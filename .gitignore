@@ -1,2 +1,6 @@
-build
-!.vscode/*
+build/
+.vscode/
+*.elf
+*.bin
+*.uf2
+*.map
