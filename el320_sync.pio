@@ -1,0 +1,21 @@
+.program el320_sync
+
+; pin 0 = HS
+; pin 1 = VS
+
+.wrap_target
+    set pins, 3      ; HS=1 VS=1  (idle)
+
+line_loop:
+    set pins, 3      ; HS high, VS high
+    nop [31]
+    nop [31]
+
+    set pins, 1      ; HS low
+    nop [31]
+
+    set pins, 3      ; HS high again
+    nop [31]
+
+    jmp line_loop
+.wrap

@@ -1,0 +1,11 @@
+.program el320_raster
+
+; 4 contiguous pins:
+; bit 0 -> GPIO2 -> VID
+; bit 1 -> GPIO3 -> VCLK
+; bit 2 -> GPIO4 -> HS
+; bit 3 -> GPIO5 -> VS
+
+.wrap_target
+    out pins, 4
+.wrap
