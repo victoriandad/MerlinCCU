@@ -17,13 +17,12 @@ else()
 endif()
 set(sdkVersion 2.2.0)
 set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-4)
+set(picotoolVersion 2.2.0-a4)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
-# ======================================================
-
+# ====================================================================================
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
@@ -59,6 +58,8 @@ target_include_directories(MerlinCCU PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
+pico_stdlib
+pico_cyw43_arch_none
     hardware_pio
     hardware_dma
 )

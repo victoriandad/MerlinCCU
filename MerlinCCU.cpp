@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <cstdlib>
+#include <cstdint>
 
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
@@ -10,10 +12,15 @@
 
 static constexpr uint PIN_BASE = 2;   // GPIO2..GPIO5 = VID,VCLK,HS,VS
 
+// Native panel framebuffer dimensions (electrical scan orientation)
 static constexpr int FB_WIDTH  = 320;
 static constexpr int FB_HEIGHT = 256;
 static constexpr int FB_STRIDE = FB_WIDTH / 8;
 static constexpr int FB_SIZE   = FB_STRIDE * FB_HEIGHT;
+
+// Logical UI dimensions (physical portrait mounting)
+static constexpr int UI_WIDTH  = 256;
+static constexpr int UI_HEIGHT = 320;
 
 static constexpr int H_PRE_BLANK   = 32;
 static constexpr int H_POST_BLANK  = 32;
@@ -114,7 +121,7 @@ static void start_dma(PIO pio, uint sm)
 }
 
 // -----------------------------------------------------------------------------
-// Framebuffer helpers
+// Native framebuffer helpers
 // -----------------------------------------------------------------------------
 
 static inline void fb_clear(uint8_t* fb, bool on)
@@ -122,7 +129,7 @@ static inline void fb_clear(uint8_t* fb, bool on)
     memset(fb, on ? 0xFF : 0x00, FB_SIZE);
 }
 
-static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
+static inline void fb_set_pixel_native(uint8_t* fb, int x, int y, bool on)
 {
     if (x < 0 || x >= FB_WIDTH || y < 0 || y >= FB_HEIGHT) {
         return;
@@ -134,11 +141,11 @@ static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
     if (on) {
         byte |= mask;
     } else {
-        byte &= (uint8_t)~mask;
+        byte &= static_cast<uint8_t>(~mask);
     }
 }
 
-static inline bool fb_get_pixel(const uint8_t* fb, int x, int y)
+static inline bool fb_get_pixel_native(const uint8_t* fb, int x, int y)
 {
     if (x < 0 || x >= FB_WIDTH || y < 0 || y >= FB_HEIGHT) {
         return false;
@@ -149,12 +156,29 @@ static inline bool fb_get_pixel(const uint8_t* fb, int x, int y)
     return (byte & mask) != 0;
 }
 
+// -----------------------------------------------------------------------------
+// Logical portrait-space helpers
+// Rotation: 90 degrees clockwise into native framebuffer space
+// -----------------------------------------------------------------------------
+
+static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
+{
+    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
+        return;
+    }
+
+    const int x_native = y;
+    const int y_native = FB_HEIGHT - 1 - x;
+
+    fb_set_pixel_native(fb, x_native, y_native, on);
+}
+
 static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
 {
-    if (y < 0 || y >= FB_HEIGHT) return;
+    if (y < 0 || y >= UI_HEIGHT) return;
     if (x0 > x1) std::swap(x0, x1);
     x0 = std::max(0, x0);
-    x1 = std::min(FB_WIDTH - 1, x1);
+    x1 = std::min(UI_WIDTH - 1, x1);
 
     for (int x = x0; x <= x1; ++x) {
         fb_set_pixel(fb, x, y, on);
@@ -163,10 +187,10 @@ static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
 
 static void fb_draw_vline(uint8_t* fb, int x, int y0, int y1, bool on)
 {
-    if (x < 0 || x >= FB_WIDTH) return;
+    if (x < 0 || x >= UI_WIDTH) return;
     if (y0 > y1) std::swap(y0, y1);
     y0 = std::max(0, y0);
-    y1 = std::min(FB_HEIGHT - 1, y1);
+    y1 = std::min(UI_HEIGHT - 1, y1);
 
     for (int y = y0; y <= y1; ++y) {
         fb_set_pixel(fb, x, y, on);
@@ -176,6 +200,7 @@ static void fb_draw_vline(uint8_t* fb, int x, int y0, int y1, bool on)
 static void fb_draw_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 {
     if (w <= 0 || h <= 0) return;
+
     fb_draw_hline(fb, x, x + w - 1, y, on);
     fb_draw_hline(fb, x, x + w - 1, y + h - 1, on);
     fb_draw_vline(fb, x, y, y + h - 1, on);
@@ -185,6 +210,7 @@ static void fb_draw_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 static void fb_fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 {
     if (w <= 0 || h <= 0) return;
+
     for (int yy = y; yy < y + h; ++yy) {
         fb_draw_hline(fb, x, x + w - 1, yy, on);
     }
@@ -192,13 +218,12 @@ static void fb_fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 
 static void fb_draw_diag(uint8_t* fb, bool on)
 {
-    const int limit = std::min(FB_WIDTH, FB_HEIGHT);
+    const int limit = std::min(UI_WIDTH, UI_HEIGHT);
     for (int i = 0; i < limit; ++i) {
         fb_set_pixel(fb, i, i, on);
     }
 }
 
-// Simple Bresenham line
 static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
 {
     int dx = std::abs(x1 - x0);
@@ -210,6 +235,7 @@ static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
     while (true) {
         fb_set_pixel(fb, x0, y0, on);
         if (x0 == x1 && y0 == y1) break;
+
         int e2 = 2 * err;
         if (e2 >= dy) {
             err += dy;
@@ -273,7 +299,7 @@ static void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_
     }
 
     for (int x = 0; x < FB_WIDTH; ++x) {
-        const bool vid_on = fb_get_pixel(fb, x, y);
+        const bool vid_on = fb_get_pixel_native(fb, x, y);
         emit_pixel(line_buf, step, vid_on, true, vs_high);
     }
 
@@ -321,56 +347,56 @@ static void present_backbuffer()
 }
 
 // -----------------------------------------------------------------------------
-// Demo screens
+// Demo screens in PORTRAIT logical coordinates
 // -----------------------------------------------------------------------------
 
 static void draw_demo_screen_1(uint8_t* fb)
 {
     fb_clear(fb, false);
 
-    fb_draw_rect(fb, 0, 0, FB_WIDTH, FB_HEIGHT, true);
-    fb_draw_rect(fb, 10, 10, FB_WIDTH - 20, FB_HEIGHT - 20, true);
+    fb_draw_rect(fb, 0, 0, UI_WIDTH, UI_HEIGHT, true);
+    fb_draw_rect(fb, 10, 10, UI_WIDTH - 20, UI_HEIGHT - 20, true);
 
-    fb_fill_rect(fb, 20, 20, 80, 40, true);
-    fb_fill_rect(fb, 220, 30, 60, 60, true);
+    fb_fill_rect(fb, 20, 20, 60, 40, true);
+    fb_fill_rect(fb, UI_WIDTH - 80, 30, 40, 70, true);
 
     fb_draw_diag(fb, true);
 
     for (int i = 0; i < 10; ++i) {
-        fb_fill_rect(fb, 5, 20 + i * 22, 6, 10, true);
-        fb_fill_rect(fb, FB_WIDTH - 11, 20 + i * 22, 6, 10, true);
+        fb_fill_rect(fb, 5, 20 + i * 28, 6, 12, true);                  // left markers
+        fb_fill_rect(fb, UI_WIDTH - 11, 20 + i * 28, 6, 12, true);      // right markers
     }
 
-    fb_fill_rect(fb, 0, FB_HEIGHT - 16, FB_WIDTH, 16, true);
-    fb_fill_rect(fb, 8, FB_HEIGHT - 12, 100, 8, false);
+    fb_fill_rect(fb, 0, UI_HEIGHT - 16, UI_WIDTH, 16, true);
+    fb_fill_rect(fb, 8, UI_HEIGHT - 12, 100, 8, false);
 }
 
 static void draw_demo_screen_2(uint8_t* fb)
 {
     fb_clear(fb, false);
 
-    fb_draw_rect(fb, 0, 0, FB_WIDTH, FB_HEIGHT, true);
-    fb_draw_rect(fb, 12, 12, FB_WIDTH - 24, FB_HEIGHT - 24, true);
+    fb_draw_rect(fb, 0, 0, UI_WIDTH, UI_HEIGHT, true);
+    fb_draw_rect(fb, 12, 12, UI_WIDTH - 24, UI_HEIGHT - 24, true);
 
     // Top status bar
-    fb_fill_rect(fb, 0, 0, FB_WIDTH, 18, true);
-    fb_fill_rect(fb, 8, 5, 90, 8, false);
-    fb_fill_rect(fb, 220, 5, 80, 8, false);
+    fb_fill_rect(fb, 0, 0, UI_WIDTH, 18, true);
+    fb_fill_rect(fb, 8, 5, 70, 8, false);
+    fb_fill_rect(fb, UI_WIDTH - 78, 5, 70, 8, false);
 
-    // Left and right softkey blocks
+    // Left and right button blocks
     for (int i = 0; i < 5; ++i) {
-        fb_fill_rect(fb, 18, 35 + i * 38, 70, 16, true);
-        fb_fill_rect(fb, FB_WIDTH - 88, 35 + i * 38, 70, 16, true);
+        fb_fill_rect(fb, 18, 35 + i * 48, 54, 18, true);
+        fb_fill_rect(fb, UI_WIDTH - 72, 35 + i * 48, 54, 18, true);
     }
 
-    // Center box and cross lines
-    fb_draw_rect(fb, 105, 40, 110, 150, true);
-    fb_draw_line(fb, 105, 40, 214, 189, true);
-    fb_draw_line(fb, 214, 40, 105, 189, true);
+    // Central box and cross
+    fb_draw_rect(fb, 78, 60, 100, 170, true);
+    fb_draw_line(fb, 78, 60, 177, 229, true);
+    fb_draw_line(fb, 177, 60, 78, 229, true);
 
     // Bottom bar
-    fb_fill_rect(fb, 0, FB_HEIGHT - 20, FB_WIDTH, 20, true);
-    fb_fill_rect(fb, 120, FB_HEIGHT - 14, 80, 8, false);
+    fb_fill_rect(fb, 0, UI_HEIGHT - 20, UI_WIDTH, 20, true);
+    fb_fill_rect(fb, 88, UI_HEIGHT - 14, 80, 8, false);
 }
 
 // -----------------------------------------------------------------------------
@@ -382,13 +408,12 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    printf("Framebuffer demo start. clkdiv=%.2f\n", CLKDIV);
+    printf("Portrait demo start. clkdiv=%.2f\n", CLKDIV);
 
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
 
-    // Draw first screen into back buffer, present it
     draw_demo_screen_1(fb_back);
     present_backbuffer();
 
@@ -402,10 +427,10 @@ int main()
 
         if (show_first) {
             draw_demo_screen_1(fb_back);
-            printf("Presenting demo screen 1\n");
+            printf("Presenting portrait demo screen 1\n");
         } else {
             draw_demo_screen_2(fb_back);
-            printf("Presenting demo screen 2\n");
+            printf("Presenting portrait demo screen 2\n");
         }
 
         present_backbuffer();
