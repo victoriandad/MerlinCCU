@@ -25,8 +25,8 @@ static constexpr int V_POST_BLANK  = 2;
 static constexpr float CLKDIV      = 2.51f;
 
 static constexpr int PIXELS_PER_LINE = H_PRE_BLANK + FB_WIDTH + H_POST_BLANK;
-static constexpr int STEPS_PER_LINE  = PIXELS_PER_LINE * 2;   // VCLK low + high
-static constexpr int STEPS_PER_WORD  = 8;                    // 8 nibbles in a 32-bit word
+static constexpr int STEPS_PER_LINE  = PIXELS_PER_LINE * 2;
+static constexpr int STEPS_PER_WORD  = 8;
 static constexpr int WORDS_PER_LINE  = STEPS_PER_LINE / STEPS_PER_WORD;
 static constexpr int TOTAL_LINES     = V_SYNC_PULSE + V_PRE_BLANK + FB_HEIGHT + V_POST_BLANK;
 static constexpr int RASTER_WORDS    = WORDS_PER_LINE * TOTAL_LINES;
@@ -134,7 +134,7 @@ static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
     if (on) {
         byte |= mask;
     } else {
-        byte &= ~mask;
+        byte &= (uint8_t)~mask;
     }
 }
 
@@ -198,6 +198,30 @@ static void fb_draw_diag(uint8_t* fb, bool on)
     }
 }
 
+// Simple Bresenham line
+static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
+{
+    int dx = std::abs(x1 - x0);
+    int sx = x0 < x1 ? 1 : -1;
+    int dy = -std::abs(y1 - y0);
+    int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    while (true) {
+        fb_set_pixel(fb, x0, y0, on);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Raster builder
 // -----------------------------------------------------------------------------
@@ -217,7 +241,6 @@ static inline void emit_pixel(uint32_t* buf, int& step_index, bool vid, bool hs,
     if (hs)  base |= BIT_HS;
     if (vs)  base |= BIT_VS;
 
-    // VCLK low then high
     emit_step(buf, step_index, base);
     emit_step(buf, step_index, base | BIT_VCLK);
 }
@@ -227,17 +250,14 @@ static void build_blank_line(uint32_t* line_buf, bool vs_high)
     memset(line_buf, 0, WORDS_PER_LINE * sizeof(uint32_t));
     int step = 0;
 
-    // Pre-blank, HS high
     for (int i = 0; i < H_PRE_BLANK; ++i) {
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
-    // Active region blank, HS high
     for (int i = 0; i < FB_WIDTH; ++i) {
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
-    // Post-blank, HS low
     for (int i = 0; i < H_POST_BLANK; ++i) {
         emit_pixel(line_buf, step, false, false, vs_high);
     }
@@ -248,18 +268,15 @@ static void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_
     memset(line_buf, 0, WORDS_PER_LINE * sizeof(uint32_t));
     int step = 0;
 
-    // Pre-blank, HS high
     for (int i = 0; i < H_PRE_BLANK; ++i) {
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
-    // Active region from framebuffer
     for (int x = 0; x < FB_WIDTH; ++x) {
         const bool vid_on = fb_get_pixel(fb, x, y);
         emit_pixel(line_buf, step, vid_on, true, vs_high);
     }
 
-    // Post-blank, HS low
     for (int i = 0; i < H_POST_BLANK; ++i) {
         emit_pixel(line_buf, step, false, false, vs_high);
     }
@@ -269,29 +286,25 @@ static void rebuild_raster_from_front_fb()
 {
     int line = 0;
 
-    // VS pulse lines
     for (int i = 0; i < V_SYNC_PULSE; ++i, ++line) {
         build_blank_line(&raster_words[line * WORDS_PER_LINE], true);
     }
 
-    // Vertical pre-blank
     for (int i = 0; i < V_PRE_BLANK; ++i, ++line) {
         build_blank_line(&raster_words[line * WORDS_PER_LINE], false);
     }
 
-    // Active image
     for (int y = 0; y < FB_HEIGHT; ++y, ++line) {
         build_fb_line(&raster_words[line * WORDS_PER_LINE], fb_front, y, false);
     }
 
-    // Vertical post-blank
     for (int i = 0; i < V_POST_BLANK; ++i, ++line) {
         build_blank_line(&raster_words[line * WORDS_PER_LINE], false);
     }
 }
 
 // -----------------------------------------------------------------------------
-// Swap
+// Swap / present
 // -----------------------------------------------------------------------------
 
 static void fb_swap()
@@ -301,11 +314,17 @@ static void fb_swap()
     fb_back = tmp;
 }
 
+static void present_backbuffer()
+{
+    fb_swap();
+    rebuild_raster_from_front_fb();
+}
+
 // -----------------------------------------------------------------------------
-// Demo drawing
+// Demo screens
 // -----------------------------------------------------------------------------
 
-static void draw_demo_screen(uint8_t* fb)
+static void draw_demo_screen_1(uint8_t* fb)
 {
     fb_clear(fb, false);
 
@@ -318,13 +337,40 @@ static void draw_demo_screen(uint8_t* fb)
     fb_draw_diag(fb, true);
 
     for (int i = 0; i < 10; ++i) {
-        fb_fill_rect(fb, 5, 20 + i * 22, 6, 10, true);               // left softkey markers
-        fb_fill_rect(fb, FB_WIDTH - 11, 20 + i * 22, 6, 10, true);   // right softkey markers
+        fb_fill_rect(fb, 5, 20 + i * 22, 6, 10, true);
+        fb_fill_rect(fb, FB_WIDTH - 11, 20 + i * 22, 6, 10, true);
     }
 
-    // Bottom status strip
     fb_fill_rect(fb, 0, FB_HEIGHT - 16, FB_WIDTH, 16, true);
     fb_fill_rect(fb, 8, FB_HEIGHT - 12, 100, 8, false);
+}
+
+static void draw_demo_screen_2(uint8_t* fb)
+{
+    fb_clear(fb, false);
+
+    fb_draw_rect(fb, 0, 0, FB_WIDTH, FB_HEIGHT, true);
+    fb_draw_rect(fb, 12, 12, FB_WIDTH - 24, FB_HEIGHT - 24, true);
+
+    // Top status bar
+    fb_fill_rect(fb, 0, 0, FB_WIDTH, 18, true);
+    fb_fill_rect(fb, 8, 5, 90, 8, false);
+    fb_fill_rect(fb, 220, 5, 80, 8, false);
+
+    // Left and right softkey blocks
+    for (int i = 0; i < 5; ++i) {
+        fb_fill_rect(fb, 18, 35 + i * 38, 70, 16, true);
+        fb_fill_rect(fb, FB_WIDTH - 88, 35 + i * 38, 70, 16, true);
+    }
+
+    // Center box and cross lines
+    fb_draw_rect(fb, 105, 40, 110, 150, true);
+    fb_draw_line(fb, 105, 40, 214, 189, true);
+    fb_draw_line(fb, 214, 40, 105, 189, true);
+
+    // Bottom bar
+    fb_fill_rect(fb, 0, FB_HEIGHT - 20, FB_WIDTH, 20, true);
+    fb_fill_rect(fb, 120, FB_HEIGHT - 14, 80, 8, false);
 }
 
 // -----------------------------------------------------------------------------
@@ -338,24 +384,32 @@ int main()
 
     printf("Framebuffer demo start. clkdiv=%.2f\n", CLKDIV);
 
-    // Prepare initial back buffer content
-    draw_demo_screen(fb_back);
-
-    // Swap so demo becomes front buffer
-    fb_swap();
-
-    // Build raster stream from front buffer
-    rebuild_raster_from_front_fb();
-
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
 
+    // Draw first screen into back buffer, present it
+    draw_demo_screen_1(fb_back);
+    present_backbuffer();
+
     el320_raster_program_init(pio, sm, offset, PIN_BASE);
     start_dma(pio, sm);
 
+    bool show_first = false;
+
     while (true) {
-        tight_loop_contents();
+        sleep_ms(3000);
+
+        if (show_first) {
+            draw_demo_screen_1(fb_back);
+            printf("Presenting demo screen 1\n");
+        } else {
+            draw_demo_screen_2(fb_back);
+            printf("Presenting demo screen 2\n");
+        }
+
+        present_backbuffer();
+        show_first = !show_first;
     }
 
     return 0;
