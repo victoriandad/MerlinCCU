@@ -19,8 +19,11 @@ static constexpr int FB_STRIDE = FB_WIDTH / 8;
 static constexpr int FB_SIZE   = FB_STRIDE * FB_HEIGHT;
 
 // Logical UI dimensions (physical portrait mounting)
-static constexpr int UI_WIDTH  = 256;
+static constexpr int UI_WIDTH  = 252;
 static constexpr int UI_HEIGHT = 320;
+
+// Sweep this from -5 to +5
+static constexpr int NATIVE_ROW_OFFSET = -4;
 
 static constexpr int H_PRE_BLANK   = 32;
 static constexpr int H_POST_BLANK  = 32;
@@ -158,8 +161,12 @@ static inline bool fb_get_pixel_native(const uint8_t* fb, int x, int y)
 
 // -----------------------------------------------------------------------------
 // Logical portrait-space helpers
-// Rotation: 90 degrees clockwise into native framebuffer space
 // -----------------------------------------------------------------------------
+
+static inline int clamp_int(int v, int lo, int hi)
+{
+    return (v < lo) ? lo : (v > hi ? hi : v);
+}
 
 static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
 {
@@ -168,9 +175,23 @@ static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
     }
 
     const int x_native = y;
-    const int y_native = FB_HEIGHT - 1 - x;
+    const int y_native_raw = FB_HEIGHT - 1 - x + NATIVE_ROW_OFFSET;
+    const int y_native = clamp_int(y_native_raw, 0, FB_HEIGHT - 1);
 
     fb_set_pixel_native(fb, x_native, y_native, on);
+}
+
+static inline bool fb_get_pixel(const uint8_t* fb, int x, int y)
+{
+    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
+        return false;
+    }
+
+    const int x_native = y;
+    const int y_native_raw = FB_HEIGHT - 1 - x + NATIVE_ROW_OFFSET;
+    const int y_native = clamp_int(y_native_raw, 0, FB_HEIGHT - 1);
+
+    return fb_get_pixel_native(fb, x_native, y_native);
 }
 
 static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
@@ -363,8 +384,8 @@ static void draw_demo_screen_1(uint8_t* fb)
     fb_draw_diag(fb, true);
 
     for (int i = 0; i < 10; ++i) {
-        fb_fill_rect(fb, 5, 20 + i * 28, 6, 12, true);                  // left markers
-        fb_fill_rect(fb, UI_WIDTH - 11, 20 + i * 28, 6, 12, true);      // right markers
+        fb_fill_rect(fb, 5, 20 + i * 28, 6, 12, true);
+        fb_fill_rect(fb, UI_WIDTH - 11, 20 + i * 28, 6, 12, true);
     }
 
     fb_fill_rect(fb, 0, UI_HEIGHT - 16, UI_WIDTH, 16, true);
@@ -378,23 +399,19 @@ static void draw_demo_screen_2(uint8_t* fb)
     fb_draw_rect(fb, 0, 0, UI_WIDTH, UI_HEIGHT, true);
     fb_draw_rect(fb, 12, 12, UI_WIDTH - 24, UI_HEIGHT - 24, true);
 
-    // Top status bar
     fb_fill_rect(fb, 0, 0, UI_WIDTH, 18, true);
     fb_fill_rect(fb, 8, 5, 70, 8, false);
     fb_fill_rect(fb, UI_WIDTH - 78, 5, 70, 8, false);
 
-    // Left and right button blocks
     for (int i = 0; i < 5; ++i) {
         fb_fill_rect(fb, 18, 35 + i * 48, 54, 18, true);
         fb_fill_rect(fb, UI_WIDTH - 72, 35 + i * 48, 54, 18, true);
     }
 
-    // Central box and cross
     fb_draw_rect(fb, 78, 60, 100, 170, true);
     fb_draw_line(fb, 78, 60, 177, 229, true);
     fb_draw_line(fb, 177, 60, 78, 229, true);
 
-    // Bottom bar
     fb_fill_rect(fb, 0, UI_HEIGHT - 20, UI_WIDTH, 20, true);
     fb_fill_rect(fb, 88, UI_HEIGHT - 14, 80, 8, false);
 }
@@ -408,7 +425,7 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    printf("Portrait demo start. clkdiv=%.2f\n", CLKDIV);
+    printf("Portrait demo start. clkdiv=%.2f row_offset=%d\n", CLKDIV, NATIVE_ROW_OFFSET);
 
     PIO pio = pio0;
     const uint sm = 0;
