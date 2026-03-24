@@ -22,7 +22,7 @@ static constexpr int FB_SIZE   = FB_STRIDE * FB_HEIGHT;
 static constexpr int UI_WIDTH  = 252;
 static constexpr int UI_HEIGHT = 320;
 
-// Sweep this from -5 to +5
+// Keep this at the known-good value
 static constexpr int NATIVE_ROW_OFFSET = -4;
 
 static constexpr int H_PRE_BLANK   = 32;
@@ -179,19 +179,6 @@ static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
     const int y_native = clamp_int(y_native_raw, 0, FB_HEIGHT - 1);
 
     fb_set_pixel_native(fb, x_native, y_native, on);
-}
-
-static inline bool fb_get_pixel(const uint8_t* fb, int x, int y)
-{
-    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
-        return false;
-    }
-
-    const int x_native = y;
-    const int y_native_raw = FB_HEIGHT - 1 - x + NATIVE_ROW_OFFSET;
-    const int y_native = clamp_int(y_native_raw, 0, FB_HEIGHT - 1);
-
-    return fb_get_pixel_native(fb, x_native, y_native);
 }
 
 static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
@@ -425,7 +412,8 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    printf("Portrait demo start. clkdiv=%.2f row_offset=%d\n", CLKDIV, NATIVE_ROW_OFFSET);
+    printf("Working portrait baseline. clkdiv=%.2f row_offset=%d\n",
+           CLKDIV, NATIVE_ROW_OFFSET);
 
     PIO pio = pio0;
     const uint sm = 0;
