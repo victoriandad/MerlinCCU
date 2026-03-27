@@ -62,6 +62,78 @@ static int dma_chan_data;
 static int dma_chan_ctrl;
 
 // -----------------------------------------------------------------------------
+// 5x7 font
+// Each glyph is 5 columns, LSB at top of column.
+// Supported: space, digits, A-Z, hyphen, slash, colon, period
+// -----------------------------------------------------------------------------
+
+struct Glyph5x7 {
+    char c;
+    uint8_t col[5];
+};
+
+static constexpr Glyph5x7 FONT_5X7[] = {
+    {' ', {0x00,0x00,0x00,0x00,0x00}},
+    {'-', {0x08,0x08,0x08,0x08,0x08}},
+    {'.', {0x00,0x00,0x60,0x60,0x00}},
+    {':', {0x00,0x36,0x36,0x00,0x00}},
+    {'/', {0x40,0x20,0x10,0x08,0x04}},
+
+    {'0', {0x3E,0x51,0x49,0x45,0x3E}},
+    {'1', {0x00,0x42,0x7F,0x40,0x00}},
+    {'2', {0x62,0x51,0x49,0x49,0x46}},
+    {'3', {0x22,0x41,0x49,0x49,0x36}},
+    {'4', {0x18,0x14,0x12,0x7F,0x10}},
+    {'5', {0x2F,0x49,0x49,0x49,0x31}},
+    {'6', {0x3E,0x49,0x49,0x49,0x32}},
+    {'7', {0x01,0x71,0x09,0x05,0x03}},
+    {'8', {0x36,0x49,0x49,0x49,0x36}},
+    {'9', {0x26,0x49,0x49,0x49,0x3E}},
+
+    {'A', {0x7E,0x11,0x11,0x11,0x7E}},
+    {'B', {0x7F,0x49,0x49,0x49,0x36}},
+    {'C', {0x3E,0x41,0x41,0x41,0x22}},
+    {'D', {0x7F,0x41,0x41,0x22,0x1C}},
+    {'E', {0x7F,0x49,0x49,0x49,0x41}},
+    {'F', {0x7F,0x09,0x09,0x09,0x01}},
+    {'G', {0x3E,0x41,0x49,0x49,0x7A}},
+    {'H', {0x7F,0x08,0x08,0x08,0x7F}},
+    {'I', {0x00,0x41,0x7F,0x41,0x00}},
+    {'J', {0x20,0x40,0x41,0x3F,0x01}},
+    {'K', {0x7F,0x08,0x14,0x22,0x41}},
+    {'L', {0x7F,0x40,0x40,0x40,0x40}},
+    {'M', {0x7F,0x02,0x0C,0x02,0x7F}},
+    {'N', {0x7F,0x04,0x08,0x10,0x7F}},
+    {'O', {0x3E,0x41,0x41,0x41,0x3E}},
+    {'P', {0x7F,0x09,0x09,0x09,0x06}},
+    {'Q', {0x3E,0x41,0x51,0x21,0x5E}},
+    {'R', {0x7F,0x09,0x19,0x29,0x46}},
+    {'S', {0x46,0x49,0x49,0x49,0x31}},
+    {'T', {0x01,0x01,0x7F,0x01,0x01}},
+    {'U', {0x3F,0x40,0x40,0x40,0x3F}},
+    {'V', {0x1F,0x20,0x40,0x20,0x1F}},
+    {'W', {0x7F,0x20,0x18,0x20,0x7F}},
+    {'X', {0x63,0x14,0x08,0x14,0x63}},
+    {'Y', {0x03,0x04,0x78,0x04,0x03}},
+    {'Z', {0x61,0x51,0x49,0x45,0x43}},
+};
+
+static const Glyph5x7* font_lookup(char c)
+{
+    if (c >= 'a' && c <= 'z') {
+        c = static_cast<char>(c - 'a' + 'A');
+    }
+
+    for (const auto& g : FONT_5X7) {
+        if (g.c == c) {
+            return &g;
+        }
+    }
+
+    return &FONT_5X7[0];
+}
+
+// -----------------------------------------------------------------------------
 // PIO / DMA setup
 // -----------------------------------------------------------------------------
 
@@ -256,6 +328,38 @@ static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
     }
 }
 
+static void fb_draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale = 1)
+{
+    if (scale < 1) scale = 1;
+
+    const Glyph5x7* g = font_lookup(c);
+
+    for (int col = 0; col < 5; ++col) {
+        const uint8_t bits = g->col[col];
+
+        for (int row = 0; row < 7; ++row) {
+            const bool pixel_on = ((bits >> row) & 0x01u) != 0;
+            if (!pixel_on) continue;
+
+            for (int sx = 0; sx < scale; ++sx) {
+                for (int sy = 0; sy < scale; ++sy) {
+                    fb_set_pixel(fb, x + col * scale + sx, y + row * scale + sy, on);
+                }
+            }
+        }
+    }
+}
+
+static void fb_draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale = 1, int spacing = 1)
+{
+    int cursor_x = x;
+    while (*s) {
+        fb_draw_char(fb, cursor_x, y, *s, on, scale);
+        cursor_x += (5 * scale) + spacing;
+        ++s;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Raster builder
 // -----------------------------------------------------------------------------
@@ -358,7 +462,7 @@ static void present_backbuffer()
 // Demo screens in PORTRAIT logical coordinates
 // -----------------------------------------------------------------------------
 
-static void draw_demo_screen_1(uint8_t* fb)
+static void draw_demo_screen(uint8_t* fb)
 {
     fb_clear(fb, false);
 
@@ -379,28 +483,62 @@ static void draw_demo_screen_1(uint8_t* fb)
     fb_fill_rect(fb, 8, UI_HEIGHT - 12, 100, 8, false);
 }
 
-static void draw_demo_screen_2(uint8_t* fb)
+static void draw_dummy_menu_screen(uint8_t* fb)
 {
     fb_clear(fb, false);
 
+    // outer frame
     fb_draw_rect(fb, 0, 0, UI_WIDTH, UI_HEIGHT, true);
-    fb_draw_rect(fb, 12, 12, UI_WIDTH - 24, UI_HEIGHT - 24, true);
+    fb_draw_rect(fb, 6, 6, UI_WIDTH - 12, UI_HEIGHT - 12, true);
 
-    fb_fill_rect(fb, 0, 0, UI_WIDTH, 18, true);
-    fb_fill_rect(fb, 8, 5, 70, 8, false);
-    fb_fill_rect(fb, UI_WIDTH - 78, 5, 70, 8, false);
+    // title bar
+    fb_fill_rect(fb, 8, 8, UI_WIDTH - 16, 18, true);
+    fb_draw_text(fb, 14, 14, "MERLIN CCU", false, 1, 1);
+
+    // softkey markers and labels
+    const char* left_labels[5] = {
+        "LIGHTS",
+        "HEAT",
+        "GARAGE",
+        "MEDIA",
+        "ALARM"
+    };
+
+    const char* right_labels[5] = {
+        "STATUS",
+        "CAMERAS",
+        "ENERGY",
+        "SCENES",
+        "SETUP"
+    };
 
     for (int i = 0; i < 5; ++i) {
-        fb_fill_rect(fb, 18, 35 + i * 48, 54, 18, true);
-        fb_fill_rect(fb, UI_WIDTH - 72, 35 + i * 48, 54, 18, true);
+        const int y = 42 + i * 42;
+
+        // left side
+        fb_fill_rect(fb, 8, y + 4, 8, 10, true);
+        fb_draw_rect(fb, 22, y, 82, 18, true);
+        fb_draw_text(fb, 28, y + 5, left_labels[i], true, 1, 1);
+
+        // right side
+        fb_fill_rect(fb, UI_WIDTH - 16, y + 4, 8, 10, true);
+        fb_draw_rect(fb, UI_WIDTH - 104, y, 82, 18, true);
+        fb_draw_text(fb, UI_WIDTH - 98, y + 5, right_labels[i], true, 1, 1);
     }
 
-    fb_draw_rect(fb, 78, 60, 100, 170, true);
-    fb_draw_line(fb, 78, 60, 177, 229, true);
-    fb_draw_line(fb, 177, 60, 78, 229, true);
+    // central status panel
+    fb_draw_rect(fb, 72, 54, 108, 148, true);
 
-    fb_fill_rect(fb, 0, UI_HEIGHT - 20, UI_WIDTH, 20, true);
-    fb_fill_rect(fb, 88, UI_HEIGHT - 14, 80, 8, false);
+    fb_draw_text(fb, 96, 66, "HOME", true, 2, 2);
+    fb_draw_text(fb, 84, 100, "TEMP  19", true, 1, 1);
+    fb_draw_text(fb, 84, 116, "DOOR  SHUT", true, 1, 1);
+    fb_draw_text(fb, 84, 132, "ALARM OFF", true, 1, 1);
+    fb_draw_text(fb, 84, 148, "WIFI  GOOD", true, 1, 1);
+
+    // bottom status bar
+    fb_fill_rect(fb, 8, UI_HEIGHT - 20, UI_WIDTH - 16, 10, true);
+    fb_draw_text(fb, 14, UI_HEIGHT - 18, "IDLE 00:42", false, 1, 1);
+    fb_draw_text(fb, UI_WIDTH - 54, UI_HEIGHT - 18, "HA OK", false, 1, 1);
 }
 
 // -----------------------------------------------------------------------------
@@ -412,34 +550,34 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    printf("Working portrait baseline. clkdiv=%.2f row_offset=%d\n",
+    printf("Dummy menu demo. clkdiv=%.2f row_offset=%d\n",
            CLKDIV, NATIVE_ROW_OFFSET);
 
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
 
-    draw_demo_screen_1(fb_back);
+    draw_demo_screen(fb_back);
     present_backbuffer();
 
     el320_raster_program_init(pio, sm, offset, PIN_BASE);
     start_dma(pio, sm);
 
-    bool show_first = false;
+    bool show_menu = false;
 
     while (true) {
         sleep_ms(3000);
 
-        if (show_first) {
-            draw_demo_screen_1(fb_back);
-            printf("Presenting portrait demo screen 1\n");
+        if (show_menu) {
+            draw_dummy_menu_screen(fb_back);
+            printf("Presenting dummy menu screen\n");
         } else {
-            draw_demo_screen_2(fb_back);
-            printf("Presenting portrait demo screen 2\n");
+            draw_demo_screen(fb_back);
+            printf("Presenting demo screen\n");
         }
 
         present_backbuffer();
-        show_first = !show_first;
+        show_menu = !show_menu;
     }
 
     return 0;
