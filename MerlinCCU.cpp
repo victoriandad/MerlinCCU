@@ -12,33 +12,60 @@
 
 static constexpr uint PIN_BASE = 2;   // GPIO2..GPIO5 = VID,VCLK,HS,VS
 
+/// @brief Describes one panel mounting and timing setup.
+/// @details The firmware works with two coordinate systems:
+/// - UI space: portrait-oriented coordinates used by drawing code.
+/// - Native panel space: the electrical scan order expected by the display.
+///
+/// This struct keeps the panel-specific geometry and timing values together so
+/// the rest of the code can treat them as one coherent configuration.
+struct PanelConfig {
+    int fb_width;
+    int fb_height;
+    int ui_width;
+    int ui_height;
+    int native_row_offset;
+    int h_pre_blank;
+    int h_post_blank;
+    int v_sync_pulse;
+    int v_pre_blank;
+    int v_post_blank;
+    float clkdiv;
+};
+
+/// @brief Panel timing and geometry for the current EL320 portrait mounting.
+/// @details These are the current known-good settings for the display under
+/// test. If the image is unstable, shifted, or clipped, start by reviewing
+/// these values.
+static constexpr PanelConfig PANEL = {
+    .fb_width = 320,
+    .fb_height = 256,
+    .ui_width = 252,
+    .ui_height = 320,
+    .native_row_offset = -4,
+    .h_pre_blank = 32,
+    .h_post_blank = 32,
+    .v_sync_pulse = 2,
+    .v_pre_blank = 2,
+    .v_post_blank = 2,
+    .clkdiv = 2.51f,
+};
+
 // Native panel framebuffer dimensions (electrical scan orientation)
-static constexpr int FB_WIDTH  = 320;
-static constexpr int FB_HEIGHT = 256;
-static constexpr int FB_STRIDE = FB_WIDTH / 8;
-static constexpr int FB_SIZE   = FB_STRIDE * FB_HEIGHT;
+static constexpr int FB_WIDTH  = PANEL.fb_width;
+static constexpr int FB_HEIGHT = PANEL.fb_height;
 
 // Logical UI dimensions (physical portrait mounting)
-static constexpr int UI_WIDTH  = 252;
-static constexpr int UI_HEIGHT = 320;
+static constexpr int UI_WIDTH  = PANEL.ui_width;
+static constexpr int UI_HEIGHT = PANEL.ui_height;
+static constexpr int UI_STRIDE = (UI_WIDTH + 7) / 8;
+static constexpr int UI_FB_SIZE = UI_STRIDE * UI_HEIGHT;
 
-// Keep this at the known-good value
-static constexpr int NATIVE_ROW_OFFSET = -4;
-
-static constexpr int H_PRE_BLANK   = 32;
-static constexpr int H_POST_BLANK  = 32;
-
-static constexpr int V_SYNC_PULSE  = 2;
-static constexpr int V_PRE_BLANK   = 2;
-static constexpr int V_POST_BLANK  = 2;
-
-static constexpr float CLKDIV      = 2.51f;
-
-static constexpr int PIXELS_PER_LINE = H_PRE_BLANK + FB_WIDTH + H_POST_BLANK;
+static constexpr int PIXELS_PER_LINE = PANEL.h_pre_blank + FB_WIDTH + PANEL.h_post_blank;
 static constexpr int STEPS_PER_LINE  = PIXELS_PER_LINE * 2;
 static constexpr int STEPS_PER_WORD  = 8;
 static constexpr int WORDS_PER_LINE  = STEPS_PER_LINE / STEPS_PER_WORD;
-static constexpr int TOTAL_LINES     = V_SYNC_PULSE + V_PRE_BLANK + FB_HEIGHT + V_POST_BLANK;
+static constexpr int TOTAL_LINES     = PANEL.v_sync_pulse + PANEL.v_pre_blank + FB_HEIGHT + PANEL.v_post_blank;
 static constexpr int RASTER_WORDS    = WORDS_PER_LINE * TOTAL_LINES;
 
 static_assert((STEPS_PER_LINE % STEPS_PER_WORD) == 0, "Line packing must be exact");
@@ -48,24 +75,55 @@ static constexpr uint8_t BIT_VCLK = 1u << 1;
 static constexpr uint8_t BIT_HS   = 1u << 2;
 static constexpr uint8_t BIT_VS   = 1u << 3;
 
-// Swing buffers
-static uint8_t fb_a[FB_SIZE];
-static uint8_t fb_b[FB_SIZE];
+/// @brief Two UI-space framebuffers used for drawing and presentation.
+/// @details New graphics are drawn into @c fb_back while @c fb_front remains
+/// the current displayed image. Presenting a frame swaps the pointers.
+static uint8_t fb_a[UI_FB_SIZE];
+static uint8_t fb_b[UI_FB_SIZE];
 
 static uint8_t* fb_front = fb_a;
 static uint8_t* fb_back  = fb_b;
 
-// DMA/PIO raster stream
-static uint32_t raster_words[RASTER_WORDS];
+/// @brief Two scanout buffers that hold the exact DMA/PIO waveform for a frame.
+/// @details These are different from the framebuffers above. A framebuffer is a
+/// compact 1-bit image in UI space. A raster buffer is a packed stream of pin
+/// states for VID, VCLK, HS and VS ready for DMA to feed the PIO state machine.
+static uint32_t raster_a[RASTER_WORDS];
+static uint32_t raster_b[RASTER_WORDS];
+
+static uint32_t* raster_front = raster_a;
+static uint32_t* raster_back  = raster_b;
+static uint32_t* raster_pending = nullptr;
+
+static const void* dma_read_addr = raster_a;
 
 static int dma_chan_data;
 static int dma_chan_ctrl;
+static bool dma_running = false;
 
-// -----------------------------------------------------------------------------
-// 5x7 font
-// Each glyph is 5 columns, LSB at top of column.
-// Supported: space, digits, A-Z, hyphen, slash, colon, period
-// -----------------------------------------------------------------------------
+/// @brief DMA interrupt handler used to switch scanout buffers safely.
+/// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
+/// A second control DMA channel then reloads the data channel's read address so
+/// the same frame repeats forever.
+///
+/// This interrupt runs at that frame boundary. If a new raster has been queued,
+/// it becomes the next frame without rewriting the live DMA source in place.
+static void dma_ctrl_irq_handler()
+{
+    const uint32_t mask = 1u << dma_chan_ctrl;
+    dma_hw->ints0 = mask;
+
+    if (raster_pending != nullptr) {
+        uint32_t* previous_front = raster_front;
+        raster_front = raster_pending;
+        raster_back = previous_front;
+        raster_pending = nullptr;
+        dma_read_addr = raster_front;
+    }
+}
+
+/// @brief One fixed-width 5x7 font glyph stored as five columns.
+/// @details The least-significant bit is the top pixel of each column.
 
 struct Glyph5x7 {
     char c;
@@ -118,6 +176,9 @@ static constexpr Glyph5x7 FONT_5X7[] = {
     {'Z', {0x61,0x51,0x49,0x45,0x43}},
 };
 
+/// @brief Returns a glyph definition for the requested character.
+/// @details Lowercase letters are folded to uppercase. Unsupported characters
+/// fall back to a blank glyph so the caller never has to handle errors.
 static const Glyph5x7* font_lookup(char c)
 {
     if (c >= 'a' && c <= 'z') {
@@ -137,6 +198,9 @@ static const Glyph5x7* font_lookup(char c)
 // PIO / DMA setup
 // -----------------------------------------------------------------------------
 
+/// @brief Configures the PIO state machine that outputs the 4-bit raster stream.
+/// @details The PIO program itself is intentionally tiny. The CPU does the hard
+/// work by precomputing every output state in a raster buffer first.
 static void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_base)
 {
     for (uint pin = pin_base; pin < pin_base + 4; ++pin) {
@@ -150,10 +214,14 @@ static void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_ba
     sm_config_set_out_shift(&c, true, true, 32);
 
     pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_clkdiv(pio, sm, CLKDIV);
+    pio_sm_set_clkdiv(pio, sm, PANEL.clkdiv);
     pio_sm_set_enabled(pio, sm, true);
 }
 
+/// @brief Starts the repeating two-channel DMA scanout loop.
+/// @details The data DMA channel pushes raster words into the PIO TX FIFO.
+/// When that transfer finishes, the control DMA channel reloads the data
+/// channel's read pointer so the same frame immediately starts again.
 static void start_dma(PIO pio, uint sm)
 {
     dma_chan_data = dma_claim_unused_channel(true);
@@ -170,7 +238,7 @@ static void start_dma(PIO pio, uint sm)
         dma_chan_data,
         &c_data,
         &pio->txf[sm],
-        raster_words,
+        raster_front,
         RASTER_WORDS,
         false
     );
@@ -181,36 +249,43 @@ static void start_dma(PIO pio, uint sm)
     channel_config_set_write_increment(&c_ctrl, false);
     channel_config_set_chain_to(&c_ctrl, dma_chan_data);
 
-    static const void* read_addr = raster_words;
-
     dma_channel_configure(
         dma_chan_ctrl,
         &c_ctrl,
         &dma_hw->ch[dma_chan_data].read_addr,
-        &read_addr,
+        &dma_read_addr,
         1,
         false
     );
 
+    dma_channel_set_irq0_enabled(dma_chan_ctrl, true);
+    irq_set_exclusive_handler(DMA_IRQ_0, dma_ctrl_irq_handler);
+    irq_set_enabled(DMA_IRQ_0, true);
+
     dma_start_channel_mask(1u << dma_chan_data);
+    dma_running = true;
 }
 
 // -----------------------------------------------------------------------------
-// Native framebuffer helpers
+// UI framebuffer helpers
 // -----------------------------------------------------------------------------
 
+/// @brief Fills the whole UI framebuffer with black or white.
 static inline void fb_clear(uint8_t* fb, bool on)
 {
-    memset(fb, on ? 0xFF : 0x00, FB_SIZE);
+    memset(fb, on ? 0xFF : 0x00, UI_FB_SIZE);
 }
 
-static inline void fb_set_pixel_native(uint8_t* fb, int x, int y, bool on)
+/// @brief Sets one pixel in the logical portrait UI framebuffer.
+/// @details This function knows only about UI coordinates. It does not know how
+/// the physical panel is rotated or scanned.
+static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
 {
-    if (x < 0 || x >= FB_WIDTH || y < 0 || y >= FB_HEIGHT) {
+    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
         return;
     }
 
-    uint8_t& byte = fb[y * FB_STRIDE + (x >> 3)];
+    uint8_t& byte = fb[y * UI_STRIDE + (x >> 3)];
     uint8_t mask = 0x80u >> (x & 7);
 
     if (on) {
@@ -220,39 +295,29 @@ static inline void fb_set_pixel_native(uint8_t* fb, int x, int y, bool on)
     }
 }
 
-static inline bool fb_get_pixel_native(const uint8_t* fb, int x, int y)
+/// @brief Reads one pixel from the logical portrait UI framebuffer.
+static inline bool fb_get_pixel(const uint8_t* fb, int x, int y)
 {
-    if (x < 0 || x >= FB_WIDTH || y < 0 || y >= FB_HEIGHT) {
+    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
         return false;
     }
 
-    const uint8_t byte = fb[y * FB_STRIDE + (x >> 3)];
+    const uint8_t byte = fb[y * UI_STRIDE + (x >> 3)];
     const uint8_t mask = 0x80u >> (x & 7);
     return (byte & mask) != 0;
 }
 
 // -----------------------------------------------------------------------------
-// Logical portrait-space helpers
+// Logical portrait-space drawing helpers
 // -----------------------------------------------------------------------------
 
+/// @brief Constrains a value to the supplied inclusive range.
 static inline int clamp_int(int v, int lo, int hi)
 {
     return (v < lo) ? lo : (v > hi ? hi : v);
 }
 
-static inline void fb_set_pixel(uint8_t* fb, int x, int y, bool on)
-{
-    if (x < 0 || x >= UI_WIDTH || y < 0 || y >= UI_HEIGHT) {
-        return;
-    }
-
-    const int x_native = y;
-    const int y_native_raw = FB_HEIGHT - 1 - x + NATIVE_ROW_OFFSET;
-    const int y_native = clamp_int(y_native_raw, 0, FB_HEIGHT - 1);
-
-    fb_set_pixel_native(fb, x_native, y_native, on);
-}
-
+/// @brief Draws a horizontal line in UI space.
 static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
 {
     if (y < 0 || y >= UI_HEIGHT) return;
@@ -265,6 +330,7 @@ static void fb_draw_hline(uint8_t* fb, int x0, int x1, int y, bool on)
     }
 }
 
+/// @brief Draws a vertical line in UI space.
 static void fb_draw_vline(uint8_t* fb, int x, int y0, int y1, bool on)
 {
     if (x < 0 || x >= UI_WIDTH) return;
@@ -277,6 +343,7 @@ static void fb_draw_vline(uint8_t* fb, int x, int y0, int y1, bool on)
     }
 }
 
+/// @brief Draws an outline rectangle in UI space.
 static void fb_draw_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 {
     if (w <= 0 || h <= 0) return;
@@ -287,6 +354,7 @@ static void fb_draw_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
     fb_draw_vline(fb, x + w - 1, y, y + h - 1, on);
 }
 
+/// @brief Draws a filled rectangle in UI space.
 static void fb_fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 {
     if (w <= 0 || h <= 0) return;
@@ -296,6 +364,7 @@ static void fb_fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
     }
 }
 
+/// @brief Draws a simple diagonal test line.
 static void fb_draw_diag(uint8_t* fb, bool on)
 {
     const int limit = std::min(UI_WIDTH, UI_HEIGHT);
@@ -304,6 +373,7 @@ static void fb_draw_diag(uint8_t* fb, bool on)
     }
 }
 
+/// @brief Draws a general line using Bresenham's algorithm.
 static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
 {
     int dx = std::abs(x1 - x0);
@@ -328,6 +398,7 @@ static void fb_draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
     }
 }
 
+/// @brief Draws one 5x7 character at the requested scale.
 static void fb_draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale = 1)
 {
     if (scale < 1) scale = 1;
@@ -350,6 +421,7 @@ static void fb_draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale =
     }
 }
 
+/// @brief Draws a null-terminated text string in UI space.
 static void fb_draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale = 1, int spacing = 1)
 {
     int cursor_x = x;
@@ -364,6 +436,9 @@ static void fb_draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int 
 // Raster builder
 // -----------------------------------------------------------------------------
 
+/// @brief Appends one 4-bit output state to a packed raster buffer.
+/// @details Each nibble contains one simultaneous state for VID, VCLK, HS and
+/// VS. Eight of those nibbles are packed into one 32-bit word.
 static inline void emit_step(uint32_t* buf, int& step_index, uint8_t nibble)
 {
     const int word_index   = step_index / 8;
@@ -372,6 +447,10 @@ static inline void emit_step(uint32_t* buf, int& step_index, uint8_t nibble)
     ++step_index;
 }
 
+/// @brief Emits one pixel time into the raster buffer.
+/// @details Each pixel is stored as two output steps: clock low, then clock
+/// high. This lets the CPU precompute the exact waveform and keeps the PIO
+/// program extremely simple.
 static inline void emit_pixel(uint32_t* buf, int& step_index, bool vid, bool hs, bool vs)
 {
     uint8_t base = 0;
@@ -383,12 +462,15 @@ static inline void emit_pixel(uint32_t* buf, int& step_index, bool vid, bool hs,
     emit_step(buf, step_index, base | BIT_VCLK);
 }
 
+/// @brief Builds one fully blank scan line.
+/// @details The line still includes the correct sync and blanking timing, but
+/// the video data bit stays off.
 static void build_blank_line(uint32_t* line_buf, bool vs_high)
 {
     memset(line_buf, 0, WORDS_PER_LINE * sizeof(uint32_t));
     int step = 0;
 
-    for (int i = 0; i < H_PRE_BLANK; ++i) {
+    for (int i = 0; i < PANEL.h_pre_blank; ++i) {
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
@@ -396,48 +478,58 @@ static void build_blank_line(uint32_t* line_buf, bool vs_high)
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
-    for (int i = 0; i < H_POST_BLANK; ++i) {
+    for (int i = 0; i < PANEL.h_post_blank; ++i) {
         emit_pixel(line_buf, step, false, false, vs_high);
     }
 }
 
+/// @brief Builds one active native scan line from the UI framebuffer.
+/// @details This is the only place that knows how portrait UI coordinates map
+/// to the panel's native electrical scan order and row offset.
 static void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
 {
     memset(line_buf, 0, WORDS_PER_LINE * sizeof(uint32_t));
     int step = 0;
+    const int max_ui_source_y = FB_HEIGHT - 1 + PANEL.native_row_offset;
+    const int ui_x = clamp_int(max_ui_source_y - y, 0, UI_WIDTH - 1);
 
-    for (int i = 0; i < H_PRE_BLANK; ++i) {
+    for (int i = 0; i < PANEL.h_pre_blank; ++i) {
         emit_pixel(line_buf, step, false, true, vs_high);
     }
 
     for (int x = 0; x < FB_WIDTH; ++x) {
-        const bool vid_on = fb_get_pixel_native(fb, x, y);
+        const bool vid_on = (x < UI_HEIGHT) && (y <= max_ui_source_y)
+            ? fb_get_pixel(fb, ui_x, x)
+            : false;
         emit_pixel(line_buf, step, vid_on, true, vs_high);
     }
 
-    for (int i = 0; i < H_POST_BLANK; ++i) {
+    for (int i = 0; i < PANEL.h_post_blank; ++i) {
         emit_pixel(line_buf, step, false, false, vs_high);
     }
 }
 
-static void rebuild_raster_from_front_fb()
+/// @brief Rebuilds a complete scanout raster from a UI framebuffer.
+/// @details The output buffer is ready for DMA to stream directly into the PIO
+/// state machine.
+static void rebuild_raster_from_fb(const uint8_t* fb, uint32_t* raster)
 {
     int line = 0;
 
-    for (int i = 0; i < V_SYNC_PULSE; ++i, ++line) {
-        build_blank_line(&raster_words[line * WORDS_PER_LINE], true);
+    for (int i = 0; i < PANEL.v_sync_pulse; ++i, ++line) {
+        build_blank_line(&raster[line * WORDS_PER_LINE], true);
     }
 
-    for (int i = 0; i < V_PRE_BLANK; ++i, ++line) {
-        build_blank_line(&raster_words[line * WORDS_PER_LINE], false);
+    for (int i = 0; i < PANEL.v_pre_blank; ++i, ++line) {
+        build_blank_line(&raster[line * WORDS_PER_LINE], false);
     }
 
     for (int y = 0; y < FB_HEIGHT; ++y, ++line) {
-        build_fb_line(&raster_words[line * WORDS_PER_LINE], fb_front, y, false);
+        build_fb_line(&raster[line * WORDS_PER_LINE], fb, y, false);
     }
 
-    for (int i = 0; i < V_POST_BLANK; ++i, ++line) {
-        build_blank_line(&raster_words[line * WORDS_PER_LINE], false);
+    for (int i = 0; i < PANEL.v_post_blank; ++i, ++line) {
+        build_blank_line(&raster[line * WORDS_PER_LINE], false);
     }
 }
 
@@ -445,6 +537,7 @@ static void rebuild_raster_from_front_fb()
 // Swap / present
 // -----------------------------------------------------------------------------
 
+/// @brief Swaps the UI front and back framebuffer pointers.
 static void fb_swap()
 {
     uint8_t* tmp = fb_front;
@@ -452,16 +545,38 @@ static void fb_swap()
     fb_back = tmp;
 }
 
+/// @brief Swaps the front and back raster buffer pointers.
+static void raster_swap()
+{
+    uint32_t* tmp = raster_front;
+    raster_front = raster_back;
+    raster_back = tmp;
+}
+
+/// @brief Presents the current backbuffer.
+/// @details This function swaps the UI buffers, converts the new front buffer
+/// into the inactive scanout buffer, and queues that scanout buffer for the
+/// next safe frame-boundary handoff.
 static void present_backbuffer()
 {
     fb_swap();
-    rebuild_raster_from_front_fb();
+    rebuild_raster_from_fb(fb_front, raster_back);
+
+    if (!dma_running) {
+        raster_swap();
+        return;
+    }
+
+    raster_pending = raster_back;
 }
 
 // -----------------------------------------------------------------------------
 // Demo screens in PORTRAIT logical coordinates
 // -----------------------------------------------------------------------------
 
+/// @brief Draws a simple geometry test pattern.
+/// @details This is useful when checking orientation, clipping and gross timing
+/// issues on the physical display.
 static void draw_demo_screen(uint8_t* fb)
 {
     fb_clear(fb, false);
@@ -483,6 +598,7 @@ static void draw_demo_screen(uint8_t* fb)
     fb_fill_rect(fb, 8, UI_HEIGHT - 12, 100, 8, false);
 }
 
+/// @brief Draws a mock menu screen for bring-up and layout testing.
 static void draw_dummy_menu_screen(uint8_t* fb)
 {
     fb_clear(fb, false);
@@ -545,13 +661,19 @@ static void draw_dummy_menu_screen(uint8_t* fb)
 // Main
 // -----------------------------------------------------------------------------
 
+/// @brief Firmware entry point.
+/// @details The startup sequence is:
+/// - draw an initial UI frame into the backbuffer
+/// - convert that frame into the first scanout raster
+/// - start PIO and DMA scanout
+/// - keep drawing future frames into the backbuffer
 int main()
 {
     stdio_init_all();
     sleep_ms(2000);
 
     printf("Dummy menu demo. clkdiv=%.2f row_offset=%d\n",
-           CLKDIV, NATIVE_ROW_OFFSET);
+           PANEL.clkdiv, PANEL.native_row_offset);
 
     PIO pio = pio0;
     const uint sm = 0;
