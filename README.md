@@ -16,8 +16,12 @@ using:
 - a very small PIO program to shift prepared pin states onto the display lines
 
 The current code is still prototype firmware, but it has moved beyond simple
-"can the screen light up?" testing. It now has a cleaner display architecture,
-a screensaver mode, and a skeleton input layer ready for future keypad wiring.
+"can the screen light up?" testing. It now has:
+
+- a cleaner display architecture
+- a screensaver mode
+- a skeleton input layer ready for future keypad wiring
+- a source layout split into smaller logical modules
 
 ## Current Status
 
@@ -117,9 +121,28 @@ hardware is connected.
 ## Files In Active Use
 
 - `MerlinCCU.cpp`
-  Main firmware source. It contains panel configuration, framebuffer helpers,
-  raster generation, DMA/PIO scanout setup, input skeleton code, demo screens,
-  and the Life screensaver.
+  Main entry point and top-level app loop.
+
+- `panel_config.h`
+  Shared panel geometry, timing values, and pin base definitions.
+
+- `framebuffer.h` / `framebuffer.cpp`
+  UI framebuffer storage and drawing helpers.
+
+- `display.h` / `display.cpp`
+  Raster composition, DMA setup, PIO setup, and scanout presentation.
+
+- `input.h` / `input.cpp`
+  Placeholder keypad/input layer with debouncing and logical button events.
+
+- `screens.h` / `screens.cpp`
+  Demo pattern and dummy menu rendering.
+
+- `screensaver_life.h` / `screensaver_life.cpp`
+  Conway's Game of Life state, stepping, reseed logic, and rendering.
+
+- `font_5x7.h`
+  Built-in bitmap font used by the framebuffer text helpers.
 
 - `el320_raster.pio`
   The active PIO program. It outputs one 4-bit state at a time onto the four
@@ -160,4 +183,4 @@ Reasonable future work from here:
 - replace the timed/demo screen mode selection with a real UI state model
 - add a future system menu with screen saver settings
 - document the hardware and panel timing in more detail
-- split the growing firmware into smaller source files
+- continue refining the new module boundaries as more real CCU features are added
