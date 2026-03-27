@@ -75,6 +75,89 @@ static constexpr uint8_t BIT_VCLK = 1u << 1;
 static constexpr uint8_t BIT_HS   = 1u << 2;
 static constexpr uint8_t BIT_VS   = 1u << 3;
 
+/// @brief Logical buttons the future CCU keypad can expose to the UI.
+enum class ButtonId : uint8_t {
+    LeftTop = 0,
+    LeftUpper,
+    LeftMiddle,
+    LeftLower,
+    LeftBottom,
+    RightTop,
+    RightUpper,
+    RightMiddle,
+    RightLower,
+    RightBottom,
+    Count,
+};
+
+/// @brief Simple edge event produced by the button debouncer.
+enum class ButtonEventType : uint8_t {
+    None = 0,
+    Pressed,
+    Released,
+};
+
+/// @brief One physical button wiring definition.
+/// @details Set @c pin to a valid GPIO number when the hardware arrives.
+/// A value of `-1` means the button is currently not wired and should be ignored.
+struct ButtonConfig {
+    ButtonId id;
+    int pin;
+    bool active_low;
+    const char* name;
+};
+
+/// @brief Runtime debounce state for one logical button.
+struct ButtonState {
+    bool raw_level;
+    bool stable_pressed;
+    absolute_time_t last_change_time;
+};
+
+/// @brief Edge event returned by the input poller.
+struct ButtonEvent {
+    ButtonId id;
+    ButtonEventType type;
+};
+
+/// @brief High-level content modes shown on the display.
+/// @details The Life screensaver is the current default because it exercises
+/// continuous screen updates and helps mask the panel's existing burn-in.
+enum class ScreenMode : uint8_t {
+    DemoPattern = 0,
+    DummyMenu,
+    LifeScreensaver,
+};
+
+static constexpr int BUTTON_DEBOUNCE_MS = 25;
+static constexpr size_t BUTTON_COUNT = static_cast<size_t>(ButtonId::Count);
+static constexpr int LIFE_SCALE = 2;
+static constexpr int LIFE_WIDTH = UI_WIDTH / LIFE_SCALE;
+static constexpr int LIFE_HEIGHT = UI_HEIGHT / LIFE_SCALE;
+static constexpr int LIFE_CELL_COUNT = LIFE_WIDTH * LIFE_HEIGHT;
+/// @brief Reseed timeout for a completely unchanged Life field.
+static constexpr uint32_t LIFE_STABLE_RESEED_FRAMES = 200;
+/// @brief Number of recent Life hashes remembered for repeat-cycle detection.
+static constexpr size_t LIFE_HASH_HISTORY = 8;
+/// @brief Reseed timeout for an oscillating Life field that keeps repeating.
+static constexpr uint32_t LIFE_REPEAT_RESEED_FRAMES = 100;
+
+/// @brief Placeholder keypad mapping.
+/// @details This is a skeleton for future keypad support. Replace the `-1`
+/// values with real GPIO numbers once the keypad wiring is known and connected.
+static constexpr ButtonConfig BUTTONS[BUTTON_COUNT] = {
+    {ButtonId::LeftTop,     -1, true, "LeftTop"},
+    {ButtonId::LeftUpper,   -1, true, "LeftUpper"},
+    {ButtonId::LeftMiddle,  -1, true, "LeftMiddle"},
+    {ButtonId::LeftLower,   -1, true, "LeftLower"},
+    {ButtonId::LeftBottom,  -1, true, "LeftBottom"},
+    {ButtonId::RightTop,    -1, true, "RightTop"},
+    {ButtonId::RightUpper,  -1, true, "RightUpper"},
+    {ButtonId::RightMiddle, -1, true, "RightMiddle"},
+    {ButtonId::RightLower,  -1, true, "RightLower"},
+    {ButtonId::RightBottom, -1, true, "RightBottom"},
+};
+
 /// @brief Two UI-space framebuffers used for drawing and presentation.
 /// @details New graphics are drawn into @c fb_back while @c fb_front remains
 /// the current displayed image. Presenting a frame swaps the pointers.
@@ -100,6 +183,14 @@ static const void* dma_read_addr = raster_a;
 static int dma_chan_data;
 static int dma_chan_ctrl;
 static bool dma_running = false;
+static ButtonState button_states[BUTTON_COUNT];
+static uint8_t life_a[LIFE_CELL_COUNT];
+static uint8_t life_b[LIFE_CELL_COUNT];
+static uint8_t* life_front = life_a;
+static uint8_t* life_back = life_b;
+static uint32_t life_hash_ring[LIFE_HASH_HISTORY];
+static size_t life_hash_index = 0;
+static size_t life_hash_count = 0;
 
 /// @brief DMA interrupt handler used to switch scanout buffers safely.
 /// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
@@ -433,6 +524,274 @@ static void fb_draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int 
 }
 
 // -----------------------------------------------------------------------------
+// Input skeleton
+// -----------------------------------------------------------------------------
+
+/// @brief Converts a raw GPIO level into a logical "pressed" state.
+static bool button_level_is_pressed(bool raw_level, const ButtonConfig& button)
+{
+    return button.active_low ? !raw_level : raw_level;
+}
+
+/// @brief Configures any keypad GPIOs that have been assigned real pins.
+/// @details Buttons left at pin `-1` are skipped so the firmware can run
+/// before the keypad hardware is connected.
+static void buttons_init()
+{
+    const absolute_time_t now = get_absolute_time();
+
+    for (size_t i = 0; i < BUTTON_COUNT; ++i) {
+        button_states[i] = {
+            .raw_level = false,
+            .stable_pressed = false,
+            .last_change_time = now,
+        };
+
+        const ButtonConfig& button = BUTTONS[i];
+        if (button.pin < 0) {
+            continue;
+        }
+
+        gpio_init(static_cast<uint>(button.pin));
+        gpio_set_dir(static_cast<uint>(button.pin), GPIO_IN);
+
+        if (button.active_low) {
+            gpio_pull_up(static_cast<uint>(button.pin));
+        } else {
+            gpio_pull_down(static_cast<uint>(button.pin));
+        }
+
+        const bool raw_level = gpio_get(static_cast<uint>(button.pin));
+        button_states[i].raw_level = raw_level;
+        button_states[i].stable_pressed = button_level_is_pressed(raw_level, button);
+    }
+}
+
+/// @brief Polls one button and returns a debounced edge event if one occurred.
+static ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
+{
+    if (button.pin < 0) {
+        return {button.id, ButtonEventType::None};
+    }
+
+    const bool raw_level = gpio_get(static_cast<uint>(button.pin));
+    const absolute_time_t now = get_absolute_time();
+
+    if (raw_level != state.raw_level) {
+        state.raw_level = raw_level;
+        state.last_change_time = now;
+        return {button.id, ButtonEventType::None};
+    }
+
+    if (absolute_time_diff_us(state.last_change_time, now) < (BUTTON_DEBOUNCE_MS * 1000)) {
+        return {button.id, ButtonEventType::None};
+    }
+
+    const bool pressed = button_level_is_pressed(raw_level, button);
+    if (pressed == state.stable_pressed) {
+        return {button.id, ButtonEventType::None};
+    }
+
+    state.stable_pressed = pressed;
+    return {
+        button.id,
+        pressed ? ButtonEventType::Pressed : ButtonEventType::Released
+    };
+}
+
+/// @brief Polls every configured button and returns the first edge event found.
+/// @details This is enough for early bring-up. It can later be replaced by an
+/// event queue if multiple button edges need to be captured per loop.
+static ButtonEvent poll_buttons()
+{
+    for (size_t i = 0; i < BUTTON_COUNT; ++i) {
+        ButtonEvent event = poll_button(button_states[i], BUTTONS[i]);
+        if (event.type != ButtonEventType::None) {
+            return event;
+        }
+    }
+
+    return {ButtonId::LeftTop, ButtonEventType::None};
+}
+
+/// @brief Temporary placeholder for future UI input handling.
+/// @details The current firmware still flips between demo screens on a timer.
+/// This function is where real menu navigation should be connected later.
+static void handle_button_event(const ButtonEvent& event)
+{
+    if (event.type == ButtonEventType::None) {
+        return;
+    }
+
+    for (const ButtonConfig& button : BUTTONS) {
+        if (button.id == event.id) {
+            const char* edge = (event.type == ButtonEventType::Pressed) ? "pressed" : "released";
+            printf("Button %s %s\n", button.name, edge);
+            return;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Game of Life screensaver
+// -----------------------------------------------------------------------------
+
+/// @brief Returns the linear array index for one Life cell.
+static inline int life_index(int x, int y)
+{
+    return y * LIFE_WIDTH + x;
+}
+
+/// @brief Clears a Life simulation buffer.
+static void life_clear(uint8_t* grid)
+{
+    memset(grid, 0, LIFE_CELL_COUNT);
+}
+
+/// @brief Seeds the Life simulation with a random starting pattern.
+/// @details A moderate fill level gives the simulation enough activity to keep
+/// the whole display moving without immediately becoming solid noise. This is
+/// also used to restart the screensaver after it becomes too stable.
+static void life_seed_random(uint8_t* grid)
+{
+    for (int i = 0; i < LIFE_CELL_COUNT; ++i) {
+        grid[i] = (rand() % 100) < 28 ? 1u : 0u;
+    }
+}
+
+/// @brief Produces a simple hash for one Life grid.
+/// @details This is used to spot repeating oscillator patterns without storing
+/// whole generations for comparison.
+static uint32_t life_hash_grid(const uint8_t* grid)
+{
+    uint32_t hash = 2166136261u;
+
+    for (int i = 0; i < LIFE_CELL_COUNT; ++i) {
+        hash ^= grid[i];
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
+
+/// @brief Clears the rolling history used for oscillator detection.
+/// @details Call this after reseeding so old pattern hashes do not immediately
+/// trigger another timeout.
+static void life_reset_hash_history()
+{
+    memset(life_hash_ring, 0, sizeof(life_hash_ring));
+    life_hash_index = 0;
+    life_hash_count = 0;
+}
+
+/// @brief Records a new grid hash and reports whether it recently appeared.
+/// @details Matching a recent hash means the Life field has entered a repeating
+/// cycle, even if it is not identical to the immediately previous frame.
+static bool life_record_hash_and_check_repeat(uint32_t hash)
+{
+    bool repeated = false;
+
+    for (size_t i = 0; i < life_hash_count; ++i) {
+        if (life_hash_ring[i] == hash) {
+            repeated = true;
+            break;
+        }
+    }
+
+    life_hash_ring[life_hash_index] = hash;
+    life_hash_index = (life_hash_index + 1) % LIFE_HASH_HISTORY;
+
+    if (life_hash_count < LIFE_HASH_HISTORY) {
+        ++life_hash_count;
+    }
+
+    return repeated;
+}
+
+/// @brief Counts the live neighbours around one Life cell.
+/// @details The simulation wraps at the edges, so the left and right sides
+/// connect together, and the top and bottom sides connect together.
+static uint8_t life_count_neighbors(const uint8_t* grid, int x, int y)
+{
+    uint8_t count = 0;
+
+    for (int yy = y - 1; yy <= y + 1; ++yy) {
+        for (int xx = x - 1; xx <= x + 1; ++xx) {
+            if (xx == x && yy == y) {
+                continue;
+            }
+
+            const int wrapped_x = (xx + LIFE_WIDTH) % LIFE_WIDTH;
+            const int wrapped_y = (yy + LIFE_HEIGHT) % LIFE_HEIGHT;
+
+            count += grid[life_index(wrapped_x, wrapped_y)] != 0 ? 1u : 0u;
+        }
+    }
+
+    return count;
+}
+
+/// @brief Advances the Life simulation by one generation.
+/// @return True if the new generation differs from the previous one.
+/// @details The screensaver uses this together with hash-based repeat detection
+/// to reseed fields that become static or fall into short oscillator loops.
+static bool life_step(const uint8_t* src, uint8_t* dst)
+{
+    int live_count = 0;
+    bool changed = false;
+
+    for (int y = 0; y < LIFE_HEIGHT; ++y) {
+        for (int x = 0; x < LIFE_WIDTH; ++x) {
+            const int index = life_index(x, y);
+            const bool alive = src[index] != 0;
+            const uint8_t neighbors = life_count_neighbors(src, x, y);
+            const bool next_alive = alive
+                ? (neighbors == 2 || neighbors == 3)
+                : (neighbors == 3);
+
+            dst[index] = next_alive ? 1u : 0u;
+            live_count += next_alive ? 1 : 0;
+            changed = changed || (dst[index] != src[index]);
+        }
+    }
+
+    if (live_count == 0) {
+        life_seed_random(dst);
+        return true;
+    }
+
+    return changed;
+}
+
+/// @brief Swaps the front and back Life simulation grids.
+static void life_swap()
+{
+    uint8_t* tmp = life_front;
+    life_front = life_back;
+    life_back = tmp;
+}
+
+/// @brief Renders the Life simulation into the UI framebuffer.
+/// @details Each Life cell is drawn as a 2x2 block so the simulation fills the
+/// entire portrait UI area while keeping the simulation grid smaller and faster.
+/// This is deliberate: the screensaver is meant to create visible movement over
+/// most of the panel rather than tiny single-pixel details.
+static void draw_life_screen(uint8_t* fb, const uint8_t* grid)
+{
+    fb_clear(fb, false);
+
+    for (int y = 0; y < LIFE_HEIGHT; ++y) {
+        for (int x = 0; x < LIFE_WIDTH; ++x) {
+            if (grid[life_index(x, y)] == 0) {
+                continue;
+            }
+
+            fb_fill_rect(fb, x * LIFE_SCALE, y * LIFE_SCALE, LIFE_SCALE, LIFE_SCALE, true);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Raster builder
 // -----------------------------------------------------------------------------
 
@@ -665,12 +1024,14 @@ static void draw_dummy_menu_screen(uint8_t* fb)
 /// @details The startup sequence is:
 /// - draw an initial UI frame into the backbuffer
 /// - convert that frame into the first scanout raster
+/// - prepare any configured keypad GPIOs
 /// - start PIO and DMA scanout
 /// - keep drawing future frames into the backbuffer
 int main()
 {
     stdio_init_all();
     sleep_ms(2000);
+    srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
 
     printf("Dummy menu demo. clkdiv=%.2f row_offset=%d\n",
            PANEL.clkdiv, PANEL.native_row_offset);
@@ -678,9 +1039,24 @@ int main()
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
+    const ScreenMode mode = ScreenMode::LifeScreensaver;
+    absolute_time_t next_demo_flip = make_timeout_time_ms(3000);
+    uint32_t life_frame_counter = 0;
+    uint32_t life_stable_frames = 0;
+    uint32_t life_repeat_frames = 0;
+    absolute_time_t next_life_stats = make_timeout_time_ms(1000);
 
-    draw_demo_screen(fb_back);
+    if (mode == ScreenMode::LifeScreensaver) {
+        life_clear(life_front);
+        life_seed_random(life_front);
+        life_reset_hash_history();
+        (void)life_record_hash_and_check_repeat(life_hash_grid(life_front));
+        draw_life_screen(fb_back, life_front);
+    } else {
+        draw_demo_screen(fb_back);
+    }
     present_backbuffer();
+    buttons_init();
 
     el320_raster_program_init(pio, sm, offset, PIN_BASE);
     start_dma(pio, sm);
@@ -688,18 +1064,81 @@ int main()
     bool show_menu = false;
 
     while (true) {
-        sleep_ms(3000);
+        handle_button_event(poll_buttons());
 
-        if (show_menu) {
-            draw_dummy_menu_screen(fb_back);
-            printf("Presenting dummy menu screen\n");
+        if (mode == ScreenMode::LifeScreensaver) {
+            const absolute_time_t step_start = get_absolute_time();
+            const bool life_changed = life_step(life_front, life_back);
+            const int64_t sim_us = absolute_time_diff_us(step_start, get_absolute_time());
+            const bool life_repeated = life_record_hash_and_check_repeat(life_hash_grid(life_back));
+
+            if (life_changed) {
+                life_stable_frames = 0;
+            } else {
+                ++life_stable_frames;
+            }
+
+            if (life_repeated) {
+                ++life_repeat_frames;
+            } else {
+                life_repeat_frames = 0;
+            }
+
+            if (life_stable_frames >= LIFE_STABLE_RESEED_FRAMES) {
+                life_seed_random(life_back);
+                life_stable_frames = 0;
+                life_repeat_frames = 0;
+                life_reset_hash_history();
+                (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
+                printf("Life reseeded after stable timeout\n");
+            } else if (life_repeat_frames >= LIFE_REPEAT_RESEED_FRAMES) {
+                life_seed_random(life_back);
+                life_stable_frames = 0;
+                life_repeat_frames = 0;
+                life_reset_hash_history();
+                (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
+                printf("Life reseeded after repeat-cycle timeout\n");
+            }
+
+            const absolute_time_t draw_start = get_absolute_time();
+            draw_life_screen(fb_back, life_back);
+            const int64_t draw_us = absolute_time_diff_us(draw_start, get_absolute_time());
+
+            const absolute_time_t present_start = get_absolute_time();
+            present_backbuffer();
+            const int64_t present_us = absolute_time_diff_us(present_start, get_absolute_time());
+
+            life_swap();
+            ++life_frame_counter;
+
+            if (absolute_time_diff_us(get_absolute_time(), next_life_stats) <= 0) {
+                printf("Life fps=%lu sim=%lldus draw=%lldus present=%lldus\n",
+                       static_cast<unsigned long>(life_frame_counter),
+                       sim_us,
+                       draw_us,
+                       present_us);
+                life_frame_counter = 0;
+                next_life_stats = make_timeout_time_ms(1000);
+            }
+
+            sleep_ms(75);
         } else {
-            draw_demo_screen(fb_back);
-            printf("Presenting demo screen\n");
-        }
+            sleep_ms(20);
 
-        present_backbuffer();
-        show_menu = !show_menu;
+            if (absolute_time_diff_us(get_absolute_time(), next_demo_flip) <= 0) {
+                if (show_menu) {
+                    draw_dummy_menu_screen(fb_back);
+                    printf("Presenting dummy menu screen\n");
+                } else {
+                    draw_demo_screen(fb_back);
+                    printf("Presenting demo screen\n");
+                }
+
+                present_backbuffer();
+                show_menu = !show_menu;
+                next_demo_flip = make_timeout_time_ms(3000);
+            }
+        }
     }
 
     return 0;
