@@ -10,6 +10,7 @@
 #include "panel_config.h"
 #include "screens.h"
 #include "screensaver_life.h"
+#include "console_controller.h"
 
 namespace {
 
@@ -66,6 +67,7 @@ int main()
     display::present(framebuffer::front());
 
     input::init();
+    console_controller::init();
     display::init(pio, sm, offset, PIN_BASE);
     display::set_clkdiv(current_clkdiv);
     std::printf("Active clkdiv=%.2f\n", current_clkdiv);
@@ -85,7 +87,9 @@ int main()
     }
 
     while (true) {
-        input::handle_button_event(input::poll_buttons());
+        const ButtonEvent event = input::poll_buttons();
+        input::handle_button_event(event);
+        console_controller::handle_button_event(event);
 
         if (mode == ScreenMode::LifeScreensaver) {
             LifeFrameStats stats{};

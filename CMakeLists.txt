@@ -36,6 +36,8 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 add_executable(MerlinCCU
     MerlinCCU.cpp
+    console_controller.cpp
+    console_model.cpp
     display.cpp
     framebuffer.cpp
     input.cpp
