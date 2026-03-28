@@ -17,13 +17,12 @@ else()
 endif()
 set(sdkVersion 2.2.0)
 set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-4)
+set(picotoolVersion 2.2.0-a4)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
-# ======================================================
-
+# ====================================================================================
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
@@ -35,7 +34,16 @@ project(MerlinCCU C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(MerlinCCU MerlinCCU.cpp)
+add_executable(MerlinCCU
+    MerlinCCU.cpp
+    console_controller.cpp
+    console_model.cpp
+    display.cpp
+    framebuffer.cpp
+    input.cpp
+    screens.cpp
+    screensaver_life.cpp
+)
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
 pico_set_program_version(MerlinCCU "0.1")
@@ -59,6 +67,8 @@ target_include_directories(MerlinCCU PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
+pico_stdlib
+pico_cyw43_arch_none
     hardware_pio
     hardware_dma
 )

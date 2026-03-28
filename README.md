@@ -1,2 +1,186 @@
 # MerlinCCU
-Merlin Mk1/Mk3 Common Control Unit c1994
+
+Merlin Mk1/Mk3 Common Control Unit recreation work using a Raspberry Pi Pico 2 W.
+
+## What This Repo Is
+
+This project is currently a display and UI bring-up platform for a vintage
+Merlin CCU style unit.
+
+The firmware generates the timing needed by a monochrome EL320-class panel
+using:
+
+- a 1-bit logical UI framebuffer
+- a CPU-built scanout raster
+- DMA to stream that raster continuously
+- a very small PIO program to shift prepared pin states onto the display lines
+
+The current code is still prototype firmware, but it has moved beyond simple
+"can the screen light up?" testing. It now has:
+
+- a cleaner display architecture
+- a screensaver mode
+- a skeleton input layer ready for future keypad wiring
+- a source layout split into smaller logical modules
+
+## Current Status
+
+The firmware currently:
+
+- builds for `pico2_w`
+- drives four display output signals from the Pico using PIO
+- stores drawing data in a portrait-oriented UI framebuffer
+- converts that framebuffer into the panel's native scan order during composition
+- uses double buffering for both the UI framebuffer and the DMA scanout raster
+- swaps scanout buffers at a frame boundary rather than rewriting the live DMA source
+- includes a placeholder keypad/input layer with debouncing logic and GPIO mapping slots
+- includes three screen modes:
+  - a geometry test pattern
+  - a dummy CCU menu screen
+  - a Conway's Game of Life screensaver
+
+The Life screensaver is currently the default runtime mode because it is useful
+for testing:
+
+- continuous screen updates
+- full display refresh behavior
+- timing/performance visibility over USB serial
+- visual masking of existing panel burn-in
+
+## High-Level Architecture
+
+There are three main graphics layers in the current design:
+
+1. UI framebuffer
+
+This is a compact 1-bit image stored in logical portrait coordinates. All
+drawing helpers work in this space, so the UI code does not need to know how
+the panel is physically mounted or scanned.
+
+2. Scanout raster
+
+This is a much larger buffer that contains the exact output waveform for a
+whole frame. Each packed nibble represents the simultaneous state of:
+
+- `VID`
+- `VCLK`
+- `HS`
+- `VS`
+
+The CPU builds this raster from the UI framebuffer.
+
+3. PIO + DMA scanout
+
+DMA repeatedly feeds the raster into a PIO state machine. The PIO program is
+deliberately simple: it just shifts out the already prepared pin states.
+
+## Why There Are Two Coordinate Systems
+
+The display panel does not use the same orientation as the desired UI.
+
+To keep the drawing code simple:
+
+- the UI framebuffer is stored in portrait coordinates
+- panel rotation and row offset are handled only during raster composition
+
+This means UI code can draw rectangles, text and lines normally, while the
+composition step translates that image into the panel's native electrical scan
+order.
+
+## Screensaver Notes
+
+The current screensaver is Conway's Game of Life.
+
+It is implemented on a reduced simulation grid and then scaled up to the full
+display. This keeps the CPU and RAM cost reasonable while still creating large,
+visible moving patterns on the panel.
+
+Important details:
+
+- the Life field wraps around all four edges
+- the simulation automatically reseeds if it becomes static
+- the simulation also reseeds if it falls into a short repeating cycle
+- USB serial output includes simple timing information for simulation, drawing
+  and frame presentation
+
+## Input Layer Status
+
+The code now contains a small input skeleton for future keypad support.
+
+At the moment:
+
+- logical button IDs are defined
+- placeholder GPIO mappings are present
+- debounce logic exists
+- button polling is wired into the main loop
+
+The actual GPIO assignments are still left as `-1` until the keypad wiring is
+ready. That means the input layer is safe to leave in place even before the
+hardware is connected.
+
+## Files In Active Use
+
+- `MerlinCCU.cpp`
+  Main entry point and top-level app loop.
+
+- `panel_config.h`
+  Shared panel geometry, timing values, and pin base definitions.
+
+- `framebuffer.h` / `framebuffer.cpp`
+  UI framebuffer storage and drawing helpers.
+
+- `display.h` / `display.cpp`
+  Raster composition, DMA setup, PIO setup, and scanout presentation.
+
+- `input.h` / `input.cpp`
+  Placeholder keypad/input layer with debouncing and logical button events.
+
+- `screens.h` / `screens.cpp`
+  Demo pattern and dummy menu rendering.
+
+- `screensaver_life.h` / `screensaver_life.cpp`
+  Conway's Game of Life state, stepping, reseed logic, and rendering.
+
+- `font_5x7.h`
+  Built-in bitmap font used by the framebuffer text helpers.
+
+- `el320_raster.pio`
+  The active PIO program. It outputs one 4-bit state at a time onto the four
+  display pins.
+
+- `CMakeLists.txt`
+  Pico SDK build configuration for the firmware target.
+
+## Other Files In The Repo
+
+Some other `.pio` files are present from earlier experiments or alternate ideas.
+At the moment, `el320_raster.pio` is the one used by the build.
+
+## Signal Mapping
+
+The active firmware expects four contiguous GPIO pins starting at GPIO2:
+
+- `GPIO2` -> `VID`
+- `GPIO3` -> `VCLK`
+- `GPIO4` -> `HS`
+- `GPIO5` -> `VS`
+
+If the hardware wiring changes, update the firmware and any related hardware
+notes together.
+
+## Build Notes
+
+This repository uses the Raspberry Pi Pico SDK with CMake.
+
+The exact local build flow depends on your environment. In this project the
+Pico VS Code plugin workflow is being used successfully.
+
+## Likely Next Steps
+
+Reasonable future work from here:
+
+- connect the real keypad wiring and assign GPIOs
+- replace the timed/demo screen mode selection with a real UI state model
+- add a future system menu with screen saver settings
+- document the hardware and panel timing in more detail
+- continue refining the new module boundaries as more real CCU features are added
