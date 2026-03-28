@@ -15,8 +15,8 @@
 namespace {
 
 /// @brief High-level content modes shown on the display.
-/// @details The Life screensaver is the current default because it exercises
-/// continuous screen updates and helps mask the panel's existing burn-in.
+/// @details The dummy menu is the current default because it exposes the
+/// front-panel development harness while the keypad hardware is still pending.
 enum class ScreenMode : uint8_t {
     Calibration = 0,
     DemoPattern,
@@ -47,11 +47,13 @@ int main()
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
-    const ScreenMode mode = ScreenMode::Calibration;
+    const ScreenMode mode = ScreenMode::DummyMenu;
 
     uint32_t life_frame_counter = 0;
     absolute_time_t next_life_stats = make_timeout_time_ms(1000);
     const float current_clkdiv = PANEL.clkdiv;
+
+    console_controller::init();
 
     if (mode == ScreenMode::LifeScreensaver) {
         screensaver_life::init();
@@ -59,6 +61,8 @@ int main()
         screensaver_life::step_and_render(framebuffer::back(), stats);
     } else if (mode == ScreenMode::Calibration) {
         screens::draw_calibration_screen(framebuffer::back());
+    } else if (mode == ScreenMode::DummyMenu) {
+        screens::draw_dummy_menu_screen(framebuffer::back(), console_controller::state());
     } else {
         screens::draw_demo_screen(framebuffer::back());
     }
@@ -67,7 +71,6 @@ int main()
     display::present(framebuffer::front());
 
     input::init();
-    console_controller::init();
     display::init(pio, sm, offset, PIN_BASE);
     display::set_clkdiv(current_clkdiv);
     std::printf("Active clkdiv=%.2f\n", current_clkdiv);
@@ -81,7 +84,7 @@ int main()
         framebuffer::swap();
         display::present(framebuffer::front());
     } else if (mode == ScreenMode::DummyMenu) {
-        screens::draw_dummy_menu_screen(framebuffer::back());
+        screens::draw_dummy_menu_screen(framebuffer::back(), console_controller::state());
         framebuffer::swap();
         display::present(framebuffer::front());
     }
@@ -89,7 +92,7 @@ int main()
     while (true) {
         const ButtonEvent event = input::poll_buttons();
         input::handle_button_event(event);
-        console_controller::handle_button_event(event);
+        const bool console_changed = console_controller::handle_button_event(event);
 
         if (mode == ScreenMode::LifeScreensaver) {
             LifeFrameStats stats{};
@@ -114,6 +117,11 @@ int main()
 
             sleep_ms(75);
         } else {
+            if (console_changed && mode == ScreenMode::DummyMenu) {
+                screens::draw_dummy_menu_screen(framebuffer::back(), console_controller::state());
+                framebuffer::swap();
+                display::present(framebuffer::front());
+            }
             sleep_ms(100);
         }
     }
