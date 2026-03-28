@@ -1,9 +1,104 @@
 #include "screens.h"
 
+#include <cstddef>
+
+#include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 
 namespace screens {
+
+namespace {
+
+const char* letter_mode_text(LetterMode mode)
+{
+    return (mode == LetterMode::On) ? "ON" : "OFF";
+}
+
+const char* alert_severity_text(AlertSeverity severity)
+{
+    switch (severity) {
+    case AlertSeverity::None:
+        return "NONE";
+    case AlertSeverity::Message:
+        return "MSG";
+    case AlertSeverity::Warning:
+        return "WARN";
+    case AlertSeverity::Alert:
+        return "ALERT";
+    }
+
+    return "?";
+}
+
+const char* test_state_text(SystemTestState state)
+{
+    switch (state) {
+    case SystemTestState::Idle:
+        return "IDLE";
+    case SystemTestState::Running:
+        return "RUN";
+    case SystemTestState::Passed:
+        return "PASS";
+    case SystemTestState::Failed:
+        return "FAIL";
+    }
+
+    return "?";
+}
+
+const char* brightness_text(BrightnessLevel level)
+{
+    switch (level) {
+    case BrightnessLevel::Off:
+        return "OFF";
+    case BrightnessLevel::Low:
+        return "LOW";
+    case BrightnessLevel::Medium:
+        return "MED";
+    case BrightnessLevel::High:
+        return "HIGH";
+    }
+
+    return "?";
+}
+
+const char* lamp_mode_text(LampMode mode)
+{
+    switch (mode) {
+    case LampMode::Off:
+        return "OFF";
+    case LampMode::On:
+        return "ON";
+    case LampMode::FlashSlow:
+        return "F-SLOW";
+    case LampMode::FlashFast:
+        return "F-FAST";
+    }
+
+    return "?";
+}
+
+void draw_softkey_column(uint8_t* fb,
+                         int indicator_x,
+                         int box_x,
+                         int text_x,
+                         const SoftKeyAction* actions)
+{
+    for (int i = 0; i < 5; ++i) {
+        const int y = 42 + i * 42;
+        const int box_w = 82;
+
+        framebuffer::fill_rect(fb, indicator_x, y + 4, 8, 10, true);
+        framebuffer::draw_rect(fb, box_x, y, box_w, 18, true);
+        framebuffer::draw_text(fb, text_x, y + 5, actions[i].label, true, 1, 1);
+        if (!actions[i].enabled) {
+            framebuffer::draw_hline(fb, box_x + 4, box_x + box_w - 5, y + 9, true);
+        }
+    }
+}
+
+}  // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
 void draw_demo_screen(uint8_t* fb)
@@ -28,7 +123,7 @@ void draw_demo_screen(uint8_t* fb)
 }
 
 /// @brief Draws a static mock-up of a future Merlin CCU home/status page.
-void draw_dummy_menu_screen(uint8_t* fb)
+void draw_dummy_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
@@ -38,31 +133,45 @@ void draw_dummy_menu_screen(uint8_t* fb)
     framebuffer::fill_rect(fb, 8, 8, UI_WIDTH - 16, 18, true);
     framebuffer::draw_text(fb, 14, 14, "MERLIN CCU", false, 1, 1);
 
-    const char* left_labels[5] = {"LIGHTS", "HEAT", "GARAGE", "MEDIA", "ALARM"};
-    const char* right_labels[5] = {"STATUS", "CAMERAS", "ENERGY", "SCENES", "SETUP"};
-
-    for (int i = 0; i < 5; ++i) {
-        const int y = 42 + i * 42;
-
-        framebuffer::fill_rect(fb, 8, y + 4, 8, 10, true);
-        framebuffer::draw_rect(fb, 22, y, 82, 18, true);
-        framebuffer::draw_text(fb, 28, y + 5, left_labels[i], true, 1, 1);
-
-        framebuffer::fill_rect(fb, UI_WIDTH - 16, y + 4, 8, 10, true);
-        framebuffer::draw_rect(fb, UI_WIDTH - 104, y, 82, 18, true);
-        framebuffer::draw_text(fb, UI_WIDTH - 98, y + 5, right_labels[i], true, 1, 1);
-    }
+    draw_softkey_column(fb, 8, 22, 28, console_state.softkeys.data());
+    draw_softkey_column(fb,
+                        UI_WIDTH - 16,
+                        UI_WIDTH - 104,
+                        UI_WIDTH - 98,
+                        console_state.softkeys.data() + 5);
 
     framebuffer::draw_rect(fb, 72, 54, 108, 148, true);
-    framebuffer::draw_text(fb, 96, 66, "HOME", true, 2, 2);
-    framebuffer::draw_text(fb, 84, 100, "TEMP  19", true, 1, 1);
-    framebuffer::draw_text(fb, 84, 116, "DOOR  SHUT", true, 1, 1);
-    framebuffer::draw_text(fb, 84, 132, "ALARM OFF", true, 1, 1);
-    framebuffer::draw_text(fb, 84, 148, "WIFI  GOOD", true, 1, 1);
+    framebuffer::draw_text(fb, 84, 66, "FRONT PANEL", true, 1, 1);
+    framebuffer::draw_text(fb, 84, 86, "LTRS", true, 1, 1);
+    framebuffer::draw_text(fb, 130, 86, letter_mode_text(console_state.letter_mode), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 102, "ALRT", true, 1, 1);
+    framebuffer::draw_text(fb, 130, 102, alert_severity_text(console_state.alert_severity), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 118, "TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 130, 118, test_state_text(console_state.test_state), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 134, "PANEL", true, 1, 1);
+    framebuffer::draw_text(fb, 130, 134, brightness_text(console_state.panel_brightness), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 150, "KEYS", true, 1, 1);
+    framebuffer::draw_text(fb, 130, 150, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 170, "A LAMP", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           126,
+                           170,
+                           lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::AlertLamp)]),
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, 84, 186, "T LAMP", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           126,
+                           186,
+                           lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::TestLamp)]),
+                           true,
+                           1,
+                           1);
 
     framebuffer::fill_rect(fb, 8, UI_HEIGHT - 20, UI_WIDTH - 16, 10, true);
-    framebuffer::draw_text(fb, 14, UI_HEIGHT - 18, "IDLE 00:42", false, 1, 1);
-    framebuffer::draw_text(fb, UI_WIDTH - 54, UI_HEIGHT - 18, "HA OK", false, 1, 1);
+    framebuffer::draw_text(fb, 14, UI_HEIGHT - 18, "SOFTKEY DEV HARNESS", false, 1, 1);
+    framebuffer::draw_text(fb, UI_WIDTH - 54, UI_HEIGHT - 18, "READY", false, 1, 1);
 }
 
 /// @brief Draws a static calibration screen for alignment and extent testing.

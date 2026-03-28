@@ -41,9 +41,9 @@ constexpr KeyLegend KEY_LEGENDS[] = {
     {"X", "9"},
     {"Y", "T NAV"},
     {"Z", "T DATA"},
-    {nullptr, "T FUNC"},
-    {nullptr, "."},
-    {nullptr, "0"},
+    {"T FUNC", nullptr},
+    {".", nullptr},
+    {"0", nullptr},
     {"SPC", nullptr}
 };
 
@@ -61,6 +61,9 @@ constexpr SoftKeyMap DEFAULT_SOFTKEYS = {{
 }};
 
 }  // namespace
+
+static_assert((sizeof(KEY_LEGENDS) / sizeof(KEY_LEGENDS[0])) == static_cast<size_t>(HardKeyId::Count),
+              "Key legend table must match HardKeyId");
 
 const KeyLegend& key_legend(HardKeyId key)
 {
