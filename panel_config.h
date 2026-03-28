@@ -24,6 +24,8 @@ struct PanelConfig {
 inline constexpr uint PIN_BASE = 2;
 
 /// @brief Panel timing and geometry for the current EL320 portrait mounting.
+/// @details These values are the empirically stable timing neighborhood used
+/// during bring-up. Divider sweeping is done around this region.
 inline constexpr PanelConfig PANEL = {
     .fb_width = 320,
     .fb_height = 256,

@@ -29,6 +29,9 @@ const void* dma_read_addr = raster_a;
 int dma_chan_data = -1;
 int dma_chan_ctrl = -1;
 bool dma_running = false;
+PIO active_pio = pio0;
+uint active_sm = 0;
+float configured_clkdiv = PANEL.clkdiv;
 
 /// @brief DMA interrupt handler used to switch scanout buffers safely.
 /// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
@@ -161,13 +164,16 @@ void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_base)
     sm_config_set_out_shift(&c, true, true, 32);
 
     pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_clkdiv(pio, sm, PANEL.clkdiv);
+    pio_sm_set_clkdiv(pio, sm, configured_clkdiv);
     pio_sm_set_enabled(pio, sm, true);
 }
 
 /// @brief Starts the repeating two-channel DMA scanout loop.
 void start_dma(PIO pio, uint sm)
 {
+    active_pio = pio;
+    active_sm = sm;
+
     dma_chan_data = dma_claim_unused_channel(true);
     dma_chan_ctrl = dma_claim_unused_channel(true);
 
@@ -216,6 +222,12 @@ void init(PIO pio, uint sm, uint offset, uint pin_base)
 {
     el320_raster_program_init(pio, sm, offset, pin_base);
     start_dma(pio, sm);
+}
+
+void set_clkdiv(float clkdiv)
+{
+    configured_clkdiv = clkdiv;
+    pio_sm_set_clkdiv(active_pio, active_sm, configured_clkdiv);
 }
 
 /// @brief Converts the supplied UI framebuffer into the inactive raster buffer.

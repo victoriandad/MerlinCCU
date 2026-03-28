@@ -13,4 +13,9 @@ void draw_demo_screen(uint8_t* fb);
 /// @details This is a static layout used for bring-up and UI experimentation.
 void draw_dummy_menu_screen(uint8_t* fb);
 
+/// @brief Draws a static calibration pattern for timing and visible extents.
+/// @details This pattern is intended for photographing the panel so the true
+/// usable area, centering, clipping and line stability can be assessed.
+void draw_calibration_screen(uint8_t* fb);
+
 }  // namespace screens

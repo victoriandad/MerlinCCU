@@ -17,7 +17,8 @@ namespace {
 /// @details The Life screensaver is the current default because it exercises
 /// continuous screen updates and helps mask the panel's existing burn-in.
 enum class ScreenMode : uint8_t {
-    DemoPattern = 0,
+    Calibration = 0,
+    DemoPattern,
     DummyMenu,
     LifeScreensaver,
 };
@@ -36,23 +37,27 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d\n",
-                PANEL.clkdiv, PANEL.native_row_offset);
+    std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d hblank=(%d,%d)\n",
+                PANEL.clkdiv,
+                PANEL.native_row_offset,
+                PANEL.h_pre_blank,
+                PANEL.h_post_blank);
 
     PIO pio = pio0;
     const uint sm = 0;
     const uint offset = pio_add_program(pio, &el320_raster_program);
-    const ScreenMode mode = ScreenMode::LifeScreensaver;
+    const ScreenMode mode = ScreenMode::Calibration;
 
-    absolute_time_t next_demo_flip = make_timeout_time_ms(3000);
     uint32_t life_frame_counter = 0;
     absolute_time_t next_life_stats = make_timeout_time_ms(1000);
-    bool show_menu = false;
+    const float current_clkdiv = PANEL.clkdiv;
 
     if (mode == ScreenMode::LifeScreensaver) {
         screensaver_life::init();
         LifeFrameStats stats{};
         screensaver_life::step_and_render(framebuffer::back(), stats);
+    } else if (mode == ScreenMode::Calibration) {
+        screens::draw_calibration_screen(framebuffer::back());
     } else {
         screens::draw_demo_screen(framebuffer::back());
     }
@@ -62,6 +67,22 @@ int main()
 
     input::init();
     display::init(pio, sm, offset, PIN_BASE);
+    display::set_clkdiv(current_clkdiv);
+    std::printf("Active clkdiv=%.2f\n", current_clkdiv);
+
+    if (mode == ScreenMode::Calibration) {
+        screens::draw_calibration_screen(framebuffer::back());
+        framebuffer::swap();
+        display::present(framebuffer::front());
+    } else if (mode == ScreenMode::DemoPattern) {
+        screens::draw_demo_screen(framebuffer::back());
+        framebuffer::swap();
+        display::present(framebuffer::front());
+    } else if (mode == ScreenMode::DummyMenu) {
+        screens::draw_dummy_menu_screen(framebuffer::back());
+        framebuffer::swap();
+        display::present(framebuffer::front());
+    }
 
     while (true) {
         input::handle_button_event(input::poll_buttons());
@@ -89,22 +110,7 @@ int main()
 
             sleep_ms(75);
         } else {
-            sleep_ms(20);
-
-            if (absolute_time_diff_us(get_absolute_time(), next_demo_flip) <= 0) {
-                if (show_menu) {
-                    screens::draw_dummy_menu_screen(framebuffer::back());
-                    std::printf("Presenting dummy menu screen\n");
-                } else {
-                    screens::draw_demo_screen(framebuffer::back());
-                    std::printf("Presenting demo screen\n");
-                }
-
-                framebuffer::swap();
-                display::present(framebuffer::front());
-                show_menu = !show_menu;
-                next_demo_flip = make_timeout_time_ms(3000);
-            }
+            sleep_ms(100);
         }
     }
 
