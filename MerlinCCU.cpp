@@ -11,6 +11,7 @@
 #include "screens.h"
 #include "screensaver_life.h"
 #include "console_controller.h"
+#include "wifi_manager.h"
 
 namespace {
 
@@ -54,6 +55,8 @@ int main()
     const float current_clkdiv = PANEL.clkdiv;
 
     console_controller::init();
+    wifi_manager::init();
+    console_controller::set_wifi_status(wifi_manager::status());
 
     if (mode == ScreenMode::LifeScreensaver) {
         screensaver_life::init();
@@ -92,7 +95,9 @@ int main()
     while (true) {
         const ButtonEvent event = input::poll_buttons();
         input::handle_button_event(event);
-        const bool console_changed = console_controller::handle_button_event(event);
+        bool console_changed = console_controller::handle_button_event(event);
+        console_changed = wifi_manager::update() ? (console_controller::set_wifi_status(wifi_manager::status()) || console_changed)
+                                                 : (console_controller::set_wifi_status(wifi_manager::status()) || console_changed);
 
         if (mode == ScreenMode::LifeScreensaver) {
             LifeFrameStats stats{};

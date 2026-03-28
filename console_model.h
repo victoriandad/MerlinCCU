@@ -111,6 +111,30 @@ enum class SystemTestState : uint8_t {
     Failed,
 };
 
+/// @brief High-level Wi-Fi connectivity state for the Pico W radio.
+enum class WifiConnectionState : uint8_t {
+    Disabled = 0,
+    Unconfigured,
+    Initializing,
+    Connecting,
+    WaitingForIp,
+    Connected,
+    AuthFailed,
+    NoNetwork,
+    ConnectFailed,
+    Error,
+};
+
+/// @brief Snapshot of Wi-Fi state suitable for UI and controller use.
+struct WifiStatus {
+    WifiConnectionState state;
+    bool credentials_present;
+    int last_error;
+    int link_status;
+    std::array<char, 33> ssid;
+    std::array<char, 16> ip_address;
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 struct SoftKeyAction {
     const char* label;
@@ -134,6 +158,7 @@ struct ConsoleState {
     SystemTestState test_state;
     BrightnessLevel panel_brightness;
     BrightnessLevel key_backlight_brightness;
+    WifiStatus wifi_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

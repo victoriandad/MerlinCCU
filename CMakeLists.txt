@@ -43,6 +43,7 @@ add_executable(MerlinCCU
     input.cpp
     screens.cpp
     screensaver_life.cpp
+    wifi_manager.cpp
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
@@ -68,7 +69,7 @@ target_include_directories(MerlinCCU PRIVATE
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
 pico_stdlib
-pico_cyw43_arch_none
+    pico_cyw43_arch_lwip_threadsafe_background
     hardware_pio
     hardware_dma
 )

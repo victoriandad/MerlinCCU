@@ -127,6 +127,25 @@ const ConsoleState& state()
     return g_console_state;
 }
 
+bool set_wifi_status(const WifiStatus& wifi_status)
+{
+    const bool changed =
+        g_console_state.wifi_status.state != wifi_status.state ||
+        g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
+        g_console_state.wifi_status.last_error != wifi_status.last_error ||
+        g_console_state.wifi_status.link_status != wifi_status.link_status ||
+        g_console_state.wifi_status.ssid != wifi_status.ssid ||
+        g_console_state.wifi_status.ip_address != wifi_status.ip_address;
+
+    if (!changed) {
+        return false;
+    }
+
+    g_console_state.wifi_status = wifi_status;
+    update_softkeys_from_state();
+    return true;
+}
+
 bool handle_button_event(const ButtonEvent& event)
 {
     if (event.type != ButtonEventType::Pressed) {

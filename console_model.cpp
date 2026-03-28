@@ -78,6 +78,12 @@ ConsoleState make_default_console_state()
     state.test_state = SystemTestState::Idle;
     state.panel_brightness = BrightnessLevel::Medium;
     state.key_backlight_brightness = BrightnessLevel::Medium;
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    state.wifi_status.credentials_present = false;
+    state.wifi_status.last_error = 0;
+    state.wifi_status.link_status = 0;
+    state.wifi_status.ssid.fill('\0');
+    state.wifi_status.ip_address.fill('\0');
     state.lamps.fill(LampMode::Off);
     state.softkeys = DEFAULT_SOFTKEYS;
     return state;

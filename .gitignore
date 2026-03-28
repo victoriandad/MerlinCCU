@@ -4,3 +4,4 @@ build/
 *.bin
 *.uf2
 *.map
+wifi_credentials.h

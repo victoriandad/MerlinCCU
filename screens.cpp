@@ -79,6 +79,34 @@ const char* lamp_mode_text(LampMode mode)
     return "?";
 }
 
+const char* wifi_state_text(WifiConnectionState state)
+{
+    switch (state) {
+    case WifiConnectionState::Disabled:
+        return "DISABLED";
+    case WifiConnectionState::Unconfigured:
+        return "UNCONFIG";
+    case WifiConnectionState::Initializing:
+        return "INIT";
+    case WifiConnectionState::Connecting:
+        return "CONNECT";
+    case WifiConnectionState::WaitingForIp:
+        return "DHCP";
+    case WifiConnectionState::Connected:
+        return "UP";
+    case WifiConnectionState::AuthFailed:
+        return "BADAUTH";
+    case WifiConnectionState::NoNetwork:
+        return "NO NET";
+    case WifiConnectionState::ConnectFailed:
+        return "FAIL";
+    case WifiConnectionState::Error:
+        return "ERROR";
+    }
+
+    return "?";
+}
+
 void draw_softkey_column(uint8_t* fb,
                          int indicator_x,
                          int box_x,
@@ -152,18 +180,36 @@ void draw_dummy_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     framebuffer::draw_text(fb, 130, 134, brightness_text(console_state.panel_brightness), true, 1, 1);
     framebuffer::draw_text(fb, 84, 150, "KEYS", true, 1, 1);
     framebuffer::draw_text(fb, 130, 150, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 170, "A LAMP", true, 1, 1);
+    framebuffer::draw_text(fb, 84, 166, "WIFI", true, 1, 1);
+    framebuffer::draw_text(fb, 124, 166, wifi_state_text(console_state.wifi_status.state), true, 1, 1);
+    framebuffer::draw_text(fb, 84, 182, "SSID", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           124,
+                           182,
+                           console_state.wifi_status.credentials_present ? console_state.wifi_status.ssid.data() : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, 84, 198, "IP", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           124,
+                           198,
+                           console_state.wifi_status.ip_address[0] ? console_state.wifi_status.ip_address.data() : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, 84, 214, "A LAMP", true, 1, 1);
     framebuffer::draw_text(fb,
                            126,
-                           170,
+                           214,
                            lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::AlertLamp)]),
                            true,
                            1,
                            1);
-    framebuffer::draw_text(fb, 84, 186, "T LAMP", true, 1, 1);
+    framebuffer::draw_text(fb, 84, 230, "T LAMP", true, 1, 1);
     framebuffer::draw_text(fb,
                            126,
-                           186,
+                           230,
                            lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::TestLamp)]),
                            true,
                            1,
