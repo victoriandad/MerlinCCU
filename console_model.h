@@ -111,10 +111,70 @@ enum class SystemTestState : uint8_t {
     Failed,
 };
 
+/// @brief High-level menu pages shown on the display.
+enum class MenuPage : uint8_t {
+    Home = 0,
+    Status,
+    Settings,
+};
+
+/// @brief High-level Wi-Fi connectivity state for the Pico W radio.
+enum class WifiConnectionState : uint8_t {
+    Disabled = 0,
+    Unconfigured,
+    Initializing,
+    Scanning,
+    Connecting,
+    WaitingForIp,
+    Connected,
+    AuthFailed,
+    NoNetwork,
+    ConnectFailed,
+    Error,
+};
+
+/// @brief Snapshot of Wi-Fi state suitable for UI and controller use.
+struct WifiStatus {
+    WifiConnectionState state;
+    bool credentials_present;
+    bool internet_reachable;
+    bool internet_probe_pending;
+    int last_error;
+    int link_status;
+    int internet_rtt_ms;
+    std::array<char, 12> auth_mode;
+    std::array<char, 18> mac_address;
+    std::array<char, 33> ssid;
+    std::array<char, 16> ip_address;
+};
+
+/// @brief Snapshot of time state suitable for UI and controller use.
+struct TimeStatus {
+    bool synced;
+    std::array<char, 6> time_text;
+};
+
+/// @brief Semantic action currently assigned to a contextual softkey.
+enum class SoftKeyRoute : uint8_t {
+    None = 0,
+    GoHome,
+    GoStatus,
+    GoSettings,
+    CycleAlert,
+    ToggleLetters,
+    CycleTest,
+    ResetConsoleState,
+    ClearAlert,
+    PanelBrighter,
+    PanelDimmer,
+    KeysBrighter,
+    KeysDimmer,
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 struct SoftKeyAction {
     const char* label;
-    const char* route;
+    SoftKeyRoute route;
     bool enabled;
 };
 
@@ -129,11 +189,14 @@ struct KeyLegend {
 
 /// @brief Captures the logical front-panel state independent of hardware wiring.
 struct ConsoleState {
+    MenuPage active_page;
     LetterMode letter_mode;
     AlertSeverity alert_severity;
     SystemTestState test_state;
     BrightnessLevel panel_brightness;
     BrightnessLevel key_backlight_brightness;
+    WifiStatus wifi_status;
+    TimeStatus time_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

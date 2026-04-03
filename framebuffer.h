@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "fonts.h"
 
 namespace framebuffer {
 
@@ -43,7 +44,19 @@ void draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on);
 /// @brief Draws one 5x7 character at the requested scale.
 void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale = 1);
 
+/// @brief Draws one character using a fixed-size bitmap font face.
+void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font);
+
 /// @brief Draws a null-terminated text string in UI space.
 void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale = 1, int spacing = 1);
+
+/// @brief Draws a null-terminated text string using a fixed-size bitmap font face.
+void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFace font, int spacing = 1);
+
+/// @brief Returns the pixel width of a rendered string for the requested font face.
+int measure_text(const char* s, fonts::FontFace font, int spacing = 1);
+
+/// @brief Returns the pixel height of the requested font face.
+int font_height(fonts::FontFace font);
 
 }  // namespace framebuffer

@@ -48,16 +48,16 @@ constexpr KeyLegend KEY_LEGENDS[] = {
 };
 
 constexpr SoftKeyMap DEFAULT_SOFTKEYS = {{
-    {"L1", "left_1", false},
-    {"L2", "left_2", false},
-    {"L3", "left_3", false},
-    {"L4", "left_4", false},
-    {"L5", "left_5", false},
-    {"R1", "right_1", false},
-    {"R2", "right_2", false},
-    {"R3", "right_3", false},
-    {"R4", "right_4", false},
-    {"R5", "right_5", false},
+    {"L1", SoftKeyRoute::None, false},
+    {"L2", SoftKeyRoute::None, false},
+    {"L3", SoftKeyRoute::None, false},
+    {"L4", SoftKeyRoute::None, false},
+    {"L5", SoftKeyRoute::None, false},
+    {"R1", SoftKeyRoute::None, false},
+    {"R2", SoftKeyRoute::None, false},
+    {"R3", SoftKeyRoute::None, false},
+    {"R4", SoftKeyRoute::None, false},
+    {"R5", SoftKeyRoute::None, false},
 }};
 
 }  // namespace
@@ -73,11 +73,25 @@ const KeyLegend& key_legend(HardKeyId key)
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
+    state.active_page = MenuPage::Home;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
     state.panel_brightness = BrightnessLevel::Medium;
     state.key_backlight_brightness = BrightnessLevel::Medium;
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    state.wifi_status.credentials_present = false;
+    state.wifi_status.internet_reachable = false;
+    state.wifi_status.internet_probe_pending = false;
+    state.wifi_status.last_error = 0;
+    state.wifi_status.link_status = 0;
+    state.wifi_status.internet_rtt_ms = -1;
+    state.wifi_status.auth_mode.fill('\0');
+    state.wifi_status.mac_address.fill('\0');
+    state.wifi_status.ssid.fill('\0');
+    state.wifi_status.ip_address.fill('\0');
+    state.time_status.synced = false;
+    state.time_status.time_text.fill('\0');
     state.lamps.fill(LampMode::Off);
     state.softkeys = DEFAULT_SOFTKEYS;
     return state;

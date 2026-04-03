@@ -41,8 +41,11 @@ add_executable(MerlinCCU
     display.cpp
     framebuffer.cpp
     input.cpp
+    screen_banners.cpp
     screens.cpp
     screensaver_life.cpp
+    time_manager.cpp
+    wifi_manager.cpp
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
@@ -68,7 +71,9 @@ target_include_directories(MerlinCCU PRIVATE
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
 pico_stdlib
-pico_cyw43_arch_none
+    pico_cyw43_arch_lwip_threadsafe_background
+    pico_lwip_netbios
+    pico_lwip_sntp
     hardware_pio
     hardware_dma
 )

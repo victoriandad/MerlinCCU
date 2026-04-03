@@ -11,9 +11,9 @@ namespace screens {
 /// timing issues on the physical panel.
 void draw_demo_screen(uint8_t* fb);
 
-/// @brief Draws a mock Merlin CCU menu screen.
-/// @details This is a static layout used for bring-up and UI experimentation.
-void draw_dummy_menu_screen(uint8_t* fb, const ConsoleState& console_state);
+/// @brief Draws the current Merlin CCU menu page and contextual softkeys.
+/// @details This is the main UI surface used for menu bring-up and navigation.
+void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state);
 
 /// @brief Draws a static calibration pattern for timing and visible extents.
 /// @details This pattern is intended for photographing the panel so the true
