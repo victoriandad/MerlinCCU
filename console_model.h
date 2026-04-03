@@ -111,6 +111,13 @@ enum class SystemTestState : uint8_t {
     Failed,
 };
 
+/// @brief High-level menu pages shown on the display.
+enum class MenuPage : uint8_t {
+    Home = 0,
+    Status,
+    Settings,
+};
+
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
 enum class WifiConnectionState : uint8_t {
     Disabled = 0,
@@ -148,9 +155,26 @@ struct TimeStatus {
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
+enum class SoftKeyRoute : uint8_t {
+    None = 0,
+    GoHome,
+    GoStatus,
+    GoSettings,
+    CycleAlert,
+    ToggleLetters,
+    CycleTest,
+    ResetConsoleState,
+    ClearAlert,
+    PanelBrighter,
+    PanelDimmer,
+    KeysBrighter,
+    KeysDimmer,
+};
+
+/// @brief Semantic action currently assigned to a contextual softkey.
 struct SoftKeyAction {
     const char* label;
-    const char* route;
+    SoftKeyRoute route;
     bool enabled;
 };
 
@@ -165,6 +189,7 @@ struct KeyLegend {
 
 /// @brief Captures the logical front-panel state independent of hardware wiring.
 struct ConsoleState {
+    MenuPage active_page;
     LetterMode letter_mode;
     AlertSeverity alert_severity;
     SystemTestState test_state;

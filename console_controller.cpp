@@ -14,20 +14,91 @@ constexpr size_t lamp_index(LampId lamp)
     return static_cast<size_t>(lamp);
 }
 
+constexpr size_t softkey_index(SoftKeyId key)
+{
+    return static_cast<size_t>(key);
+}
+
+SoftKeyId softkey_id_from_button(ButtonId button)
+{
+    switch (button) {
+    case ButtonId::LeftTop:
+        return SoftKeyId::Left1;
+    case ButtonId::LeftUpper:
+        return SoftKeyId::Left2;
+    case ButtonId::LeftMiddle:
+        return SoftKeyId::Left3;
+    case ButtonId::LeftLower:
+        return SoftKeyId::Left4;
+    case ButtonId::LeftBottom:
+        return SoftKeyId::Left5;
+    case ButtonId::RightTop:
+        return SoftKeyId::Right1;
+    case ButtonId::RightUpper:
+        return SoftKeyId::Right2;
+    case ButtonId::RightMiddle:
+        return SoftKeyId::Right3;
+    case ButtonId::RightLower:
+        return SoftKeyId::Right4;
+    case ButtonId::RightBottom:
+        return SoftKeyId::Right5;
+    default:
+        return SoftKeyId::Left1;
+    }
+}
+
 void update_softkeys_from_state()
 {
-    g_console_state.softkeys = {{
-        {"ALERT", "cycle_alert", true},
-        {"LTRS", "toggle_letters", true},
-        {"TEST", "cycle_test", true},
-        {"RESET", "reset_console_state", true},
-        {"ALRT OFF", "clear_alert_only", g_console_state.alert_severity != AlertSeverity::None},
-        {"PANEL +", "panel_brighter", g_console_state.panel_brightness != BrightnessLevel::High},
-        {"PANEL -", "panel_dimmer", g_console_state.panel_brightness != BrightnessLevel::Off},
-        {"KEYS +", "keys_brighter", g_console_state.key_backlight_brightness != BrightnessLevel::High},
-        {"KEYS -", "keys_dimmer", g_console_state.key_backlight_brightness != BrightnessLevel::Off},
-        {"TEST IDLE", "test_idle", g_console_state.test_state != SystemTestState::Idle},
+    SoftKeyMap softkeys = {{
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
+        {"", SoftKeyRoute::None, false},
     }};
+
+    switch (g_console_state.active_page) {
+    case MenuPage::Home:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"STATUS", SoftKeyRoute::GoStatus, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
+        softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
+        softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
+        softkeys[softkey_index(SoftKeyId::Right4)] = {
+            "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {
+            "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
+        break;
+    case MenuPage::Status:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"CLR ALRT", SoftKeyRoute::ClearAlert,
+                                                      g_console_state.alert_severity != AlertSeverity::None};
+        break;
+    case MenuPage::Settings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetConsoleState, true};
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            "KEYS +", SoftKeyRoute::KeysBrighter, g_console_state.key_backlight_brightness != BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            "KEYS -", SoftKeyRoute::KeysDimmer, g_console_state.key_backlight_brightness != BrightnessLevel::Off};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
+        softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
+        softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
+        softkeys[softkey_index(SoftKeyId::Right4)] = {
+            "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {
+            "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
+        break;
+    }
+
+    g_console_state.softkeys = softkeys;
 }
 
 AlertSeverity next_alert_severity(AlertSeverity severity)
@@ -113,6 +184,68 @@ BrightnessLevel dimmer(BrightnessLevel level)
     return static_cast<BrightnessLevel>(static_cast<uint8_t>(level) - 1);
 }
 
+bool apply_softkey_route(SoftKeyRoute route)
+{
+    switch (route) {
+    case SoftKeyRoute::None:
+        return false;
+    case SoftKeyRoute::GoHome:
+        g_console_state.active_page = MenuPage::Home;
+        return true;
+    case SoftKeyRoute::GoStatus:
+        g_console_state.active_page = MenuPage::Status;
+        return true;
+    case SoftKeyRoute::GoSettings:
+        g_console_state.active_page = MenuPage::Settings;
+        return true;
+    case SoftKeyRoute::CycleAlert:
+        g_console_state.alert_severity = next_alert_severity(g_console_state.alert_severity);
+        return true;
+    case SoftKeyRoute::ToggleLetters:
+        g_console_state.letter_mode =
+            (g_console_state.letter_mode == LetterMode::Off) ? LetterMode::On : LetterMode::Off;
+        return true;
+    case SoftKeyRoute::CycleTest:
+        g_console_state.test_state = next_test_state(g_console_state.test_state);
+        return true;
+    case SoftKeyRoute::ResetConsoleState:
+        g_console_state = make_default_console_state();
+        return true;
+    case SoftKeyRoute::ClearAlert:
+        if (g_console_state.alert_severity == AlertSeverity::None) {
+            return false;
+        }
+        g_console_state.alert_severity = AlertSeverity::None;
+        return true;
+    case SoftKeyRoute::PanelBrighter:
+        if (g_console_state.panel_brightness == BrightnessLevel::High) {
+            return false;
+        }
+        g_console_state.panel_brightness = brighter(g_console_state.panel_brightness);
+        return true;
+    case SoftKeyRoute::PanelDimmer:
+        if (g_console_state.panel_brightness == BrightnessLevel::Off) {
+            return false;
+        }
+        g_console_state.panel_brightness = dimmer(g_console_state.panel_brightness);
+        return true;
+    case SoftKeyRoute::KeysBrighter:
+        if (g_console_state.key_backlight_brightness == BrightnessLevel::High) {
+            return false;
+        }
+        g_console_state.key_backlight_brightness = brighter(g_console_state.key_backlight_brightness);
+        return true;
+    case SoftKeyRoute::KeysDimmer:
+        if (g_console_state.key_backlight_brightness == BrightnessLevel::Off) {
+            return false;
+        }
+        g_console_state.key_backlight_brightness = dimmer(g_console_state.key_backlight_brightness);
+        return true;
+    }
+
+    return false;
+}
+
 }  // namespace
 
 void init()
@@ -171,47 +304,13 @@ bool handle_button_event(const ButtonEvent& event)
         return false;
     }
 
-    bool changed = true;
-
-    // These button mappings are a development harness that lets the current
-    // side-button skeleton exercise the front-panel model before the real
-    // keypad matrix and lamp wiring are connected.
-    switch (event.id) {
-    case ButtonId::LeftTop:
-        g_console_state.alert_severity = next_alert_severity(g_console_state.alert_severity);
-        break;
-    case ButtonId::LeftUpper:
-        g_console_state.letter_mode =
-            (g_console_state.letter_mode == LetterMode::Off) ? LetterMode::On : LetterMode::Off;
-        break;
-    case ButtonId::LeftMiddle:
-        g_console_state.test_state = next_test_state(g_console_state.test_state);
-        break;
-    case ButtonId::LeftLower:
-        g_console_state = make_default_console_state();
-        break;
-    case ButtonId::LeftBottom:
-        g_console_state.alert_severity = AlertSeverity::None;
-        break;
-    case ButtonId::RightTop:
-        g_console_state.panel_brightness = brighter(g_console_state.panel_brightness);
-        break;
-    case ButtonId::RightUpper:
-        g_console_state.panel_brightness = dimmer(g_console_state.panel_brightness);
-        break;
-    case ButtonId::RightMiddle:
-        g_console_state.key_backlight_brightness = brighter(g_console_state.key_backlight_brightness);
-        break;
-    case ButtonId::RightLower:
-        g_console_state.key_backlight_brightness = dimmer(g_console_state.key_backlight_brightness);
-        break;
-    case ButtonId::RightBottom:
-        g_console_state.test_state = SystemTestState::Idle;
-        break;
-    default:
-        changed = false;
-        break;
+    const SoftKeyId key = softkey_id_from_button(event.id);
+    const SoftKeyAction& action = g_console_state.softkeys[softkey_index(key)];
+    if (!action.enabled) {
+        return false;
     }
+
+    const bool changed = apply_softkey_route(action.route);
 
     if (!changed) {
         return false;
@@ -219,7 +318,8 @@ bool handle_button_event(const ButtonEvent& event)
 
     update_softkeys_from_state();
     update_lamps_from_state();
-    std::printf("Console state updated: ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+    std::printf("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+                static_cast<unsigned>(g_console_state.active_page),
                 (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
                 static_cast<unsigned>(g_console_state.alert_severity),
                 static_cast<unsigned>(g_console_state.test_state),

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include "console_model.h"
 #include "framebuffer.h"
@@ -111,6 +112,180 @@ const char* wifi_state_text(WifiConnectionState state)
     return "?";
 }
 
+const char* menu_page_title(MenuPage page)
+{
+    switch (page) {
+    case MenuPage::Home:
+        return "MENU";
+    case MenuPage::Status:
+        return "STATUS";
+    case MenuPage::Settings:
+        return "SETTINGS";
+    }
+
+    return "MENU";
+}
+
+int text_width(const char* text,
+               fonts::FontFace font = fonts::FontFace::Font5x7,
+               int spacing = 1)
+{
+    if (text == nullptr || text[0] == '\0') {
+        return 0;
+    }
+
+    return framebuffer::measure_text(text, font, spacing);
+}
+
+void draw_centered_text(uint8_t* fb,
+                        int center_x,
+                        int y,
+                        const char* text,
+                        bool on,
+                        fonts::FontFace font = fonts::FontFace::Font5x7,
+                        int spacing = 1)
+{
+    framebuffer::draw_text(fb, center_x - (text_width(text, font, spacing) / 2), y, text, on, font, spacing);
+}
+
+void draw_softkey_label(uint8_t* fb, int x, int y, int w, const SoftKeyAction& action, bool left_side)
+{
+    framebuffer::draw_rect(fb, x, y, w, 18, true);
+
+    if (action.enabled) {
+        framebuffer::fill_rect(fb, x + 1, y + 1, w - 2, 16, true);
+    }
+
+    if (action.label == nullptr || action.label[0] == '\0') {
+        return;
+    }
+
+    const int label_width = text_width(action.label);
+    const int text_x = left_side ? (x + 4) : (x + w - 4 - label_width);
+    framebuffer::draw_text(fb, text_x, y + 5, action.label, !action.enabled, 1, 1);
+}
+
+void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kLabelWidth = 34;
+    constexpr int kTopY = 50;
+    constexpr int kPitch = 40;
+
+    for (int i = 0; i < 5; ++i) {
+        draw_softkey_label(fb, 2, kTopY + (i * kPitch), kLabelWidth, console_state.softkeys[i], true);
+        draw_softkey_label(fb,
+                           UI_WIDTH - kLabelWidth - 2,
+                           kTopY + (i * kPitch),
+                           kLabelWidth,
+                           console_state.softkeys[i + 5],
+                           false);
+    }
+}
+
+void draw_panel_frame(uint8_t* fb)
+{
+    framebuffer::draw_rect(fb, 40, 40, UI_WIDTH - 80, 206, true);
+    framebuffer::draw_rect(fb, 46, 46, UI_WIDTH - 92, 194, true);
+}
+
+void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_panel_frame(fb);
+    draw_centered_text(fb, UI_WIDTH / 2, 56, "MENU", true, fonts::FontFace::FontTitle8x12, 1);
+
+    framebuffer::draw_text(fb, 58, 88, "L1 STATUS PAGE", true, 1, 1);
+    framebuffer::draw_text(fb, 58, 104, "L2 SETTINGS PAGE", true, 1, 1);
+
+    framebuffer::draw_text(fb, 58, 126, "TITLE FONT SAMPLE", true, 1, 1);
+    framebuffer::draw_text(fb, 58, 142, "STATUS", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 156, "SETTINGS", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 170, "ALERT TEST", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 184, "PANEL WIFI", true, fonts::FontFace::FontTitle8x12, 1);
+
+    framebuffer::draw_text(fb, 58, 206, "ALERT", true, 1, 1);
+    framebuffer::draw_text(fb, 124, 206, alert_severity_text(console_state.alert_severity), true, 1, 1);
+
+    framebuffer::draw_text(fb, 58, 222, "TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 124, 222, test_state_text(console_state.test_state), true, 1, 1);
+}
+
+void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_panel_frame(fb);
+    draw_centered_text(fb, UI_WIDTH / 2, 56, "STATUS", true, fonts::FontFace::FontTitle8x12, 1);
+
+    framebuffer::draw_text(fb, 54, 84, "TIME", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           84,
+                           console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--",
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, 54, 100, "WIFI", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 100, wifi_state_text(console_state.wifi_status.state), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 116, "SSID", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           116,
+                           console_state.wifi_status.credentials_present ? console_state.wifi_status.ssid.data() : "-",
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, 54, 132, "IP", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           132,
+                           console_state.wifi_status.ip_address[0] ? console_state.wifi_status.ip_address.data() : "-",
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, 54, 148, "MAC", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           148,
+                           console_state.wifi_status.mac_address[0] ? console_state.wifi_status.mac_address.data() : "-",
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, 54, 176, "ALERT", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 176, alert_severity_text(console_state.alert_severity), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 192, "TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 192, test_state_text(console_state.test_state), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 208, "PANEL", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 208, brightness_text(console_state.panel_brightness), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 224, "KEYS", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 224, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
+}
+
+void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_panel_frame(fb);
+    draw_centered_text(fb, UI_WIDTH / 2, 56, "SETTINGS", true, fonts::FontFace::FontTitle8x12, 1);
+
+    framebuffer::draw_text(fb, 54, 86, "RIGHT SIDE", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 102, "ALERT  LTRS  TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 118, "PANEL + PANEL -", true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 146, "LEFT SIDE", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 162, "HOME  STATUS  RESET", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 178, "KEYS + KEYS -", true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 206, "LTRS", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 206, letter_mode_text(console_state.letter_mode), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 222, "ALERT", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 222, alert_severity_text(console_state.alert_severity), true, 1, 1);
+}
+
 }  // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
@@ -135,60 +310,25 @@ void draw_demo_screen(uint8_t* fb)
     framebuffer::fill_rect(fb, 8, UI_HEIGHT - 12, 100, 8, false);
 }
 
-/// @brief Draws a static mock-up of a future Merlin CCU home/status page.
-void draw_dummy_menu_screen(uint8_t* fb, const ConsoleState& console_state)
+/// @brief Draws the active menu page and contextual softkey labels.
+void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
-    screen_banners::draw_standard_banners(fb, console_state, "MERLIN CCU");
+    screen_banners::draw_standard_banners(fb, console_state, menu_page_title(console_state.active_page));
+    draw_softkeys(fb, console_state);
 
-    framebuffer::draw_rect(fb, 16, 40, UI_WIDTH - 32, 206, true);
-    framebuffer::draw_text(fb, 74, 52, "FRONT PANEL", true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 78, "LTRS", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 78, letter_mode_text(console_state.letter_mode), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 94, "ALRT", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 94, alert_severity_text(console_state.alert_severity), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 110, "TEST", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 110, test_state_text(console_state.test_state), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 126, "PANEL", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 126, brightness_text(console_state.panel_brightness), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 142, "KEYS", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 142, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 158, "WIFI", true, 1, 1);
-    framebuffer::draw_text(fb, 92, 158, wifi_state_text(console_state.wifi_status.state), true, 1, 1);
-
-    framebuffer::draw_text(fb, 28, 174, "SSID", true, 1, 1);
-    framebuffer::draw_text(fb,
-                           92,
-                           174,
-                           console_state.wifi_status.credentials_present ? console_state.wifi_status.ssid.data() : "-",
-                           true,
-                           1,
-                           1);
-
-    framebuffer::draw_text(fb, 28, 190, "IP", true, 1, 1);
-    framebuffer::draw_text(fb,
-                           92,
-                           190,
-                           console_state.wifi_status.ip_address[0] ? console_state.wifi_status.ip_address.data() : "-",
-                           true,
-                           1,
-                           1);
-
-    framebuffer::draw_text(fb, 28, 206, "MAC", true, 1, 1);
-    framebuffer::draw_text(fb,
-                           92,
-                           206,
-                           console_state.wifi_status.mac_address[0] ? console_state.wifi_status.mac_address.data() : "-",
-                           true,
-                           1,
-                           1);
+    switch (console_state.active_page) {
+    case MenuPage::Home:
+        draw_home_page(fb, console_state);
+        break;
+    case MenuPage::Status:
+        draw_status_page(fb, console_state);
+        break;
+    case MenuPage::Settings:
+        draw_settings_page(fb, console_state);
+        break;
+    }
 }
 
 /// @brief Draws a static calibration screen for alignment and extent testing.

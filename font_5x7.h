@@ -2,12 +2,9 @@
 
 #include <cstdint>
 
-/// @brief One fixed-width 5x7 font glyph stored as five columns.
-/// @details The least-significant bit is the top pixel of each column.
-struct Glyph5x7 {
-    char c;
-    uint8_t col[5];
-};
+#include "fonts.h"
+
+namespace fonts::font5x7 {
 
 inline constexpr Glyph5x7 FONT_5X7[] = {
     {' ', {0x00,0x00,0x00,0x00,0x00}},
@@ -53,8 +50,7 @@ inline constexpr Glyph5x7 FONT_5X7[] = {
     {'Z', {0x61,0x51,0x49,0x45,0x43}},
 };
 
-/// @brief Returns a glyph definition for the requested character.
-inline const Glyph5x7* font_lookup(char c)
+inline const Glyph5x7* lookup(char c)
 {
     if (c >= 'a' && c <= 'z') {
         c = static_cast<char>(c - 'a' + 'A');
@@ -68,3 +64,14 @@ inline const Glyph5x7* font_lookup(char c)
 
     return &FONT_5X7[0];
 }
+
+}  // namespace fonts::font5x7
+
+namespace fonts {
+
+inline const Glyph5x7* lookup_5x7(char c)
+{
+    return font5x7::lookup(c);
+}
+
+}  // namespace fonts

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "bitmap_font.h"
 #include "font_5x7.h"
 #include "panel_config.h"
 
@@ -152,7 +153,7 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
 {
     if (scale < 1) scale = 1;
 
-    const Glyph5x7* g = font_lookup(c);
+    const fonts::Glyph5x7* g = fonts::lookup_5x7(c);
     for (int col = 0; col < 5; ++col) {
         const uint8_t bits = g->col[col];
 
@@ -170,6 +171,28 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
     }
 }
 
+void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font)
+{
+    if (font == fonts::FontFace::Font5x7) {
+        draw_char(fb, x, y, c, on, 1);
+        return;
+    }
+
+    const uint8_t* rows = fonts::lookup_bitmap_rows(font, c);
+    const int width = fonts::font_width(font);
+    const int height = fonts::font_height(font);
+
+    for (int row = 0; row < height; ++row) {
+        const uint8_t bits = rows[row];
+        for (int col = 0; col < width; ++col) {
+            if ((bits & (0x80u >> col)) == 0) {
+                continue;
+            }
+            set_pixel(fb, x + col, y + row, on);
+        }
+    }
+}
+
 void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale, int spacing)
 {
     int cursor_x = x;
@@ -178,6 +201,32 @@ void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale, int
         cursor_x += (5 * scale) + spacing;
         ++s;
     }
+}
+
+void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFace font, int spacing)
+{
+    int cursor_x = x;
+    const int advance = fonts::font_width(font) + spacing;
+
+    while (*s) {
+        draw_char(fb, cursor_x, y, *s, on, font);
+        cursor_x += advance;
+        ++s;
+    }
+}
+
+int measure_text(const char* s, fonts::FontFace font, int spacing)
+{
+    if (s == nullptr || s[0] == '\0') {
+        return 0;
+    }
+
+    return static_cast<int>(std::strlen(s)) * (fonts::font_width(font) + spacing) - spacing;
+}
+
+int font_height(fonts::FontFace font)
+{
+    return fonts::font_height(font);
 }
 
 }  // namespace framebuffer
