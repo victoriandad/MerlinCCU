@@ -132,8 +132,13 @@ bool set_wifi_status(const WifiStatus& wifi_status)
     const bool changed =
         g_console_state.wifi_status.state != wifi_status.state ||
         g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
+        g_console_state.wifi_status.internet_reachable != wifi_status.internet_reachable ||
+        g_console_state.wifi_status.internet_probe_pending != wifi_status.internet_probe_pending ||
         g_console_state.wifi_status.last_error != wifi_status.last_error ||
         g_console_state.wifi_status.link_status != wifi_status.link_status ||
+        g_console_state.wifi_status.internet_rtt_ms != wifi_status.internet_rtt_ms ||
+        g_console_state.wifi_status.auth_mode != wifi_status.auth_mode ||
+        g_console_state.wifi_status.mac_address != wifi_status.mac_address ||
         g_console_state.wifi_status.ssid != wifi_status.ssid ||
         g_console_state.wifi_status.ip_address != wifi_status.ip_address;
 
@@ -142,6 +147,20 @@ bool set_wifi_status(const WifiStatus& wifi_status)
     }
 
     g_console_state.wifi_status = wifi_status;
+    update_softkeys_from_state();
+    return true;
+}
+
+bool set_time_status(const TimeStatus& time_status)
+{
+    const bool changed = g_console_state.time_status.synced != time_status.synced ||
+                         g_console_state.time_status.time_text != time_status.time_text;
+
+    if (!changed) {
+        return false;
+    }
+
+    g_console_state.time_status = time_status;
     update_softkeys_from_state();
     return true;
 }

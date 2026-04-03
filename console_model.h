@@ -116,6 +116,7 @@ enum class WifiConnectionState : uint8_t {
     Disabled = 0,
     Unconfigured,
     Initializing,
+    Scanning,
     Connecting,
     WaitingForIp,
     Connected,
@@ -129,10 +130,21 @@ enum class WifiConnectionState : uint8_t {
 struct WifiStatus {
     WifiConnectionState state;
     bool credentials_present;
+    bool internet_reachable;
+    bool internet_probe_pending;
     int last_error;
     int link_status;
+    int internet_rtt_ms;
+    std::array<char, 12> auth_mode;
+    std::array<char, 18> mac_address;
     std::array<char, 33> ssid;
     std::array<char, 16> ip_address;
+};
+
+/// @brief Snapshot of time state suitable for UI and controller use.
+struct TimeStatus {
+    bool synced;
+    std::array<char, 6> time_text;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
@@ -159,6 +171,7 @@ struct ConsoleState {
     BrightnessLevel panel_brightness;
     BrightnessLevel key_backlight_brightness;
     WifiStatus wifi_status;
+    TimeStatus time_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

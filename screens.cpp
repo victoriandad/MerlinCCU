@@ -1,10 +1,12 @@
 #include "screens.h"
 
 #include <cstddef>
+#include <cstdio>
 
 #include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "screen_banners.h"
 
 namespace screens {
 
@@ -88,6 +90,8 @@ const char* wifi_state_text(WifiConnectionState state)
         return "UNCONFIG";
     case WifiConnectionState::Initializing:
         return "INIT";
+    case WifiConnectionState::Scanning:
+        return "SCAN";
     case WifiConnectionState::Connecting:
         return "CONNECT";
     case WifiConnectionState::WaitingForIp:
@@ -105,25 +109,6 @@ const char* wifi_state_text(WifiConnectionState state)
     }
 
     return "?";
-}
-
-void draw_softkey_column(uint8_t* fb,
-                         int indicator_x,
-                         int box_x,
-                         int text_x,
-                         const SoftKeyAction* actions)
-{
-    for (int i = 0; i < 5; ++i) {
-        const int y = 42 + i * 42;
-        const int box_w = 82;
-
-        framebuffer::fill_rect(fb, indicator_x, y + 4, 8, 10, true);
-        framebuffer::draw_rect(fb, box_x, y, box_w, 18, true);
-        framebuffer::draw_text(fb, text_x, y + 5, actions[i].label, true, 1, 1);
-        if (!actions[i].enabled) {
-            framebuffer::draw_hline(fb, box_x + 4, box_x + box_w - 5, y + 9, true);
-        }
-    }
 }
 
 }  // namespace
@@ -155,69 +140,55 @@ void draw_dummy_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
-    framebuffer::draw_rect(fb, 0, 0, UI_WIDTH, UI_HEIGHT, true);
-    framebuffer::draw_rect(fb, 6, 6, UI_WIDTH - 12, UI_HEIGHT - 12, true);
+    screen_banners::draw_standard_banners(fb, console_state, "MERLIN CCU");
 
-    framebuffer::fill_rect(fb, 8, 8, UI_WIDTH - 16, 18, true);
-    framebuffer::draw_text(fb, 14, 14, "MERLIN CCU", false, 1, 1);
+    framebuffer::draw_rect(fb, 16, 40, UI_WIDTH - 32, 206, true);
+    framebuffer::draw_text(fb, 74, 52, "FRONT PANEL", true, 1, 1);
 
-    draw_softkey_column(fb, 8, 22, 28, console_state.softkeys.data());
-    draw_softkey_column(fb,
-                        UI_WIDTH - 16,
-                        UI_WIDTH - 104,
-                        UI_WIDTH - 98,
-                        console_state.softkeys.data() + 5);
+    framebuffer::draw_text(fb, 28, 78, "LTRS", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 78, letter_mode_text(console_state.letter_mode), true, 1, 1);
 
-    framebuffer::draw_rect(fb, 72, 54, 108, 148, true);
-    framebuffer::draw_text(fb, 84, 66, "FRONT PANEL", true, 1, 1);
-    framebuffer::draw_text(fb, 84, 86, "LTRS", true, 1, 1);
-    framebuffer::draw_text(fb, 130, 86, letter_mode_text(console_state.letter_mode), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 102, "ALRT", true, 1, 1);
-    framebuffer::draw_text(fb, 130, 102, alert_severity_text(console_state.alert_severity), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 118, "TEST", true, 1, 1);
-    framebuffer::draw_text(fb, 130, 118, test_state_text(console_state.test_state), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 134, "PANEL", true, 1, 1);
-    framebuffer::draw_text(fb, 130, 134, brightness_text(console_state.panel_brightness), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 150, "KEYS", true, 1, 1);
-    framebuffer::draw_text(fb, 130, 150, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 166, "WIFI", true, 1, 1);
-    framebuffer::draw_text(fb, 124, 166, wifi_state_text(console_state.wifi_status.state), true, 1, 1);
-    framebuffer::draw_text(fb, 84, 182, "SSID", true, 1, 1);
+    framebuffer::draw_text(fb, 28, 94, "ALRT", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 94, alert_severity_text(console_state.alert_severity), true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 110, "TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 110, test_state_text(console_state.test_state), true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 126, "PANEL", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 126, brightness_text(console_state.panel_brightness), true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 142, "KEYS", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 142, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 158, "WIFI", true, 1, 1);
+    framebuffer::draw_text(fb, 92, 158, wifi_state_text(console_state.wifi_status.state), true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 174, "SSID", true, 1, 1);
     framebuffer::draw_text(fb,
-                           124,
-                           182,
+                           92,
+                           174,
                            console_state.wifi_status.credentials_present ? console_state.wifi_status.ssid.data() : "-",
                            true,
                            1,
                            1);
-    framebuffer::draw_text(fb, 84, 198, "IP", true, 1, 1);
+
+    framebuffer::draw_text(fb, 28, 190, "IP", true, 1, 1);
     framebuffer::draw_text(fb,
-                           124,
-                           198,
+                           92,
+                           190,
                            console_state.wifi_status.ip_address[0] ? console_state.wifi_status.ip_address.data() : "-",
                            true,
                            1,
                            1);
-    framebuffer::draw_text(fb, 84, 214, "A LAMP", true, 1, 1);
-    framebuffer::draw_text(fb,
-                           126,
-                           214,
-                           lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::AlertLamp)]),
-                           true,
-                           1,
-                           1);
-    framebuffer::draw_text(fb, 84, 230, "T LAMP", true, 1, 1);
-    framebuffer::draw_text(fb,
-                           126,
-                           230,
-                           lamp_mode_text(console_state.lamps[static_cast<size_t>(LampId::TestLamp)]),
-                           true,
-                           1,
-                           1);
 
-    framebuffer::fill_rect(fb, 8, UI_HEIGHT - 20, UI_WIDTH - 16, 10, true);
-    framebuffer::draw_text(fb, 14, UI_HEIGHT - 18, "SOFTKEY DEV HARNESS", false, 1, 1);
-    framebuffer::draw_text(fb, UI_WIDTH - 54, UI_HEIGHT - 18, "READY", false, 1, 1);
+    framebuffer::draw_text(fb, 28, 206, "MAC", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           92,
+                           206,
+                           console_state.wifi_status.mac_address[0] ? console_state.wifi_status.mac_address.data() : "-",
+                           true,
+                           1,
+                           1);
 }
 
 /// @brief Draws a static calibration screen for alignment and extent testing.
