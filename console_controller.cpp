@@ -298,6 +298,24 @@ bool set_time_status(const TimeStatus& time_status)
     return true;
 }
 
+bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
+{
+    const bool changed =
+        g_console_state.home_assistant_status.state != home_assistant_status.state ||
+        g_console_state.home_assistant_status.configured != home_assistant_status.configured ||
+        g_console_state.home_assistant_status.last_error != home_assistant_status.last_error ||
+        g_console_state.home_assistant_status.last_http_status != home_assistant_status.last_http_status ||
+        g_console_state.home_assistant_status.host != home_assistant_status.host;
+
+    if (!changed) {
+        return false;
+    }
+
+    g_console_state.home_assistant_status = home_assistant_status;
+    update_softkeys_from_state();
+    return true;
+}
+
 bool handle_button_event(const ButtonEvent& event)
 {
     if (event.type != ButtonEventType::Pressed) {

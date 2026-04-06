@@ -40,6 +40,7 @@ add_executable(MerlinCCU
     console_model.cpp
     display.cpp
     framebuffer.cpp
+    home_assistant_manager.cpp
     input.cpp
     screen_banners.cpp
     screens.cpp

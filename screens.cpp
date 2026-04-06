@@ -112,6 +112,32 @@ const char* wifi_state_text(WifiConnectionState state)
     return "?";
 }
 
+const char* home_assistant_state_text(HomeAssistantConnectionState state)
+{
+    switch (state) {
+    case HomeAssistantConnectionState::Disabled:
+        return "DISABLED";
+    case HomeAssistantConnectionState::Unconfigured:
+        return "UNCONFIG";
+    case HomeAssistantConnectionState::WaitingForWifi:
+        return "WAIT WIFI";
+    case HomeAssistantConnectionState::Resolving:
+        return "RESOLVE";
+    case HomeAssistantConnectionState::Connecting:
+        return "CONNECT";
+    case HomeAssistantConnectionState::Authorizing:
+        return "AUTH";
+    case HomeAssistantConnectionState::Connected:
+        return "UP";
+    case HomeAssistantConnectionState::Unauthorized:
+        return "TOKEN";
+    case HomeAssistantConnectionState::Error:
+        return "ERROR";
+    }
+
+    return "?";
+}
+
 const char* menu_page_title(MenuPage page)
 {
     switch (page) {
@@ -196,11 +222,11 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
     framebuffer::draw_text(fb, 58, 88, "L1 STATUS PAGE", true, 1, 1);
     framebuffer::draw_text(fb, 58, 104, "L2 SETTINGS PAGE", true, 1, 1);
 
-    framebuffer::draw_text(fb, 58, 126, "TITLE FONT SAMPLE", true, 1, 1);
-    framebuffer::draw_text(fb, 58, 142, "STATUS", true, fonts::FontFace::FontTitle8x12, 1);
-    framebuffer::draw_text(fb, 58, 156, "SETTINGS", true, fonts::FontFace::FontTitle8x12, 1);
-    framebuffer::draw_text(fb, 58, 170, "ALERT TEST", true, fonts::FontFace::FontTitle8x12, 1);
-    framebuffer::draw_text(fb, 58, 184, "PANEL WIFI", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 126, "Font samples upper/lower", true, 1, 1);
+    framebuffer::draw_text(fb, 58, 142, "Status", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 156, "Settings", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 170, "Alert test", true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, 58, 184, "panel wifi abcxyz", true, fonts::FontFace::Font8x12, 1);
 
     framebuffer::draw_text(fb, 58, 206, "ALERT", true, 1, 1);
     framebuffer::draw_text(fb, 124, 206, alert_severity_text(console_state.alert_severity), true, 1, 1);
@@ -253,17 +279,38 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
                            1,
                            1);
 
-    framebuffer::draw_text(fb, 54, 176, "ALERT", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 176, alert_severity_text(console_state.alert_severity), true, 1, 1);
+    framebuffer::draw_text(fb, 54, 164, "HA", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 164, home_assistant_state_text(console_state.home_assistant_status.state), true, 1, 1);
 
-    framebuffer::draw_text(fb, 54, 192, "TEST", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 192, test_state_text(console_state.test_state), true, 1, 1);
+    framebuffer::draw_text(fb,
+                           54,
+                           180,
+                           "HOST",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb,
+                           116,
+                           180,
+                           console_state.home_assistant_status.host[0] ? console_state.home_assistant_status.host.data() : "-",
+                           true,
+                           1,
+                           1);
 
-    framebuffer::draw_text(fb, 54, 208, "PANEL", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 208, brightness_text(console_state.panel_brightness), true, 1, 1);
+    framebuffer::draw_text(fb, 54, 196, "HTTP", true, 1, 1);
+    if (console_state.home_assistant_status.last_http_status > 0) {
+        char http_text[8] = {};
+        std::snprintf(http_text, sizeof(http_text), "%d", console_state.home_assistant_status.last_http_status);
+        framebuffer::draw_text(fb, 116, 196, http_text, true, 1, 1);
+    } else {
+        framebuffer::draw_text(fb, 116, 196, "-", true, 1, 1);
+    }
 
-    framebuffer::draw_text(fb, 54, 224, "KEYS", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 224, brightness_text(console_state.key_backlight_brightness), true, 1, 1);
+    framebuffer::draw_text(fb, 54, 212, "ALERT", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 212, alert_severity_text(console_state.alert_severity), true, 1, 1);
+
+    framebuffer::draw_text(fb, 54, 228, "TEST", true, 1, 1);
+    framebuffer::draw_text(fb, 116, 228, test_state_text(console_state.test_state), true, 1, 1);
 }
 
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)

@@ -175,6 +175,26 @@ This repository uses the Raspberry Pi Pico SDK with CMake.
 The exact local build flow depends on your environment. In this project the
 Pico VS Code plugin workflow is being used successfully.
 
+## Wi-Fi And Home Assistant Setup
+
+To connect the Pico W to your local network and Home Assistant instance:
+
+- copy `wifi_credentials.example.h` to `wifi_credentials.h`
+- set `WIFI_SSID` and `WIFI_PASSWORD`
+- copy `home_assistant_credentials.example.h` to `home_assistant_credentials.h`
+- set `HOME_ASSISTANT_TOKEN` to a Home Assistant long-lived access token
+- set `HOME_ASSISTANT_HOST` to either:
+  - a bare host such as `homeassistant.local`
+  - a fixed LAN IP such as `192.168.1.20`
+  - an `http://` URL such as `http://homeassistant.local:8123`
+
+Important limits of the current implementation:
+
+- it probes `GET /api/` over plain HTTP only
+- `https://` is not supported yet
+- if `.local` name resolution is unreliable on your network, use a fixed IP
+- the UI status page shows Wi-Fi state, IP address, Home Assistant host, and the last HTTP result
+
 ## Likely Next Steps
 
 Reasonable future work from here:

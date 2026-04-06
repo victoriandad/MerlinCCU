@@ -90,6 +90,11 @@ ConsoleState make_default_console_state()
     state.wifi_status.mac_address.fill('\0');
     state.wifi_status.ssid.fill('\0');
     state.wifi_status.ip_address.fill('\0');
+    state.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
+    state.home_assistant_status.configured = false;
+    state.home_assistant_status.last_error = 0;
+    state.home_assistant_status.last_http_status = 0;
+    state.home_assistant_status.host.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
     state.lamps.fill(LampMode::Off);
