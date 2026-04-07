@@ -320,6 +320,25 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
     return true;
 }
 
+bool set_mqtt_status(const MqttStatus& mqtt_status)
+{
+    const bool changed =
+        g_console_state.mqtt_status.state != mqtt_status.state ||
+        g_console_state.mqtt_status.configured != mqtt_status.configured ||
+        g_console_state.mqtt_status.discovery_published != mqtt_status.discovery_published ||
+        g_console_state.mqtt_status.last_error != mqtt_status.last_error ||
+        g_console_state.mqtt_status.broker != mqtt_status.broker ||
+        g_console_state.mqtt_status.device_id != mqtt_status.device_id;
+
+    if (!changed) {
+        return false;
+    }
+
+    g_console_state.mqtt_status = mqtt_status;
+    update_softkeys_from_state();
+    return true;
+}
+
 bool handle_button_event(const ButtonEvent& event)
 {
     if (event.type != ButtonEventType::Pressed) {

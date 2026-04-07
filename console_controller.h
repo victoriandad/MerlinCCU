@@ -20,6 +20,9 @@ bool set_time_status(const TimeStatus& time_status);
 /// @brief Copies the latest Home Assistant status into the logical front-panel state.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status);
 
+/// @brief Copies the latest MQTT status into the logical front-panel state.
+bool set_mqtt_status(const MqttStatus& mqtt_status);
+
 /// @brief Applies one button event to the logical front-panel state.
 /// @details For now this is a pure software state machine. It does not require
 /// the keypad hardware to exist yet.
