@@ -471,8 +471,6 @@ bool attempt_connect()
     const bool ip_ready = has_ipv4_address();
 
     if (rc == PICO_OK && (link_status == CYW43_LINK_UP || ip_ready)) {
-        g_status.link_status = CYW43_LINK_UP;
-        g_last_observed_link_status = CYW43_LINK_UP;
         apply_static_ip_config();
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;
@@ -488,8 +486,6 @@ bool attempt_connect()
 
     if (rc == PICO_OK && (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP)) {
         if (kUseStaticIp && apply_static_ip_config()) {
-            g_status.link_status = CYW43_LINK_UP;
-            g_last_observed_link_status = CYW43_LINK_UP;
             g_status.state = WifiConnectionState::Connected;
             start_sntp_if_needed();
             g_next_retry = nil_time;
@@ -591,8 +587,6 @@ bool update()
         std::printf("WiFi link status changed: %d\n", link_status);
 
         if (link_status == CYW43_LINK_UP || ip_ready) {
-            g_status.link_status = CYW43_LINK_UP;
-            g_last_observed_link_status = CYW43_LINK_UP;
             apply_static_ip_config();
             update_ip_address();
             g_status.state = WifiConnectionState::Connected;
@@ -602,8 +596,6 @@ bool update()
             g_next_probe = get_absolute_time();
         } else if (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP) {
             if (kUseStaticIp && apply_static_ip_config()) {
-                g_status.link_status = CYW43_LINK_UP;
-                g_last_observed_link_status = CYW43_LINK_UP;
                 g_status.state = WifiConnectionState::Connected;
                 start_sntp_if_needed();
                 g_next_retry = nil_time;
@@ -630,8 +622,8 @@ bool update()
     }
 
     if (ip_ready && (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0])) {
-        g_status.link_status = CYW43_LINK_UP;
-        g_last_observed_link_status = CYW43_LINK_UP;
+        g_status.link_status = link_status;
+        g_last_observed_link_status = link_status;
         apply_static_ip_config();
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;

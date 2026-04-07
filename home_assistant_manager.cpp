@@ -8,6 +8,7 @@
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 
 namespace {
@@ -20,14 +21,21 @@ constexpr bool kHomeAssistantConfigured = false;
 inline constexpr char HOME_ASSISTANT_HOST[] = "";
 inline constexpr uint16_t HOME_ASSISTANT_PORT = 8123;
 inline constexpr char HOME_ASSISTANT_TOKEN[] = "";
+inline constexpr char HOME_ASSISTANT_ENTITY_ID[] = "";
+inline constexpr char HOME_ASSISTANT_SELF_ENTITY_ID[] = "";
 #endif
 
 constexpr uint32_t kResolveTimeoutMs = 4000;
 constexpr uint32_t kConnectTimeoutMs = 4000;
 constexpr uint32_t kIoTimeoutMs = 4000;
-constexpr uint32_t kSuccessProbeIntervalMs = 30000;
-constexpr uint32_t kFailureRetryIntervalMs = 10000;
 constexpr uint8_t kTcpPollInterval = 2;
+constexpr bool kHomeAssistantRuntimeEnabled = true;
+
+enum class RequestKind : uint8_t {
+    ProbeApi = 0,
+    FetchTrackedEntity,
+    PublishSelfEntity,
+};
 
 HomeAssistantStatus g_status = {};
 ip_addr_t g_resolved_ip = {};
@@ -36,15 +44,20 @@ bool g_dns_resolved = false;
 tcp_pcb* g_pcb = nullptr;
 size_t g_request_sent = 0;
 size_t g_response_len = 0;
-char g_request[512] = {};
-char g_response[256] = {};
+char g_request[1024] = {};
+char g_request_body[256] = {};
+char g_response[1024] = {};
 char g_configured_host[48] = {};
 uint16_t g_configured_port = HOME_ASSISTANT_PORT;
 bool g_config_valid = false;
 absolute_time_t g_deadline = nil_time;
 absolute_time_t g_next_attempt = nil_time;
+bool g_probe_attempted = false;
+bool g_sequence_complete = false;
+RequestKind g_request_kind = RequestKind::ProbeApi;
 
-void copy_text(std::array<char, 48>& dst, const char* src)
+template <size_t N>
+void copy_text(std::array<char, N>& dst, const char* src)
 {
     dst.fill('\0');
     if (!src) {
@@ -77,6 +90,105 @@ bool parse_port(const char* text, uint16_t* out_port)
 
     *out_port = static_cast<uint16_t>(value);
     return true;
+}
+
+const char* request_kind_name(RequestKind kind)
+{
+    switch (kind) {
+    case RequestKind::ProbeApi:
+        return "probe";
+    case RequestKind::FetchTrackedEntity:
+        return "entity";
+    case RequestKind::PublishSelfEntity:
+        return "publish";
+    }
+
+    return "unknown";
+}
+
+const char* response_body()
+{
+    const char* body = std::strstr(g_response, "\r\n\r\n");
+    return body ? (body + 4) : nullptr;
+}
+
+bool extract_json_string_value(const char* json, const char* key, char* out, size_t out_size)
+{
+    if (json == nullptr || key == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    const char* key_pos = std::strstr(json, key);
+    if (key_pos == nullptr) {
+        return false;
+    }
+
+    const char* value_start = key_pos + std::strlen(key);
+    size_t i = 0;
+    while (value_start[i] != '\0' && value_start[i] != '"' && i + 1 < out_size) {
+        if (value_start[i] == '\\' && value_start[i + 1] != '\0') {
+            ++i;
+        }
+        out[i] = value_start[i];
+        ++i;
+    }
+    out[i] = '\0';
+
+    return i > 0;
+}
+
+void clear_runtime_data()
+{
+    g_status.self_entity_published = false;
+    g_status.tracked_entity_state.fill('\0');
+}
+
+bool request_kind_success(RequestKind kind, int http_status)
+{
+    switch (kind) {
+    case RequestKind::ProbeApi:
+    case RequestKind::FetchTrackedEntity:
+        return http_status == 200;
+    case RequestKind::PublishSelfEntity:
+        return http_status == 200 || http_status == 201;
+    }
+
+    return false;
+}
+
+void advance_request_kind()
+{
+    switch (g_request_kind) {
+    case RequestKind::ProbeApi:
+        if (g_status.tracked_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::FetchTrackedEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        if (g_status.self_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::PublishSelfEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        break;
+    case RequestKind::FetchTrackedEntity:
+        if (g_status.self_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::PublishSelfEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        break;
+    case RequestKind::PublishSelfEntity:
+        break;
+    }
+
+    g_sequence_complete = true;
+    g_next_attempt = nil_time;
 }
 
 bool parse_home_assistant_endpoint()
@@ -174,12 +286,13 @@ void close_pcb()
 
     tcp_pcb* pcb = g_pcb;
     g_pcb = nullptr;
+    cyw43_arch_lwip_begin();
     clear_tcp_callbacks(pcb);
-
     const err_t close_rc = tcp_close(pcb);
     if (close_rc != ERR_OK) {
         tcp_abort(pcb);
     }
+    cyw43_arch_lwip_end();
 }
 
 void reset_attempt_state()
@@ -189,33 +302,92 @@ void reset_attempt_state()
     g_dns_resolved = false;
     g_request_sent = 0;
     g_response_len = 0;
+    g_request_body[0] = '\0';
     g_response[0] = '\0';
     g_deadline = nil_time;
 }
 
 void finish_request(HomeAssistantConnectionState state, int last_error, int last_http_status, uint32_t retry_ms)
 {
+    (void)retry_ms;
     set_status(state, last_error, last_http_status);
-    schedule_retry(retry_ms);
+    g_next_attempt = nil_time;
     reset_attempt_state();
+}
+
+void finish_request_success(int http_status)
+{
+    set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+    reset_attempt_state();
+    advance_request_kind();
 }
 
 bool build_request()
 {
+    g_request_body[0] = '\0';
+    const char* method = "GET";
+    const char* target = "/api/";
+    char target_buffer[96] = {};
+
+    if (g_request_kind == RequestKind::FetchTrackedEntity) {
+        const int target_len = std::snprintf(target_buffer,
+                                             sizeof(target_buffer),
+                                             "/api/states/%s",
+                                             g_status.tracked_entity_id.data());
+        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+        target = target_buffer;
+    } else if (g_request_kind == RequestKind::PublishSelfEntity) {
+        method = "POST";
+        const int target_len = std::snprintf(target_buffer,
+                                             sizeof(target_buffer),
+                                             "/api/states/%s",
+                                             g_status.self_entity_id.data());
+        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+
+        const int body_len = std::snprintf(g_request_body,
+                                           sizeof(g_request_body),
+                                           "{\"state\":\"online\",\"attributes\":{\"friendly_name\":\"MerlinCCU\","
+                                           "\"integration\":\"rest_api\",\"status\":\"connected\"}}");
+        if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+        target = target_buffer;
+    }
+
     const int len = std::snprintf(g_request,
                                   sizeof(g_request),
-                                  "GET /api/ HTTP/1.1\r\n"
+                                  "%s %s HTTP/1.1\r\n"
                                   "Host: %s:%u\r\n"
                                   "Authorization: Bearer %s\r\n"
                                   "Content-Type: application/json\r\n"
+                                  "Content-Length: %u\r\n"
                                   "Connection: close\r\n"
-                                  "\r\n",
+                                  "\r\n"
+                                  "%s",
+                                  method,
+                                  target,
                                   g_configured_host,
                                   static_cast<unsigned>(g_configured_port),
-                                  HOME_ASSISTANT_TOKEN);
+                                  HOME_ASSISTANT_TOKEN,
+                                  static_cast<unsigned>(std::strlen(g_request_body)),
+                                  g_request_body);
     if (len <= 0 || static_cast<size_t>(len) >= sizeof(g_request)) {
         set_status(HomeAssistantConnectionState::Error, -1, 0);
-        schedule_retry(kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        g_next_attempt = nil_time;
         return false;
     }
     return true;
@@ -232,7 +404,8 @@ err_t on_tcp_connected(void* arg, tcp_pcb* pcb, err_t err)
     }
 
     if (err != ERR_OK) {
-        finish_request(HomeAssistantConnectionState::Error, err, 0, kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        finish_request(HomeAssistantConnectionState::Error, err, 0, 0);
         std::printf("HA connect failed err=%d\n", static_cast<int>(err));
         return ERR_OK;
     }
@@ -247,13 +420,14 @@ void on_tcp_error(void* arg, err_t err)
     (void)arg;
     g_pcb = nullptr;
     set_status(HomeAssistantConnectionState::Error, err, g_status.last_http_status);
+    g_sequence_complete = true;
     g_dns_pending = false;
     g_dns_resolved = false;
     g_request_sent = 0;
     g_response_len = 0;
     g_response[0] = '\0';
     g_deadline = nil_time;
-    schedule_retry(kFailureRetryIntervalMs);
+    g_next_attempt = nil_time;
     std::printf("HA tcp error err=%d\n", static_cast<int>(err));
 }
 
@@ -261,25 +435,46 @@ void handle_http_status(int http_status)
 {
     g_status.last_http_status = http_status;
 
-    if (http_status == 200) {
-        finish_request(HomeAssistantConnectionState::Connected, 0, http_status, kSuccessProbeIntervalMs);
-        std::printf("HA API probe ok host=%s port=%u status=%d\n",
-                    g_configured_host,
-                    static_cast<unsigned>(g_configured_port),
-                    http_status);
+    if (request_kind_success(g_request_kind, http_status)) {
+        if (g_request_kind == RequestKind::FetchTrackedEntity) {
+            char entity_state[sizeof(g_status.tracked_entity_state)] = {};
+            if (extract_json_string_value(response_body(), "\"state\":\"", entity_state, sizeof(entity_state))) {
+                copy_text(g_status.tracked_entity_state, entity_state);
+            } else {
+                copy_text(g_status.tracked_entity_state, "?");
+            }
+            std::printf("HA entity state %s=%s\n",
+                        g_status.tracked_entity_id.data(),
+                        g_status.tracked_entity_state.data());
+        } else if (g_request_kind == RequestKind::PublishSelfEntity) {
+            g_status.self_entity_published = true;
+            std::printf("HA self entity posted %s status=%d\n",
+                        g_status.self_entity_id.data(),
+                        http_status);
+        } else {
+            std::printf("HA API probe ok host=%s port=%u status=%d\n",
+                        g_configured_host,
+                        static_cast<unsigned>(g_configured_port),
+                        http_status);
+        }
+
+        finish_request_success(http_status);
         return;
     }
 
     if (http_status == 401) {
-        finish_request(HomeAssistantConnectionState::Unauthorized, 0, http_status, kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        finish_request(HomeAssistantConnectionState::Unauthorized, 0, http_status, 0);
         std::printf("HA API probe unauthorized host=%s port=%u\n",
                     g_configured_host,
                     static_cast<unsigned>(g_configured_port));
         return;
     }
 
-    finish_request(HomeAssistantConnectionState::Error, 0, http_status, kFailureRetryIntervalMs);
-    std::printf("HA API probe unexpected status=%d host=%s port=%u\n",
+    g_sequence_complete = true;
+    finish_request(HomeAssistantConnectionState::Error, 0, http_status, 0);
+    std::printf("HA %s request unexpected status=%d host=%s port=%u\n",
+                request_kind_name(g_request_kind),
                 http_status,
                 g_configured_host,
                 static_cast<unsigned>(g_configured_port));
@@ -301,12 +496,14 @@ err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
         if (p != nullptr) {
             pbuf_free(p);
         }
-        finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status, kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status, 0);
         return ERR_OK;
     }
 
     if (p == nullptr) {
-        finish_request(HomeAssistantConnectionState::Error, ERR_CLSD, g_status.last_http_status, kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        finish_request(HomeAssistantConnectionState::Error, ERR_CLSD, g_status.last_http_status, 0);
         return ERR_OK;
     }
 
@@ -326,8 +523,9 @@ err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
 
     const char* line_end = std::strstr(g_response, "\r\n");
     if (line_end == nullptr) {
-        if (g_response_len + 1 >= sizeof(g_response)) {
-            finish_request(HomeAssistantConnectionState::Error, ERR_BUF, 0, kFailureRetryIntervalMs);
+    if (g_response_len + 1 >= sizeof(g_response)) {
+            g_sequence_complete = true;
+            finish_request(HomeAssistantConnectionState::Error, ERR_BUF, 0, 0);
         }
         return ERR_OK;
     }
@@ -369,7 +567,8 @@ err_t try_send_request()
                 return ERR_OK;
             }
 
-            finish_request(HomeAssistantConnectionState::Error, write_rc, 0, kFailureRetryIntervalMs);
+            g_sequence_complete = true;
+            finish_request(HomeAssistantConnectionState::Error, write_rc, 0, 0);
             return write_rc;
         }
 
@@ -378,7 +577,8 @@ err_t try_send_request()
 
     const err_t output_rc = tcp_output(g_pcb);
     if (output_rc != ERR_OK) {
-        finish_request(HomeAssistantConnectionState::Error, output_rc, 0, kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        finish_request(HomeAssistantConnectionState::Error, output_rc, 0, 0);
         return output_rc;
     }
 
@@ -426,7 +626,8 @@ void dns_found(const char* name, const ip_addr_t* ipaddr, void* arg)
     g_dns_pending = false;
     if (ipaddr == nullptr) {
         set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0);
-        schedule_retry(kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        g_next_attempt = nil_time;
         std::printf("HA DNS resolution failed for host=%s\n", g_configured_host);
         return;
     }
@@ -441,10 +642,13 @@ bool start_socket_connect()
         return false;
     }
 
+    cyw43_arch_lwip_begin();
     g_pcb = tcp_new_ip_type(IP_GET_TYPE(&g_resolved_ip));
     if (g_pcb == nullptr) {
+        cyw43_arch_lwip_end();
         set_status(HomeAssistantConnectionState::Error, ERR_MEM, 0);
-        schedule_retry(kFailureRetryIntervalMs);
+        g_sequence_complete = true;
+        g_next_attempt = nil_time;
         return false;
     }
 
@@ -455,6 +659,7 @@ bool start_socket_connect()
     tcp_poll(g_pcb, on_tcp_poll, kTcpPollInterval);
 
     const err_t rc = tcp_connect(g_pcb, &g_resolved_ip, g_configured_port, on_tcp_connected);
+    cyw43_arch_lwip_end();
     if (rc == ERR_OK) {
         set_status(HomeAssistantConnectionState::Connecting, 0, 0);
         g_deadline = make_timeout_time_ms(kConnectTimeoutMs);
@@ -462,17 +667,20 @@ bool start_socket_connect()
     }
 
     set_status(HomeAssistantConnectionState::Error, rc, 0);
+    g_sequence_complete = true;
     reset_attempt_state();
-    schedule_retry(kFailureRetryIntervalMs);
+    g_next_attempt = nil_time;
     std::printf("HA connect start failed err=%d\n", static_cast<int>(rc));
     return false;
 }
 
 bool start_probe()
 {
+    g_probe_attempted = true;
     reset_attempt_state();
     g_status.last_error = 0;
     g_status.last_http_status = 0;
+    std::printf("HA starting %s request\n", request_kind_name(g_request_kind));
 
     ip_addr_t parsed = {};
     if (ipaddr_aton(g_configured_host, &parsed)) {
@@ -481,7 +689,9 @@ bool start_probe()
         return start_socket_connect();
     }
 
+    cyw43_arch_lwip_begin();
     const err_t dns_rc = dns_gethostbyname(g_configured_host, &g_resolved_ip, dns_found, nullptr);
+    cyw43_arch_lwip_end();
     if (dns_rc == ERR_OK) {
         g_dns_resolved = true;
         set_status(HomeAssistantConnectionState::Resolving, 0, 0);
@@ -497,7 +707,8 @@ bool start_probe()
     }
 
     set_status(HomeAssistantConnectionState::Error, dns_rc, 0);
-    schedule_retry(kFailureRetryIntervalMs);
+    g_sequence_complete = true;
+    g_next_attempt = nil_time;
     std::printf("HA dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(dns_rc), g_configured_host);
     return false;
 }
@@ -514,12 +725,19 @@ void init()
                           g_config_valid &&
                           HOME_ASSISTANT_TOKEN[0] != '\0';
     copy_text(g_status.host, g_configured_host);
+    copy_text(g_status.tracked_entity_id, HOME_ASSISTANT_ENTITY_ID);
+    copy_text(g_status.self_entity_id, HOME_ASSISTANT_SELF_ENTITY_ID);
+    clear_runtime_data();
     g_status.last_error = 0;
     g_status.last_http_status = 0;
-    g_status.state = g_status.configured ? HomeAssistantConnectionState::WaitingForWifi
-                                         : HomeAssistantConnectionState::Unconfigured;
+    g_status.state = !g_status.configured ? HomeAssistantConnectionState::Unconfigured
+                                          : (kHomeAssistantRuntimeEnabled ? HomeAssistantConnectionState::WaitingForWifi
+                                                                         : HomeAssistantConnectionState::Disabled);
     reset_attempt_state();
     g_next_attempt = nil_time;
+    g_probe_attempted = false;
+    g_sequence_complete = false;
+    g_request_kind = RequestKind::ProbeApi;
 }
 
 bool update(const WifiStatus& wifi_status)
@@ -531,20 +749,38 @@ bool update(const WifiStatus& wifi_status)
         return previous.state != g_status.state || previous.configured != g_status.configured;
     }
 
-    const bool wifi_ready = wifi_status.state == WifiConnectionState::Connected && wifi_status.ip_address[0] != '\0';
+    if (!kHomeAssistantRuntimeEnabled) {
+        g_status.state = HomeAssistantConnectionState::Disabled;
+        g_status.last_error = 0;
+        g_status.last_http_status = 0;
+        clear_runtime_data();
+        reset_attempt_state();
+        g_next_attempt = nil_time;
+        g_probe_attempted = false;
+        g_sequence_complete = false;
+        g_request_kind = RequestKind::ProbeApi;
+        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+    }
+
+    const bool wifi_ready = wifi_status.ip_address[0] != '\0';
     if (!wifi_ready) {
         reset_attempt_state();
         g_status.state = HomeAssistantConnectionState::WaitingForWifi;
         g_status.last_error = 0;
         g_status.last_http_status = 0;
+        clear_runtime_data();
         g_next_attempt = nil_time;
+        g_probe_attempted = false;
+        g_sequence_complete = false;
+        g_request_kind = RequestKind::ProbeApi;
         return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
     }
 
     if (g_dns_pending && !is_nil_time(g_deadline) && absolute_time_diff_us(get_absolute_time(), g_deadline) <= 0) {
         g_dns_pending = false;
+        g_sequence_complete = true;
         set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0);
-        schedule_retry(kFailureRetryIntervalMs);
+        g_next_attempt = nil_time;
     }
 
     if (g_dns_resolved && g_pcb == nullptr) {
@@ -553,13 +789,15 @@ bool update(const WifiStatus& wifi_status)
     }
 
     if (g_pcb != nullptr && !is_nil_time(g_deadline) && absolute_time_diff_us(get_absolute_time(), g_deadline) <= 0) {
+        g_sequence_complete = true;
         set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, g_status.last_http_status);
         reset_attempt_state();
-        schedule_retry(kFailureRetryIntervalMs);
+        g_next_attempt = nil_time;
     }
 
-    if (!g_dns_pending && g_pcb == nullptr &&
-        (is_nil_time(g_next_attempt) || absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0)) {
+    if (!g_sequence_complete && !g_dns_pending && g_pcb == nullptr &&
+        (!g_probe_attempted || (!is_nil_time(g_next_attempt) &&
+                                absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0))) {
         g_next_attempt = nil_time;
         start_probe();
     }

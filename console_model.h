@@ -171,9 +171,13 @@ struct TimeStatus {
 struct HomeAssistantStatus {
     HomeAssistantConnectionState state;
     bool configured;
+    bool self_entity_published;
     int last_error;
     int last_http_status;
     std::array<char, 48> host;
+    std::array<char, 48> tracked_entity_id;
+    std::array<char, 24> tracked_entity_state;
+    std::array<char, 48> self_entity_id;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.

@@ -306,11 +306,25 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         framebuffer::draw_text(fb, 116, 196, "-", true, 1, 1);
     }
 
-    framebuffer::draw_text(fb, 54, 212, "ALERT", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 212, alert_severity_text(console_state.alert_severity), true, 1, 1);
+    framebuffer::draw_text(fb, 54, 212, "ENT", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           212,
+                           console_state.home_assistant_status.tracked_entity_state[0]
+                               ? console_state.home_assistant_status.tracked_entity_state.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
 
-    framebuffer::draw_text(fb, 54, 228, "TEST", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 228, test_state_text(console_state.test_state), true, 1, 1);
+    framebuffer::draw_text(fb, 54, 228, "SELF", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           228,
+                           console_state.home_assistant_status.self_entity_published ? "POSTED" : "-",
+                           true,
+                           1,
+                           1);
 }
 
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)

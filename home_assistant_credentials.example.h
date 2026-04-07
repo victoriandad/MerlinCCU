@@ -17,3 +17,13 @@
 inline constexpr char HOME_ASSISTANT_HOST[] = "homeassistant.local";
 inline constexpr uint16_t HOME_ASSISTANT_PORT = 8123;
 inline constexpr char HOME_ASSISTANT_TOKEN[] = "your-long-lived-access-token";
+
+// Optional entity to read from Home Assistant using GET /api/states/<entity_id>.
+// For a Tapo P110 this is often a switch or sensor entity, but the exact ID
+// depends on your HA setup. Example:
+// inline constexpr char HOME_ASSISTANT_ENTITY_ID[] = "switch.tapo_p110";
+inline constexpr char HOME_ASSISTANT_ENTITY_ID[] = "";
+
+// Optional entity for MerlinCCU to publish back into Home Assistant using
+// POST /api/states/<entity_id>.
+inline constexpr char HOME_ASSISTANT_SELF_ENTITY_ID[] = "sensor.merlinccu_status";

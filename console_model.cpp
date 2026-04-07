@@ -73,7 +73,7 @@ const KeyLegend& key_legend(HardKeyId key)
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
-    state.active_page = MenuPage::Home;
+    state.active_page = MenuPage::Status;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
@@ -92,9 +92,13 @@ ConsoleState make_default_console_state()
     state.wifi_status.ip_address.fill('\0');
     state.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
     state.home_assistant_status.configured = false;
+    state.home_assistant_status.self_entity_published = false;
     state.home_assistant_status.last_error = 0;
     state.home_assistant_status.last_http_status = 0;
     state.home_assistant_status.host.fill('\0');
+    state.home_assistant_status.tracked_entity_id.fill('\0');
+    state.home_assistant_status.tracked_entity_state.fill('\0');
+    state.home_assistant_status.self_entity_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
     state.lamps.fill(LampMode::Off);
