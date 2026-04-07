@@ -5,3 +5,4 @@ build/
 *.uf2
 *.map
 wifi_credentials.h
+home_assistant_credentials.h

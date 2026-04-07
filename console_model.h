@@ -133,6 +133,19 @@ enum class WifiConnectionState : uint8_t {
     Error,
 };
 
+/// @brief High-level Home Assistant connectivity state.
+enum class HomeAssistantConnectionState : uint8_t {
+    Disabled = 0,
+    Unconfigured,
+    WaitingForWifi,
+    Resolving,
+    Connecting,
+    Authorizing,
+    Connected,
+    Unauthorized,
+    Error,
+};
+
 /// @brief Snapshot of Wi-Fi state suitable for UI and controller use.
 struct WifiStatus {
     WifiConnectionState state;
@@ -152,6 +165,19 @@ struct WifiStatus {
 struct TimeStatus {
     bool synced;
     std::array<char, 6> time_text;
+};
+
+/// @brief Snapshot of Home Assistant state suitable for UI and controller use.
+struct HomeAssistantStatus {
+    HomeAssistantConnectionState state;
+    bool configured;
+    bool self_entity_published;
+    int last_error;
+    int last_http_status;
+    std::array<char, 48> host;
+    std::array<char, 48> tracked_entity_id;
+    std::array<char, 24> tracked_entity_state;
+    std::array<char, 48> self_entity_id;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
@@ -196,6 +222,7 @@ struct ConsoleState {
     BrightnessLevel panel_brightness;
     BrightnessLevel key_backlight_brightness;
     WifiStatus wifi_status;
+    HomeAssistantStatus home_assistant_status;
     TimeStatus time_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
