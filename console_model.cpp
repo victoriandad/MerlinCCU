@@ -99,6 +99,12 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.tracked_entity_id.fill('\0');
     state.home_assistant_status.tracked_entity_state.fill('\0');
     state.home_assistant_status.self_entity_id.fill('\0');
+    state.mqtt_status.state = MqttConnectionState::Disabled;
+    state.mqtt_status.configured = false;
+    state.mqtt_status.discovery_published = false;
+    state.mqtt_status.last_error = 0;
+    state.mqtt_status.broker.fill('\0');
+    state.mqtt_status.device_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
     state.lamps.fill(LampMode::Off);

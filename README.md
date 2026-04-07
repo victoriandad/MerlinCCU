@@ -187,13 +187,20 @@ To connect the Pico W to your local network and Home Assistant instance:
   - a bare host such as `homeassistant.local`
   - a fixed LAN IP such as `192.168.1.20`
   - an `http://` URL such as `http://homeassistant.local:8123`
+- optional: copy `mqtt_credentials.example.h` to `mqtt_credentials.h` if you want
+  MQTT discovery so Home Assistant sees MerlinCCU as a device
+- set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP
+- if your broker requires auth, set `HOME_ASSISTANT_MQTT_USERNAME` and
+  `HOME_ASSISTANT_MQTT_PASSWORD`
 
 Important limits of the current implementation:
 
 - it probes `GET /api/` over plain HTTP only
 - `https://` is not supported yet
 - if `.local` name resolution is unreliable on your network, use a fixed IP
-- the UI status page shows Wi-Fi state, IP address, Home Assistant host, and the last HTTP result
+- MQTT discovery requires the Home Assistant MQTT integration and a reachable broker
+- the UI status page shows Wi-Fi state, IP address, Home Assistant REST state,
+  and MQTT discovery state
 
 ## Likely Next Steps
 

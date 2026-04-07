@@ -146,6 +146,18 @@ enum class HomeAssistantConnectionState : uint8_t {
     Error,
 };
 
+/// @brief High-level MQTT connectivity state for Home Assistant discovery.
+enum class MqttConnectionState : uint8_t {
+    Disabled = 0,
+    Unconfigured,
+    WaitingForWifi,
+    Resolving,
+    Connecting,
+    Connected,
+    AuthFailed,
+    Error,
+};
+
 /// @brief Snapshot of Wi-Fi state suitable for UI and controller use.
 struct WifiStatus {
     WifiConnectionState state;
@@ -178,6 +190,16 @@ struct HomeAssistantStatus {
     std::array<char, 48> tracked_entity_id;
     std::array<char, 24> tracked_entity_state;
     std::array<char, 48> self_entity_id;
+};
+
+/// @brief Snapshot of MQTT discovery state suitable for UI and controller use.
+struct MqttStatus {
+    MqttConnectionState state;
+    bool configured;
+    bool discovery_published;
+    int last_error;
+    std::array<char, 48> broker;
+    std::array<char, 32> device_id;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
@@ -223,6 +245,7 @@ struct ConsoleState {
     BrightnessLevel key_backlight_brightness;
     WifiStatus wifi_status;
     HomeAssistantStatus home_assistant_status;
+    MqttStatus mqtt_status;
     TimeStatus time_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;

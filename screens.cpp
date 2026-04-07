@@ -138,6 +138,30 @@ const char* home_assistant_state_text(HomeAssistantConnectionState state)
     return "?";
 }
 
+const char* mqtt_state_text(MqttConnectionState state)
+{
+    switch (state) {
+    case MqttConnectionState::Disabled:
+        return "DISABLED";
+    case MqttConnectionState::Unconfigured:
+        return "UNCONFIG";
+    case MqttConnectionState::WaitingForWifi:
+        return "WAIT WIFI";
+    case MqttConnectionState::Resolving:
+        return "RESOLVE";
+    case MqttConnectionState::Connecting:
+        return "CONNECT";
+    case MqttConnectionState::Connected:
+        return "UP";
+    case MqttConnectionState::AuthFailed:
+        return "AUTH";
+    case MqttConnectionState::Error:
+        return "ERROR";
+    }
+
+    return "?";
+}
+
 const char* menu_page_title(MenuPage page)
 {
     switch (page) {
@@ -270,46 +294,37 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
                            1,
                            1);
 
-    framebuffer::draw_text(fb, 54, 148, "MAC", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 148, "HA", true, 1, 1);
     framebuffer::draw_text(fb,
                            116,
                            148,
-                           console_state.wifi_status.mac_address[0] ? console_state.wifi_status.mac_address.data() : "-",
+                           home_assistant_state_text(console_state.home_assistant_status.state),
                            true,
                            1,
                            1);
 
-    framebuffer::draw_text(fb, 54, 164, "HA", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 164, home_assistant_state_text(console_state.home_assistant_status.state), true, 1, 1);
-
-    framebuffer::draw_text(fb,
-                           54,
-                           180,
-                           "HOST",
-                           true,
-                           1,
-                           1);
+    framebuffer::draw_text(fb, 54, 164, "HOST", true, 1, 1);
     framebuffer::draw_text(fb,
                            116,
-                           180,
+                           164,
                            console_state.home_assistant_status.host[0] ? console_state.home_assistant_status.host.data() : "-",
                            true,
                            1,
                            1);
 
-    framebuffer::draw_text(fb, 54, 196, "HTTP", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 180, "HTTP", true, 1, 1);
     if (console_state.home_assistant_status.last_http_status > 0) {
         char http_text[8] = {};
         std::snprintf(http_text, sizeof(http_text), "%d", console_state.home_assistant_status.last_http_status);
-        framebuffer::draw_text(fb, 116, 196, http_text, true, 1, 1);
+        framebuffer::draw_text(fb, 116, 180, http_text, true, 1, 1);
     } else {
-        framebuffer::draw_text(fb, 116, 196, "-", true, 1, 1);
+        framebuffer::draw_text(fb, 116, 180, "-", true, 1, 1);
     }
 
-    framebuffer::draw_text(fb, 54, 212, "ENT", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 196, "ENT", true, 1, 1);
     framebuffer::draw_text(fb,
                            116,
-                           212,
+                           196,
                            console_state.home_assistant_status.tracked_entity_state[0]
                                ? console_state.home_assistant_status.tracked_entity_state.data()
                                : "-",
@@ -317,11 +332,20 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
                            1,
                            1);
 
-    framebuffer::draw_text(fb, 54, 228, "SELF", true, 1, 1);
+    framebuffer::draw_text(fb, 54, 212, "MQTT", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           116,
+                           212,
+                           mqtt_state_text(console_state.mqtt_status.state),
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, 54, 228, "DISC", true, 1, 1);
     framebuffer::draw_text(fb,
                            116,
                            228,
-                           console_state.home_assistant_status.self_entity_published ? "POSTED" : "-",
+                           console_state.mqtt_status.discovery_published ? "READY" : "-",
                            true,
                            1,
                            1);

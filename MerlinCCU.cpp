@@ -8,6 +8,7 @@
 #include "framebuffer.h"
 #include "home_assistant_manager.h"
 #include "input.h"
+#include "mqtt_manager.h"
 #include "panel_config.h"
 #include "screens.h"
 #include "screensaver_life.h"
@@ -60,9 +61,11 @@ int main()
     time_manager::init();
     wifi_manager::init();
     home_assistant_manager::init();
+    mqtt_manager::init();
     console_controller::set_wifi_status(wifi_manager::status());
     console_controller::set_time_status(time_manager::status());
     console_controller::set_home_assistant_status(home_assistant_manager::status());
+    console_controller::set_mqtt_status(mqtt_manager::status());
 
     if (mode == ScreenMode::LifeScreensaver) {
         screensaver_life::init();
@@ -105,9 +108,12 @@ int main()
         console_changed = wifi_manager::update() || console_changed;
         console_changed = time_manager::update() || console_changed;
         console_changed = home_assistant_manager::update(wifi_manager::status()) || console_changed;
+        console_changed = mqtt_manager::update(
+            wifi_manager::status(), home_assistant_manager::status(), time_manager::status()) || console_changed;
         console_changed = console_controller::set_wifi_status(wifi_manager::status()) || console_changed;
         console_changed = console_controller::set_time_status(time_manager::status()) || console_changed;
         console_changed = console_controller::set_home_assistant_status(home_assistant_manager::status()) || console_changed;
+        console_changed = console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
 
         if (mode == ScreenMode::LifeScreensaver) {
             LifeFrameStats stats{};

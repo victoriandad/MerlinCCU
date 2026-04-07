@@ -42,6 +42,7 @@ add_executable(MerlinCCU
     framebuffer.cpp
     home_assistant_manager.cpp
     input.cpp
+    mqtt_manager.cpp
     screen_banners.cpp
     screens.cpp
     screensaver_life.cpp
@@ -73,6 +74,7 @@ target_include_directories(MerlinCCU PRIVATE
 target_link_libraries(MerlinCCU
 pico_stdlib
     pico_cyw43_arch_lwip_threadsafe_background
+    pico_lwip_mqtt
     pico_lwip_netbios
     pico_lwip_sntp
     hardware_pio
