@@ -9,6 +9,7 @@ namespace input {
 
 namespace {
 
+/// @brief Static GPIO configuration for one logical keypad button.
 struct ButtonConfig {
     ButtonId id;
     int pin;
@@ -16,6 +17,7 @@ struct ButtonConfig {
     const char* name;
 };
 
+/// @brief Debounce tracking for one logical button.
 struct ButtonState {
     bool raw_level;
     bool stable_pressed;
@@ -40,11 +42,13 @@ constexpr ButtonConfig BUTTONS[BUTTON_COUNT] = {
 
 ButtonState button_states[BUTTON_COUNT];
 
+/// @brief Converts one raw GPIO level into a pressed/not-pressed meaning.
 bool button_level_is_pressed(bool raw_level, const ButtonConfig& button)
 {
     return button.active_low ? !raw_level : raw_level;
 }
 
+/// @brief Polls and debounces one logical button definition.
 ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
 {
     if (button.pin < 0) {
@@ -75,6 +79,7 @@ ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
 
 }  // namespace
 
+/// @brief Initializes any configured button GPIOs and debounce state.
 void init()
 {
     const absolute_time_t now = get_absolute_time();
@@ -106,6 +111,7 @@ void init()
     }
 }
 
+/// @brief Returns the first debounced button edge seen in the current scan.
 ButtonEvent poll_buttons()
 {
     for (size_t i = 0; i < BUTTON_COUNT; ++i) {
@@ -118,6 +124,7 @@ ButtonEvent poll_buttons()
     return {ButtonId::LeftTop, ButtonEventType::None};
 }
 
+/// @brief Logs button edges for keypad bring-up and controller debugging.
 void handle_button_event(const ButtonEvent& event)
 {
     if (event.type == ButtonEventType::None) {

@@ -175,6 +175,28 @@ This repository uses the Raspberry Pi Pico SDK with CMake.
 The exact local build flow depends on your environment. In this project the
 Pico VS Code plugin workflow is being used successfully.
 
+## Configuration Files
+
+Local machine- or network-specific settings are intentionally kept out of git.
+
+Use the `.example` files as the starting point:
+
+- `wifi_credentials.example.h` -> `wifi_credentials.h`
+  Required for any networked feature.
+- `home_assistant_credentials.example.h` -> `home_assistant_credentials.h`
+  Required only if you want the REST-based Home Assistant probe and entity
+  polling/posting.
+- `mqtt_credentials.example.h` -> `mqtt_credentials.h`
+  Required only if you want MerlinCCU to appear as a Home Assistant MQTT device.
+
+Recommended setup order:
+
+1. Get Wi-Fi working first.
+2. Add Home Assistant REST once the device can stay on the network reliably.
+3. Add MQTT discovery after the broker is installed and tested in Home Assistant.
+
+There is also a short contributor/setup checklist in `CONTRIBUTING.md`.
+
 ## Wi-Fi And Home Assistant Setup
 
 To connect the Pico W to your local network and Home Assistant instance:
@@ -192,6 +214,12 @@ To connect the Pico W to your local network and Home Assistant instance:
 - set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP
 - if your broker requires auth, set `HOME_ASSISTANT_MQTT_USERNAME` and
   `HOME_ASSISTANT_MQTT_PASSWORD`
+
+Important distinction:
+
+- `HOME_ASSISTANT_TOKEN` is only for the REST API
+- `HOME_ASSISTANT_MQTT_USERNAME` and `HOME_ASSISTANT_MQTT_PASSWORD` are broker
+  credentials used by Mosquitto or another MQTT broker
 
 Important limits of the current implementation:
 

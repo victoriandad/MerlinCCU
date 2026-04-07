@@ -7,16 +7,27 @@
 /// - UI space: portrait-oriented coordinates used by drawing code.
 /// - Native panel space: the electrical scan order expected by the display.
 struct PanelConfig {
+    /// @brief Native panel pixel width in electrical scan order.
     int fb_width;
+    /// @brief Native panel pixel height in electrical scan order.
     int fb_height;
+    /// @brief Logical portrait UI width used by drawing helpers.
     int ui_width;
+    /// @brief Logical portrait UI height used by drawing helpers.
     int ui_height;
+    /// @brief Row offset applied when mapping UI rows to panel rows.
     int native_row_offset;
+    /// @brief Blank pixels emitted before active video on each line.
     int h_pre_blank;
+    /// @brief Blank pixels emitted after active video on each line.
     int h_post_blank;
+    /// @brief Number of lines with vertical sync asserted.
     int v_sync_pulse;
+    /// @brief Blank lines before active video.
     int v_pre_blank;
+    /// @brief Blank lines after active video.
     int v_post_blank;
+    /// @brief PIO state machine clock divider for stable panel timing.
     float clkdiv;
 };
 
@@ -40,6 +51,7 @@ inline constexpr PanelConfig PANEL = {
     .clkdiv = 2.51f,
 };
 
+/// @brief Frequently used geometry aliases derived from `PANEL`.
 inline constexpr int FB_WIDTH  = PANEL.fb_width;
 inline constexpr int FB_HEIGHT = PANEL.fb_height;
 inline constexpr int UI_WIDTH  = PANEL.ui_width;
@@ -47,6 +59,7 @@ inline constexpr int UI_HEIGHT = PANEL.ui_height;
 inline constexpr int UI_STRIDE = (UI_WIDTH + 7) / 8;
 inline constexpr int UI_FB_SIZE = UI_STRIDE * UI_HEIGHT;
 
+/// @brief Packed raster sizing derived from the current panel timing model.
 inline constexpr int PIXELS_PER_LINE = PANEL.h_pre_blank + FB_WIDTH + PANEL.h_post_blank;
 inline constexpr int STEPS_PER_LINE  = PIXELS_PER_LINE * 2;
 inline constexpr int STEPS_PER_WORD  = 8;

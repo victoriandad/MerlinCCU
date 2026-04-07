@@ -51,6 +51,7 @@ void dma_ctrl_irq_handler()
     }
 }
 
+/// @brief Clamps one integer into an inclusive range.
 inline int clamp_int(int v, int lo, int hi)
 {
     return (v < lo) ? lo : (v > hi ? hi : v);
