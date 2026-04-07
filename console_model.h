@@ -116,6 +116,7 @@ enum class MenuPage : uint8_t {
     Home = 0,
     Status,
     Settings,
+    Alignment,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.

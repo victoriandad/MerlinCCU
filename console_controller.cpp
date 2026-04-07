@@ -1,6 +1,7 @@
 #include "console_controller.h"
 
 #include <cstddef>
+#include <cstring>
 #include <cstdio>
 
 namespace console_controller {
@@ -8,6 +9,9 @@ namespace console_controller {
 namespace {
 
 ConsoleState g_console_state = make_default_console_state();
+constexpr size_t kSoftkeyLabelCapacity = 48;
+std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_overrides = {};
+std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
 
 constexpr size_t lamp_index(LampId lamp)
 {
@@ -17,6 +21,17 @@ constexpr size_t lamp_index(LampId lamp)
 constexpr size_t softkey_index(SoftKeyId key)
 {
     return static_cast<size_t>(key);
+}
+
+void apply_softkey_label_overrides(SoftKeyMap& softkeys)
+{
+    for (size_t i = 0; i < g_softkey_label_override_active.size(); ++i) {
+        if (!g_softkey_label_override_active[i]) {
+            continue;
+        }
+
+        softkeys[i].label = g_softkey_label_overrides[i].data();
+    }
 }
 
 SoftKeyId softkey_id_from_button(ButtonId button)
@@ -96,8 +111,21 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right5)] = {
             "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
         break;
+    case MenuPage::Alignment:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"Short", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"Status page", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"Left softkey label", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Left4)] = {"1234 / 5678", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {"Reset panel state", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"Alert", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Right2)] = {"Panel +", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Right3)] = {"Two line wrap", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"Tracked entity", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"Test / Dim mode", SoftKeyRoute::None, true};
+        break;
     }
 
+    apply_softkey_label_overrides(softkeys);
     g_console_state.softkeys = softkeys;
 }
 
@@ -251,6 +279,10 @@ bool apply_softkey_route(SoftKeyRoute route)
 void init()
 {
     g_console_state = make_default_console_state();
+    g_softkey_label_override_active.fill(false);
+    for (auto& label : g_softkey_label_overrides) {
+        label.fill('\0');
+    }
     update_softkeys_from_state();
     update_lamps_from_state();
 }
@@ -335,6 +367,37 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     }
 
     g_console_state.mqtt_status = mqtt_status;
+    update_softkeys_from_state();
+    return true;
+}
+
+bool set_softkey_label(SoftKeyId key, const char* label)
+{
+    const size_t index = softkey_index(key);
+    const bool clear_override = (label == nullptr) || (label[0] == '\0');
+
+    if (clear_override) {
+        if (!g_softkey_label_override_active[index] && g_softkey_label_overrides[index][0] == '\0') {
+            return false;
+        }
+
+        g_softkey_label_override_active[index] = false;
+        g_softkey_label_overrides[index][0] = '\0';
+        update_softkeys_from_state();
+        return true;
+    }
+
+    char copied_label[kSoftkeyLabelCapacity] = {};
+    std::snprintf(copied_label, sizeof(copied_label), "%s", label);
+
+    const bool changed = !g_softkey_label_override_active[index] ||
+                         std::strcmp(g_softkey_label_overrides[index].data(), copied_label) != 0;
+    if (!changed) {
+        return false;
+    }
+
+    std::snprintf(g_softkey_label_overrides[index].data(), g_softkey_label_overrides[index].size(), "%s", copied_label);
+    g_softkey_label_override_active[index] = true;
     update_softkeys_from_state();
     return true;
 }

@@ -171,6 +171,8 @@ const char* menu_page_title(MenuPage page)
         return "STATUS";
     case MenuPage::Settings:
         return "SETTINGS";
+    case MenuPage::Alignment:
+        return "ALIGN";
     }
 
     return "MENU";
@@ -187,6 +189,156 @@ int text_width(const char* text,
     return framebuffer::measure_text(text, font, spacing);
 }
 
+struct SoftkeyLayout {
+    int left_x;
+    int width;
+    int height;
+    int top_y;
+    int pitch;
+    int text_inset;
+    int line_gap;
+};
+
+constexpr SoftkeyLayout kSoftkeyLayout = {
+    .left_x = 2,
+    .width = 34,
+    .height = 18,
+    .top_y = 41,
+    .pitch = 57,
+    .text_inset = 4,
+    .line_gap = 2,
+};
+
+constexpr int softkey_y_for_index(int index)
+{
+    return kSoftkeyLayout.top_y + (index * kSoftkeyLayout.pitch);
+}
+
+constexpr int softkey_center_y_for_index(int index)
+{
+    return softkey_y_for_index(index) + (kSoftkeyLayout.height / 2);
+}
+
+fonts::FontFace softkey_label_font(MenuPage page)
+{
+    return (page == MenuPage::Alignment) ? fonts::FontFace::Font8x12 : fonts::FontFace::Font5x7;
+}
+
+constexpr int softkey_label_max_width()
+{
+    return (UI_WIDTH / 2) - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset;
+}
+
+struct WrappedSoftkeyLabel {
+    char line_one[48];
+    char line_two[48];
+    int line_count;
+};
+
+void copy_softkey_label_slice(char* dest, size_t dest_size, const char* src, size_t length)
+{
+    if (dest_size == 0) {
+        return;
+    }
+
+    const size_t copy_length = (length < (dest_size - 1)) ? length : (dest_size - 1);
+    std::memcpy(dest, src, copy_length);
+    dest[copy_length] = '\0';
+}
+
+size_t fit_softkey_label_prefix(const char* text, fonts::FontFace font)
+{
+    char candidate[48] = {};
+    size_t length = 0;
+
+    while (text[length] != '\0' && text[length] != '\n') {
+        copy_softkey_label_slice(candidate, sizeof(candidate), text, length + 1);
+        if (text_width(candidate, font) > softkey_label_max_width()) {
+            break;
+        }
+        ++length;
+    }
+
+    return length;
+}
+
+size_t find_softkey_wrap_split(const char* text, size_t fit_length)
+{
+    if (fit_length == 0) {
+        return 0;
+    }
+
+    if (text[fit_length] == '\n' || text[fit_length] == '\0') {
+        return fit_length;
+    }
+
+    for (size_t i = fit_length; i > 0; --i) {
+        if (text[i - 1] == ' ') {
+            return i - 1;
+        }
+    }
+
+    return fit_length;
+}
+
+size_t skip_softkey_label_breaks(const char* text, size_t start)
+{
+    while (text[start] == ' ' || text[start] == '\n') {
+        ++start;
+    }
+
+    return start;
+}
+
+WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font)
+{
+    WrappedSoftkeyLabel wrapped = {};
+    wrapped.line_count = 0;
+
+    if (label == nullptr || label[0] == '\0') {
+        return wrapped;
+    }
+
+    const size_t first_fit_length = fit_softkey_label_prefix(label, font);
+    if (first_fit_length == 0) {
+        return wrapped;
+    }
+
+    size_t first_length = find_softkey_wrap_split(label, first_fit_length);
+    while (first_length > 0 && label[first_length - 1] == ' ') {
+        --first_length;
+    }
+
+    copy_softkey_label_slice(wrapped.line_one, sizeof(wrapped.line_one), label, first_length);
+    wrapped.line_count = 1;
+
+    size_t second_start = skip_softkey_label_breaks(label, first_length);
+    if (label[second_start] == '\0') {
+        return wrapped;
+    }
+
+    const size_t second_fit_length = fit_softkey_label_prefix(label + second_start, font);
+    if (second_fit_length == 0) {
+        return wrapped;
+    }
+
+    size_t second_length = second_fit_length;
+    if (label[second_start + second_fit_length] != '\0' && label[second_start + second_fit_length] != '\n') {
+        const size_t second_split = find_softkey_wrap_split(label + second_start, second_fit_length);
+        if (second_split > 0) {
+            second_length = second_split;
+        }
+    }
+
+    while (second_length > 0 && label[second_start + second_length - 1] == ' ') {
+        --second_length;
+    }
+
+    copy_softkey_label_slice(wrapped.line_two, sizeof(wrapped.line_two), label + second_start, second_length);
+    wrapped.line_count = 2;
+    return wrapped;
+}
+
 void draw_centered_text(uint8_t* fb,
                         int center_x,
                         int y,
@@ -198,37 +350,62 @@ void draw_centered_text(uint8_t* fb,
     framebuffer::draw_text(fb, center_x - (text_width(text, font, spacing) / 2), y, text, on, font, spacing);
 }
 
-void draw_softkey_label(uint8_t* fb, int x, int y, int w, const SoftKeyAction& action, bool left_side)
+void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side, fonts::FontFace font)
 {
-    framebuffer::draw_rect(fb, x, y, w, 18, true);
-
-    if (action.enabled) {
-        framebuffer::fill_rect(fb, x + 1, y + 1, w - 2, 16, true);
-    }
-
     if (action.label == nullptr || action.label[0] == '\0') {
         return;
     }
 
-    const int label_width = text_width(action.label);
-    const int text_x = left_side ? (x + 4) : (x + w - 4 - label_width);
-    framebuffer::draw_text(fb, text_x, y + 5, action.label, !action.enabled, 1, 1);
+    const WrappedSoftkeyLabel wrapped = wrap_softkey_label(action.label, font);
+    const int line_height = framebuffer::font_height(font);
+    const int block_height = (wrapped.line_count * line_height) + ((wrapped.line_count - 1) * kSoftkeyLayout.line_gap);
+    const int block_top_y = y + ((kSoftkeyLayout.height - block_height) / 2);
+
+    auto draw_line = [&](const char* line_text, int line_index) {
+        if (line_text == nullptr || line_text[0] == '\0') {
+            return;
+        }
+
+        const int label_width = text_width(line_text, font);
+        const int text_x =
+            left_side ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
+                      : (UI_WIDTH - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - label_width);
+        const int text_y = block_top_y + (line_index * (line_height + kSoftkeyLayout.line_gap));
+        framebuffer::draw_text(fb, text_x, text_y, line_text, true, font, 1);
+    };
+
+    draw_line(wrapped.line_one, 0);
+    if (wrapped.line_count > 1) {
+        draw_line(wrapped.line_two, 1);
+    }
+}
+
+void draw_softkey_guides(uint8_t* fb)
+{
+    for (int i = 0; i < 5; ++i) {
+        const int center_y = softkey_center_y_for_index(i);
+        framebuffer::draw_vline(fb, 1, center_y - 6, center_y + 6, true);
+        framebuffer::draw_vline(fb, UI_WIDTH - 2, center_y - 6, center_y + 6, true);
+        framebuffer::fill_rect(fb, 0, center_y - 1, 3, 3, true);
+        framebuffer::fill_rect(fb, UI_WIDTH - 3, center_y - 1, 3, 3, true);
+    }
 }
 
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kLabelWidth = 34;
-    constexpr int kTopY = 50;
-    constexpr int kPitch = 40;
+    const fonts::FontFace label_font = softkey_label_font(console_state.active_page);
 
     for (int i = 0; i < 5; ++i) {
-        draw_softkey_label(fb, 2, kTopY + (i * kPitch), kLabelWidth, console_state.softkeys[i], true);
         draw_softkey_label(fb,
-                           UI_WIDTH - kLabelWidth - 2,
-                           kTopY + (i * kPitch),
-                           kLabelWidth,
+                           softkey_y_for_index(i),
+                           console_state.softkeys[i],
+                           true,
+                           label_font);
+        draw_softkey_label(fb,
+                           softkey_y_for_index(i),
                            console_state.softkeys[i + 5],
-                           false);
+                           false,
+                           label_font);
     }
 }
 
@@ -371,6 +548,12 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
     framebuffer::draw_text(fb, 116, 222, alert_severity_text(console_state.alert_severity), true, 1, 1);
 }
 
+void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
 }  // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
@@ -413,7 +596,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::Settings:
         draw_settings_page(fb, console_state);
         break;
+    case MenuPage::Alignment:
+        draw_alignment_page(fb, console_state);
+        break;
     }
+
+    draw_softkey_guides(fb);
 }
 
 /// @brief Draws a static calibration screen for alignment and extent testing.

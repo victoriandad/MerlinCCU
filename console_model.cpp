@@ -73,7 +73,7 @@ const KeyLegend& key_legend(HardKeyId key)
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
-    state.active_page = MenuPage::Status;
+    state.active_page = MenuPage::Alignment;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
