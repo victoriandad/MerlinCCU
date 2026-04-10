@@ -25,8 +25,14 @@ constexpr int kHeaderStatusRightInset = 2;
 /// @brief Gap between the header network icon and the time text.
 constexpr int kHeaderStatusGap = 2;
 
+/// @brief Gap between the Home Assistant and internet icons.
+constexpr int kHeaderStatusIconGap = 2;
+
 /// @brief Width reserved for the compact internet status icon.
 constexpr int kHeaderStatusIconWidth = 16;
+
+/// @brief Width reserved for the compact Home Assistant status icon.
+constexpr int kHeaderHomeAssistantIconWidth = 12;
 
 /// @brief Y position of the header status icon.
 constexpr int kHeaderStatusIconY = 11;
@@ -66,6 +72,60 @@ void draw_internet_icon(uint8_t* fb, int x, int y, bool reachable, bool pending)
     framebuffer::draw_line(fb, x + 1, y + 11, x + 11, y + 1, kIconOn);
 }
 
+/// @brief Returns true while the Home Assistant client is actively trying to connect.
+bool home_assistant_pending(const HomeAssistantStatus& status)
+{
+    switch (status.state) {
+    case HomeAssistantConnectionState::WaitingForWifi:
+    case HomeAssistantConnectionState::Resolving:
+    case HomeAssistantConnectionState::Connecting:
+    case HomeAssistantConnectionState::Authorizing:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/// @brief Returns true when the Home Assistant link is considered up.
+bool home_assistant_connected(const HomeAssistantStatus& status)
+{
+    return status.configured && status.state == HomeAssistantConnectionState::Connected;
+}
+
+/// @brief Draws a small house glyph used for the Home Assistant header icon.
+void draw_home_assistant_symbol(uint8_t* fb, int x, int y, bool on)
+{
+    framebuffer::draw_line(fb, x + 1, y + 4, x + 5, y + 0, on);
+    framebuffer::draw_line(fb, x + 5, y + 0, x + 9, y + 4, on);
+    framebuffer::draw_hline(fb, x + 2, x + 8, y + 4, on);
+    framebuffer::draw_rect(fb, x + 2, y + 4, 7, 6, on);
+}
+
+/// @brief Draws the compact header Home Assistant connectivity icon.
+void draw_home_assistant_icon(uint8_t* fb, int x, int y, const HomeAssistantStatus& status)
+{
+    if (!status.configured) {
+        return;
+    }
+
+    constexpr bool kIconOn = true;
+    draw_home_assistant_symbol(fb, x, y, kIconOn);
+
+    if (home_assistant_connected(status)) {
+        framebuffer::fill_rect(fb, x + 5, y + 6, 2, 4, kIconOn);
+        return;
+    }
+
+    if (home_assistant_pending(status)) {
+        framebuffer::draw_line(fb, x + 5, y + 5, x + 5, y + 9, kIconOn);
+        framebuffer::draw_line(fb, x + 3, y + 7, x + 7, y + 7, kIconOn);
+        return;
+    }
+
+    framebuffer::draw_line(fb, x + 1, y + 9, x + 9, y + 1, kIconOn);
+    framebuffer::draw_line(fb, x + 1, y + 10, x + 10, y + 1, kIconOn);
+}
+
 }  // namespace
 
 void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const char* title)
@@ -73,12 +133,22 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     const char* time_text = console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--";
     const int title_width = framebuffer::measure_text(title, fonts::FontFace::FontTitle8x12, 1);
     const int time_width = framebuffer::measure_text(time_text, fonts::FontFace::Font8x12, 1);
+    const int home_assistant_icon_width =
+        console_state.home_assistant_status.configured ? kHeaderHomeAssistantIconWidth : 0;
     const int time_x = UI_WIDTH - kHeaderStatusRightInset - time_width;
     const int icon_x = time_x - kHeaderStatusGap - kHeaderStatusIconWidth;
+    const int home_assistant_icon_x =
+        icon_x - ((home_assistant_icon_width > 0) ? (kHeaderStatusIconGap + home_assistant_icon_width) : 0);
 
     framebuffer::draw_hline(fb, 0, UI_WIDTH - 1, kHeaderBannerY + kBannerHeight - 1, true);
     framebuffer::draw_text(
         fb, (UI_WIDTH / 2) - (title_width / 2), kHeaderTextY, title, true, fonts::FontFace::FontTitle8x12, 1);
+    if (home_assistant_icon_width > 0) {
+        draw_home_assistant_icon(fb,
+                                 home_assistant_icon_x,
+                                 kHeaderStatusIconY,
+                                 console_state.home_assistant_status);
+    }
     draw_internet_icon(fb,
                        icon_x,
                        kHeaderStatusIconY,

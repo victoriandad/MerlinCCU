@@ -188,6 +188,8 @@ Use the `.example` files as the starting point:
   polling/posting.
 - `mqtt_credentials.example.h` -> `mqtt_credentials.h`
   Required only if you want MerlinCCU to appear as a Home Assistant MQTT device.
+- `weather_display_config.example.h` -> `weather_display_config.h`
+  Optional. Lets the Home page read one Home Assistant `weather.*` entity.
 
 Recommended setup order:
 
@@ -214,12 +216,17 @@ To connect the Pico W to your local network and Home Assistant instance:
 - set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP
 - if your broker requires auth, set `HOME_ASSISTANT_MQTT_USERNAME` and
   `HOME_ASSISTANT_MQTT_PASSWORD`
+- optional: copy `weather_display_config.example.h` to `weather_display_config.h`
+  if you want the Home page to show weather from Home Assistant
+- set `HOME_ASSISTANT_WEATHER_ENTITY_ID` to a real `weather.*` entity such as
+  `weather.forecast_home`
 
 Important distinction:
 
 - `HOME_ASSISTANT_TOKEN` is only for the REST API
 - `HOME_ASSISTANT_MQTT_USERNAME` and `HOME_ASSISTANT_MQTT_PASSWORD` are broker
   credentials used by Mosquitto or another MQTT broker
+- `HOME_ASSISTANT_WEATHER_ENTITY_ID` is just an entity id; it is not a secret
 
 Important limits of the current implementation:
 
@@ -229,6 +236,8 @@ Important limits of the current implementation:
 - MQTT discovery requires the Home Assistant MQTT integration and a reachable broker
 - the UI status page shows Wi-Fi state, IP address, Home Assistant REST state,
   and MQTT discovery state
+- the Home page can optionally show current weather and an hourly forecast list
+  if a Home Assistant weather entity is configured and supports hourly forecasts
 
 ## Likely Next Steps
 

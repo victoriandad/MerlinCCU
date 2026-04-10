@@ -86,8 +86,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
         softkeys[softkey_index(SoftKeyId::Right4)] = {
             "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {
-            "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT SOURCE", SoftKeyRoute::GoWeatherSources, true};
         break;
     case MenuPage::Status:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
@@ -110,6 +109,12 @@ void update_softkeys_from_state()
             "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
         softkeys[softkey_index(SoftKeyId::Right5)] = {
             "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
+        break;
+    case MenuPage::WeatherSources:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT", SoftKeyRoute::None, false};
         break;
     case MenuPage::Alignment:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"Short", SoftKeyRoute::None, true};
@@ -226,6 +231,9 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoSettings:
         g_console_state.active_page = MenuPage::Settings;
         return true;
+    case SoftKeyRoute::GoWeatherSources:
+        g_console_state.active_page = MenuPage::WeatherSources;
+        return true;
     case SoftKeyRoute::CycleAlert:
         g_console_state.alert_severity = next_alert_severity(g_console_state.alert_severity);
         return true;
@@ -341,6 +349,15 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
         g_console_state.home_assistant_status.host != home_assistant_status.host ||
         g_console_state.home_assistant_status.tracked_entity_id != home_assistant_status.tracked_entity_id ||
         g_console_state.home_assistant_status.tracked_entity_state != home_assistant_status.tracked_entity_state ||
+        g_console_state.home_assistant_status.weather_entity_id != home_assistant_status.weather_entity_id ||
+        g_console_state.home_assistant_status.weather_source_hint != home_assistant_status.weather_source_hint ||
+        g_console_state.home_assistant_status.weather_condition != home_assistant_status.weather_condition ||
+        g_console_state.home_assistant_status.weather_temperature != home_assistant_status.weather_temperature ||
+        g_console_state.home_assistant_status.weather_wind_unit != home_assistant_status.weather_wind_unit ||
+        g_console_state.home_assistant_status.sunrise_text != home_assistant_status.sunrise_text ||
+        g_console_state.home_assistant_status.sunset_text != home_assistant_status.sunset_text ||
+        g_console_state.home_assistant_status.weather_forecast_count != home_assistant_status.weather_forecast_count ||
+        g_console_state.home_assistant_status.weather_forecast != home_assistant_status.weather_forecast ||
         g_console_state.home_assistant_status.self_entity_id != home_assistant_status.self_entity_id;
 
     if (!changed) {

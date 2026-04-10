@@ -7,3 +7,4 @@ build/
 wifi_credentials.h
 home_assistant_credentials.h
 mqtt_credentials.h
+weather_display_config.h

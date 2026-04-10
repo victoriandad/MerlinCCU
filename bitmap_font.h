@@ -273,4 +273,84 @@ inline int font_height(FontFace font)
     return 7;
 }
 
+namespace detail {
+
+inline GlyphMetrics glyph_metrics_5x7(const Glyph5x7* glyph)
+{
+    constexpr uint8_t kSpaceAdvance = 3;
+    if (glyph == nullptr) {
+        return {0, 0, kSpaceAdvance};
+    }
+
+    int first = 5;
+    int last = -1;
+
+    for (int col = 0; col < 5; ++col) {
+        if (glyph->col[col] == 0) {
+            continue;
+        }
+        if (col < first) {
+            first = col;
+        }
+        if (col > last) {
+            last = col;
+        }
+    }
+
+    if (last < first) {
+        return {0, 0, kSpaceAdvance};
+    }
+
+    const uint8_t draw_width = static_cast<uint8_t>(last - first + 1);
+    return {static_cast<uint8_t>(first), draw_width, draw_width};
+}
+
+inline GlyphMetrics glyph_metrics_bitmap_rows(
+    const uint8_t* rows, int storage_width, int height, uint8_t empty_advance)
+{
+    if (rows == nullptr) {
+        return {0, 0, empty_advance};
+    }
+
+    int first = storage_width;
+    int last = -1;
+
+    for (int row = 0; row < height; ++row) {
+        const uint8_t bits = rows[row];
+        for (int col = 0; col < storage_width; ++col) {
+            if ((bits & (0x80u >> col)) == 0) {
+                continue;
+            }
+            if (col < first) {
+                first = col;
+            }
+            if (col > last) {
+                last = col;
+            }
+        }
+    }
+
+    if (last < first) {
+        return {0, 0, empty_advance};
+    }
+
+    const uint8_t draw_width = static_cast<uint8_t>(last - first + 1);
+    return {static_cast<uint8_t>(first), draw_width, draw_width};
+}
+
+}  // namespace detail
+
+inline GlyphMetrics glyph_metrics(FontFace font, char c)
+{
+    if (font == FontFace::Font5x7) {
+        return detail::glyph_metrics_5x7(lookup_5x7(c));
+    }
+
+    const int storage_width = font_width(font);
+    const int height = font_height(font);
+    const uint8_t empty_advance = static_cast<uint8_t>((storage_width + 1) / 2);
+    return detail::glyph_metrics_bitmap_rows(
+        lookup_bitmap_rows(font, c), storage_width, height, empty_advance);
+}
+
 }  // namespace fonts

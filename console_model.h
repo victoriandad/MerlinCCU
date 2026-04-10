@@ -116,6 +116,7 @@ enum class MenuPage : uint8_t {
     Home = 0,
     Status,
     Settings,
+    WeatherSources,
     Alignment,
 };
 
@@ -180,6 +181,24 @@ struct TimeStatus {
     std::array<char, 6> time_text;
 };
 
+inline constexpr size_t kWeatherForecastEntryCount = 10;
+
+/// @brief One compact hourly forecast entry for the Home page.
+struct WeatherForecastEntry {
+    std::array<char, 6> time_text;
+    std::array<char, 12> temperature_text;
+    std::array<char, 8> wind_text;
+    std::array<char, 20> condition_text;
+};
+
+inline bool operator==(const WeatherForecastEntry& lhs, const WeatherForecastEntry& rhs)
+{
+    return lhs.time_text == rhs.time_text &&
+           lhs.temperature_text == rhs.temperature_text &&
+           lhs.wind_text == rhs.wind_text &&
+           lhs.condition_text == rhs.condition_text;
+}
+
 /// @brief Snapshot of Home Assistant state suitable for UI and controller use.
 struct HomeAssistantStatus {
     HomeAssistantConnectionState state;
@@ -190,6 +209,15 @@ struct HomeAssistantStatus {
     std::array<char, 48> host;
     std::array<char, 48> tracked_entity_id;
     std::array<char, 24> tracked_entity_state;
+    std::array<char, 48> weather_entity_id;
+    std::array<char, 80> weather_source_hint;
+    std::array<char, 24> weather_condition;
+    std::array<char, 16> weather_temperature;
+    std::array<char, 8> weather_wind_unit;
+    std::array<char, 6> sunrise_text;
+    std::array<char, 6> sunset_text;
+    uint8_t weather_forecast_count;
+    std::array<WeatherForecastEntry, kWeatherForecastEntryCount> weather_forecast;
     std::array<char, 48> self_entity_id;
 };
 
@@ -209,6 +237,7 @@ enum class SoftKeyRoute : uint8_t {
     GoHome,
     GoStatus,
     GoSettings,
+    GoWeatherSources,
     CycleAlert,
     ToggleLetters,
     CycleTest,
