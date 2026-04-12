@@ -139,6 +139,11 @@ const char* response_body()
     return body ? (body + 4) : nullptr;
 }
 
+const char* response_headers_end()
+{
+    return std::strstr(g_response, "\r\n\r\n");
+}
+
 int partial_http_status()
 {
     const char* line_end = std::strstr(g_response, "\r\n");
@@ -152,6 +157,191 @@ int partial_http_status()
     }
 
     return http_status;
+}
+
+bool ascii_iequals(char left, char right)
+{
+    return std::tolower(static_cast<unsigned char>(left)) ==
+           std::tolower(static_cast<unsigned char>(right));
+}
+
+bool ascii_starts_with_case_insensitive(const char* text, const char* prefix)
+{
+    if (text == nullptr || prefix == nullptr) {
+        return false;
+    }
+
+    while (*prefix != '\0') {
+        if (*text == '\0' || !ascii_iequals(*text, *prefix)) {
+            return false;
+        }
+        ++text;
+        ++prefix;
+    }
+
+    return true;
+}
+
+const char* next_header_line(const char* line, const char* headers_end)
+{
+    if (line == nullptr || headers_end == nullptr || line >= headers_end) {
+        return nullptr;
+    }
+
+    const char* line_end = std::strstr(line, "\r\n");
+    if (line_end == nullptr || line_end >= headers_end) {
+        return nullptr;
+    }
+
+    const char* next = line_end + 2;
+    return (next < headers_end) ? next : nullptr;
+}
+
+const char* find_response_header_value(const char* header_name)
+{
+    if (header_name == nullptr || header_name[0] == '\0') {
+        return nullptr;
+    }
+
+    const char* headers_end = response_headers_end();
+    const char* line = std::strstr(g_response, "\r\n");
+    if (headers_end == nullptr || line == nullptr) {
+        return nullptr;
+    }
+
+    for (line += 2; line != nullptr && line < headers_end; line = next_header_line(line, headers_end)) {
+        while (*line == ' ' || *line == '\t') {
+            ++line;
+        }
+
+        if (ascii_starts_with_case_insensitive(line, header_name)) {
+            const char* value = line + std::strlen(header_name);
+            while (*value == ' ' || *value == '\t') {
+                ++value;
+            }
+            return value;
+        }
+    }
+
+    return nullptr;
+}
+
+bool parse_response_content_length(size_t* out_length)
+{
+    if (out_length == nullptr) {
+        return false;
+    }
+
+    const char* value = find_response_header_value("Content-Length:");
+    if (value == nullptr) {
+        return false;
+    }
+
+    char* parse_end = nullptr;
+    const unsigned long parsed = std::strtoul(value, &parse_end, 10);
+    if (parse_end == value) {
+        return false;
+    }
+
+    while (parse_end != nullptr && (*parse_end == ' ' || *parse_end == '\t')) {
+        ++parse_end;
+    }
+
+    if (parse_end == nullptr || (*parse_end != '\0' && std::strncmp(parse_end, "\r\n", 2) != 0)) {
+        return false;
+    }
+
+    *out_length = static_cast<size_t>(parsed);
+    return true;
+}
+
+bool response_header_has_token(const char* header_name, const char* token)
+{
+    if (header_name == nullptr || token == nullptr || token[0] == '\0') {
+        return false;
+    }
+
+    const char* value = find_response_header_value(header_name);
+    if (value == nullptr) {
+        return false;
+    }
+
+    const size_t token_len = std::strlen(token);
+    const char* headers_end = response_headers_end();
+    const char* line_end = std::strstr(value, "\r\n");
+    if (headers_end != nullptr && (line_end == nullptr || line_end > headers_end)) {
+        line_end = headers_end;
+    }
+    if (line_end == nullptr) {
+        return false;
+    }
+
+    for (const char* cursor = value; cursor + token_len <= line_end; ++cursor) {
+        size_t i = 0;
+        while (i < token_len && ascii_iequals(cursor[i], token[i])) {
+            ++i;
+        }
+        if (i == token_len) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Why this exists:
+// This firmware does not implement every HTTP feature. It expects a response
+// with:
+// 1. a complete header block ending in "\r\n\r\n"
+// 2. a normal body, not chunked transfer encoding
+// 3. a body length that matches Content-Length when that header is present
+//
+// Without this check, a truncated socket read or an unsupported HTTP feature
+// could still flow into the JSON parsing code. That is risky because the JSON
+// helpers would then be reading partial network data and might populate runtime
+// state with incomplete or misleading values. Failing early here keeps the
+// trust boundary simple: only a complete, supported HTTP response reaches the
+// higher-level parsers.
+bool validate_http_response(int* http_status, err_t* protocol_error)
+{
+    if (http_status != nullptr) {
+        *http_status = 0;
+    }
+    if (protocol_error != nullptr) {
+        *protocol_error = ERR_VAL;
+    }
+
+    const char* headers_end = response_headers_end();
+    if (headers_end == nullptr) {
+        return false;
+    }
+
+    int parsed_status = 0;
+    if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &parsed_status) != 1) {
+        return false;
+    }
+
+    if (response_header_has_token("Transfer-Encoding:", "chunked")) {
+        return false;
+    }
+
+    const char* body = headers_end + 4;
+    const size_t body_length = g_response_len - static_cast<size_t>(body - g_response);
+    size_t content_length = 0;
+    if (parse_response_content_length(&content_length) && body_length != content_length) {
+        if (protocol_error != nullptr) {
+            *protocol_error = ERR_CLSD;
+        }
+        return false;
+    }
+
+    if (http_status != nullptr) {
+        *http_status = parsed_status;
+    }
+    if (protocol_error != nullptr) {
+        *protocol_error = ERR_OK;
+    }
+    return true;
 }
 
 bool extract_json_string_value(const char* json, const char* key, char* out, size_t out_size)
@@ -169,16 +359,37 @@ bool extract_json_string_value(const char* json, const char* key, char* out, siz
 
     const char* value_start = key_pos + std::strlen(key);
     size_t i = 0;
-    while (value_start[i] != '\0' && value_start[i] != '"' && i + 1 < out_size) {
-        if (value_start[i] == '\\' && value_start[i + 1] != '\0') {
-            ++i;
+    bool closed = false;
+    for (size_t cursor = 0; value_start[cursor] != '\0'; ++cursor) {
+        char current = value_start[cursor];
+        if (current == '"') {
+            closed = true;
+            break;
         }
-        out[i] = value_start[i];
-        ++i;
+
+        if (current == '\\') {
+            ++cursor;
+            current = value_start[cursor];
+            if (current == '\0') {
+                return false;
+            }
+        }
+
+        if (i + 1 >= out_size) {
+            return false;
+        }
+
+        out[i++] = current;
     }
     out[i] = '\0';
 
-    return i > 0;
+    // Why this is strict:
+    // If the closing quote is missing, the string in the receive buffer is
+    // incomplete. Older behavior would accept whatever characters had arrived
+    // so far, which can turn a truncated network read into a fake but
+    // believable value on screen. Returning false here forces the caller to
+    // treat that field as missing instead.
+    return closed && i > 0;
 }
 
 bool extract_json_scalar_value(const char* json, const char* key, char* out, size_t out_size)
@@ -199,10 +410,16 @@ bool extract_json_scalar_value(const char* json, const char* key, char* out, siz
         ++value;
     }
 
+    if (*value == '\0' || *value == '"' || *value == '[' || *value == '{') {
+        return false;
+    }
+
     size_t i = 0;
+    bool terminated = false;
     while (value[i] != '\0' &&
            value[i] != ',' &&
            value[i] != '}' &&
+           value[i] != ']' &&
            value[i] != '\r' &&
            value[i] != '\n' &&
            i + 1 < out_size) {
@@ -210,11 +427,15 @@ bool extract_json_scalar_value(const char* json, const char* key, char* out, siz
         ++i;
     }
 
+    if (value[i] == ',' || value[i] == '}' || value[i] == ']' || value[i] == '\r' || value[i] == '\n') {
+        terminated = true;
+    }
+
     while (i > 0 && (out[i - 1] == ' ' || out[i - 1] == '\t')) {
         --i;
     }
     out[i] = '\0';
-    return i > 0;
+    return terminated && i > 0;
 }
 
 void trim_text_in_place(char* text)
@@ -578,6 +799,56 @@ void clear_weather_forecast()
     }
 }
 
+// Why this helper is needed:
+// The forecast parser does not use a full JSON library. It first isolates one
+// forecast object, then re-parses just that slice. A plain "find the next }"
+// approach is not safe enough because JSON strings can legally contain braces,
+// for example in descriptive text. This matcher keeps track of whether we are
+// inside a quoted string and whether the current character is escaped, so only
+// real structural braces count.
+const char* find_matching_json_object_end(const char* object_start)
+{
+    if (object_start == nullptr || *object_start != '{') {
+        return nullptr;
+    }
+
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+    for (const char* p = object_start; *p != '\0'; ++p) {
+        const char current = *p;
+        if (escape) {
+            escape = false;
+            continue;
+        }
+
+        if (current == '\\' && in_string) {
+            escape = true;
+            continue;
+        }
+
+        if (current == '"') {
+            in_string = !in_string;
+            continue;
+        }
+
+        if (in_string) {
+            continue;
+        }
+
+        if (current == '{') {
+            ++depth;
+        } else if (current == '}') {
+            --depth;
+            if (depth == 0) {
+                return p;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 bool parse_hourly_forecast_response(const char* json)
 {
     if (json == nullptr) {
@@ -605,29 +876,24 @@ bool parse_hourly_forecast_response(const char* json)
             break;
         }
 
-        int depth = 0;
-        const char* object_end = nullptr;
-        for (const char* p = object_start; *p != '\0'; ++p) {
-            if (*p == '{') {
-                ++depth;
-            } else if (*p == '}') {
-                --depth;
-                if (depth == 0) {
-                    object_end = p;
-                    break;
-                }
-            }
-        }
-
+        const char* object_end = find_matching_json_object_end(object_start);
         if (object_end == nullptr) {
             break;
         }
 
         char object_json[384] = {};
         const size_t object_len = static_cast<size_t>(object_end - object_start + 1);
-        const size_t copy_len = (object_len < (sizeof(object_json) - 1)) ? object_len : (sizeof(object_json) - 1);
-        std::memcpy(object_json, object_start, copy_len);
-        object_json[copy_len] = '\0';
+        if (object_len >= sizeof(object_json)) {
+            // Reason for skipping:
+            // Copying only part of the object would create invalid JSON and the
+            // parser below could then read a half-object as if it were real
+            // data. Dropping the single oversized entry is safer than trying to
+            // salvage a truncated copy.
+            cursor = object_end + 1;
+            continue;
+        }
+        std::memcpy(object_json, object_start, object_len);
+        object_json[object_len] = '\0';
 
         char datetime_text[32] = {};
         char temperature_text[16] = {};
@@ -1308,16 +1574,25 @@ err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
     }
 
     if (p == nullptr) {
-        const char* line_end = std::strstr(g_response, "\r\n");
-        if (line_end == nullptr) {
-            g_sequence_complete = true;
-            finish_request(HomeAssistantConnectionState::Error, ERR_CLSD, g_status.last_http_status, kRetryDelayMs);
-            return ERR_OK;
-        }
-
         int http_status = 0;
-        if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &http_status) != 1) {
-            http_status = 0;
+        err_t protocol_error = ERR_VAL;
+        if (!validate_http_response(&http_status, &protocol_error)) {
+            // Why we fail here:
+            // This is the boundary between raw network input and application
+            // state. If the response is malformed, incomplete, or uses an HTTP
+            // feature this client does not understand, we stop here and treat
+            // it like a failed request. That is easier to reason about than
+            // letting deeper parsing code guess what the response meant.
+            if (request_updates_connection_state()) {
+                g_sequence_complete = true;
+                finish_request(HomeAssistantConnectionState::Error,
+                               protocol_error,
+                               partial_http_status(),
+                               kRetryDelayMs);
+            } else {
+                finish_optional_request_soft_failure(protocol_error);
+            }
+            return ERR_OK;
         }
 
         handle_http_status(http_status);
