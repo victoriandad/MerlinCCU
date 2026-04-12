@@ -239,6 +239,25 @@ Important limits of the current implementation:
 - the Home page can optionally show current weather and an hourly forecast list
   if a Home Assistant weather entity is configured and supports hourly forecasts
 
+## Deferred Security TODOs
+
+These items are intentionally parked for a later hardening phase so the current
+working firmware can be preserved while the network-facing changes are planned
+properly.
+
+- add `https://` support in MerlinCCU for the Home Assistant REST client
+- enable HTTPS on Home Assistant or on a reverse proxy in front of it
+- choose how MerlinCCU will validate the HA server certificate:
+  - public CA
+  - private/internal CA
+  - pinned certificate or public key
+- move MQTT to TLS and configure the broker with a certificate MerlinCCU can validate
+- create a dedicated Home Assistant user/token for MerlinCCU with only the access it needs
+- create a dedicated MQTT account and restrict it to the required topics with broker ACLs
+- review whether MerlinCCU should use trusted local DNS and NTP services instead of public defaults
+- consider putting MerlinCCU on a trusted SSID or VLAN during and after the migration
+- update setup documentation once HTTPS/TLS is actually supported end-to-end
+
 ## Likely Next Steps
 
 Reasonable future work from here:
