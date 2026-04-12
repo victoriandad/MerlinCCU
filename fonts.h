@@ -18,6 +18,13 @@ struct Glyph5x7 {
     uint8_t col[5];
 };
 
+/// @brief Derived metrics for one rendered glyph after trimming empty columns.
+struct GlyphMetrics {
+    uint8_t first_column;
+    uint8_t draw_width;
+    uint8_t advance;
+};
+
 /// @brief Looks up a 5x7 glyph entry for one ASCII character.
 const Glyph5x7* lookup_5x7(char c);
 
@@ -26,10 +33,13 @@ const Glyph5x7* lookup_5x7(char c);
 /// not exist in that font face.
 const uint8_t* lookup_bitmap_rows(FontFace font, char c);
 
-/// @brief Returns the pixel width for one glyph in the selected font face.
+/// @brief Returns the stored bitmap cell width for one glyph in the selected font face.
 int font_width(FontFace font);
 
 /// @brief Returns the pixel height for one glyph in the selected font face.
 int font_height(FontFace font);
+
+/// @brief Returns the trimmed draw width and advance for one rendered glyph.
+GlyphMetrics glyph_metrics(FontFace font, char c);
 
 }  // namespace fonts

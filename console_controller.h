@@ -23,6 +23,12 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Copies the latest MQTT status into the logical front-panel state.
 bool set_mqtt_status(const MqttStatus& mqtt_status);
 
+/// @brief Overrides the displayed text for one softkey using controller-owned storage.
+/// @details Pass `nullptr` or an empty string to clear the override and restore
+/// the page-default label. Rendering will wrap to two lines when needed and
+/// truncate any content that would exceed two lines on screen.
+bool set_softkey_label(SoftKeyId key, const char* label);
+
 /// @brief Applies one button event to the logical front-panel state.
 /// @details For now this is a pure software state machine. It does not require
 /// the keypad hardware to exist yet.

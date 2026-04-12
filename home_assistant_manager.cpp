@@ -1,5 +1,7 @@
 #include "home_assistant_manager.h"
 
+#include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -25,15 +27,27 @@ inline constexpr char HOME_ASSISTANT_ENTITY_ID[] = "";
 inline constexpr char HOME_ASSISTANT_SELF_ENTITY_ID[] = "";
 #endif
 
+#if __has_include("weather_display_config.h")
+#include "weather_display_config.h"
+#else
+inline constexpr char HOME_ASSISTANT_WEATHER_ENTITY_ID[] = "";
+inline constexpr char HOME_ASSISTANT_SUN_ENTITY_ID[] = "";
+#endif
+
 constexpr uint32_t kResolveTimeoutMs = 4000;
 constexpr uint32_t kConnectTimeoutMs = 4000;
 constexpr uint32_t kIoTimeoutMs = 4000;
+constexpr uint32_t kRetryDelayMs = 10000;
+constexpr uint32_t kRefreshIntervalMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr bool kHomeAssistantRuntimeEnabled = true;
 
 enum class RequestKind : uint8_t {
     ProbeApi = 0,
     FetchTrackedEntity,
+    FetchWeatherEntity,
+    FetchWeatherForecast,
+    FetchSunEntity,
     PublishSelfEntity,
 };
 
@@ -46,7 +60,7 @@ size_t g_request_sent = 0;
 size_t g_response_len = 0;
 char g_request[1024] = {};
 char g_request_body[256] = {};
-char g_response[1024] = {};
+char g_response[16384] = {};
 char g_configured_host[48] = {};
 uint16_t g_configured_port = HOME_ASSISTANT_PORT;
 bool g_config_valid = false;
@@ -55,6 +69,13 @@ absolute_time_t g_next_attempt = nil_time;
 bool g_probe_attempted = false;
 bool g_sequence_complete = false;
 RequestKind g_request_kind = RequestKind::ProbeApi;
+char g_weather_temperature_unit = '\0';
+char g_weather_wind_source_unit[8] = {};
+
+bool request_updates_connection_state()
+{
+    return g_request_kind == RequestKind::ProbeApi;
+}
 
 template <size_t N>
 void copy_text(std::array<char, N>& dst, const char* src)
@@ -99,6 +120,12 @@ const char* request_kind_name(RequestKind kind)
         return "probe";
     case RequestKind::FetchTrackedEntity:
         return "entity";
+    case RequestKind::FetchWeatherEntity:
+        return "weather";
+    case RequestKind::FetchWeatherForecast:
+        return "forecast";
+    case RequestKind::FetchSunEntity:
+        return "sun";
     case RequestKind::PublishSelfEntity:
         return "publish";
     }
@@ -110,6 +137,211 @@ const char* response_body()
 {
     const char* body = std::strstr(g_response, "\r\n\r\n");
     return body ? (body + 4) : nullptr;
+}
+
+const char* response_headers_end()
+{
+    return std::strstr(g_response, "\r\n\r\n");
+}
+
+int partial_http_status()
+{
+    const char* line_end = std::strstr(g_response, "\r\n");
+    if (line_end == nullptr) {
+        return 0;
+    }
+
+    int http_status = 0;
+    if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &http_status) != 1) {
+        return 0;
+    }
+
+    return http_status;
+}
+
+bool ascii_iequals(char left, char right)
+{
+    return std::tolower(static_cast<unsigned char>(left)) ==
+           std::tolower(static_cast<unsigned char>(right));
+}
+
+bool ascii_starts_with_case_insensitive(const char* text, const char* prefix)
+{
+    if (text == nullptr || prefix == nullptr) {
+        return false;
+    }
+
+    while (*prefix != '\0') {
+        if (*text == '\0' || !ascii_iequals(*text, *prefix)) {
+            return false;
+        }
+        ++text;
+        ++prefix;
+    }
+
+    return true;
+}
+
+const char* next_header_line(const char* line, const char* headers_end)
+{
+    if (line == nullptr || headers_end == nullptr || line >= headers_end) {
+        return nullptr;
+    }
+
+    const char* line_end = std::strstr(line, "\r\n");
+    if (line_end == nullptr || line_end >= headers_end) {
+        return nullptr;
+    }
+
+    const char* next = line_end + 2;
+    return (next < headers_end) ? next : nullptr;
+}
+
+const char* find_response_header_value(const char* header_name)
+{
+    if (header_name == nullptr || header_name[0] == '\0') {
+        return nullptr;
+    }
+
+    const char* headers_end = response_headers_end();
+    const char* line = std::strstr(g_response, "\r\n");
+    if (headers_end == nullptr || line == nullptr) {
+        return nullptr;
+    }
+
+    for (line += 2; line != nullptr && line < headers_end; line = next_header_line(line, headers_end)) {
+        while (*line == ' ' || *line == '\t') {
+            ++line;
+        }
+
+        if (ascii_starts_with_case_insensitive(line, header_name)) {
+            const char* value = line + std::strlen(header_name);
+            while (*value == ' ' || *value == '\t') {
+                ++value;
+            }
+            return value;
+        }
+    }
+
+    return nullptr;
+}
+
+bool parse_response_content_length(size_t* out_length)
+{
+    if (out_length == nullptr) {
+        return false;
+    }
+
+    const char* value = find_response_header_value("Content-Length:");
+    if (value == nullptr) {
+        return false;
+    }
+
+    char* parse_end = nullptr;
+    const unsigned long parsed = std::strtoul(value, &parse_end, 10);
+    if (parse_end == value) {
+        return false;
+    }
+
+    while (parse_end != nullptr && (*parse_end == ' ' || *parse_end == '\t')) {
+        ++parse_end;
+    }
+
+    if (parse_end == nullptr || (*parse_end != '\0' && std::strncmp(parse_end, "\r\n", 2) != 0)) {
+        return false;
+    }
+
+    *out_length = static_cast<size_t>(parsed);
+    return true;
+}
+
+bool response_header_has_token(const char* header_name, const char* token)
+{
+    if (header_name == nullptr || token == nullptr || token[0] == '\0') {
+        return false;
+    }
+
+    const char* value = find_response_header_value(header_name);
+    if (value == nullptr) {
+        return false;
+    }
+
+    const size_t token_len = std::strlen(token);
+    const char* headers_end = response_headers_end();
+    const char* line_end = std::strstr(value, "\r\n");
+    if (headers_end != nullptr && (line_end == nullptr || line_end > headers_end)) {
+        line_end = headers_end;
+    }
+    if (line_end == nullptr) {
+        return false;
+    }
+
+    for (const char* cursor = value; cursor + token_len <= line_end; ++cursor) {
+        size_t i = 0;
+        while (i < token_len && ascii_iequals(cursor[i], token[i])) {
+            ++i;
+        }
+        if (i == token_len) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Why this exists:
+// This firmware does not implement every HTTP feature. It expects a response
+// with:
+// 1. a complete header block ending in "\r\n\r\n"
+// 2. a normal body, not chunked transfer encoding
+// 3. a body length that matches Content-Length when that header is present
+//
+// Without this check, a truncated socket read or an unsupported HTTP feature
+// could still flow into the JSON parsing code. That is risky because the JSON
+// helpers would then be reading partial network data and might populate runtime
+// state with incomplete or misleading values. Failing early here keeps the
+// trust boundary simple: only a complete, supported HTTP response reaches the
+// higher-level parsers.
+bool validate_http_response(int* http_status, err_t* protocol_error)
+{
+    if (http_status != nullptr) {
+        *http_status = 0;
+    }
+    if (protocol_error != nullptr) {
+        *protocol_error = ERR_VAL;
+    }
+
+    const char* headers_end = response_headers_end();
+    if (headers_end == nullptr) {
+        return false;
+    }
+
+    int parsed_status = 0;
+    if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &parsed_status) != 1) {
+        return false;
+    }
+
+    if (response_header_has_token("Transfer-Encoding:", "chunked")) {
+        return false;
+    }
+
+    const char* body = headers_end + 4;
+    const size_t body_length = g_response_len - static_cast<size_t>(body - g_response);
+    size_t content_length = 0;
+    if (parse_response_content_length(&content_length) && body_length != content_length) {
+        if (protocol_error != nullptr) {
+            *protocol_error = ERR_CLSD;
+        }
+        return false;
+    }
+
+    if (http_status != nullptr) {
+        *http_status = parsed_status;
+    }
+    if (protocol_error != nullptr) {
+        *protocol_error = ERR_OK;
+    }
+    return true;
 }
 
 bool extract_json_string_value(const char* json, const char* key, char* out, size_t out_size)
@@ -127,22 +359,611 @@ bool extract_json_string_value(const char* json, const char* key, char* out, siz
 
     const char* value_start = key_pos + std::strlen(key);
     size_t i = 0;
-    while (value_start[i] != '\0' && value_start[i] != '"' && i + 1 < out_size) {
-        if (value_start[i] == '\\' && value_start[i + 1] != '\0') {
-            ++i;
+    bool closed = false;
+    for (size_t cursor = 0; value_start[cursor] != '\0'; ++cursor) {
+        char current = value_start[cursor];
+        if (current == '"') {
+            closed = true;
+            break;
         }
-        out[i] = value_start[i];
-        ++i;
+
+        if (current == '\\') {
+            ++cursor;
+            current = value_start[cursor];
+            if (current == '\0') {
+                return false;
+            }
+        }
+
+        if (i + 1 >= out_size) {
+            return false;
+        }
+
+        out[i++] = current;
     }
     out[i] = '\0';
 
-    return i > 0;
+    // Why this is strict:
+    // If the closing quote is missing, the string in the receive buffer is
+    // incomplete. Older behavior would accept whatever characters had arrived
+    // so far, which can turn a truncated network read into a fake but
+    // believable value on screen. Returning false here forces the caller to
+    // treat that field as missing instead.
+    return closed && i > 0;
+}
+
+bool extract_json_scalar_value(const char* json, const char* key, char* out, size_t out_size)
+{
+    if (json == nullptr || key == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    const char* key_pos = std::strstr(json, key);
+    if (key_pos == nullptr) {
+        return false;
+    }
+
+    const char* value = key_pos + std::strlen(key);
+    while (*value == ' ' || *value == '\t') {
+        ++value;
+    }
+
+    if (*value == '\0' || *value == '"' || *value == '[' || *value == '{') {
+        return false;
+    }
+
+    size_t i = 0;
+    bool terminated = false;
+    while (value[i] != '\0' &&
+           value[i] != ',' &&
+           value[i] != '}' &&
+           value[i] != ']' &&
+           value[i] != '\r' &&
+           value[i] != '\n' &&
+           i + 1 < out_size) {
+        out[i] = value[i];
+        ++i;
+    }
+
+    if (value[i] == ',' || value[i] == '}' || value[i] == ']' || value[i] == '\r' || value[i] == '\n') {
+        terminated = true;
+    }
+
+    while (i > 0 && (out[i - 1] == ' ' || out[i - 1] == '\t')) {
+        --i;
+    }
+    out[i] = '\0';
+    return terminated && i > 0;
+}
+
+void trim_text_in_place(char* text)
+{
+    if (text == nullptr) {
+        return;
+    }
+
+    size_t start = 0;
+    const size_t length = std::strlen(text);
+    while (text[start] != '\0' && std::isspace(static_cast<unsigned char>(text[start]))) {
+        ++start;
+    }
+
+    size_t end = length;
+    while (end > start &&
+           (std::isspace(static_cast<unsigned char>(text[end - 1])) || text[end - 1] == '.')) {
+        --end;
+    }
+
+    if (start >= end) {
+        text[0] = '\0';
+        return;
+    }
+
+    if (start > 0) {
+        std::memmove(text, text + start, end - start);
+    }
+    text[end - start] = '\0';
+}
+
+bool starts_with_ignore_case(const char* text, const char* prefix)
+{
+    if (text == nullptr || prefix == nullptr) {
+        return false;
+    }
+
+    while (*prefix != '\0') {
+        if (*text == '\0') {
+            return false;
+        }
+
+        if (std::tolower(static_cast<unsigned char>(*text)) !=
+            std::tolower(static_cast<unsigned char>(*prefix))) {
+            return false;
+        }
+
+        ++text;
+        ++prefix;
+    }
+
+    return true;
+}
+
+bool normalize_weather_provider_name(const char* raw_text, char* out, size_t out_size)
+{
+    if (raw_text == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    const char* provider = raw_text;
+    constexpr const char* kPrefixes[] = {
+        "Data provided by ",
+        "Weather forecast from ",
+        "Forecast provided by ",
+        "Provided by ",
+        "Powered by ",
+    };
+
+    for (const char* prefix : kPrefixes) {
+        if (starts_with_ignore_case(provider, prefix)) {
+            provider += std::strlen(prefix);
+            break;
+        }
+    }
+
+    std::snprintf(out, out_size, "%s", provider);
+    trim_text_in_place(out);
+    return out[0] != '\0';
+}
+
+bool normalize_wind_speed_unit(const char* unit_text, char* out, size_t out_size)
+{
+    if (unit_text == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (std::strstr(unit_text, "km") != nullptr || std::strstr(unit_text, "KM") != nullptr) {
+        std::snprintf(out, out_size, "km/h");
+        return true;
+    }
+    if (std::strstr(unit_text, "m/s") != nullptr || std::strstr(unit_text, "M/S") != nullptr) {
+        std::snprintf(out, out_size, "m/s");
+        return true;
+    }
+    if (std::strstr(unit_text, "mi") != nullptr || std::strstr(unit_text, "MI") != nullptr) {
+        std::snprintf(out, out_size, "mph");
+        return true;
+    }
+    if (std::strstr(unit_text, "ft/s") != nullptr || std::strstr(unit_text, "FT/S") != nullptr) {
+        std::snprintf(out, out_size, "ft/s");
+        return true;
+    }
+    if (std::strstr(unit_text, "Beaufort") != nullptr || std::strstr(unit_text, "beaufort") != nullptr) {
+        std::snprintf(out, out_size, "Bft");
+        return true;
+    }
+    if (std::strstr(unit_text, "kn") != nullptr || std::strstr(unit_text, "KN") != nullptr) {
+        std::snprintf(out, out_size, "kn");
+        return true;
+    }
+
+    std::snprintf(out, out_size, "%s", unit_text);
+    return out[0] != '\0';
+}
+
+bool format_compact_scalar_value(const char* scalar_text, char* out, size_t out_size)
+{
+    if (scalar_text == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    char* parse_end = nullptr;
+    const float value = std::strtof(scalar_text, &parse_end);
+    if (parse_end != scalar_text && parse_end != nullptr && *parse_end == '\0') {
+        const int rounded = static_cast<int>(value >= 0.0f ? (value + 0.5f) : (value - 0.5f));
+        std::snprintf(out, out_size, "%d", rounded);
+        return true;
+    }
+
+    std::snprintf(out, out_size, "%s", scalar_text);
+    return out[0] != '\0';
+}
+
+bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, char* out, size_t out_size)
+{
+    if (speed_text == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    char* parse_end = nullptr;
+    const float raw_value = std::strtof(speed_text, &parse_end);
+    if (parse_end == speed_text || parse_end == nullptr || *parse_end != '\0') {
+        return false;
+    }
+
+    float mph_value = raw_value;
+    if (source_unit != nullptr && source_unit[0] != '\0') {
+        if (std::strcmp(source_unit, "km/h") == 0) {
+            mph_value = raw_value * 0.621371f;
+        } else if (std::strcmp(source_unit, "m/s") == 0) {
+            mph_value = raw_value * 2.23694f;
+        } else if (std::strcmp(source_unit, "ft/s") == 0) {
+            mph_value = raw_value * 0.681818f;
+        } else if (std::strcmp(source_unit, "kn") == 0) {
+            mph_value = raw_value * 1.15078f;
+        } else if (std::strcmp(source_unit, "Bft") == 0) {
+            static constexpr float kBeaufortToMph[] = {
+                0.0f, 1.0f, 4.0f, 8.0f, 13.0f, 19.0f, 25.0f,
+                32.0f, 39.0f, 47.0f, 55.0f, 64.0f, 73.0f, 83.0f,
+            };
+            int index = static_cast<int>(raw_value + 0.5f);
+            if (index < 0) {
+                index = 0;
+            } else if (index >= static_cast<int>(sizeof(kBeaufortToMph) / sizeof(kBeaufortToMph[0]))) {
+                index = static_cast<int>((sizeof(kBeaufortToMph) / sizeof(kBeaufortToMph[0])) - 1);
+            }
+            mph_value = kBeaufortToMph[index];
+        }
+    }
+
+    const int rounded = static_cast<int>(mph_value >= 0.0f ? (mph_value + 0.5f) : (mph_value - 0.5f));
+    std::snprintf(out, out_size, "%d", rounded);
+    return true;
+}
+
+bool format_wind_direction_text(const char* bearing_text, char* out, size_t out_size)
+{
+    if (bearing_text == nullptr || out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    char* parse_end = nullptr;
+    float bearing = std::strtof(bearing_text, &parse_end);
+    if (parse_end != bearing_text && parse_end != nullptr && *parse_end == '\0') {
+        while (bearing < 0.0f) {
+            bearing += 360.0f;
+        }
+        while (bearing >= 360.0f) {
+            bearing -= 360.0f;
+        }
+
+        static constexpr const char* kCompass16[] = {
+            "N",  "NNE", "NE",  "ENE",
+            "E",  "ESE", "SE",  "SSE",
+            "S",  "SSW", "SW",  "WSW",
+            "W",  "WNW", "NW",  "NNW",
+        };
+        const int index = static_cast<int>((bearing + 11.25f) / 22.5f) % 16;
+        std::snprintf(out, out_size, "%s", kCompass16[index]);
+        return true;
+    }
+
+    size_t out_index = 0;
+    for (size_t i = 0; bearing_text[i] != '\0' && out_index + 1 < out_size; ++i) {
+        const unsigned char ch = static_cast<unsigned char>(bearing_text[i]);
+        if (std::isspace(ch)) {
+            continue;
+        }
+        out[out_index++] = static_cast<char>(std::toupper(ch));
+    }
+    out[out_index] = '\0';
+    return out_index > 0;
+}
+
+bool format_compact_wind_text(const char* speed_text, const char* bearing_text, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    char compact_speed[8] = {};
+    char compact_direction[4] = {};
+    const bool have_speed = speed_text != nullptr &&
+                            convert_wind_speed_to_mph(speed_text, g_weather_wind_source_unit, compact_speed, sizeof(compact_speed)) &&
+                            compact_speed[0] != '\0';
+    const bool have_direction = bearing_text != nullptr &&
+                                format_wind_direction_text(bearing_text, compact_direction, sizeof(compact_direction)) &&
+                                compact_direction[0] != '\0';
+
+    if (have_speed && have_direction) {
+        std::snprintf(out, out_size, "%s %s", compact_speed, compact_direction);
+        return true;
+    }
+    if (have_speed) {
+        std::snprintf(out, out_size, "%s", compact_speed);
+        return true;
+    }
+    if (have_direction) {
+        std::snprintf(out, out_size, "%s", compact_direction);
+        return true;
+    }
+
+    return false;
+}
+
+void update_weather_source_hint_from_json(const char* json)
+{
+    char attribution[96] = {};
+    char friendly_name[64] = {};
+    char provider_name[64] = {};
+
+    g_status.weather_source_hint.fill('\0');
+
+    if (extract_json_string_value(json, "\"attribution\":\"", attribution, sizeof(attribution)) &&
+        normalize_weather_provider_name(attribution, provider_name, sizeof(provider_name))) {
+        copy_text(g_status.weather_source_hint, provider_name);
+        return;
+    }
+
+    if (extract_json_string_value(json, "\"friendly_name\":\"", friendly_name, sizeof(friendly_name))) {
+        trim_text_in_place(friendly_name);
+        if (friendly_name[0] != '\0') {
+            copy_text(g_status.weather_source_hint, friendly_name);
+        }
+    }
+}
+
+const char* friendly_weather_condition(const char* raw_condition)
+{
+    if (raw_condition == nullptr || raw_condition[0] == '\0') {
+        return "";
+    }
+
+    if (std::strcmp(raw_condition, "clear-night") == 0) return "CLEAR NIGHT";
+    if (std::strcmp(raw_condition, "cloudy") == 0) return "CLOUDY";
+    if (std::strcmp(raw_condition, "exceptional") == 0) return "EXCEPTIONAL";
+    if (std::strcmp(raw_condition, "fog") == 0) return "FOG";
+    if (std::strcmp(raw_condition, "hail") == 0) return "HAIL";
+    if (std::strcmp(raw_condition, "lightning") == 0) return "LIGHTNING";
+    if (std::strcmp(raw_condition, "lightning-rainy") == 0) return "LTNG RAIN";
+    if (std::strcmp(raw_condition, "partlycloudy") == 0) return "PARTLY CLOUDY";
+    if (std::strcmp(raw_condition, "pouring") == 0) return "POURING";
+    if (std::strcmp(raw_condition, "rainy") == 0) return "RAIN";
+    if (std::strcmp(raw_condition, "snowy") == 0) return "SNOW";
+    if (std::strcmp(raw_condition, "snowy-rainy") == 0) return "SLEET";
+    if (std::strcmp(raw_condition, "sunny") == 0) return "SUNNY";
+    if (std::strcmp(raw_condition, "windy") == 0) return "WINDY";
+    if (std::strcmp(raw_condition, "windy-variant") == 0) return "BREEZY";
+    if (std::strcmp(raw_condition, "unavailable") == 0) return "UNAVAILABLE";
+
+    return raw_condition;
+}
+
+char normalized_temperature_unit(const char* unit_text)
+{
+    if (unit_text == nullptr) {
+        return '\0';
+    }
+
+    for (const char* p = unit_text; *p != '\0'; ++p) {
+        if (*p == 'C' || *p == 'c') return 'C';
+        if (*p == 'F' || *p == 'f') return 'F';
+    }
+
+    return '\0';
+}
+
+bool format_hour_text(const char* iso_datetime, char* out, size_t out_size)
+{
+    if (iso_datetime == nullptr || out == nullptr || out_size < 6) {
+        return false;
+    }
+
+    const char* time_sep = std::strchr(iso_datetime, 'T');
+    if (time_sep == nullptr || std::strlen(time_sep + 1) < 5) {
+        return false;
+    }
+
+    std::snprintf(out, out_size, "%.5s", time_sep + 1);
+    return true;
+}
+
+void update_sun_times_from_json(const char* json)
+{
+    char next_rising[40] = {};
+    char next_setting[40] = {};
+
+    g_status.sunrise_text.fill('\0');
+    g_status.sunset_text.fill('\0');
+
+    if (extract_json_string_value(json, "\"next_rising\":\"", next_rising, sizeof(next_rising))) {
+        format_hour_text(next_rising, g_status.sunrise_text.data(), g_status.sunrise_text.size());
+    }
+
+    if (extract_json_string_value(json, "\"next_setting\":\"", next_setting, sizeof(next_setting))) {
+        format_hour_text(next_setting, g_status.sunset_text.data(), g_status.sunset_text.size());
+    }
+}
+
+void clear_weather_forecast()
+{
+    g_status.weather_forecast_count = 0;
+    for (auto& entry : g_status.weather_forecast) {
+        entry.time_text.fill('\0');
+        entry.temperature_text.fill('\0');
+        entry.wind_text.fill('\0');
+        entry.condition_text.fill('\0');
+    }
+}
+
+// Why this helper is needed:
+// The forecast parser does not use a full JSON library. It first isolates one
+// forecast object, then re-parses just that slice. A plain "find the next }"
+// approach is not safe enough because JSON strings can legally contain braces,
+// for example in descriptive text. This matcher keeps track of whether we are
+// inside a quoted string and whether the current character is escaped, so only
+// real structural braces count.
+const char* find_matching_json_object_end(const char* object_start)
+{
+    if (object_start == nullptr || *object_start != '{') {
+        return nullptr;
+    }
+
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+    for (const char* p = object_start; *p != '\0'; ++p) {
+        const char current = *p;
+        if (escape) {
+            escape = false;
+            continue;
+        }
+
+        if (current == '\\' && in_string) {
+            escape = true;
+            continue;
+        }
+
+        if (current == '"') {
+            in_string = !in_string;
+            continue;
+        }
+
+        if (in_string) {
+            continue;
+        }
+
+        if (current == '{') {
+            ++depth;
+        } else if (current == '}') {
+            --depth;
+            if (depth == 0) {
+                return p;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+bool parse_hourly_forecast_response(const char* json)
+{
+    if (json == nullptr) {
+        return false;
+    }
+
+    const char* forecast_key = std::strstr(json, "\"forecast\":[");
+    if (forecast_key == nullptr) {
+        return false;
+    }
+
+    const char* cursor = std::strchr(forecast_key, '[');
+    if (cursor == nullptr) {
+        return false;
+    }
+    ++cursor;
+
+    clear_weather_forecast();
+
+    while (*cursor != '\0' &&
+           *cursor != ']' &&
+           g_status.weather_forecast_count < kWeatherForecastEntryCount) {
+        const char* object_start = std::strchr(cursor, '{');
+        if (object_start == nullptr) {
+            break;
+        }
+
+        const char* object_end = find_matching_json_object_end(object_start);
+        if (object_end == nullptr) {
+            break;
+        }
+
+        char object_json[384] = {};
+        const size_t object_len = static_cast<size_t>(object_end - object_start + 1);
+        if (object_len >= sizeof(object_json)) {
+            // Reason for skipping:
+            // Copying only part of the object would create invalid JSON and the
+            // parser below could then read a half-object as if it were real
+            // data. Dropping the single oversized entry is safer than trying to
+            // salvage a truncated copy.
+            cursor = object_end + 1;
+            continue;
+        }
+        std::memcpy(object_json, object_start, object_len);
+        object_json[object_len] = '\0';
+
+        char datetime_text[32] = {};
+        char temperature_text[16] = {};
+        char wind_speed_text[16] = {};
+        char wind_bearing_text[16] = {};
+        char condition_text[24] = {};
+
+        if (!extract_json_string_value(object_json, "\"datetime\":\"", datetime_text, sizeof(datetime_text)) ||
+            !format_hour_text(datetime_text,
+                              g_status.weather_forecast[g_status.weather_forecast_count].time_text.data(),
+                              g_status.weather_forecast[g_status.weather_forecast_count].time_text.size())) {
+            cursor = object_end + 1;
+            continue;
+        }
+
+        if (extract_json_scalar_value(object_json, "\"temperature\":", temperature_text, sizeof(temperature_text))) {
+            if (g_weather_temperature_unit != '\0') {
+                std::snprintf(g_status.weather_forecast[g_status.weather_forecast_count].temperature_text.data(),
+                              g_status.weather_forecast[g_status.weather_forecast_count].temperature_text.size(),
+                              "%s %c",
+                              temperature_text,
+                              g_weather_temperature_unit);
+            } else {
+                copy_text(g_status.weather_forecast[g_status.weather_forecast_count].temperature_text, temperature_text);
+            }
+        } else {
+            copy_text(g_status.weather_forecast[g_status.weather_forecast_count].temperature_text, "-");
+        }
+
+        const bool have_wind_speed =
+            extract_json_scalar_value(object_json, "\"wind_speed\":", wind_speed_text, sizeof(wind_speed_text));
+        const bool have_wind_bearing =
+            extract_json_string_value(object_json, "\"wind_bearing\":\"", wind_bearing_text, sizeof(wind_bearing_text)) ||
+            extract_json_scalar_value(object_json, "\"wind_bearing\":", wind_bearing_text, sizeof(wind_bearing_text));
+
+        if (format_compact_wind_text(have_wind_speed ? wind_speed_text : nullptr,
+                                     have_wind_bearing ? wind_bearing_text : nullptr,
+                                     g_status.weather_forecast[g_status.weather_forecast_count].wind_text.data(),
+                                     g_status.weather_forecast[g_status.weather_forecast_count].wind_text.size())) {
+        } else {
+            copy_text(g_status.weather_forecast[g_status.weather_forecast_count].wind_text, "-");
+        }
+
+        if (extract_json_string_value(object_json, "\"condition\":\"", condition_text, sizeof(condition_text))) {
+            copy_text(g_status.weather_forecast[g_status.weather_forecast_count].condition_text,
+                      friendly_weather_condition(condition_text));
+        } else {
+            copy_text(g_status.weather_forecast[g_status.weather_forecast_count].condition_text, "?");
+        }
+
+        ++g_status.weather_forecast_count;
+        cursor = object_end + 1;
+    }
+
+    return g_status.weather_forecast_count > 0;
 }
 
 void clear_runtime_data()
 {
     g_status.self_entity_published = false;
     g_status.tracked_entity_state.fill('\0');
+    g_status.weather_source_hint.fill('\0');
+    g_status.weather_condition.fill('\0');
+    g_status.weather_temperature.fill('\0');
+    g_status.weather_wind_unit.fill('\0');
+    g_status.sunrise_text.fill('\0');
+    g_status.sunset_text.fill('\0');
+    clear_weather_forecast();
+    g_weather_temperature_unit = '\0';
+    g_weather_wind_source_unit[0] = '\0';
 }
 
 bool request_kind_success(RequestKind kind, int http_status)
@@ -150,6 +971,9 @@ bool request_kind_success(RequestKind kind, int http_status)
     switch (kind) {
     case RequestKind::ProbeApi:
     case RequestKind::FetchTrackedEntity:
+    case RequestKind::FetchWeatherEntity:
+    case RequestKind::FetchWeatherForecast:
+    case RequestKind::FetchSunEntity:
         return http_status == 200;
     case RequestKind::PublishSelfEntity:
         return http_status == 200 || http_status == 201;
@@ -168,6 +992,12 @@ void advance_request_kind()
             g_next_attempt = get_absolute_time();
             return;
         }
+        if (g_status.weather_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::FetchWeatherEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
         if (g_status.self_entity_id[0] != '\0') {
             g_request_kind = RequestKind::PublishSelfEntity;
             g_sequence_complete = false;
@@ -176,6 +1006,39 @@ void advance_request_kind()
         }
         break;
     case RequestKind::FetchTrackedEntity:
+        if (g_status.weather_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::FetchWeatherEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        if (g_status.self_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::PublishSelfEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        break;
+    case RequestKind::FetchWeatherEntity:
+        g_request_kind = RequestKind::FetchWeatherForecast;
+        g_sequence_complete = false;
+        g_next_attempt = get_absolute_time();
+        return;
+    case RequestKind::FetchWeatherForecast:
+        if (HOME_ASSISTANT_SUN_ENTITY_ID[0] != '\0') {
+            g_request_kind = RequestKind::FetchSunEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        if (g_status.self_entity_id[0] != '\0') {
+            g_request_kind = RequestKind::PublishSelfEntity;
+            g_sequence_complete = false;
+            g_next_attempt = get_absolute_time();
+            return;
+        }
+        break;
+    case RequestKind::FetchSunEntity:
         if (g_status.self_entity_id[0] != '\0') {
             g_request_kind = RequestKind::PublishSelfEntity;
             g_sequence_complete = false;
@@ -187,8 +1050,9 @@ void advance_request_kind()
         break;
     }
 
+    g_request_kind = RequestKind::ProbeApi;
     g_sequence_complete = true;
-    g_next_attempt = nil_time;
+    g_next_attempt = make_timeout_time_ms(kRefreshIntervalMs);
 }
 
 bool parse_home_assistant_endpoint()
@@ -309,9 +1173,8 @@ void reset_attempt_state()
 
 void finish_request(HomeAssistantConnectionState state, int last_error, int last_http_status, uint32_t retry_ms)
 {
-    (void)retry_ms;
     set_status(state, last_error, last_http_status);
-    g_next_attempt = nil_time;
+    g_next_attempt = (retry_ms > 0) ? make_timeout_time_ms(retry_ms) : nil_time;
     reset_attempt_state();
 }
 
@@ -320,6 +1183,46 @@ void finish_request_success(int http_status)
     set_status(HomeAssistantConnectionState::Connected, 0, http_status);
     reset_attempt_state();
     advance_request_kind();
+}
+
+void finish_optional_request_soft_failure(err_t err)
+{
+    const int http_status = partial_http_status();
+
+    switch (g_request_kind) {
+    case RequestKind::FetchTrackedEntity:
+        g_status.tracked_entity_state.fill('\0');
+        break;
+    case RequestKind::FetchWeatherEntity:
+        g_status.weather_source_hint.fill('\0');
+        g_status.weather_condition.fill('\0');
+        g_status.weather_temperature.fill('\0');
+        g_status.weather_wind_unit.fill('\0');
+        g_weather_wind_source_unit[0] = '\0';
+        break;
+    case RequestKind::FetchWeatherForecast:
+        if (!parse_hourly_forecast_response(response_body())) {
+            clear_weather_forecast();
+        }
+        break;
+    case RequestKind::FetchSunEntity:
+        g_status.sunrise_text.fill('\0');
+        g_status.sunset_text.fill('\0');
+        break;
+    case RequestKind::PublishSelfEntity:
+        g_status.self_entity_published = false;
+        break;
+    case RequestKind::ProbeApi:
+        break;
+    }
+
+    reset_attempt_state();
+    set_status(HomeAssistantConnectionState::Connected, 0, http_status > 0 ? http_status : g_status.last_http_status);
+    advance_request_kind();
+    std::printf("HA %s soft-failed err=%d status=%d\n",
+                request_kind_name(g_request_kind),
+                static_cast<int>(err),
+                http_status);
 }
 
 bool build_request()
@@ -334,6 +1237,44 @@ bool build_request()
                                              sizeof(target_buffer),
                                              "/api/states/%s",
                                              g_status.tracked_entity_id.data());
+        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+        target = target_buffer;
+    } else if (g_request_kind == RequestKind::FetchWeatherEntity) {
+        const int target_len = std::snprintf(target_buffer,
+                                             sizeof(target_buffer),
+                                             "/api/states/%s",
+                                             g_status.weather_entity_id.data());
+        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+        target = target_buffer;
+    } else if (g_request_kind == RequestKind::FetchWeatherForecast) {
+        method = "POST";
+        target = "/api/services/weather/get_forecasts?return_response";
+
+        const int body_len = std::snprintf(g_request_body,
+                                           sizeof(g_request_body),
+                                           "{\"entity_id\":\"%s\",\"type\":\"hourly\"}",
+                                           g_status.weather_entity_id.data());
+        if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body)) {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+    } else if (g_request_kind == RequestKind::FetchSunEntity) {
+        const int target_len = std::snprintf(target_buffer,
+                                             sizeof(target_buffer),
+                                             "/api/states/%s",
+                                             HOME_ASSISTANT_SUN_ENTITY_ID);
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer)) {
             set_status(HomeAssistantConnectionState::Error, -1, 0);
             g_sequence_complete = true;
@@ -405,12 +1346,16 @@ err_t on_tcp_connected(void* arg, tcp_pcb* pcb, err_t err)
 
     if (err != ERR_OK) {
         g_sequence_complete = true;
-        finish_request(HomeAssistantConnectionState::Error, err, 0, 0);
+        finish_request(HomeAssistantConnectionState::Error, err, 0, kRetryDelayMs);
         std::printf("HA connect failed err=%d\n", static_cast<int>(err));
         return ERR_OK;
     }
 
-    set_status(HomeAssistantConnectionState::Authorizing, 0, 0);
+    if (request_updates_connection_state()) {
+        set_status(HomeAssistantConnectionState::Authorizing, 0, 0);
+    } else {
+        g_status.last_error = 0;
+    }
     g_deadline = make_timeout_time_ms(kIoTimeoutMs);
     return try_send_request();
 }
@@ -427,14 +1372,12 @@ void on_tcp_error(void* arg, err_t err)
     g_response_len = 0;
     g_response[0] = '\0';
     g_deadline = nil_time;
-    g_next_attempt = nil_time;
+    g_next_attempt = make_timeout_time_ms(kRetryDelayMs);
     std::printf("HA tcp error err=%d\n", static_cast<int>(err));
 }
 
 void handle_http_status(int http_status)
 {
-    g_status.last_http_status = http_status;
-
     if (request_kind_success(g_request_kind, http_status)) {
         if (g_request_kind == RequestKind::FetchTrackedEntity) {
             char entity_state[sizeof(g_status.tracked_entity_state)] = {};
@@ -446,6 +1389,71 @@ void handle_http_status(int http_status)
             std::printf("HA entity state %s=%s\n",
                         g_status.tracked_entity_id.data(),
                         g_status.tracked_entity_state.data());
+        } else if (g_request_kind == RequestKind::FetchWeatherEntity) {
+            char raw_condition[24] = {};
+            char raw_temperature[12] = {};
+            char raw_unit[8] = {};
+            char raw_wind_unit[16] = {};
+
+            update_weather_source_hint_from_json(response_body());
+
+            if (extract_json_string_value(response_body(), "\"state\":\"", raw_condition, sizeof(raw_condition))) {
+                copy_text(g_status.weather_condition, friendly_weather_condition(raw_condition));
+            } else {
+                copy_text(g_status.weather_condition, "?");
+            }
+
+            if (extract_json_scalar_value(response_body(), "\"temperature\":", raw_temperature, sizeof(raw_temperature))) {
+                if (extract_json_string_value(response_body(), "\"temperature_unit\":\"", raw_unit, sizeof(raw_unit))) {
+                    const char unit = normalized_temperature_unit(raw_unit);
+                    g_weather_temperature_unit = unit;
+                    if (unit != '\0') {
+                        char formatted_temperature[sizeof(g_status.weather_temperature)] = {};
+                        std::snprintf(formatted_temperature,
+                                      sizeof(formatted_temperature),
+                                      "%s %c",
+                                      raw_temperature,
+                                      unit);
+                        copy_text(g_status.weather_temperature, formatted_temperature);
+                    } else {
+                        copy_text(g_status.weather_temperature, raw_temperature);
+                    }
+                } else {
+                    copy_text(g_status.weather_temperature, raw_temperature);
+                }
+            } else {
+                g_status.weather_temperature.fill('\0');
+            }
+
+            if (extract_json_string_value(response_body(), "\"wind_speed_unit\":\"", raw_wind_unit, sizeof(raw_wind_unit)) &&
+                normalize_wind_speed_unit(raw_wind_unit,
+                                          g_weather_wind_source_unit,
+                                          sizeof(g_weather_wind_source_unit))) {
+                copy_text(g_status.weather_wind_unit, "mph");
+            } else {
+                g_weather_wind_source_unit[0] = '\0';
+                g_status.weather_wind_unit.fill('\0');
+            }
+
+            std::printf("HA weather %s=%s %s\n",
+                        g_status.weather_entity_id.data(),
+                        g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
+                        g_status.weather_temperature[0] ? g_status.weather_temperature.data() : "-");
+        } else if (g_request_kind == RequestKind::FetchWeatherForecast) {
+            if (parse_hourly_forecast_response(response_body())) {
+                std::printf("HA hourly forecast %s count=%u\n",
+                            g_status.weather_entity_id.data(),
+                            static_cast<unsigned>(g_status.weather_forecast_count));
+            } else {
+                clear_weather_forecast();
+                std::printf("HA hourly forecast parse failed %s\n", g_status.weather_entity_id.data());
+            }
+        } else if (g_request_kind == RequestKind::FetchSunEntity) {
+            update_sun_times_from_json(response_body());
+            std::printf("HA sun %s rise=%s set=%s\n",
+                        HOME_ASSISTANT_SUN_ENTITY_ID,
+                        g_status.sunrise_text[0] ? g_status.sunrise_text.data() : "-",
+                        g_status.sunset_text[0] ? g_status.sunset_text.data() : "-");
         } else if (g_request_kind == RequestKind::PublishSelfEntity) {
             g_status.self_entity_published = true;
             std::printf("HA self entity posted %s status=%d\n",
@@ -458,21 +1466,85 @@ void handle_http_status(int http_status)
                         http_status);
         }
 
+        g_status.last_http_status = http_status;
         finish_request_success(http_status);
         return;
     }
 
     if (http_status == 401) {
+        g_status.last_http_status = http_status;
         g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Unauthorized, 0, http_status, 0);
-        std::printf("HA API probe unauthorized host=%s port=%u\n",
+        std::printf("HA %s request unauthorized host=%s port=%u\n",
+                    request_kind_name(g_request_kind),
                     g_configured_host,
                     static_cast<unsigned>(g_configured_port));
         return;
     }
 
+    if (g_request_kind == RequestKind::FetchTrackedEntity) {
+        g_status.tracked_entity_state.fill('\0');
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        std::printf("HA tracked entity unavailable %s status=%d\n",
+                    g_status.tracked_entity_id.data(),
+                    http_status);
+        return;
+    }
+
+    if (g_request_kind == RequestKind::FetchWeatherEntity) {
+        g_status.weather_source_hint.fill('\0');
+        g_status.weather_condition.fill('\0');
+        g_status.weather_temperature.fill('\0');
+        g_status.weather_wind_unit.fill('\0');
+        g_weather_wind_source_unit[0] = '\0';
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        std::printf("HA weather entity unavailable %s status=%d\n",
+                    g_status.weather_entity_id.data(),
+                    http_status);
+        return;
+    }
+
+    if (g_request_kind == RequestKind::FetchWeatherForecast) {
+        clear_weather_forecast();
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        std::printf("HA hourly forecast unavailable %s status=%d\n",
+                    g_status.weather_entity_id.data(),
+                    http_status);
+        return;
+    }
+
+    if (g_request_kind == RequestKind::FetchSunEntity) {
+        g_status.sunrise_text.fill('\0');
+        g_status.sunset_text.fill('\0');
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        std::printf("HA sun entity unavailable %s status=%d\n",
+                    HOME_ASSISTANT_SUN_ENTITY_ID,
+                    http_status);
+        return;
+    }
+
+    if (g_request_kind == RequestKind::PublishSelfEntity) {
+        g_status.self_entity_published = false;
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        std::printf("HA self entity unavailable %s status=%d\n",
+                    g_status.self_entity_id.data(),
+                    http_status);
+        return;
+    }
+
+    g_status.last_http_status = http_status;
     g_sequence_complete = true;
-    finish_request(HomeAssistantConnectionState::Error, 0, http_status, 0);
+    finish_request(HomeAssistantConnectionState::Error, 0, http_status, kRetryDelayMs);
     std::printf("HA %s request unexpected status=%d host=%s port=%u\n",
                 request_kind_name(g_request_kind),
                 http_status,
@@ -497,13 +1569,33 @@ err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
             pbuf_free(p);
         }
         g_sequence_complete = true;
-        finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status, 0);
+        finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status, kRetryDelayMs);
         return ERR_OK;
     }
 
     if (p == nullptr) {
-        g_sequence_complete = true;
-        finish_request(HomeAssistantConnectionState::Error, ERR_CLSD, g_status.last_http_status, 0);
+        int http_status = 0;
+        err_t protocol_error = ERR_VAL;
+        if (!validate_http_response(&http_status, &protocol_error)) {
+            // Why we fail here:
+            // This is the boundary between raw network input and application
+            // state. If the response is malformed, incomplete, or uses an HTTP
+            // feature this client does not understand, we stop here and treat
+            // it like a failed request. That is easier to reason about than
+            // letting deeper parsing code guess what the response meant.
+            if (request_updates_connection_state()) {
+                g_sequence_complete = true;
+                finish_request(HomeAssistantConnectionState::Error,
+                               protocol_error,
+                               partial_http_status(),
+                               kRetryDelayMs);
+            } else {
+                finish_optional_request_soft_failure(protocol_error);
+            }
+            return ERR_OK;
+        }
+
+        handle_http_status(http_status);
         return ERR_OK;
     }
 
@@ -520,22 +1612,16 @@ err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
 
     tcp_recved(pcb, received_len);
     pbuf_free(p);
-
-    const char* line_end = std::strstr(g_response, "\r\n");
-    if (line_end == nullptr) {
     if (g_response_len + 1 >= sizeof(g_response)) {
+        if (request_updates_connection_state()) {
             g_sequence_complete = true;
-            finish_request(HomeAssistantConnectionState::Error, ERR_BUF, 0, 0);
+            finish_request(HomeAssistantConnectionState::Error, ERR_BUF, partial_http_status(), kRetryDelayMs);
+        } else {
+            finish_optional_request_soft_failure(ERR_BUF);
         }
         return ERR_OK;
     }
 
-    int http_status = 0;
-    if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &http_status) != 1) {
-        http_status = 0;
-    }
-
-    handle_http_status(http_status);
     return ERR_OK;
 }
 
@@ -568,7 +1654,7 @@ err_t try_send_request()
             }
 
             g_sequence_complete = true;
-            finish_request(HomeAssistantConnectionState::Error, write_rc, 0, 0);
+            finish_request(HomeAssistantConnectionState::Error, write_rc, 0, kRetryDelayMs);
             return write_rc;
         }
 
@@ -578,7 +1664,7 @@ err_t try_send_request()
     const err_t output_rc = tcp_output(g_pcb);
     if (output_rc != ERR_OK) {
         g_sequence_complete = true;
-        finish_request(HomeAssistantConnectionState::Error, output_rc, 0, 0);
+        finish_request(HomeAssistantConnectionState::Error, output_rc, 0, kRetryDelayMs);
         return output_rc;
     }
 
@@ -625,9 +1711,8 @@ void dns_found(const char* name, const ip_addr_t* ipaddr, void* arg)
 
     g_dns_pending = false;
     if (ipaddr == nullptr) {
-        set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0);
         g_sequence_complete = true;
-        g_next_attempt = nil_time;
+        finish_request(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0, kRetryDelayMs);
         std::printf("HA DNS resolution failed for host=%s\n", g_configured_host);
         return;
     }
@@ -646,9 +1731,8 @@ bool start_socket_connect()
     g_pcb = tcp_new_ip_type(IP_GET_TYPE(&g_resolved_ip));
     if (g_pcb == nullptr) {
         cyw43_arch_lwip_end();
-        set_status(HomeAssistantConnectionState::Error, ERR_MEM, 0);
         g_sequence_complete = true;
-        g_next_attempt = nil_time;
+        finish_request(HomeAssistantConnectionState::Error, ERR_MEM, 0, kRetryDelayMs);
         return false;
     }
 
@@ -661,15 +1745,17 @@ bool start_socket_connect()
     const err_t rc = tcp_connect(g_pcb, &g_resolved_ip, g_configured_port, on_tcp_connected);
     cyw43_arch_lwip_end();
     if (rc == ERR_OK) {
-        set_status(HomeAssistantConnectionState::Connecting, 0, 0);
+        if (request_updates_connection_state()) {
+            set_status(HomeAssistantConnectionState::Connecting, 0, 0);
+        } else {
+            g_status.last_error = 0;
+        }
         g_deadline = make_timeout_time_ms(kConnectTimeoutMs);
         return true;
     }
 
-    set_status(HomeAssistantConnectionState::Error, rc, 0);
     g_sequence_complete = true;
-    reset_attempt_state();
-    g_next_attempt = nil_time;
+    finish_request(HomeAssistantConnectionState::Error, rc, 0, kRetryDelayMs);
     std::printf("HA connect start failed err=%d\n", static_cast<int>(rc));
     return false;
 }
@@ -679,7 +1765,9 @@ bool start_probe()
     g_probe_attempted = true;
     reset_attempt_state();
     g_status.last_error = 0;
-    g_status.last_http_status = 0;
+    if (request_updates_connection_state()) {
+        g_status.last_http_status = 0;
+    }
     std::printf("HA starting %s request\n", request_kind_name(g_request_kind));
 
     ip_addr_t parsed = {};
@@ -694,21 +1782,24 @@ bool start_probe()
     cyw43_arch_lwip_end();
     if (dns_rc == ERR_OK) {
         g_dns_resolved = true;
-        set_status(HomeAssistantConnectionState::Resolving, 0, 0);
+        if (request_updates_connection_state()) {
+            set_status(HomeAssistantConnectionState::Resolving, 0, 0);
+        }
         return start_socket_connect();
     }
 
     if (dns_rc == ERR_INPROGRESS) {
         g_dns_pending = true;
-        set_status(HomeAssistantConnectionState::Resolving, 0, 0);
+        if (request_updates_connection_state()) {
+            set_status(HomeAssistantConnectionState::Resolving, 0, 0);
+        }
         g_deadline = make_timeout_time_ms(kResolveTimeoutMs);
         std::printf("HA resolving host=%s\n", g_configured_host);
         return true;
     }
 
-    set_status(HomeAssistantConnectionState::Error, dns_rc, 0);
     g_sequence_complete = true;
-    g_next_attempt = nil_time;
+    finish_request(HomeAssistantConnectionState::Error, dns_rc, 0, kRetryDelayMs);
     std::printf("HA dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(dns_rc), g_configured_host);
     return false;
 }
@@ -726,6 +1817,7 @@ void init()
                           HOME_ASSISTANT_TOKEN[0] != '\0';
     copy_text(g_status.host, g_configured_host);
     copy_text(g_status.tracked_entity_id, HOME_ASSISTANT_ENTITY_ID);
+    copy_text(g_status.weather_entity_id, HOME_ASSISTANT_WEATHER_ENTITY_ID);
     copy_text(g_status.self_entity_id, HOME_ASSISTANT_SELF_ENTITY_ID);
     clear_runtime_data();
     g_status.last_error = 0;
@@ -779,8 +1871,7 @@ bool update(const WifiStatus& wifi_status)
     if (g_dns_pending && !is_nil_time(g_deadline) && absolute_time_diff_us(get_absolute_time(), g_deadline) <= 0) {
         g_dns_pending = false;
         g_sequence_complete = true;
-        set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0);
-        g_next_attempt = nil_time;
+        finish_request(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0, kRetryDelayMs);
     }
 
     if (g_dns_resolved && g_pcb == nullptr) {
@@ -790,12 +1881,10 @@ bool update(const WifiStatus& wifi_status)
 
     if (g_pcb != nullptr && !is_nil_time(g_deadline) && absolute_time_diff_us(get_absolute_time(), g_deadline) <= 0) {
         g_sequence_complete = true;
-        set_status(HomeAssistantConnectionState::Error, ERR_TIMEOUT, g_status.last_http_status);
-        reset_attempt_state();
-        g_next_attempt = nil_time;
+        finish_request(HomeAssistantConnectionState::Error, ERR_TIMEOUT, g_status.last_http_status, kRetryDelayMs);
     }
 
-    if (!g_sequence_complete && !g_dns_pending && g_pcb == nullptr &&
+    if (!g_dns_pending && g_pcb == nullptr &&
         (!g_probe_attempted || (!is_nil_time(g_next_attempt) &&
                                 absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0))) {
         g_next_attempt = nil_time;

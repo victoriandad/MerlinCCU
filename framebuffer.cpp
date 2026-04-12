@@ -154,8 +154,10 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
     if (scale < 1) scale = 1;
 
     const fonts::Glyph5x7* g = fonts::lookup_5x7(c);
-    for (int col = 0; col < 5; ++col) {
-        const uint8_t bits = g->col[col];
+    const fonts::GlyphMetrics metrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, c);
+
+    for (int col = 0; col < metrics.draw_width; ++col) {
+        const uint8_t bits = g->col[metrics.first_column + col];
 
         for (int row = 0; row < 7; ++row) {
             if (((bits >> row) & 0x01u) == 0) {
@@ -174,18 +176,30 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
 void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font)
 {
     if (font == fonts::FontFace::Font5x7) {
-        draw_char(fb, x, y, c, on, 1);
+        const fonts::Glyph5x7* glyph = fonts::lookup_5x7(c);
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, c);
+
+        for (int col = 0; col < metrics.draw_width; ++col) {
+            const uint8_t bits = glyph->col[metrics.first_column + col];
+            for (int row = 0; row < 7; ++row) {
+                if (((bits >> row) & 0x01u) == 0) {
+                    continue;
+                }
+                set_pixel(fb, x + col, y + row, on);
+            }
+        }
         return;
     }
 
     const uint8_t* rows = fonts::lookup_bitmap_rows(font, c);
-    const int width = fonts::font_width(font);
+    const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, c);
     const int height = fonts::font_height(font);
 
     for (int row = 0; row < height; ++row) {
         const uint8_t bits = rows[row];
-        for (int col = 0; col < width; ++col) {
-            if ((bits & (0x80u >> col)) == 0) {
+        for (int col = 0; col < metrics.draw_width; ++col) {
+            const int source_col = metrics.first_column + col;
+            if ((bits & (0x80u >> source_col)) == 0) {
                 continue;
             }
             set_pixel(fb, x + col, y + row, on);
@@ -197,8 +211,9 @@ void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale, int
 {
     int cursor_x = x;
     while (*s) {
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, *s);
         draw_char(fb, cursor_x, y, *s, on, scale);
-        cursor_x += (5 * scale) + spacing;
+        cursor_x += (metrics.advance * scale) + spacing;
         ++s;
     }
 }
@@ -206,11 +221,11 @@ void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale, int
 void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFace font, int spacing)
 {
     int cursor_x = x;
-    const int advance = fonts::font_width(font) + spacing;
 
     while (*s) {
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, *s);
         draw_char(fb, cursor_x, y, *s, on, font);
-        cursor_x += advance;
+        cursor_x += metrics.advance + spacing;
         ++s;
     }
 }
@@ -221,7 +236,17 @@ int measure_text(const char* s, fonts::FontFace font, int spacing)
         return 0;
     }
 
-    return static_cast<int>(std::strlen(s)) * (fonts::font_width(font) + spacing) - spacing;
+    int width = 0;
+
+    while (*s) {
+        width += fonts::glyph_metrics(font, *s).advance;
+        if (s[1] != '\0') {
+            width += spacing;
+        }
+        ++s;
+    }
+
+    return width;
 }
 
 int font_height(fonts::FontFace font)

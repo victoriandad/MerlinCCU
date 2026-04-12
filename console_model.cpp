@@ -73,7 +73,7 @@ const KeyLegend& key_legend(HardKeyId key)
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
-    state.active_page = MenuPage::Status;
+    state.active_page = MenuPage::Home;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
@@ -98,6 +98,16 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.host.fill('\0');
     state.home_assistant_status.tracked_entity_id.fill('\0');
     state.home_assistant_status.tracked_entity_state.fill('\0');
+    state.home_assistant_status.weather_entity_id.fill('\0');
+    state.home_assistant_status.weather_source_hint.fill('\0');
+    state.home_assistant_status.weather_condition.fill('\0');
+    state.home_assistant_status.weather_temperature.fill('\0');
+    state.home_assistant_status.weather_forecast_count = 0;
+    for (auto& entry : state.home_assistant_status.weather_forecast) {
+        entry.time_text.fill('\0');
+        entry.temperature_text.fill('\0');
+        entry.condition_text.fill('\0');
+    }
     state.home_assistant_status.self_entity_id.fill('\0');
     state.mqtt_status.state = MqttConnectionState::Disabled;
     state.mqtt_status.configured = false;
