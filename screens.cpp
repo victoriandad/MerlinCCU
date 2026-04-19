@@ -181,6 +181,8 @@ const char* menu_page_title(MenuPage page)
         return "SOURCES";
     case MenuPage::Alignment:
         return "ALIGN";
+    case MenuPage::KeypadDebug:
+        return "KEYPAD";
     }
 
     return "MENU";
@@ -885,6 +887,132 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
     framebuffer::draw_text(fb, 116, 222, alert_severity_text(console_state.alert_severity), true, 1, 1);
 }
 
+void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int panel_left = 60;
+    constexpr int panel_top = 40;
+    constexpr int panel_width = UI_WIDTH - 80;
+    constexpr int panel_height = 200;
+    constexpr int label_x = 74;
+    constexpr int value_x = 136;
+    constexpr int divider_y = 144;
+
+    framebuffer::draw_rect(fb, panel_left, panel_top, panel_width, panel_height, true);
+    draw_centered_text(fb, panel_left + (panel_width / 2), 56, "KEYPAD", true, fonts::FontFace::FontTitle8x12, 1);
+
+    framebuffer::draw_text(fb, label_x, 84, "ACTIVE", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           84,
+                           console_state.keypad_debug_status.active_panel_pins[0]
+                               ? console_state.keypad_debug_status.active_panel_pins.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, label_x, 100, "MASK", true, 1, 1);
+    char mask_text[16] = {};
+    std::snprintf(mask_text, sizeof(mask_text), "0x%04lX",
+                  static_cast<unsigned long>(console_state.keypad_debug_status.active_mask));
+    framebuffer::draw_text(fb,
+                           value_x,
+                           100,
+                           mask_text,
+                           true,
+                           1,
+                           1);
+
+    framebuffer::draw_text(fb, label_x, 116, "LINES", true, 1, 1);
+    char lines_text[24] = {};
+    std::snprintf(lines_text,
+                  sizeof(lines_text),
+                  "%u/%u",
+                  static_cast<unsigned>(console_state.keypad_debug_status.active_count),
+                  static_cast<unsigned>(console_state.keypad_debug_status.configured_count));
+    framebuffer::draw_text(fb, value_x, 116, lines_text, true, 1, 1);
+
+    framebuffer::draw_text(fb, label_x, 132, "DRIVE", true, 1, 1);
+    char drive_text[16] = {};
+    if (console_state.keypad_debug_status.probe_drive_panel_pin != 0) {
+        std::snprintf(drive_text,
+                      sizeof(drive_text),
+                      "%u",
+                      static_cast<unsigned>(console_state.keypad_debug_status.probe_drive_panel_pin));
+    } else {
+        std::snprintf(drive_text, sizeof(drive_text), "-");
+    }
+    framebuffer::draw_text(fb, value_x, 132, drive_text, true, 1, 1);
+
+    framebuffer::draw_hline(fb, label_x, panel_left + panel_width - 14, divider_y, true);
+    framebuffer::draw_text(fb, label_x, 156, "SENSE", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           156,
+                           console_state.keypad_debug_status.probe_hit_panel_pins[0]
+                               ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, label_x, 172, "LAST KEY", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           172,
+                           console_state.keypad_debug_status.last_button_name[0]
+                               ? console_state.keypad_debug_status.last_button_name.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, label_x, 188, "EVENT", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           188,
+                           console_state.keypad_debug_status.last_event_type[0]
+                               ? console_state.keypad_debug_status.last_event_type.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, label_x, 204, "COUNT", true, 1, 1);
+    char count_text[16] = {};
+    std::snprintf(count_text, sizeof(count_text), "%lu",
+                  static_cast<unsigned long>(console_state.keypad_debug_status.event_count));
+    framebuffer::draw_text(fb, value_x, 204, count_text, true, 1, 1);
+
+    framebuffer::draw_text(fb, label_x, 212, "D05", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           212,
+                           console_state.keypad_debug_status.drive_5_hits[0]
+                               ? console_state.keypad_debug_status.drive_5_hits.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, label_x, 224, "D14", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           224,
+                           console_state.keypad_debug_status.drive_14_hits[0]
+                               ? console_state.keypad_debug_status.drive_14_hits.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+    framebuffer::draw_text(fb, label_x, 236, "D19", true, 1, 1);
+    framebuffer::draw_text(fb,
+                           value_x,
+                           236,
+                           console_state.keypad_debug_status.drive_19_hits[0]
+                               ? console_state.keypad_debug_status.drive_19_hits.data()
+                               : "-",
+                           true,
+                           1,
+                           1);
+}
+
 void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
 {
     (void)fb;
@@ -940,6 +1068,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::Alignment:
         draw_alignment_page(fb, console_state);
+        break;
+    case MenuPage::KeypadDebug:
+        draw_keypad_debug_page(fb, console_state);
         break;
     }
 

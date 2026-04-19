@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "debug_logging.h"
 #include "lwip/dns.h"
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
@@ -1386,9 +1387,9 @@ void handle_http_status(int http_status)
             } else {
                 copy_text(g_status.tracked_entity_state, "?");
             }
-            std::printf("HA entity state %s=%s\n",
-                        g_status.tracked_entity_id.data(),
-                        g_status.tracked_entity_state.data());
+            PERIODIC_LOG("HA entity state %s=%s\n",
+                         g_status.tracked_entity_id.data(),
+                         g_status.tracked_entity_state.data());
         } else if (g_request_kind == RequestKind::FetchWeatherEntity) {
             char raw_condition[24] = {};
             char raw_temperature[12] = {};
@@ -1435,35 +1436,35 @@ void handle_http_status(int http_status)
                 g_status.weather_wind_unit.fill('\0');
             }
 
-            std::printf("HA weather %s=%s %s\n",
-                        g_status.weather_entity_id.data(),
-                        g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
-                        g_status.weather_temperature[0] ? g_status.weather_temperature.data() : "-");
+            PERIODIC_LOG("HA weather %s=%s %s\n",
+                         g_status.weather_entity_id.data(),
+                         g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
+                         g_status.weather_temperature[0] ? g_status.weather_temperature.data() : "-");
         } else if (g_request_kind == RequestKind::FetchWeatherForecast) {
             if (parse_hourly_forecast_response(response_body())) {
-                std::printf("HA hourly forecast %s count=%u\n",
-                            g_status.weather_entity_id.data(),
-                            static_cast<unsigned>(g_status.weather_forecast_count));
+                PERIODIC_LOG("HA hourly forecast %s count=%u\n",
+                             g_status.weather_entity_id.data(),
+                             static_cast<unsigned>(g_status.weather_forecast_count));
             } else {
                 clear_weather_forecast();
-                std::printf("HA hourly forecast parse failed %s\n", g_status.weather_entity_id.data());
+                PERIODIC_LOG("HA hourly forecast parse failed %s\n", g_status.weather_entity_id.data());
             }
         } else if (g_request_kind == RequestKind::FetchSunEntity) {
             update_sun_times_from_json(response_body());
-            std::printf("HA sun %s rise=%s set=%s\n",
-                        HOME_ASSISTANT_SUN_ENTITY_ID,
-                        g_status.sunrise_text[0] ? g_status.sunrise_text.data() : "-",
-                        g_status.sunset_text[0] ? g_status.sunset_text.data() : "-");
+            PERIODIC_LOG("HA sun %s rise=%s set=%s\n",
+                         HOME_ASSISTANT_SUN_ENTITY_ID,
+                         g_status.sunrise_text[0] ? g_status.sunrise_text.data() : "-",
+                         g_status.sunset_text[0] ? g_status.sunset_text.data() : "-");
         } else if (g_request_kind == RequestKind::PublishSelfEntity) {
             g_status.self_entity_published = true;
-            std::printf("HA self entity posted %s status=%d\n",
-                        g_status.self_entity_id.data(),
-                        http_status);
+            PERIODIC_LOG("HA self entity posted %s status=%d\n",
+                         g_status.self_entity_id.data(),
+                         http_status);
         } else {
-            std::printf("HA API probe ok host=%s port=%u status=%d\n",
-                        g_configured_host,
-                        static_cast<unsigned>(g_configured_port),
-                        http_status);
+            PERIODIC_LOG("HA API probe ok host=%s port=%u status=%d\n",
+                         g_configured_host,
+                         static_cast<unsigned>(g_configured_port),
+                         http_status);
         }
 
         g_status.last_http_status = http_status;
@@ -1475,10 +1476,10 @@ void handle_http_status(int http_status)
         g_status.last_http_status = http_status;
         g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Unauthorized, 0, http_status, 0);
-        std::printf("HA %s request unauthorized host=%s port=%u\n",
-                    request_kind_name(g_request_kind),
-                    g_configured_host,
-                    static_cast<unsigned>(g_configured_port));
+        PERIODIC_LOG("HA %s request unauthorized host=%s port=%u\n",
+                     request_kind_name(g_request_kind),
+                     g_configured_host,
+                     static_cast<unsigned>(g_configured_port));
         return;
     }
 
@@ -1487,9 +1488,9 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        std::printf("HA tracked entity unavailable %s status=%d\n",
-                    g_status.tracked_entity_id.data(),
-                    http_status);
+        PERIODIC_LOG("HA tracked entity unavailable %s status=%d\n",
+                     g_status.tracked_entity_id.data(),
+                     http_status);
         return;
     }
 
@@ -1502,9 +1503,9 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        std::printf("HA weather entity unavailable %s status=%d\n",
-                    g_status.weather_entity_id.data(),
-                    http_status);
+        PERIODIC_LOG("HA weather entity unavailable %s status=%d\n",
+                     g_status.weather_entity_id.data(),
+                     http_status);
         return;
     }
 
@@ -1513,9 +1514,9 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        std::printf("HA hourly forecast unavailable %s status=%d\n",
-                    g_status.weather_entity_id.data(),
-                    http_status);
+        PERIODIC_LOG("HA hourly forecast unavailable %s status=%d\n",
+                     g_status.weather_entity_id.data(),
+                     http_status);
         return;
     }
 
@@ -1525,9 +1526,9 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        std::printf("HA sun entity unavailable %s status=%d\n",
-                    HOME_ASSISTANT_SUN_ENTITY_ID,
-                    http_status);
+        PERIODIC_LOG("HA sun entity unavailable %s status=%d\n",
+                     HOME_ASSISTANT_SUN_ENTITY_ID,
+                     http_status);
         return;
     }
 
@@ -1536,20 +1537,20 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        std::printf("HA self entity unavailable %s status=%d\n",
-                    g_status.self_entity_id.data(),
-                    http_status);
+        PERIODIC_LOG("HA self entity unavailable %s status=%d\n",
+                     g_status.self_entity_id.data(),
+                     http_status);
         return;
     }
 
     g_status.last_http_status = http_status;
     g_sequence_complete = true;
     finish_request(HomeAssistantConnectionState::Error, 0, http_status, kRetryDelayMs);
-    std::printf("HA %s request unexpected status=%d host=%s port=%u\n",
-                request_kind_name(g_request_kind),
-                http_status,
-                g_configured_host,
-                static_cast<unsigned>(g_configured_port));
+    PERIODIC_LOG("HA %s request unexpected status=%d host=%s port=%u\n",
+                 request_kind_name(g_request_kind),
+                 http_status,
+                 g_configured_host,
+                 static_cast<unsigned>(g_configured_port));
 }
 
 err_t on_tcp_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
@@ -1768,7 +1769,7 @@ bool start_probe()
     if (request_updates_connection_state()) {
         g_status.last_http_status = 0;
     }
-    std::printf("HA starting %s request\n", request_kind_name(g_request_kind));
+    PERIODIC_LOG("HA starting %s request\n", request_kind_name(g_request_kind));
 
     ip_addr_t parsed = {};
     if (ipaddr_aton(g_configured_host, &parsed)) {
@@ -1794,7 +1795,7 @@ bool start_probe()
             set_status(HomeAssistantConnectionState::Resolving, 0, 0);
         }
         g_deadline = make_timeout_time_ms(kResolveTimeoutMs);
-        std::printf("HA resolving host=%s\n", g_configured_host);
+        PERIODIC_LOG("HA resolving host=%s\n", g_configured_host);
         return true;
     }
 

@@ -4,6 +4,8 @@
 #include <cstring>
 #include <cstdio>
 
+#include "debug_logging.h"
+
 namespace console_controller {
 
 namespace {
@@ -21,6 +23,109 @@ constexpr size_t lamp_index(LampId lamp)
 constexpr size_t softkey_index(SoftKeyId key)
 {
     return static_cast<size_t>(key);
+}
+
+void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
+                                 std::array<char, 48>& out_text)
+{
+    out_text.fill('\0');
+    size_t used = 0;
+    for (const auto& line : keypad_status.lines) {
+        if (!line.configured || !line.active) {
+            continue;
+        }
+
+        const int written = std::snprintf(out_text.data() + used,
+                                          out_text.size() - used,
+                                          "%s%u",
+                                          (used == 0) ? "" : " ",
+                                          static_cast<unsigned>(line.panel_pin));
+        if (written <= 0) {
+            break;
+        }
+
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_text.size() - used)) {
+            used = out_text.size() - 1;
+            break;
+        }
+        used += write_size;
+    }
+}
+
+void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
+                                    std::array<char, 48>& out_text)
+{
+    out_text.fill('\0');
+    size_t used = 0;
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
+        if ((keypad_status.probe_hit_mask & (1u << i)) == 0) {
+            continue;
+        }
+
+        const int written = std::snprintf(out_text.data() + used,
+                                          out_text.size() - used,
+                                          "%s%u",
+                                          (used == 0) ? "" : " ",
+                                          static_cast<unsigned>(keypad_status.lines[i].panel_pin));
+        if (written <= 0) {
+            break;
+        }
+
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_text.size() - used)) {
+            used = out_text.size() - 1;
+            break;
+        }
+        used += write_size;
+    }
+}
+
+void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
+                                    uint8_t drive_panel_pin,
+                                    std::array<char, 24>& out_text)
+{
+    out_text.fill('\0');
+
+    size_t drive_index = keypad_status.lines.size();
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
+        if (keypad_status.lines[i].panel_pin == drive_panel_pin) {
+            drive_index = i;
+            break;
+        }
+    }
+
+    if (drive_index >= keypad_status.lines.size()) {
+        return;
+    }
+
+    const uint16_t hit_mask = keypad_status.probe_hits_by_drive[drive_index];
+    if (hit_mask == 0) {
+        return;
+    }
+
+    size_t used = 0;
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
+        if ((hit_mask & (1u << i)) == 0) {
+            continue;
+        }
+
+        const int written = std::snprintf(out_text.data() + used,
+                                          out_text.size() - used,
+                                          "%s%u",
+                                          (used == 0) ? "" : " ",
+                                          static_cast<unsigned>(keypad_status.lines[i].panel_pin));
+        if (written <= 0) {
+            break;
+        }
+
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_text.size() - used)) {
+            used = out_text.size() - 1;
+            break;
+        }
+        used += write_size;
+    }
 }
 
 void apply_softkey_label_overrides(SoftKeyMap& softkeys)
@@ -93,6 +198,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"CLR ALRT", SoftKeyRoute::ClearAlert,
                                                       g_console_state.alert_severity != AlertSeverity::None};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         break;
     case MenuPage::Settings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
@@ -127,6 +233,11 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right3)] = {"Two line wrap", SoftKeyRoute::None, true};
         softkeys[softkey_index(SoftKeyId::Right4)] = {"Tracked entity", SoftKeyRoute::None, true};
         softkeys[softkey_index(SoftKeyId::Right5)] = {"Test / Dim mode", SoftKeyRoute::None, true};
+        break;
+    case MenuPage::KeypadDebug:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         break;
     }
 
@@ -233,6 +344,9 @@ bool apply_softkey_route(SoftKeyRoute route)
         return true;
     case SoftKeyRoute::GoWeatherSources:
         g_console_state.active_page = MenuPage::WeatherSources;
+        return true;
+    case SoftKeyRoute::GoKeypadDebug:
+        g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
     case SoftKeyRoute::CycleAlert:
         g_console_state.alert_severity = next_alert_severity(g_console_state.alert_severity);
@@ -388,6 +502,51 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     return true;
 }
 
+bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
+{
+    std::array<char, 48> active_panel_pins = {};
+    std::array<char, 48> probe_hit_panel_pins = {};
+    std::array<char, 24> drive_5_hits = {};
+    std::array<char, 24> drive_14_hits = {};
+    std::array<char, 24> drive_19_hits = {};
+    build_active_panel_pin_text(keypad_status, active_panel_pins);
+    build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
+    build_drive_hit_panel_pin_text(keypad_status, 5, drive_5_hits);
+    build_drive_hit_panel_pin_text(keypad_status, 14, drive_14_hits);
+    build_drive_hit_panel_pin_text(keypad_status, 19, drive_19_hits);
+
+    const bool changed =
+        g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
+        g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
+        g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
+        g_console_state.keypad_debug_status.active_panel_pins != active_panel_pins ||
+        g_console_state.keypad_debug_status.probe_drive_panel_pin != keypad_status.probe_drive_panel_pin ||
+        g_console_state.keypad_debug_status.probe_hit_mask != keypad_status.probe_hit_mask ||
+        g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
+        g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins ||
+        g_console_state.keypad_debug_status.drive_5_hits != drive_5_hits ||
+        g_console_state.keypad_debug_status.drive_14_hits != drive_14_hits ||
+        g_console_state.keypad_debug_status.drive_19_hits != drive_19_hits;
+
+    if (!changed) {
+        return false;
+    }
+
+    g_console_state.keypad_debug_status.active_mask = keypad_status.active_mask;
+    g_console_state.keypad_debug_status.configured_count = keypad_status.configured_count;
+    g_console_state.keypad_debug_status.active_count = keypad_status.active_count;
+    g_console_state.keypad_debug_status.active_panel_pins = active_panel_pins;
+    g_console_state.keypad_debug_status.probe_drive_panel_pin = keypad_status.probe_drive_panel_pin;
+    g_console_state.keypad_debug_status.probe_hit_mask = keypad_status.probe_hit_mask;
+    g_console_state.keypad_debug_status.probe_hit_count = keypad_status.probe_hit_count;
+    g_console_state.keypad_debug_status.probe_hit_panel_pins = probe_hit_panel_pins;
+    g_console_state.keypad_debug_status.drive_5_hits = drive_5_hits;
+    g_console_state.keypad_debug_status.drive_14_hits = drive_14_hits;
+    g_console_state.keypad_debug_status.drive_19_hits = drive_19_hits;
+    update_softkeys_from_state();
+    return true;
+}
+
 bool set_softkey_label(SoftKeyId key, const char* label)
 {
     const size_t index = softkey_index(key);
@@ -421,31 +580,59 @@ bool set_softkey_label(SoftKeyId key, const char* label)
 
 bool handle_button_event(const ButtonEvent& event)
 {
-    if (event.type != ButtonEventType::Pressed) {
+    if (event.type == ButtonEventType::None) {
         return false;
+    }
+
+    bool changed = false;
+
+    const char* event_name = input::button_name(event.id);
+    const char* event_type = (event.type == ButtonEventType::Pressed) ? "Pressed" : "Released";
+    char button_name[sizeof(g_console_state.keypad_debug_status.last_button_name)] = {};
+    std::snprintf(button_name, sizeof(button_name), "%s", event_name);
+    char event_type_text[sizeof(g_console_state.keypad_debug_status.last_event_type)] = {};
+    std::snprintf(event_type_text, sizeof(event_type_text), "%s", event_type);
+
+    if (std::strcmp(g_console_state.keypad_debug_status.last_button_name.data(), button_name) != 0 ||
+        std::strcmp(g_console_state.keypad_debug_status.last_event_type.data(), event_type_text) != 0) {
+        std::snprintf(g_console_state.keypad_debug_status.last_button_name.data(),
+                      g_console_state.keypad_debug_status.last_button_name.size(),
+                      "%s",
+                      button_name);
+        std::snprintf(g_console_state.keypad_debug_status.last_event_type.data(),
+                      g_console_state.keypad_debug_status.last_event_type.size(),
+                      "%s",
+                      event_type_text);
+        changed = true;
+    }
+    ++g_console_state.keypad_debug_status.event_count;
+    changed = true;
+
+    if (event.type != ButtonEventType::Pressed) {
+        return changed;
     }
 
     const SoftKeyId key = softkey_id_from_button(event.id);
     const SoftKeyAction& action = g_console_state.softkeys[softkey_index(key)];
     if (!action.enabled) {
-        return false;
+        return changed;
     }
 
-    const bool changed = apply_softkey_route(action.route);
+    const bool route_changed = apply_softkey_route(action.route);
 
-    if (!changed) {
-        return false;
+    if (!route_changed) {
+        return changed;
     }
 
     update_softkeys_from_state();
     update_lamps_from_state();
-    std::printf("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
-                static_cast<unsigned>(g_console_state.active_page),
-                (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
-                static_cast<unsigned>(g_console_state.alert_severity),
-                static_cast<unsigned>(g_console_state.test_state),
-                static_cast<unsigned>(g_console_state.panel_brightness),
-                static_cast<unsigned>(g_console_state.key_backlight_brightness));
+    PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+                 static_cast<unsigned>(g_console_state.active_page),
+                 (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
+                 static_cast<unsigned>(g_console_state.alert_severity),
+                 static_cast<unsigned>(g_console_state.test_state),
+                 static_cast<unsigned>(g_console_state.panel_brightness),
+                 static_cast<unsigned>(g_console_state.key_backlight_brightness));
     return true;
 }
 

@@ -118,6 +118,7 @@ enum class MenuPage : uint8_t {
     Settings,
     WeatherSources,
     Alignment,
+    KeypadDebug,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
@@ -238,6 +239,7 @@ enum class SoftKeyRoute : uint8_t {
     GoStatus,
     GoSettings,
     GoWeatherSources,
+    GoKeypadDebug,
     CycleAlert,
     ToggleLetters,
     CycleTest,
@@ -265,6 +267,24 @@ struct KeyLegend {
     const char* alternate;
 };
 
+/// @brief Snapshot of keypad bring-up state shown on the diagnostics page.
+struct KeypadDebugStatus {
+    std::array<char, 24> last_button_name;
+    std::array<char, 10> last_event_type;
+    uint32_t event_count;
+    uint32_t active_mask;
+    uint8_t configured_count;
+    uint8_t active_count;
+    std::array<char, 48> active_panel_pins;
+    uint8_t probe_drive_panel_pin;
+    uint32_t probe_hit_mask;
+    uint8_t probe_hit_count;
+    std::array<char, 48> probe_hit_panel_pins;
+    std::array<char, 24> drive_5_hits;
+    std::array<char, 24> drive_14_hits;
+    std::array<char, 24> drive_19_hits;
+};
+
 /// @brief Captures the logical front-panel state independent of hardware wiring.
 struct ConsoleState {
     MenuPage active_page;
@@ -277,6 +297,7 @@ struct ConsoleState {
     HomeAssistantStatus home_assistant_status;
     MqttStatus mqtt_status;
     TimeStatus time_status;
+    KeypadDebugStatus keypad_debug_status;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

@@ -23,6 +23,9 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Copies the latest MQTT status into the logical front-panel state.
 bool set_mqtt_status(const MqttStatus& mqtt_status);
 
+/// @brief Copies the latest raw keypad monitor snapshot into the UI state.
+bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status);
+
 /// @brief Overrides the displayed text for one softkey using controller-owned storage.
 /// @details Pass `nullptr` or an empty string to clear the override and restore
 /// the page-default label. Rendering will wrap to two lines when needed and

@@ -13,6 +13,7 @@
 #include "screens.h"
 #include "screensaver_life.h"
 #include "console_controller.h"
+#include "debug_logging.h"
 #include "time_manager.h"
 #include "wifi_manager.h"
 
@@ -110,6 +111,7 @@ int main()
         console_changed = home_assistant_manager::update(wifi_manager::status()) || console_changed;
         console_changed = mqtt_manager::update(
             wifi_manager::status(), home_assistant_manager::status(), time_manager::status()) || console_changed;
+        console_changed = console_controller::set_keypad_monitor_status(input::keypad_monitor_status()) || console_changed;
         console_changed = console_controller::set_wifi_status(wifi_manager::status()) || console_changed;
         console_changed = console_controller::set_time_status(time_manager::status()) || console_changed;
         console_changed = console_controller::set_home_assistant_status(home_assistant_manager::status()) || console_changed;
@@ -127,11 +129,11 @@ int main()
             ++life_frame_counter;
 
             if (absolute_time_diff_us(get_absolute_time(), next_life_stats) <= 0) {
-                std::printf("Life fps=%lu sim=%lldus draw=%lldus present=%lldus\n",
-                            static_cast<unsigned long>(life_frame_counter),
-                            stats.sim_us,
-                            stats.draw_us,
-                            stats.present_us);
+                PERIODIC_LOG("Life fps=%lu sim=%lldus draw=%lldus present=%lldus\n",
+                             static_cast<unsigned long>(life_frame_counter),
+                             stats.sim_us,
+                             stats.draw_us,
+                             stats.present_us);
                 life_frame_counter = 0;
                 next_life_stats = make_timeout_time_ms(1000);
             }

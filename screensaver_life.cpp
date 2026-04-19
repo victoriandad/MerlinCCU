@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstring>
 
+#include "debug_logging.h"
 #include "pico/stdlib.h"
 
 #include "framebuffer.h"
@@ -194,14 +195,14 @@ void step_and_render(uint8_t* fb, LifeFrameStats& stats)
         life_repeat_frames = 0;
         life_reset_hash_history();
         (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
-        std::printf("Life reseeded after stable timeout\n");
+        PERIODIC_LOG("Life reseeded after stable timeout\n");
     } else if (life_repeat_frames >= LIFE_REPEAT_RESEED_FRAMES) {
         life_seed_random(life_back);
         life_stable_frames = 0;
         life_repeat_frames = 0;
         life_reset_hash_history();
         (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
-        std::printf("Life reseeded after repeat-cycle timeout\n");
+        PERIODIC_LOG("Life reseeded after repeat-cycle timeout\n");
     }
 
     const absolute_time_t draw_start = get_absolute_time();
