@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include "debug_logging.h"
 #include "lwip/apps/netbiosns.h"
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
@@ -372,7 +373,7 @@ void dns_probe_found(const char* name, const ip_addr_t* ipaddr, void* callback_a
     g_probe_in_flight = false;
     g_probe_deadline = nil_time;
     g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
-    std::printf("WiFi internet probe %s host=%s\n", ipaddr ? "ok" : "failed", kInternetProbeHostName);
+    PERIODIC_LOG("WiFi internet probe %s host=%s\n", ipaddr ? "ok" : "failed", kInternetProbeHostName);
 }
 
 bool start_dns_probe()
@@ -403,7 +404,7 @@ bool start_dns_probe()
     g_probe_started_at = get_absolute_time();
     g_probe_deadline = make_timeout_time_ms(kInternetProbeTimeoutMs);
     g_status.internet_probe_pending = true;
-    std::printf("WiFi internet probe resolving %s\n", kInternetProbeHostName);
+    PERIODIC_LOG("WiFi internet probe resolving %s\n", kInternetProbeHostName);
     return true;
 }
 
@@ -426,7 +427,7 @@ bool update_internet_probe()
             g_status.internet_reachable = false;
             g_status.internet_rtt_ms = -1;
             g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
-            std::printf("WiFi internet probe timeout for %s\n", kInternetProbeHostName);
+            PERIODIC_LOG("WiFi internet probe timeout for %s\n", kInternetProbeHostName);
             return true;
         }
         return false;
@@ -478,9 +479,9 @@ bool attempt_connect()
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
         g_next_probe = get_absolute_time();
-        std::printf("WiFi connected to '%s' ip=%s\n",
-                    credential->ssid,
-                    g_status.ip_address[0] ? g_status.ip_address.data() : "-");
+        PERIODIC_LOG("WiFi connected to '%s' ip=%s\n",
+                     credential->ssid,
+                     g_status.ip_address[0] ? g_status.ip_address.data() : "-");
         return true;
     }
 
@@ -491,13 +492,13 @@ bool attempt_connect()
             g_next_retry = nil_time;
             g_wait_for_ip_deadline = nil_time;
             g_next_probe = get_absolute_time();
-            std::printf("WiFi treating joined link as up after static IP assignment\n");
+            PERIODIC_LOG("WiFi treating joined link as up after static IP assignment\n");
             return true;
         }
         g_status.state = WifiConnectionState::WaitingForIp;
         g_next_retry = nil_time;
         schedule_wait_for_ip_deadline();
-        std::printf("WiFi joined '%s'; waiting for DHCP (link=%d)\n", credential->ssid, link_status);
+        PERIODIC_LOG("WiFi joined '%s'; waiting for DHCP (link=%d)\n", credential->ssid, link_status);
         return true;
     }
 
@@ -584,7 +585,7 @@ bool update()
     if (link_status != g_last_observed_link_status) {
         g_last_observed_link_status = link_status;
         g_status.link_status = link_status;
-        std::printf("WiFi link status changed: %d\n", link_status);
+        PERIODIC_LOG("WiFi link status changed: %d\n", link_status);
 
         if (link_status == CYW43_LINK_UP || ip_ready) {
             apply_static_ip_config();
@@ -635,7 +636,7 @@ bool update()
     }
 
     if (!is_nil_time(g_wait_for_ip_deadline) && absolute_time_diff_us(get_absolute_time(), g_wait_for_ip_deadline) <= 0) {
-        std::printf("WiFi DHCP wait expired; retrying connection\n");
+        PERIODIC_LOG("WiFi DHCP wait expired; retrying connection\n");
         g_wait_for_ip_deadline = nil_time;
         schedule_retry();
         changed = true;

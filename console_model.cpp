@@ -73,7 +73,7 @@ const KeyLegend& key_legend(HardKeyId key)
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
-    state.active_page = MenuPage::Home;
+    state.active_page = MenuPage::KeypadDebug;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
@@ -117,6 +117,20 @@ ConsoleState make_default_console_state()
     state.mqtt_status.device_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
+    state.keypad_debug_status.last_button_name.fill('\0');
+    state.keypad_debug_status.last_event_type.fill('\0');
+    state.keypad_debug_status.event_count = 0;
+    state.keypad_debug_status.active_mask = 0;
+    state.keypad_debug_status.configured_count = 0;
+    state.keypad_debug_status.active_count = 0;
+    state.keypad_debug_status.active_panel_pins.fill('\0');
+    state.keypad_debug_status.probe_drive_panel_pin = 0;
+    state.keypad_debug_status.probe_hit_mask = 0;
+    state.keypad_debug_status.probe_hit_count = 0;
+    state.keypad_debug_status.probe_hit_panel_pins.fill('\0');
+    state.keypad_debug_status.drive_5_hits.fill('\0');
+    state.keypad_debug_status.drive_14_hits.fill('\0');
+    state.keypad_debug_status.drive_19_hits.fill('\0');
     state.lamps.fill(LampMode::Off);
     state.softkeys = DEFAULT_SOFTKEYS;
     return state;

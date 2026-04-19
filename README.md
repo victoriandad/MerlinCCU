@@ -174,6 +174,8 @@ This repository uses the Raspberry Pi Pico SDK with CMake.
 
 The exact local build flow depends on your environment. In this project the
 Pico VS Code plugin workflow is being used successfully.
+Do not run `cmake` or `cmake --build` from the CLI on this setup; use the VS
+Code Pico extension for build/flash actions.
 
 ## Configuration Files
 
@@ -239,6 +241,115 @@ Important limits of the current implementation:
 - the Home page can optionally show current weather and an hourly forecast list
   if a Home Assistant weather entity is configured and supports hourly forecasts
 
+## Keypad Bring-Up Notes
+
+Current keypad work is still provisional. The ribbon-cable breakout and matrix
+decode should be treated as bench notes until they are confirmed on hardware.
+
+From the current spreadsheet in local development, the likely keypad matrix
+panel pins are:
+
+- `5, 6, 7, 8, 9, 10, 11`
+- `15, 16, 17, 18, 20, 21`
+
+Other spreadsheet notes suggest separate non-key lines for:
+
+- alert/test LEDs
+- key backlight power and ground
+- a photoresistor pair
+
+Those notes are useful for bring-up, but they are not yet a verified final
+netlist.
+
+With the current firmware, the Pico 2 W GPIO situation is:
+
+- `GPIO2..GPIO5` are reserved for the display scanout (`VID`, `VCLK`, `HS`, `VS`)
+- likely free for keypad work: `GPIO0`, `GPIO1`, `GPIO6..GPIO22`
+- `GPIO26..GPIO28` are also available and can be used as digital inputs/outputs if ADC is not needed there
+- do not plan around `RUN`, `3V3_EN`, `VSYS`, `VBUS`, `ADC_VREF`, or ground pins as general GPIO
+- do not assume internal wireless-side control lines are available as normal front-panel GPIO
+
+The firmware now includes a keypad diagnostics page that records the last
+logical button event seen by the input layer and also shows the current raw
+active-line signature from the monitored keypad pins. This is intended as a
+bring-up tool while the real matrix decoder is still being worked out.
+
+Use `keypad_matrix_config.example.h` as the starting point for local wiring.
+Copy it to `keypad_matrix_config.h`, assign the Pico GPIO connected to each
+panel pin you want to observe, and the keypad diagnostics page will show:
+
+- the currently active panel-pin list
+- the current active-line bitmask
+- how many observed lines are configured and active
+
+Current measured pin accounting from front-panel switch tests:
+
+| Pin | Status | Notes |
+| --- | --- | --- |
+| 1 | Unused | Not referenced by any measured key |
+| 2 | Unused | Not referenced by any measured key |
+| 3 | Unused | Not referenced by any measured key |
+| 4 | Unused | Not referenced by any measured key |
+| 5 | Used | `TEST`, `BRT`, `DIM` |
+| 6 | Used | `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR` |
+| 7 | Used | `R1`, `A`, `B`, `C`, `D`, `E`, `F` |
+| 8 | Used | `R2`, `G`, `H`, `I`, `J`, `K`, `L` |
+| 9 | Used | `R3`, `M`, `N`, `O`, `P`, `Q`, `R` |
+| 10 | Used | `R4`, `S`, `T`, `U`, `V`, `W`, `X` |
+| 11 | Used | `R5`, `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC` |
+| 12 | Unused | Not referenced by any measured key |
+| 13 | Unused | Not referenced by any measured key |
+| 14 | Candidate | Likely missing left-key column for `L1..L5`, possibly `ALERT` |
+| 15 | Used | `DIM`, `R1`, `R2`, `R3`, `R4`, `R5` |
+| 16 | Used | `BRT`, `CLR`, `F`, `L`, `R`, `X`, `SPC` |
+| 17 | Used | `TEST`, `/`, `E`, `K`, `Q`, `W`, `0` |
+| 18 | Used | `Right Arrow`, `D`, `J`, `P`, `V`, `.` |
+| 19 | Used | `Left Arrow`, `C`, `I`, `O`, `U`, `T FUNC` |
+| 20 | Used | `BACK STEP`, `B`, `H`, `N`, `T`, `Z` |
+| 21 | Used | `LTRS`, `A`, `G`, `M`, `S`, `Y` |
+| 22 | Unused | Not referenced by any measured key |
+| 23 | Unused | Not referenced by any measured key |
+| 24 | Unused | Not referenced by any measured key |
+| 25 | Unused | Not referenced by any measured key |
+| 26 | Unused | Not referenced by any measured key |
+| 27 | Unused | Not referenced by any measured key |
+| 28 | Unused | Not referenced by any measured key |
+| 29 | Unused | Not referenced by any measured key |
+| 30 | Unused | Not referenced by any measured key |
+
+Confirmed matrix pattern from current bench tests:
+
+- `6 x 21..16` = `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR`
+- `7 x 21..16` = `A..F`
+- `8 x 21..16` = `G..L`
+- `9 x 21..16` = `M..R`
+- `10 x 21..16` = `S..X`
+- `11 x 21..16` = `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC`
+- `7..11 x 15` = `R1..R5`
+- `5 x 17,16,15` = `TEST`, `BRT`, `DIM`
+
+Unresolved keys from the current tests:
+
+- `ALERT`
+- `L1`
+- `L2`
+- `L3`
+- `L4`
+- `L5`
+
+Current working hypothesis:
+
+- panel pin `14` is the strongest candidate for the missing left-key column
+- expected mapping if that hypothesis is correct:
+  - `L1..L5` = `7..11 x 14`
+  - `ALERT` = likely `5 x 14`
+- this is still unconfirmed and should be treated as a hypothesis, not a solved netlist
+
+Pending verification:
+
+- ask Sam to confirm whether panel pin `14` is active on a known-good CCU
+- if confirmed, retest `L1..L5` and `ALERT` with particular attention to drive/sense activity on `14`
+
 ## Deferred Security TODOs
 
 These items are intentionally parked for a later hardening phase so the current
@@ -258,12 +369,57 @@ properly.
 - consider putting MerlinCCU on a trusted SSID or VLAN during and after the migration
 - update setup documentation once HTTPS/TLS is actually supported end-to-end
 
-## Likely Next Steps
+## Deferred Functional TODOs
 
-Reasonable future work from here:
+These are non-security items that are worth keeping visible for future passes.
 
 - connect the real keypad wiring and assign GPIOs
 - replace the timed/demo screen mode selection with a real UI state model
+- replace the provisional keypad diagnostics page with a real matrix decoder and key map
+- confirm the spreadsheet matrix against real continuity and switch-press tests
+- decide how the hard keys and side softkeys should be represented in the input model
 - add a future system menu with screen saver settings
+- turn the placeholder weather source page into a real source-selection workflow
+- support more than one weather provider or feed behind the weather UI
+- improve the weather page layout as more data columns and status lines are added
+- decide which Home page values should degrade gracefully when HA data is missing
+- add a clearer user-facing distinction between Wi-Fi loss, HA loss, and missing weather data
+- review whether the 5-minute HA refresh cadence is the right tradeoff for responsiveness and network load
+- add more useful HA-backed entities if they fit the CCU concept cleanly
+- keep refining the module boundaries as more real CCU features are added
+
+## Deferred UI And Interaction TODOs
+
+- replace placeholder screens and routes with a coherent navigation model
+- define the softkey behavior consistently across all screens
+- decide which controls belong on the Home page versus secondary pages
+- add any missing iconography needed for status and fault conditions
+- review whether the current text layout still works once more live data is added
+- document font choices, spacing rules, and banner conventions so future UI changes stay consistent
+- decide whether the screensaver should be configurable from the UI
+
+## Deferred Hardware And Platform TODOs
+
+- document the hardware wiring and panel timing in more detail
+- validate the keypad electrical design before final GPIO assignments are locked in
+- decide whether any display timing values should move from compile-time constants to documented tuning parameters
+- review memory headroom as more UI and network features are added
+- review CPU time spent in raster composition, weather rendering, and network parsing as the firmware grows
+
+## Deferred Reliability TODOs
+
+- add a clearer strategy for backoff and retry across Wi-Fi, HA REST, and MQTT
+- decide whether stale HA data should be cached and shown for longer during outages
+- add more explicit diagnostics for malformed HA responses and unsupported payloads
+- review whether any optional requests should be rate-limited or skipped after repeated failures
+- check whether forecast payload size limits are still appropriate as more providers are tested
+- add a documented test checklist for network loss, HA restarts, broker loss, and recovery behavior
+
+## Likely Next Steps
+
+If work resumes soon, the most obvious next items are:
+
+- connect the real keypad wiring and assign GPIOs
+- replace the timed/demo screen mode selection with a real UI state model
+- turn the placeholder weather source page into a real source-selection workflow
 - document the hardware and panel timing in more detail
-- continue refining the new module boundaries as more real CCU features are added

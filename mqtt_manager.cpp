@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "debug_logging.h"
 #include "lwip/apps/mqtt.h"
 #include "lwip/dns.h"
 #include "lwip/inet.h"
@@ -584,19 +585,19 @@ void mqtt_request_cb(void* arg, err_t err)
     switch (completed_type) {
     case PendingPublishType::Availability:
         g_availability_published = true;
-        std::printf("MQTT availability published topic=%s\n", g_availability_topic);
+        PERIODIC_LOG("MQTT availability published topic=%s\n", g_availability_topic);
         break;
     case PendingPublishType::Discovery:
         g_sensor_discovery_published[sensor_index(completed_sensor)] = true;
         g_status.discovery_published = all_discovery_published();
-        std::printf("MQTT discovery published topic=%s\n", g_sensor_discovery_topics[sensor_index(completed_sensor)].data());
+        PERIODIC_LOG("MQTT discovery published topic=%s\n", g_sensor_discovery_topics[sensor_index(completed_sensor)].data());
         break;
     case PendingPublishType::State:
         copy_text(g_published_sensor_values[sensor_index(completed_sensor)],
                   g_current_sensor_values[sensor_index(completed_sensor)].data());
-        std::printf("MQTT state published topic=%s value=%s\n",
-                    g_sensor_state_topics[sensor_index(completed_sensor)].data(),
-                    g_published_sensor_values[sensor_index(completed_sensor)].data());
+        PERIODIC_LOG("MQTT state published topic=%s value=%s\n",
+                     g_sensor_state_topics[sensor_index(completed_sensor)].data(),
+                     g_published_sensor_values[sensor_index(completed_sensor)].data());
         break;
     case PendingPublishType::None:
         break;
@@ -613,7 +614,7 @@ void mqtt_connection_cb(mqtt_client_t* client, void* arg, mqtt_connection_status
     if (status == MQTT_CONNECT_ACCEPTED) {
         g_connected = true;
         set_status(MqttConnectionState::Connected, 0);
-        std::printf("MQTT connected to %s:%u\n", g_broker_host, static_cast<unsigned>(g_broker_port));
+        PERIODIC_LOG("MQTT connected to %s:%u\n", g_broker_host, static_cast<unsigned>(g_broker_port));
         return;
     }
 
@@ -645,7 +646,7 @@ bool start_mqtt_connect()
     cyw43_arch_lwip_end();
 
     if (rc == ERR_OK) {
-        std::printf("MQTT connecting host=%s port=%u\n", g_broker_host, static_cast<unsigned>(g_broker_port));
+        PERIODIC_LOG("MQTT connecting host=%s port=%u\n", g_broker_host, static_cast<unsigned>(g_broker_port));
         return true;
     }
 
@@ -703,7 +704,7 @@ bool start_session()
         g_dns_pending = true;
         g_dns_deadline = make_timeout_time_ms(kResolveTimeoutMs);
         set_status(MqttConnectionState::Resolving, 0);
-        std::printf("MQTT resolving host=%s\n", g_broker_host);
+        PERIODIC_LOG("MQTT resolving host=%s\n", g_broker_host);
         return true;
     }
 
