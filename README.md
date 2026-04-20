@@ -246,6 +246,12 @@ Important limits of the current implementation:
 Current keypad work is still provisional. The ribbon-cable breakout and matrix
 decode should be treated as bench notes until they are confirmed on hardware.
 
+The local `Keyboard.xlsx` workbook is the current bench-tracing reference for
+the remaining front-panel lines, including keypad, backlight LED, and
+photoresistor pin investigation. It is kept alongside the source so the raw
+bring-up notes are available even where the README only captures the confirmed
+results.
+
 From the current spreadsheet in local development, the likely keypad matrix
 panel pins are:
 
