@@ -281,8 +281,8 @@ struct KeypadDebugStatus {
     uint8_t probe_hit_count;
     std::array<char, 48> probe_hit_panel_pins;
     std::array<char, 24> drive_5_hits;
-    std::array<char, 24> drive_14_hits;
-    std::array<char, 24> drive_19_hits;
+    std::array<char, 24> drive_20_hits;
+    std::array<char, 24> drive_22_hits;
 };
 
 /// @brief Captures the logical front-panel state independent of hardware wiring.

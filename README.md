@@ -299,7 +299,7 @@ Current measured pin accounting from front-panel switch tests:
 | 11 | Used | `R5`, `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC` |
 | 12 | Unused | Not referenced by any measured key |
 | 13 | Unused | Not referenced by any measured key |
-| 14 | Candidate | Likely missing left-key column for `L1..L5`, possibly `ALERT` |
+| 14 | Unused | Not referenced by any measured key |
 | 15 | Used | `DIM`, `R1`, `R2`, `R3`, `R4`, `R5` |
 | 16 | Used | `BRT`, `CLR`, `F`, `L`, `R`, `X`, `SPC` |
 | 17 | Used | `TEST`, `/`, `E`, `K`, `Q`, `W`, `0` |
@@ -307,7 +307,7 @@ Current measured pin accounting from front-panel switch tests:
 | 19 | Used | `Left Arrow`, `C`, `I`, `O`, `U`, `T FUNC` |
 | 20 | Used | `BACK STEP`, `B`, `H`, `N`, `T`, `Z` |
 | 21 | Used | `LTRS`, `A`, `G`, `M`, `S`, `Y` |
-| 22 | Unused | Not referenced by any measured key |
+| 22 | Used | `L1`, `L2`, `L3`, `L4`, `L5` |
 | 23 | Unused | Not referenced by any measured key |
 | 24 | Unused | Not referenced by any measured key |
 | 25 | Unused | Not referenced by any measured key |
@@ -319,36 +319,40 @@ Current measured pin accounting from front-panel switch tests:
 
 Confirmed matrix pattern from current bench tests:
 
+- `5 x 20` = `ALERT`
 - `6 x 21..16` = `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR`
 - `7 x 21..16` = `A..F`
 - `8 x 21..16` = `G..L`
 - `9 x 21..16` = `M..R`
 - `10 x 21..16` = `S..X`
 - `11 x 21..16` = `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC`
+- `7..11 x 22` = `L1..L5`
 - `7..11 x 15` = `R1..R5`
 - `5 x 17,16,15` = `TEST`, `BRT`, `DIM`
 
-Unresolved keys from the current tests:
+Confirmed front-panel layout from current bench tests:
 
-- `ALERT`
-- `L1`
-- `L2`
-- `L3`
-- `L4`
-- `L5`
+- top function row:
+  - `ALERT = 5 20`
+  - `TEST = 5 17`
+  - `BRT = 5 16`
+  - `DIM = 5 15`
+- side softkeys:
+  - `L1..L5 = 7..11 x 22`
+  - `R1..R5 = 7..11 x 15`
+- main key block:
+  - `6 x 21..16` = `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR`
+  - `7 x 21..16` = `A`, `B`, `C`, `D`, `E`, `F`
+  - `8 x 21..16` = `G`, `H`, `I`, `J`, `K`, `L`
+  - `9 x 21..16` = `M`, `N`, `O`, `P`, `Q`, `R`
+  - `10 x 21..16` = `S`, `T`, `U`, `V`, `W`, `X`
+  - `11 x 21..16` = `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC`
 
-Current working hypothesis:
+Implementation note:
 
-- panel pin `14` is the strongest candidate for the missing left-key column
-- expected mapping if that hypothesis is correct:
-  - `L1..L5` = `7..11 x 14`
-  - `ALERT` = likely `5 x 14`
-- this is still unconfirmed and should be treated as a hypothesis, not a solved netlist
-
-Pending verification:
-
-- ask Sam to confirm whether panel pin `14` is active on a known-good CCU
-- if confirmed, retest `L1..L5` and `ALERT` with particular attention to drive/sense activity on `14`
+- the observed panel-pin numbering is now confirmed for bring-up and decoding work
+- the current GPIO/panel-pin ordering in code is intentionally still a bench-work layout rather than a cleaned-up PCB-oriented netlist
+- if a fixed PCB is designed later, it would be reasonable to reorder or rename the pin definitions for clarity, but that cleanup is deferred for now so the confirmed working mapping is preserved
 
 ## Deferred Security TODOs
 

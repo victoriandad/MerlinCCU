@@ -23,6 +23,7 @@ inline constexpr int KEYPAD_PANEL_PIN_18_GPIO = -1;
 inline constexpr int KEYPAD_PANEL_PIN_19_GPIO = -1;
 inline constexpr int KEYPAD_PANEL_PIN_20_GPIO = -1;
 inline constexpr int KEYPAD_PANEL_PIN_21_GPIO = -1;
+inline constexpr int KEYPAD_PANEL_PIN_22_GPIO = -1;
 #endif
 
 namespace input {
@@ -85,6 +86,7 @@ constexpr ObservedLineConfig OBSERVED_LINES[kKeypadObservedLineCount] = {
     {19, KEYPAD_PANEL_PIN_19_GPIO, true},
     {20, KEYPAD_PANEL_PIN_20_GPIO, true},
     {21, KEYPAD_PANEL_PIN_21_GPIO, true},
+    {22, KEYPAD_PANEL_PIN_22_GPIO, true},
 };
 
 ButtonState button_states[BUTTON_COUNT];

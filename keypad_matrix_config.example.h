@@ -21,3 +21,4 @@ inline constexpr int KEYPAD_PANEL_PIN_18_GPIO = 16;
 inline constexpr int KEYPAD_PANEL_PIN_19_GPIO = 19;
 inline constexpr int KEYPAD_PANEL_PIN_20_GPIO = 17;
 inline constexpr int KEYPAD_PANEL_PIN_21_GPIO = 18;
+inline constexpr int KEYPAD_PANEL_PIN_22_GPIO = 21;

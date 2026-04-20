@@ -35,7 +35,7 @@ struct ButtonEvent {
     ButtonEventType type;
 };
 
-inline constexpr size_t kKeypadObservedLineCount = 15;
+inline constexpr size_t kKeypadObservedLineCount = 16;
 
 /// @brief One observed front-panel matrix line wired to a Pico GPIO.
 struct KeypadObservedLine {

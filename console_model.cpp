@@ -129,8 +129,8 @@ ConsoleState make_default_console_state()
     state.keypad_debug_status.probe_hit_count = 0;
     state.keypad_debug_status.probe_hit_panel_pins.fill('\0');
     state.keypad_debug_status.drive_5_hits.fill('\0');
-    state.keypad_debug_status.drive_14_hits.fill('\0');
-    state.keypad_debug_status.drive_19_hits.fill('\0');
+    state.keypad_debug_status.drive_20_hits.fill('\0');
+    state.keypad_debug_status.drive_22_hits.fill('\0');
     state.lamps.fill(LampMode::Off);
     state.softkeys = DEFAULT_SOFTKEYS;
     return state;

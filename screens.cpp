@@ -991,22 +991,22 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
                            true,
                            1,
                            1);
-    framebuffer::draw_text(fb, label_x, 224, "D14", true, 1, 1);
+    framebuffer::draw_text(fb, label_x, 224, "D20", true, 1, 1);
     framebuffer::draw_text(fb,
                            value_x,
                            224,
-                           console_state.keypad_debug_status.drive_14_hits[0]
-                               ? console_state.keypad_debug_status.drive_14_hits.data()
+                           console_state.keypad_debug_status.drive_20_hits[0]
+                               ? console_state.keypad_debug_status.drive_20_hits.data()
                                : "-",
                            true,
                            1,
                            1);
-    framebuffer::draw_text(fb, label_x, 236, "D19", true, 1, 1);
+    framebuffer::draw_text(fb, label_x, 236, "D22", true, 1, 1);
     framebuffer::draw_text(fb,
                            value_x,
                            236,
-                           console_state.keypad_debug_status.drive_19_hits[0]
-                               ? console_state.keypad_debug_status.drive_19_hits.data()
+                           console_state.keypad_debug_status.drive_22_hits[0]
+                               ? console_state.keypad_debug_status.drive_22_hits.data()
                                : "-",
                            true,
                            1,

@@ -507,13 +507,13 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     std::array<char, 48> active_panel_pins = {};
     std::array<char, 48> probe_hit_panel_pins = {};
     std::array<char, 24> drive_5_hits = {};
-    std::array<char, 24> drive_14_hits = {};
-    std::array<char, 24> drive_19_hits = {};
+    std::array<char, 24> drive_20_hits = {};
+    std::array<char, 24> drive_22_hits = {};
     build_active_panel_pin_text(keypad_status, active_panel_pins);
     build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
     build_drive_hit_panel_pin_text(keypad_status, 5, drive_5_hits);
-    build_drive_hit_panel_pin_text(keypad_status, 14, drive_14_hits);
-    build_drive_hit_panel_pin_text(keypad_status, 19, drive_19_hits);
+    build_drive_hit_panel_pin_text(keypad_status, 20, drive_20_hits);
+    build_drive_hit_panel_pin_text(keypad_status, 22, drive_22_hits);
 
     const bool changed =
         g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
@@ -525,8 +525,8 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
         g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
         g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins ||
         g_console_state.keypad_debug_status.drive_5_hits != drive_5_hits ||
-        g_console_state.keypad_debug_status.drive_14_hits != drive_14_hits ||
-        g_console_state.keypad_debug_status.drive_19_hits != drive_19_hits;
+        g_console_state.keypad_debug_status.drive_20_hits != drive_20_hits ||
+        g_console_state.keypad_debug_status.drive_22_hits != drive_22_hits;
 
     if (!changed) {
         return false;
@@ -541,8 +541,8 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     g_console_state.keypad_debug_status.probe_hit_count = keypad_status.probe_hit_count;
     g_console_state.keypad_debug_status.probe_hit_panel_pins = probe_hit_panel_pins;
     g_console_state.keypad_debug_status.drive_5_hits = drive_5_hits;
-    g_console_state.keypad_debug_status.drive_14_hits = drive_14_hits;
-    g_console_state.keypad_debug_status.drive_19_hits = drive_19_hits;
+    g_console_state.keypad_debug_status.drive_20_hits = drive_20_hits;
+    g_console_state.keypad_debug_status.drive_22_hits = drive_22_hits;
     update_softkeys_from_state();
     return true;
 }
