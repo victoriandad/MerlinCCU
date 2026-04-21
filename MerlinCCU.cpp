@@ -52,7 +52,7 @@ int main()
 
     PIO pio = pio0;
     const uint sm = 0;
-    const uint offset = pio_add_program(pio, &el320_raster_program);
+    const uint offset = pio_add_program(pio, &kEl320RasterProgram);
     const ScreenMode mode = ScreenMode::Menu;
 
     uint32_t life_frame_counter = 0;
