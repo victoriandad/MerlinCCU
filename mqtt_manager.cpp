@@ -18,12 +18,12 @@ namespace
 #if __has_include("mqtt_credentials.h")
 #include "mqtt_credentials.h"
 constexpr bool kMqttConfigured = true;
-inline constexpr const char* kMqttHost = HOME_ASSISTANT_MQTT_HOST;
-inline constexpr uint16_t kMqttPort = HOME_ASSISTANT_MQTT_PORT;
-inline constexpr const char* kMqttUsername = HOME_ASSISTANT_MQTT_USERNAME;
-inline constexpr const char* kMqttPassword = HOME_ASSISTANT_MQTT_PASSWORD;
-inline constexpr const char* kMqttDiscoveryPrefix = HOME_ASSISTANT_MQTT_DISCOVERY_PREFIX;
-inline constexpr const char* kMqttBaseTopic = HOME_ASSISTANT_MQTT_BASE_TOPIC;
+inline constexpr const char* kMqttHost = kHomeAssistantMqttHost;
+inline constexpr uint16_t kMqttPort = kHomeAssistantMqttPort;
+inline constexpr const char* kMqttUsername = kHomeAssistantMqttUsername;
+inline constexpr const char* kMqttPassword = kHomeAssistantMqttPassword;
+inline constexpr const char* kMqttDiscoveryPrefix = kHomeAssistantMqttDiscoveryPrefix;
+inline constexpr const char* kMqttBaseTopic = kHomeAssistantMqttBaseTopic;
 #else
 constexpr bool kMqttConfigured = false;
 inline constexpr char kMqttHost[] = "";
@@ -165,7 +165,7 @@ bool parse_port(const char* text, uint16_t* out_port)
         {
             return false;
         }
-    value = (value * 10U) + static_cast<unsigned long>(*p - '0');
+        value = (value * 10U) + static_cast<unsigned long>(*p - '0');
         if (value > kMaxTcpPortValue)
         {
             return false;
@@ -390,15 +390,15 @@ bool parse_mqtt_endpoint()
         ++host_end;
     }
 
-    const size_t host_len = static_cast<size_t>(host_end - host_start);
-    if (host_len == 0 || host_len >= sizeof(g_broker_host))
+    const size_t kHostLen = static_cast<size_t>(host_end - host_start);
+    if (kHostLen == 0 || kHostLen >= sizeof(g_broker_host))
     {
         std::printf("MQTT config host is empty or too long\n");
         return false;
     }
 
-    std::memcpy(g_broker_host, host_start, host_len);
-    g_broker_host[host_len] = '\0';
+    std::memcpy(g_broker_host, host_start, kHostLen);
+    g_broker_host[kHostLen] = '\0';
 
     if (*host_end == ':')
     {
@@ -410,15 +410,15 @@ bool parse_mqtt_endpoint()
         }
 
         char port_text[8] = {};
-        const size_t port_len = static_cast<size_t>(port_end - port_start);
-        if (port_len == 0 || port_len >= sizeof(port_text))
+        const size_t kPortLen = static_cast<size_t>(port_end - port_start);
+        if (kPortLen == 0 || kPortLen >= sizeof(port_text))
         {
             std::printf("MQTT config port is invalid\n");
             return false;
         }
 
-        std::memcpy(port_text, port_start, port_len);
-        port_text[port_len] = '\0';
+        std::memcpy(port_text, port_start, kPortLen);
+        port_text[kPortLen] = '\0';
         if (!parse_port(port_text, &g_broker_port))
         {
             std::printf("MQTT config port is invalid: %s\n", port_text);
@@ -530,41 +530,41 @@ bool build_discovery_payload(SensorId sensor_id)
     // can stay compact while still advertising richer diagnostics where useful.
     if (sensor.icon != nullptr && sensor.icon[0] != '\0')
     {
-        const int len = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
-                                      ",\"icon\":\"%s\"", sensor.icon);
-        if (len <= 0 || static_cast<size_t>(len) >= (sizeof(extras) - extras_len))
+        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
+                                       ",\"icon\":\"%s\"", sensor.icon);
+        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(len);
+        extras_len += static_cast<size_t>(kLen);
     }
 
     if (sensor.diagnostic)
     {
-        const int len = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
-                                      ",\"entity_category\":\"diagnostic\"");
-        if (len <= 0 || static_cast<size_t>(len) >= (sizeof(extras) - extras_len))
+        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
+                                       ",\"entity_category\":\"diagnostic\"");
+        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(len);
+        extras_len += static_cast<size_t>(kLen);
     }
 
     if (sensor.options_json != nullptr)
     {
-        const int len =
+        const int kLen =
             std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
                           ",\"device_class\":\"enum\",\"options\":%s", sensor.options_json);
-        if (len <= 0 || static_cast<size_t>(len) >= (sizeof(extras) - extras_len))
+        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(len);
+        extras_len += static_cast<size_t>(kLen);
     }
 
     // The final payload is a retained self-description of the device and one
     // sensor entity. State values are published separately afterward.
-    const int len =
+    const int kLen =
         std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
                       "{\"name\":\"%s\",\"unique_id\":\"%s\","
                       "\"state_topic\":\"%s\",\"availability_topic\":\"%s\","
@@ -576,7 +576,7 @@ bool build_discovery_payload(SensorId sensor_id)
                       g_sensor_state_topics[sensor_index(sensor_id)].data(), g_availability_topic,
                       kOnlineState, kOfflineState, kFirmwareVersion, g_device_id, g_device_name,
                       kManufacturer, kDeviceModel, kFirmwareVersion, extras);
-    return len > 0 && static_cast<size_t>(len) < sizeof(g_publish_buffer);
+    return kLen > 0 && static_cast<size_t>(kLen) < sizeof(g_publish_buffer);
 }
 
 /// @brief Builds the state payload for one sensor from the cached value table.
@@ -694,8 +694,8 @@ void mqtt_request_cb(void* arg, err_t err)
 {
     (void)arg;
 
-    const PendingPublishType completed_type = g_publish_type_in_flight;
-    const SensorId completed_sensor = g_sensor_in_flight;
+    const PendingPublishType kCompletedType = g_publish_type_in_flight;
+    const SensorId kCompletedSensor = g_sensor_in_flight;
     g_publish_type_in_flight = PendingPublishType::None;
     g_request_in_flight = false;
 
@@ -708,24 +708,24 @@ void mqtt_request_cb(void* arg, err_t err)
         return;
     }
 
-    switch (completed_type)
+    switch (kCompletedType)
     {
     case PendingPublishType::Availability:
         g_availability_published = true;
         PERIODIC_LOG("MQTT availability published topic=%s\n", g_availability_topic);
         break;
     case PendingPublishType::Discovery:
-        g_sensor_discovery_published[sensor_index(completed_sensor)] = true;
+        g_sensor_discovery_published[sensor_index(kCompletedSensor)] = true;
         g_status.discovery_published = all_discovery_published();
         PERIODIC_LOG("MQTT discovery published topic=%s\n",
-                     g_sensor_discovery_topics[sensor_index(completed_sensor)].data());
+                     g_sensor_discovery_topics[sensor_index(kCompletedSensor)].data());
         break;
     case PendingPublishType::State:
-        copy_text(g_published_sensor_values[sensor_index(completed_sensor)],
-                  g_current_sensor_values[sensor_index(completed_sensor)].data());
+        copy_text(g_published_sensor_values[sensor_index(kCompletedSensor)],
+                  g_current_sensor_values[sensor_index(kCompletedSensor)].data());
         PERIODIC_LOG("MQTT state published topic=%s value=%s\n",
-                     g_sensor_state_topics[sensor_index(completed_sensor)].data(),
-                     g_published_sensor_values[sensor_index(completed_sensor)].data());
+                     g_sensor_state_topics[sensor_index(kCompletedSensor)].data(),
+                     g_published_sensor_values[sensor_index(kCompletedSensor)].data());
         break;
     case PendingPublishType::None:
         break;
@@ -777,11 +777,11 @@ bool start_mqtt_connect()
     set_status(MqttConnectionState::Connecting, 0);
 
     cyw43_arch_lwip_begin();
-    const err_t rc = mqtt_client_connect(g_client, &g_resolved_ip, g_broker_port,
-                                         mqtt_connection_cb, nullptr, &g_client_info);
+    const err_t kRc = mqtt_client_connect(g_client, &g_resolved_ip, g_broker_port,
+                                          mqtt_connection_cb, nullptr, &g_client_info);
     cyw43_arch_lwip_end();
 
-    if (rc == ERR_OK)
+    if (kRc == ERR_OK)
     {
         PERIODIC_LOG("MQTT connecting host=%s port=%u\n", g_broker_host,
                      static_cast<unsigned>(g_broker_port));
@@ -789,8 +789,8 @@ bool start_mqtt_connect()
     }
 
     g_connect_in_progress = false;
-    set_status(MqttConnectionState::Error, rc);
-    std::printf("MQTT connect start failed err=%d\n", static_cast<int>(rc));
+    set_status(MqttConnectionState::Error, kRc);
+    std::printf("MQTT connect start failed err=%d\n", static_cast<int>(kRc));
     return false;
 }
 
@@ -839,15 +839,15 @@ bool start_session()
     }
 
     cyw43_arch_lwip_begin();
-    const err_t dns_rc = dns_gethostbyname(g_broker_host, &g_resolved_ip, dns_found, nullptr);
+    const err_t kDnsRc = dns_gethostbyname(g_broker_host, &g_resolved_ip, dns_found, nullptr);
     cyw43_arch_lwip_end();
 
-    if (dns_rc == ERR_OK)
+    if (kDnsRc == ERR_OK)
     {
         return start_mqtt_connect();
     }
 
-    if (dns_rc == ERR_INPROGRESS)
+    if (kDnsRc == ERR_INPROGRESS)
     {
         g_dns_pending = true;
         g_dns_deadline = make_timeout_time_ms(kResolveTimeoutMs);
@@ -856,8 +856,8 @@ bool start_session()
         return true;
     }
 
-    set_status(MqttConnectionState::Error, dns_rc);
-    std::printf("MQTT dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(dns_rc),
+    set_status(MqttConnectionState::Error, kDnsRc);
+    std::printf("MQTT dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(kDnsRc),
                 g_broker_host);
     return false;
 }
@@ -872,18 +872,18 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
         return false;
     }
 
-    const u16_t payload_length = static_cast<u16_t>(std::strlen(payload));
-    const u8_t retain = 1;
+    const u16_t kPayloadLength = static_cast<u16_t>(std::strlen(payload));
+    const u8_t kRetain = 1;
 
     cyw43_arch_lwip_begin();
-    const err_t rc =
-        mqtt_publish(g_client, topic, payload, payload_length, 0, retain, mqtt_request_cb, nullptr);
+    const err_t kRc = mqtt_publish(g_client, topic, payload, kPayloadLength, 0, kRetain,
+                                   mqtt_request_cb, nullptr);
     cyw43_arch_lwip_end();
 
-    if (rc != ERR_OK)
+    if (kRc != ERR_OK)
     {
-        set_status(MqttConnectionState::Error, rc);
-        std::printf("MQTT publish start failed err=%d topic=%s\n", static_cast<int>(rc), topic);
+        set_status(MqttConnectionState::Error, kRc);
+        std::printf("MQTT publish start failed err=%d topic=%s\n", static_cast<int>(kRc), topic);
         return false;
     }
 
@@ -965,14 +965,14 @@ void init()
 bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assistant_status,
             const TimeStatus& time_status)
 {
-    const MqttStatus previous = g_status;
+    const MqttStatus kPrevious = g_status;
 
     // Configuration and runtime-disable paths are handled first so the rest of
     // the function can assume MQTT is actually supposed to run.
     if (!g_status.configured)
     {
         g_status.state = MqttConnectionState::Unconfigured;
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
     }
 
     if (!kMqttRuntimeEnabled)
@@ -980,16 +980,16 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         g_status.state = MqttConnectionState::Disabled;
         g_status.last_error = 0;
         reset_runtime(true);
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
     }
 
-    const bool wifi_ready = wifi_status.ip_address[0] != '\0';
-    if (!wifi_ready)
+    const bool kWifiReady = wifi_status.ip_address[0] != '\0';
+    if (!kWifiReady)
     {
         reset_runtime(true);
         g_status.state = MqttConnectionState::WaitingForWifi;
         g_status.last_error = 0;
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
     }
 
     configure_identity_and_topics(wifi_status);
@@ -1023,7 +1023,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         start_next_publish();
     }
 
-    return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+    return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
 }
 
 const MqttStatus& status()

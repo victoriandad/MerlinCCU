@@ -53,21 +53,21 @@ void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
             continue;
         }
 
-        const int written =
+        const int kWritten =
             std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
                           (used == 0) ? "" : " ", static_cast<unsigned>(line.panel_pin));
-        if (written <= 0)
+        if (kWritten <= 0)
         {
             break;
         }
 
-        const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used))
+        const size_t kWriteSize = static_cast<size_t>(kWritten);
+        if (kWriteSize >= (out_text.size() - used))
         {
             used = out_text.size() - 1;
             break;
         }
-        used += write_size;
+        used += kWriteSize;
     }
 }
 
@@ -84,21 +84,21 @@ void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
             continue;
         }
 
-        const int written = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                                          (used == 0) ? "" : " ",
-                                          static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (written <= 0)
+        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
+                                           (used == 0) ? "" : " ",
+                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
+        if (kWritten <= 0)
         {
             break;
         }
 
-        const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used))
+        const size_t kWriteSize = static_cast<size_t>(kWritten);
+        if (kWriteSize >= (out_text.size() - used))
         {
             used = out_text.size() - 1;
             break;
         }
-        used += write_size;
+        used += kWriteSize;
     }
 }
 
@@ -123,8 +123,8 @@ void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
         return;
     }
 
-    const uint16_t hit_mask = keypad_status.probe_hits_by_drive[drive_index];
-    if (hit_mask == 0)
+    const uint16_t kHitMask = keypad_status.probe_hits_by_drive[drive_index];
+    if (kHitMask == 0)
     {
         return;
     }
@@ -132,26 +132,26 @@ void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
     size_t used = 0;
     for (size_t i = 0; i < keypad_status.lines.size(); ++i)
     {
-        if ((hit_mask & (1U << i)) == 0)
+        if ((kHitMask & (1U << i)) == 0)
         {
             continue;
         }
 
-        const int written = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                                          (used == 0) ? "" : " ",
-                                          static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (written <= 0)
+        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
+                                           (used == 0) ? "" : " ",
+                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
+        if (kWritten <= 0)
         {
             break;
         }
 
-        const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used))
+        const size_t kWriteSize = static_cast<size_t>(kWritten);
+        if (kWriteSize >= (out_text.size() - used))
         {
             used = out_text.size() - 1;
             break;
         }
-        used += write_size;
+        used += kWriteSize;
     }
 }
 
@@ -503,7 +503,7 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 {
     // These setters short-circuit unchanged snapshots so the UI does not redraw
     // every loop when the subsystem state is stable.
-    const bool changed =
+    const bool kChanged =
         g_console_state.wifi_status.state != wifi_status.state ||
         g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
         g_console_state.wifi_status.internet_reachable != wifi_status.internet_reachable ||
@@ -516,7 +516,7 @@ bool set_wifi_status(const WifiStatus& wifi_status)
         g_console_state.wifi_status.ssid != wifi_status.ssid ||
         g_console_state.wifi_status.ip_address != wifi_status.ip_address;
 
-    if (!changed)
+    if (!kChanged)
     {
         return false;
     }
@@ -529,10 +529,10 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 /// @brief Updates the cached time snapshot in the console model.
 bool set_time_status(const TimeStatus& time_status)
 {
-    const bool changed = g_console_state.time_status.synced != time_status.synced ||
-                         g_console_state.time_status.time_text != time_status.time_text;
+    const bool kChanged = g_console_state.time_status.synced != time_status.synced ||
+                          g_console_state.time_status.time_text != time_status.time_text;
 
-    if (!changed)
+    if (!kChanged)
     {
         return false;
     }
@@ -545,7 +545,7 @@ bool set_time_status(const TimeStatus& time_status)
 /// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
-    const bool changed =
+    const bool kChanged =
         g_console_state.home_assistant_status.state != home_assistant_status.state ||
         g_console_state.home_assistant_status.configured != home_assistant_status.configured ||
         g_console_state.home_assistant_status.self_entity_published !=
@@ -577,7 +577,7 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
         g_console_state.home_assistant_status.self_entity_id !=
             home_assistant_status.self_entity_id;
 
-    if (!changed)
+    if (!kChanged)
     {
         return false;
     }
@@ -590,7 +590,7 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
-    const bool changed =
+    const bool kChanged =
         g_console_state.mqtt_status.state != mqtt_status.state ||
         g_console_state.mqtt_status.configured != mqtt_status.configured ||
         g_console_state.mqtt_status.discovery_published != mqtt_status.discovery_published ||
@@ -598,7 +598,7 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
         g_console_state.mqtt_status.broker != mqtt_status.broker ||
         g_console_state.mqtt_status.device_id != mqtt_status.device_id;
 
-    if (!changed)
+    if (!kChanged)
     {
         return false;
     }
@@ -625,7 +625,7 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     build_drive_hit_panel_pin_text(keypad_status, 20, drive_20_hits);
     build_drive_hit_panel_pin_text(keypad_status, 22, drive_22_hits);
 
-    const bool changed =
+    const bool kChanged =
         g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
         g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
         g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
@@ -639,7 +639,7 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
         g_console_state.keypad_debug_status.drive_20_hits != drive_20_hits ||
         g_console_state.keypad_debug_status.drive_22_hits != drive_22_hits;
 
-    if (!changed)
+    if (!kChanged)
     {
         return false;
     }
@@ -662,20 +662,21 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 /// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {
-    const size_t index = softkey_index(key);
-    const bool clear_override = (label == nullptr) || (label[0] == '\0');
+    const size_t kIndex = softkey_index(key);
+    const bool kClearOverride = (label == nullptr) || (label[0] == '\0');
 
     // Clearing the override falls back to the page-defined label instead of
     // keeping an empty string that would mask the underlying softkey action.
-    if (clear_override)
+    if (kClearOverride)
     {
-        if (!g_softkey_label_override_active[index] && g_softkey_label_overrides[index][0] == '\0')
+        if (!g_softkey_label_override_active[kIndex] &&
+            g_softkey_label_overrides[kIndex][0] == '\0')
         {
             return false;
         }
 
-        g_softkey_label_override_active[index] = false;
-        g_softkey_label_overrides[index][0] = '\0';
+        g_softkey_label_override_active[kIndex] = false;
+        g_softkey_label_overrides[kIndex][0] = '\0';
         update_softkeys_from_state();
         return true;
     }
@@ -683,16 +684,16 @@ bool set_softkey_label(SoftKeyId key, const char* label)
     char copied_label[kSoftkeyLabelCapacity] = {};
     std::snprintf(copied_label, sizeof(copied_label), "%s", label);
 
-    const bool changed = !g_softkey_label_override_active[index] ||
-                         std::strcmp(g_softkey_label_overrides[index].data(), copied_label) != 0;
-    if (!changed)
+    const bool kChanged = !g_softkey_label_override_active[kIndex] ||
+                          std::strcmp(g_softkey_label_overrides[kIndex].data(), copied_label) != 0;
+    if (!kChanged)
     {
         return false;
     }
 
-    std::snprintf(g_softkey_label_overrides[index].data(), g_softkey_label_overrides[index].size(),
-                  "%s", copied_label);
-    g_softkey_label_override_active[index] = true;
+    std::snprintf(g_softkey_label_overrides[kIndex].data(),
+                  g_softkey_label_overrides[kIndex].size(), "%s", copied_label);
+    g_softkey_label_override_active[kIndex] = true;
     update_softkeys_from_state();
     return true;
 }
@@ -739,8 +740,8 @@ bool handle_button_event(const ButtonEvent& event)
         return changed;
     }
 
-    const SoftKeyId key = softkey_id_from_button(event.id);
-    const SoftKeyAction& action = g_console_state.softkeys[softkey_index(key)];
+    const SoftKeyId kEy = softkey_id_from_button(event.id);
+    const SoftKeyAction& action = g_console_state.softkeys[softkey_index(kEy)];
     if (!action.enabled)
     {
         return changed;
@@ -748,9 +749,9 @@ bool handle_button_event(const ButtonEvent& event)
 
     // The route mutates the logical console state first, then softkeys and lamp
     // outputs are recomputed from that new state as a separate step.
-    const bool route_changed = apply_softkey_route(action.route);
+    const bool kRouteChanged = apply_softkey_route(action.route);
 
-    if (!route_changed)
+    if (!kRouteChanged)
     {
         return changed;
     }

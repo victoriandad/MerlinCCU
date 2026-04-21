@@ -306,9 +306,9 @@ void copy_softkey_label_slice(char* dest, size_t dest_size, const char* src, siz
         return;
     }
 
-    const size_t copy_length = (length < (dest_size - 1)) ? length : (dest_size - 1);
-    std::memcpy(dest, src, copy_length);
-    dest[copy_length] = '\0';
+    const size_t kCopyLength = (length < (dest_size - 1)) ? length : (dest_size - 1);
+    std::memcpy(dest, src, kCopyLength);
+    dest[kCopyLength] = '\0';
 }
 
 /// @brief Returns the longest prefix that still fits within the softkey label width.
@@ -382,13 +382,13 @@ WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font
         return wrapped;
     }
 
-    const size_t first_fit_length = fit_wrapped_label_prefix(label, font, max_width);
-    if (first_fit_length == 0)
+    const size_t kFirstFitLength = fit_wrapped_label_prefix(label, font, max_width);
+    if (kFirstFitLength == 0)
     {
         return wrapped;
     }
 
-    size_t first_length = find_wrapped_label_split(label, first_fit_length);
+    size_t first_length = find_wrapped_label_split(label, kFirstFitLength);
     while (first_length > 0 && label[first_length - 1] == ' ')
     {
         --first_length;
@@ -403,22 +403,21 @@ WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font
         return wrapped;
     }
 
-    const size_t second_fit_length =
-        fit_wrapped_label_prefix(label + second_start, font, max_width);
-    if (second_fit_length == 0)
+    const size_t kSecondFitLength = fit_wrapped_label_prefix(label + second_start, font, max_width);
+    if (kSecondFitLength == 0)
     {
         return wrapped;
     }
 
-    size_t second_length = second_fit_length;
-    if (label[second_start + second_fit_length] != '\0' &&
-        label[second_start + second_fit_length] != '\n')
+    size_t second_length = kSecondFitLength;
+    if (label[second_start + kSecondFitLength] != '\0' &&
+        label[second_start + kSecondFitLength] != '\n')
     {
-        const size_t second_split =
-            find_wrapped_label_split(label + second_start, second_fit_length);
-        if (second_split > 0)
+        const size_t kSecondSplit =
+            find_wrapped_label_split(label + second_start, kSecondFitLength);
+        if (kSecondSplit > 0)
         {
-            second_length = second_split;
+            second_length = kSecondSplit;
         }
     }
 
@@ -451,25 +450,25 @@ bool parse_clock_text_minutes(const char* text, int* out_minutes)
         return false;
     }
 
-    const char hour_tens = text[0];
-    const char hour_ones = text[1];
-    const char minute_tens = text[3];
-    const char minute_ones = text[4];
+    const char kHourTens = text[0];
+    const char kHourOnes = text[1];
+    const char kMinuteTens = text[3];
+    const char kMinuteOnes = text[4];
 
-    if (hour_tens < '0' || hour_tens > '9' || hour_ones < '0' || hour_ones > '9' ||
-        minute_tens < '0' || minute_tens > '9' || minute_ones < '0' || minute_ones > '9')
+    if (kHourTens < '0' || kHourTens > '9' || kHourOnes < '0' || kHourOnes > '9' ||
+        kMinuteTens < '0' || kMinuteTens > '9' || kMinuteOnes < '0' || kMinuteOnes > '9')
     {
         return false;
     }
 
-    const int hours = ((hour_tens - '0') * 10) + (hour_ones - '0');
-    const int minutes = ((minute_tens - '0') * 10) + (minute_ones - '0');
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
+    const int kHours = ((kHourTens - '0') * 10) + (kHourOnes - '0');
+    const int kMinutes = ((kMinuteTens - '0') * 10) + (kMinuteOnes - '0');
+    if (kHours < 0 || kHours > 23 || kMinutes < 0 || kMinutes > 59)
     {
         return false;
     }
 
-    *out_minutes = (hours * 60) + minutes;
+    *out_minutes = (kHours * 60) + kMinutes;
     return true;
 }
 
@@ -497,7 +496,7 @@ ForecastDisplayWindow active_forecast_window(const ConsoleState& console_state)
         return window;
     }
 
-    const int current_hour_floor = (current_minutes / 60) * 60;
+    const int kCurrentHourFloor = (current_minutes / 60) * 60;
     const int kDayMinutes = 24 * 60;
     const int kOffsetCandidates[] = {-kDayMinutes, 0, kDayMinutes};
     int previous_forecast_minutes = -100000;
@@ -519,16 +518,16 @@ ForecastDisplayWindow active_forecast_window(const ConsoleState& console_state)
         if (!have_previous_entry)
         {
             int best_distance = 0x7fffffff;
-            for (const int candidate_offset : kOffsetCandidates)
+            for (const int kCandidateOffset : kOffsetCandidates)
             {
-                const int candidate_minutes = raw_forecast_minutes + candidate_offset;
-                const int distance = candidate_minutes > current_hour_floor
-                                         ? (candidate_minutes - current_hour_floor)
-                                         : (current_hour_floor - candidate_minutes);
-                if (distance < best_distance)
+                const int kCandidateMinutes = raw_forecast_minutes + kCandidateOffset;
+                const int kDistance = kCandidateMinutes > kCurrentHourFloor
+                                          ? (kCandidateMinutes - kCurrentHourFloor)
+                                          : (kCurrentHourFloor - kCandidateMinutes);
+                if (kDistance < best_distance)
                 {
-                    best_distance = distance;
-                    day_offset = candidate_offset;
+                    best_distance = kDistance;
+                    day_offset = kCandidateOffset;
                 }
             }
         }
@@ -540,7 +539,7 @@ ForecastDisplayWindow active_forecast_window(const ConsoleState& console_state)
             forecast_minutes = raw_forecast_minutes + day_offset;
         }
 
-        if (forecast_minutes >= current_hour_floor)
+        if (forecast_minutes >= kCurrentHourFloor)
         {
             break;
         }
@@ -579,11 +578,11 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         return;
     }
 
-    const WrappedSoftkeyLabel wrapped = wrap_softkey_label(action.label, font);
-    const int line_height = framebuffer::font_height(font);
-    const int block_height =
-        (wrapped.line_count * line_height) + ((wrapped.line_count - 1) * kSoftkeyLayout.line_gap);
-    const int block_top_y = y + ((kSoftkeyLayout.height - block_height) / 2);
+    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font);
+    const int kLineHeight = framebuffer::font_height(font);
+    const int kBlockHeight =
+        (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
+    const int kBlockTopY = y + ((kSoftkeyLayout.height - kBlockHeight) / 2);
 
     auto draw_line = [&](const char* line_text, int line_index)
     {
@@ -592,19 +591,19 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
             return;
         }
 
-        const int label_width = text_width(line_text, font);
-        const int text_x =
+        const int kLabelWidth = text_width(line_text, font);
+        const int kTextX =
             left_side
                 ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
-                : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - label_width);
-        const int text_y = block_top_y + (line_index * (line_height + kSoftkeyLayout.line_gap));
-        framebuffer::draw_text(fb, text_x, text_y, line_text, true, font, 1);
+                : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kLabelWidth);
+        const int kTextY = kBlockTopY + (line_index * (kLineHeight + kSoftkeyLayout.line_gap));
+        framebuffer::draw_text(fb, kTextX, kTextY, line_text, true, font, 1);
     };
 
-    draw_line(wrapped.line_one, 0);
-    if (wrapped.line_count > 1)
+    draw_line(kWrapped.line_one, 0);
+    if (kWrapped.line_count > 1)
     {
-        draw_line(wrapped.line_two, 1);
+        draw_line(kWrapped.line_two, 1);
     }
 }
 
@@ -639,7 +638,7 @@ bool weather_sun_times_available(const ConsoleState& console_state)
 /// available so the footer still looks intentional instead of half-empty.
 void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr fonts::FontFace sun_font = fonts::FontFace::Font5x7;
+    constexpr fonts::FontFace kSunFont = fonts::FontFace::Font5x7;
     char sunrise_label[24] = {};
     char sunset_label[24] = {};
 
@@ -658,9 +657,9 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
     if (sunrise_label[0] != '\0' && sunset_label[0] != '\0')
     {
         framebuffer::draw_hline(fb, 12, kUiWidth - 12, weather_sun_times_y() - 10, true);
-        framebuffer::draw_text(fb, 12, weather_sun_times_y(), sunrise_label, true, sun_font, 1);
-        framebuffer::draw_text(fb, kUiWidth - 12 - text_width(sunset_label, sun_font),
-                               weather_sun_times_y(), sunset_label, true, sun_font, 1);
+        framebuffer::draw_text(fb, 12, weather_sun_times_y(), sunrise_label, true, kSunFont, 1);
+        framebuffer::draw_text(fb, kUiWidth - 12 - text_width(sunset_label, kSunFont),
+                               weather_sun_times_y(), sunset_label, true, kSunFont, 1);
         return;
     }
 
@@ -671,7 +670,7 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
     }
 
     framebuffer::draw_hline(fb, 12, kUiWidth - 12, weather_sun_times_y() - 10, true);
-    draw_centered_text(fb, kUiWidth / 2, weather_sun_times_y(), label, true, sun_font, 1);
+    draw_centered_text(fb, kUiWidth / 2, weather_sun_times_y(), label, true, kSunFont, 1);
 }
 
 /// @brief Draws the visual guide for one physical softkey position.
@@ -679,12 +678,12 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 /// offset from the bezel while still reading as tied to that input.
 void draw_softkey_guide(uint8_t* fb, int index, bool left_side)
 {
-    const int center_y = softkey_center_y_for_index(index);
-    const int guide_x = left_side ? 1 : (kUiWidth - 2);
-    const int fill_x = left_side ? 0 : (kUiWidth - 3);
+    const int kCenterY = softkey_center_y_for_index(index);
+    const int kGuideX = left_side ? 1 : (kUiWidth - 2);
+    const int kFillX = left_side ? 0 : (kUiWidth - 3);
 
-    framebuffer::draw_vline(fb, guide_x, center_y - 6, center_y + 6, true);
-    framebuffer::fill_rect(fb, fill_x, center_y - 1, 3, 3, true);
+    framebuffer::draw_vline(fb, kGuideX, kCenterY - 6, kCenterY + 6, true);
+    framebuffer::fill_rect(fb, kFillX, kCenterY - 1, 3, 3, true);
 }
 
 /// @brief Draws all left and right softkey guides around the content area.
@@ -702,13 +701,13 @@ void draw_softkey_guides(uint8_t* fb)
 /// share the same bezel framing while only the content region changes.
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
-    const fonts::FontFace label_font = softkey_label_font(console_state.active_page);
+    const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
 
     for (int i = 0; i < 5; ++i)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, label_font);
+        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont);
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           label_font);
+                           kLabelFont);
     }
 }
 
@@ -726,26 +725,26 @@ void draw_panel_frame(uint8_t* fb)
 /// which backend is driving the weather data on the screen.
 void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr fonts::FontFace footer_font = fonts::FontFace::Font5x7;
-    constexpr int footer_line_gap = 2;
+    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
+    constexpr int kFooterLineGap = 2;
 
-    const WrappedSoftkeyLabel wrapped = wrap_label_two_lines(
-        weather_source_label_text(console_state), footer_font, weather_source_footer_max_width());
-    const int line_height = framebuffer::font_height(footer_font);
-    const int first_line_y = weather_source_footer_bottom_y() -
-                             ((wrapped.line_count - 1) * (line_height + footer_line_gap));
+    const WrappedSoftkeyLabel kWrapped = wrap_label_two_lines(
+        weather_source_label_text(console_state), kFooterFont, weather_source_footer_max_width());
+    const int kLineHeight = framebuffer::font_height(kFooterFont);
+    const int kFirstLineY = weather_source_footer_bottom_y() -
+                            ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));
 
-    if (wrapped.line_one[0] != '\0')
+    if (kWrapped.line_one[0] != '\0')
     {
-        framebuffer::draw_text(fb, weather_source_footer_left_x(), first_line_y, wrapped.line_one,
-                               true, footer_font, 1);
+        framebuffer::draw_text(fb, weather_source_footer_left_x(), kFirstLineY, kWrapped.line_one,
+                               true, kFooterFont, 1);
     }
 
-    if (wrapped.line_count > 1 && wrapped.line_two[0] != '\0')
+    if (kWrapped.line_count > 1 && kWrapped.line_two[0] != '\0')
     {
         framebuffer::draw_text(fb, weather_source_footer_left_x(),
-                               first_line_y + line_height + footer_line_gap, wrapped.line_two, true,
-                               footer_font, 1);
+                               kFirstLineY + kLineHeight + kFooterLineGap, kWrapped.line_two, true,
+                               kFooterFont, 1);
     }
 }
 
@@ -799,14 +798,14 @@ const char* weather_status_detail(const HomeAssistantStatus& status, char* buffe
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 {
     char status_detail[24] = {};
-    const bool weather_configured =
+    const bool kWeatherConfigured =
         console_state.home_assistant_status.weather_entity_id[0] != '\0';
-    const ForecastDisplayWindow forecast_window = active_forecast_window(console_state);
+    const ForecastDisplayWindow kForecastWindow = active_forecast_window(console_state);
     const char* weather_condition = "WEATHER OFF";
     const char* weather_temperature = "";
     const char* weather_footer = "";
 
-    if (weather_configured)
+    if (kWeatherConfigured)
     {
         weather_condition =
             console_state.home_assistant_status.weather_condition[0]
@@ -840,7 +839,7 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
         }
     }
 
-    if (forecast_window.count > 0)
+    if (kForecastWindow.count > 0)
     {
         framebuffer::draw_text(fb, 12, 36, "TIME", true, 1, 1);
         framebuffer::draw_text(fb, 60, 36, "TEMP", true, 1, 1);
@@ -848,25 +847,25 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
         framebuffer::draw_text(fb, 160, 36, "CONDITIONS", true, 1, 1);
         framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
 
-        for (uint8_t i = 0; i < forecast_window.count; ++i)
+        for (uint8_t i = 0; i < kForecastWindow.count; ++i)
         {
             const WeatherForecastEntry& entry =
                 console_state.home_assistant_status
-                    .weather_forecast[forecast_window.first_index + i];
-            const int row_y = 54 + (static_cast<int>(i) * 18);
-            framebuffer::draw_text(fb, 12, row_y, entry.time_text.data(), true,
+                    .weather_forecast[kForecastWindow.first_index + i];
+            const int kRowY = 54 + (static_cast<int>(i) * 18);
+            framebuffer::draw_text(fb, 12, kRowY, entry.time_text.data(), true,
                                    fonts::FontFace::Font8x12, 1);
-            framebuffer::draw_text(fb, 60, row_y, entry.temperature_text.data(), true,
+            framebuffer::draw_text(fb, 60, kRowY, entry.temperature_text.data(), true,
                                    fonts::FontFace::Font8x12, 1);
-            framebuffer::draw_text(fb, 102, row_y, entry.wind_text.data(), true,
+            framebuffer::draw_text(fb, 102, kRowY, entry.wind_text.data(), true,
                                    fonts::FontFace::Font8x12, 1);
-            framebuffer::draw_text(fb, 160, row_y + 3, entry.condition_text.data(), true, 1, 1);
+            framebuffer::draw_text(fb, 160, kRowY + 3, entry.condition_text.data(), true, 1, 1);
         }
-        if (weather_configured && weather_sun_times_available(console_state))
+        if (kWeatherConfigured && weather_sun_times_available(console_state))
         {
             draw_weather_sun_times(fb, console_state);
         }
-        if (weather_configured)
+        if (kWeatherConfigured)
         {
             draw_weather_source_footer(fb, console_state);
         }
@@ -880,13 +879,13 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                            fonts::FontFace::Font8x14, 1);
     }
 
-    if (weather_configured && weather_footer[0] != '\0')
+    if (kWeatherConfigured && weather_footer[0] != '\0')
     {
         draw_centered_text(fb, kUiWidth / 2, 162, weather_footer, true, fonts::FontFace::Font5x7,
                            1);
     }
 
-    if (weather_configured)
+    if (kWeatherConfigured)
     {
         draw_weather_source_footer(fb, console_state);
     }
@@ -1018,39 +1017,39 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 /// scan information and recent events over polished end-user presentation.
 void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int panel_left = 60;
-    constexpr int panel_top = 40;
-    constexpr int panel_width = kUiWidth - 80;
-    constexpr int panel_height = 200;
-    constexpr int label_x = 74;
-    constexpr int value_x = 136;
-    constexpr int divider_y = 144;
+    constexpr int kPanelLeft = 60;
+    constexpr int kPanelTop = 40;
+    constexpr int kPanelWidth = kUiWidth - 80;
+    constexpr int kPanelHeight = 200;
+    constexpr int kLabelX = 74;
+    constexpr int kValueX = 136;
+    constexpr int kDividerY = 144;
 
-    framebuffer::draw_rect(fb, panel_left, panel_top, panel_width, panel_height, true);
-    draw_centered_text(fb, panel_left + (panel_width / 2), 56, "KEYPAD", true,
+    framebuffer::draw_rect(fb, kPanelLeft, kPanelTop, kPanelWidth, kPanelHeight, true);
+    draw_centered_text(fb, kPanelLeft + (kPanelWidth / 2), 56, "KEYPAD", true,
                        fonts::FontFace::FontTitle8x12, 1);
 
-    framebuffer::draw_text(fb, label_x, 84, "ACTIVE", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 84,
+    framebuffer::draw_text(fb, kLabelX, 84, "ACTIVE", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 84,
                            console_state.keypad_debug_status.active_panel_pins[0]
                                ? console_state.keypad_debug_status.active_panel_pins.data()
                                : "-",
                            true, 1, 1);
 
-    framebuffer::draw_text(fb, label_x, 100, "MASK", true, 1, 1);
+    framebuffer::draw_text(fb, kLabelX, 100, "MASK", true, 1, 1);
     char mask_text[16] = {};
     std::snprintf(mask_text, sizeof(mask_text), "0x%04lX",
                   static_cast<unsigned long>(console_state.keypad_debug_status.active_mask));
-    framebuffer::draw_text(fb, value_x, 100, mask_text, true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 100, mask_text, true, 1, 1);
 
-    framebuffer::draw_text(fb, label_x, 116, "LINES", true, 1, 1);
+    framebuffer::draw_text(fb, kLabelX, 116, "LINES", true, 1, 1);
     char lines_text[24] = {};
     std::snprintf(lines_text, sizeof(lines_text), "%u/%u",
                   static_cast<unsigned>(console_state.keypad_debug_status.active_count),
                   static_cast<unsigned>(console_state.keypad_debug_status.configured_count));
-    framebuffer::draw_text(fb, value_x, 116, lines_text, true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 116, lines_text, true, 1, 1);
 
-    framebuffer::draw_text(fb, label_x, 132, "DRIVE", true, 1, 1);
+    framebuffer::draw_text(fb, kLabelX, 132, "DRIVE", true, 1, 1);
     char drive_text[16] = {};
     if (console_state.keypad_debug_status.probe_drive_panel_pin != 0)
     {
@@ -1062,47 +1061,47 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
     {
         std::snprintf(drive_text, sizeof(drive_text), "-");
     }
-    framebuffer::draw_text(fb, value_x, 132, drive_text, true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 132, drive_text, true, 1, 1);
 
-    framebuffer::draw_hline(fb, label_x, panel_left + panel_width - 14, divider_y, true);
-    framebuffer::draw_text(fb, label_x, 156, "SENSE", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 156,
+    framebuffer::draw_hline(fb, kLabelX, kPanelLeft + kPanelWidth - 14, kDividerY, true);
+    framebuffer::draw_text(fb, kLabelX, 156, "SENSE", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 156,
                            console_state.keypad_debug_status.probe_hit_panel_pins[0]
                                ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
                                : "-",
                            true, 1, 1);
-    framebuffer::draw_text(fb, label_x, 172, "LAST KEY", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 172,
+    framebuffer::draw_text(fb, kLabelX, 172, "LAST KEY", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 172,
                            console_state.keypad_debug_status.last_button_name[0]
                                ? console_state.keypad_debug_status.last_button_name.data()
                                : "-",
                            true, 1, 1);
-    framebuffer::draw_text(fb, label_x, 188, "EVENT", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 188,
+    framebuffer::draw_text(fb, kLabelX, 188, "EVENT", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 188,
                            console_state.keypad_debug_status.last_event_type[0]
                                ? console_state.keypad_debug_status.last_event_type.data()
                                : "-",
                            true, 1, 1);
-    framebuffer::draw_text(fb, label_x, 204, "COUNT", true, 1, 1);
+    framebuffer::draw_text(fb, kLabelX, 204, "COUNT", true, 1, 1);
     char count_text[16] = {};
     std::snprintf(count_text, sizeof(count_text), "%lu",
                   static_cast<unsigned long>(console_state.keypad_debug_status.event_count));
-    framebuffer::draw_text(fb, value_x, 204, count_text, true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 204, count_text, true, 1, 1);
 
-    framebuffer::draw_text(fb, label_x, 212, "D05", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 212,
+    framebuffer::draw_text(fb, kLabelX, 212, "D05", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 212,
                            console_state.keypad_debug_status.drive_5_hits[0]
                                ? console_state.keypad_debug_status.drive_5_hits.data()
                                : "-",
                            true, 1, 1);
-    framebuffer::draw_text(fb, label_x, 224, "D20", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 224,
+    framebuffer::draw_text(fb, kLabelX, 224, "D20", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 224,
                            console_state.keypad_debug_status.drive_20_hits[0]
                                ? console_state.keypad_debug_status.drive_20_hits.data()
                                : "-",
                            true, 1, 1);
-    framebuffer::draw_text(fb, label_x, 236, "D22", true, 1, 1);
-    framebuffer::draw_text(fb, value_x, 236,
+    framebuffer::draw_text(fb, kLabelX, 236, "D22", true, 1, 1);
+    framebuffer::draw_text(fb, kValueX, 236,
                            console_state.keypad_debug_status.drive_22_hits[0]
                                ? console_state.keypad_debug_status.drive_22_hits.data()
                                : "-",
@@ -1198,12 +1197,12 @@ void draw_calibration_screen(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    const int mid_x = kUiWidth / 2;
-    const int mid_y = kUiHeight / 2;
-    const int q1_x = kUiWidth / 4;
-    const int q3_x = (kUiWidth * 3) / 4;
-    const int q1_y = kUiHeight / 4;
-    const int q3_y = (kUiHeight * 3) / 4;
+    const int kMidX = kUiWidth / 2;
+    const int kMidY = kUiHeight / 2;
+    const int kQ1X = kUiWidth / 4;
+    const int kQ3X = (kUiWidth * 3) / 4;
+    const int kQ1Y = kUiHeight / 4;
+    const int kQ3Y = (kUiHeight * 3) / 4;
 
     // Full outer border of the logical UI.
     framebuffer::draw_rect(fb, 0, 0, kUiWidth, kUiHeight, true);
@@ -1218,14 +1217,14 @@ void draw_calibration_screen(uint8_t* fb)
     framebuffer::fill_rect(fb, kUiWidth - 8, kUiHeight - 8, 8, 8, true);
 
     // Center cross.
-    framebuffer::draw_vline(fb, mid_x, 0, kUiHeight - 1, true);
-    framebuffer::draw_hline(fb, 0, kUiWidth - 1, mid_y, true);
+    framebuffer::draw_vline(fb, kMidX, 0, kUiHeight - 1, true);
+    framebuffer::draw_hline(fb, 0, kUiWidth - 1, kMidY, true);
 
     // Quarter lines.
-    framebuffer::draw_vline(fb, q1_x, 16, kUiHeight - 17, true);
-    framebuffer::draw_vline(fb, q3_x, 16, kUiHeight - 17, true);
-    framebuffer::draw_hline(fb, 16, kUiWidth - 17, q1_y, true);
-    framebuffer::draw_hline(fb, 16, kUiWidth - 17, q3_y, true);
+    framebuffer::draw_vline(fb, kQ1X, 16, kUiHeight - 17, true);
+    framebuffer::draw_vline(fb, kQ3X, 16, kUiHeight - 17, true);
+    framebuffer::draw_hline(fb, 16, kUiWidth - 17, kQ1Y, true);
+    framebuffer::draw_hline(fb, 16, kUiWidth - 17, kQ3Y, true);
 
     // Small edge ticks every 32 logical pixels.
     for (int x = 0; x < kUiWidth; x += 32)
@@ -1241,7 +1240,7 @@ void draw_calibration_screen(uint8_t* fb)
     }
 
     // Central box.
-    framebuffer::draw_rect(fb, mid_x - 30, mid_y - 20, 60, 40, true);
+    framebuffer::draw_rect(fb, kMidX - 30, kMidY - 20, 60, 40, true);
 
     // Top and bottom labels for orientation.
     framebuffer::draw_text(fb, 12, 12, "TOP", true, 1, 1);
@@ -1249,10 +1248,10 @@ void draw_calibration_screen(uint8_t* fb)
     framebuffer::draw_text(fb, 12, kUiHeight - 20, "BOTTOM", true, 1, 1);
 
     // A few filled blocks for checking edge visibility and stability.
-    framebuffer::fill_rect(fb, 20, mid_y - 10, 12, 20, true);
-    framebuffer::fill_rect(fb, kUiWidth - 32, mid_y - 10, 12, 20, true);
-    framebuffer::fill_rect(fb, mid_x - 10, 24, 20, 12, true);
-    framebuffer::fill_rect(fb, mid_x - 10, kUiHeight - 36, 20, 12, true);
+    framebuffer::fill_rect(fb, 20, kMidY - 10, 12, 20, true);
+    framebuffer::fill_rect(fb, kUiWidth - 32, kMidY - 10, 12, 20, true);
+    framebuffer::fill_rect(fb, kMidX - 10, 24, 20, 12, true);
+    framebuffer::fill_rect(fb, kMidX - 10, kUiHeight - 36, 20, 12, true);
 }
 
 } // namespace screens

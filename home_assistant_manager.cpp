@@ -127,7 +127,7 @@ bool parse_port(const char* text, uint16_t* out_port)
         {
             return false;
         }
-    value = (value * 10U) + static_cast<unsigned long>(*p - '0');
+        value = (value * 10U) + static_cast<unsigned long>(*p - '0');
         if (value > kMaxTcpPortValue)
         {
             return false;

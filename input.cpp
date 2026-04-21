@@ -98,25 +98,25 @@ constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
 /// @details The panel pin numbers intentionally match the bench spreadsheet so probe logs
 /// and diagnostics screens can be compared directly with the hardware notes.
 constexpr std::array<ObservedLineConfig, kKeypadObservedLineCount> kObservedLines = {{
-    {5, KEYPAD_PANEL_PIN_5_GPIO, true},
-    {6, KEYPAD_PANEL_PIN_6_GPIO, true},
-    {7, KEYPAD_PANEL_PIN_7_GPIO, true},
-    {8, KEYPAD_PANEL_PIN_8_GPIO, true},
-    {9, KEYPAD_PANEL_PIN_9_GPIO, true},
-    {10, KEYPAD_PANEL_PIN_10_GPIO, true},
-    {11, KEYPAD_PANEL_PIN_11_GPIO, true},
-    {14, KEYPAD_PANEL_PIN_14_GPIO, true},
-    {15, KEYPAD_PANEL_PIN_15_GPIO, true},
-    {16, KEYPAD_PANEL_PIN_16_GPIO, true},
-    {17, KEYPAD_PANEL_PIN_17_GPIO, true},
-    {18, KEYPAD_PANEL_PIN_18_GPIO, true},
-    {19, KEYPAD_PANEL_PIN_19_GPIO, true},
-    {20, KEYPAD_PANEL_PIN_20_GPIO, true},
-    {21, KEYPAD_PANEL_PIN_21_GPIO, true},
-    {22, KEYPAD_PANEL_PIN_22_GPIO, true},
+    {5, kKeypadPanelPin5Gpio, true},
+    {6, kKeypadPanelPin6Gpio, true},
+    {7, kKeypadPanelPin7Gpio, true},
+    {8, kKeypadPanelPin8Gpio, true},
+    {9, kKeypadPanelPin9Gpio, true},
+    {10, kKeypadPanelPin10Gpio, true},
+    {11, kKeypadPanelPin11Gpio, true},
+    {14, kKeypadPanelPin14Gpio, true},
+    {15, kKeypadPanelPin15Gpio, true},
+    {16, kKeypadPanelPin16Gpio, true},
+    {17, kKeypadPanelPin17Gpio, true},
+    {18, kKeypadPanelPin18Gpio, true},
+    {19, kKeypadPanelPin19Gpio, true},
+    {20, kKeypadPanelPin20Gpio, true},
+    {21, kKeypadPanelPin21Gpio, true},
+    {22, kKeypadPanelPin22Gpio, true},
 }};
 
-std::array<ButtonState, kButtonCount> button_states = {};
+std::array<ButtonState, kButtonCount> g_button_states = {};
 KeypadMonitorStatus g_keypad_monitor_status = {};
 std::array<uint16_t, kKeypadObservedLineCount> g_probe_hits_by_drive = {};
 std::array<uint16_t, kKeypadObservedLineCount> g_last_logged_probe_hits_by_drive = {};
@@ -177,8 +177,8 @@ void log_keypad_probe_results_if_changed()
     for (size_t i = 0; i < kKeypadObservedLineCount; ++i)
     {
         const ObservedLineConfig& drive_line = kObservedLines[i];
-        const uint16_t hit_mask = g_probe_hits_by_drive[i];
-        if (drive_line.pico_gpio < 0 || hit_mask == 0)
+        const uint16_t kHitMask = g_probe_hits_by_drive[i];
+        if (drive_line.pico_gpio < 0 || kHitMask == 0)
         {
             continue;
         }
@@ -188,7 +188,7 @@ void log_keypad_probe_results_if_changed()
         bool printed_any = false;
         for (size_t j = 0; j < kKeypadObservedLineCount; ++j)
         {
-            if ((hit_mask & observed_line_hit_bit(j)) == 0)
+            if ((kHitMask & observed_line_hit_bit(j)) == 0)
             {
                 continue;
             }
@@ -339,9 +339,9 @@ void refresh_keypad_monitor_status()
                 continue;
             }
 
-            const bool raw_level = gpio_get(static_cast<uint>(sense_line.pico_gpio));
-            const bool active = observed_line_is_active(raw_level, sense_line);
-            if (!active)
+            const bool kRawLevel = gpio_get(static_cast<uint>(sense_line.pico_gpio));
+            const bool kActive = observed_line_is_active(kRawLevel, sense_line);
+            if (!kActive)
             {
                 continue;
             }
@@ -378,29 +378,29 @@ ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
         return {button.id, ButtonEventType::None};
     }
 
-    const bool raw_level = gpio_get(static_cast<uint>(button.pin));
-    const absolute_time_t now = get_absolute_time();
+    const bool kRawLevel = gpio_get(static_cast<uint>(button.pin));
+    const absolute_time_t kNow = get_absolute_time();
 
-    if (raw_level != state.raw_level)
+    if (kRawLevel != state.raw_level)
     {
-        state.raw_level = raw_level;
-        state.last_change_time = now;
+        state.raw_level = kRawLevel;
+        state.last_change_time = kNow;
         return {button.id, ButtonEventType::None};
     }
 
-    if (absolute_time_diff_us(state.last_change_time, now) < kButtonDebounceUs)
-    {
-        return {button.id, ButtonEventType::None};
-    }
-
-    const bool pressed = button_level_is_pressed(raw_level, button);
-    if (pressed == state.stable_pressed)
+    if (absolute_time_diff_us(state.last_change_time, kNow) < kButtonDebounceUs)
     {
         return {button.id, ButtonEventType::None};
     }
 
-    state.stable_pressed = pressed;
-    return {button.id, pressed ? ButtonEventType::Pressed : ButtonEventType::Released};
+    const bool kPressed = button_level_is_pressed(kRawLevel, button);
+    if (kPressed == state.stable_pressed)
+    {
+        return {button.id, ButtonEventType::None};
+    }
+
+    state.stable_pressed = kPressed;
+    return {button.id, kPressed ? ButtonEventType::Pressed : ButtonEventType::Released};
 }
 
 } // namespace
@@ -408,13 +408,13 @@ ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
 /// @brief Initializes any configured button GPIOs and debounce state.
 void init()
 {
-    const absolute_time_t now = get_absolute_time();
+    const absolute_time_t kNow = get_absolute_time();
 
     // Initialize any discrete button inputs first so debounce state starts from
     // the real electrical level instead of assuming "not pressed".
     for (size_t i = 0; i < kButtonCount; ++i)
     {
-        button_states[i] = {false, false, now};
+        g_button_states[i] = {false, false, kNow};
 
         const ButtonConfig& button = kButtons[i];
         if (button.pin < 0)
@@ -434,9 +434,9 @@ void init()
             gpio_pull_down(static_cast<uint>(button.pin));
         }
 
-        const bool raw_level = gpio_get(static_cast<uint>(button.pin));
-        button_states[i].raw_level = raw_level;
-        button_states[i].stable_pressed = button_level_is_pressed(raw_level, button);
+        const bool kRawLevel = gpio_get(static_cast<uint>(button.pin));
+        g_button_states[i].raw_level = kRawLevel;
+        g_button_states[i].stable_pressed = button_level_is_pressed(kRawLevel, button);
     }
 
     // Observed keypad lines are separate from direct buttons; they are all left
@@ -492,7 +492,7 @@ ButtonEvent poll_buttons()
     // simple "one event per loop" input model.
     for (size_t i = 0; i < kButtonCount; ++i)
     {
-        ButtonEvent event = poll_button(button_states[i], kButtons[i]);
+        ButtonEvent event = poll_button(g_button_states[i], kButtons[i]);
         if (event.type != ButtonEventType::None)
         {
             return event;

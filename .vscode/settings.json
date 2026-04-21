@@ -22,8 +22,20 @@
     "C_Cpp.clang_format_style": "file",
     "C_Cpp.clang_format_path": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-format.exe",
     "C_Cpp.codeAnalysis.runAutomatically": true,
+    "C_Cpp.codeAnalysis.exclude": {
+        "${workspaceFolder}/build/**": true,
+        "${userHome}/.pico-sdk/**": true
+    },
     "C_Cpp.codeAnalysis.clangTidy.enabled": true,
     "C_Cpp.codeAnalysis.clangTidy.path": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-tidy.exe",
+    "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
+    "C_Cpp.codeAnalysis.clangTidy.args": [
+        "--system-headers=0"
+    ],
+    "files.associations": {
+        "**/.pico-sdk/toolchain/**/include/c++/**": "cpp",
+        "**/.pico-sdk/toolchain/**/arm-none-eabi/include/c++/**": "cpp"
+    },
     "terminal.integrated.env.windows": {
         "PICO_SDK_PATH": "${env:USERPROFILE}/.pico-sdk/sdk/2.2.0",
         "PICO_TOOLCHAIN_PATH": "${env:USERPROFILE}/.pico-sdk/toolchain/14_2_Rel1",
