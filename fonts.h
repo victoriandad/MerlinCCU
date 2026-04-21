@@ -2,10 +2,12 @@
 
 #include <cstdint>
 
-namespace fonts {
+namespace fonts
+{
 
 /// @brief Fixed bitmap font faces currently available to the UI renderer.
-enum class FontFace : uint8_t {
+enum class FontFace : uint8_t
+{
     Font5x7 = 0,
     FontTitle8x12,
     Font8x12,
@@ -13,13 +15,15 @@ enum class FontFace : uint8_t {
 };
 
 /// @brief One packed 5x7 glyph entry stored column-wise.
-struct Glyph5x7 {
+struct Glyph5x7
+{
     char c;
     uint8_t col[5];
 };
 
 /// @brief Derived metrics for one rendered glyph after trimming empty columns.
-struct GlyphMetrics {
+struct GlyphMetrics
+{
     uint8_t first_column;
     uint8_t draw_width;
     uint8_t advance;
@@ -42,4 +46,4 @@ int font_height(FontFace font);
 /// @brief Returns the trimmed draw width and advance for one rendered glyph.
 GlyphMetrics glyph_metrics(FontFace font, char c);
 
-}  // namespace fonts
+} // namespace fonts

@@ -3,7 +3,8 @@
 #include "console_model.h"
 #include "input.h"
 
-namespace console_controller {
+namespace console_controller
+{
 
 /// @brief Initializes the front-panel state model.
 void init();
@@ -37,4 +38,4 @@ bool set_softkey_label(SoftKeyId key, const char* label);
 /// the keypad hardware to exist yet.
 bool handle_button_event(const ButtonEvent& event);
 
-}  // namespace console_controller
+} // namespace console_controller

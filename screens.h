@@ -4,7 +4,8 @@
 
 #include "console_model.h"
 
-namespace screens {
+namespace screens
+{
 
 /// @brief Draws a simple geometry test pattern.
 /// @details This is useful when checking orientation, clipping and obvious
@@ -20,4 +21,4 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state);
 /// usable area, centering, clipping and line stability can be assessed.
 void draw_calibration_screen(uint8_t* fb);
 
-}  // namespace screens
+} // namespace screens

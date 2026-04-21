@@ -1,9 +1,10 @@
 #pragma once
 
-#include <cstdint>
 #include "fonts.h"
+#include <cstdint>
 
-namespace framebuffer {
+namespace framebuffer
+{
 
 /// @brief Returns the currently visible UI framebuffer.
 uint8_t* front();
@@ -51,7 +52,8 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font)
 void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale = 1, int spacing = 1);
 
 /// @brief Draws a null-terminated text string using per-glyph advances.
-void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFace font, int spacing = 1);
+void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFace font,
+               int spacing = 1);
 
 /// @brief Returns the pixel width of a rendered string for the requested font face.
 int measure_text(const char* s, fonts::FontFace font, int spacing = 1);
@@ -59,4 +61,4 @@ int measure_text(const char* s, fonts::FontFace font, int spacing = 1);
 /// @brief Returns the pixel height of the requested font face.
 int font_height(fonts::FontFace font);
 
-}  // namespace framebuffer
+} // namespace framebuffer

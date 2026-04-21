@@ -1,20 +1,21 @@
 #include "wifi_manager.h"
 
-#include <cstdio>
-#include <cstring>
 #include "debug_logging.h"
 #include "lwip/apps/netbiosns.h"
+#include "lwip/apps/sntp.h"
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
 #include "lwip/ip4_addr.h"
 #include "lwip/ip_addr.h"
 #include "lwip/netif.h"
-#include "lwip/apps/sntp.h"
 #include "pico/cyw43_arch.h"
 #include "pico/error.h"
 #include "pico/stdlib.h"
+#include <cstdio>
+#include <cstring>
 
-namespace {
+namespace
+{
 
 #if __has_include("wifi_credentials.h")
 #include "wifi_credentials.h"
@@ -28,7 +29,8 @@ constexpr uint32_t kConfiguredWifiAuth = WIFI_AUTH;
 #else
 constexpr uint32_t kConfiguredWifiAuth = CYW43_AUTH_WPA2_MIXED_PSK;
 #endif
-#if defined(WIFI_STATIC_IP_ADDR) && defined(WIFI_STATIC_IP_NETMASK) && defined(WIFI_STATIC_IP_GATEWAY)
+#if defined(WIFI_STATIC_IP_ADDR) && defined(WIFI_STATIC_IP_NETMASK) &&                             \
+    defined(WIFI_STATIC_IP_GATEWAY)
 constexpr bool kUseStaticIp = true;
 constexpr const char* kStaticIpAddress = WIFI_STATIC_IP_ADDR;
 constexpr const char* kStaticIpNetmask = WIFI_STATIC_IP_NETMASK;
@@ -64,27 +66,36 @@ constexpr char kInternetProbeHostName[] = "dns.google";
 constexpr char kAdvertisedHostName[] = "MerlinCCU";
 constexpr char kNtpServerHostName[] = "pool.ntp.org";
 
-struct WifiCredential {
+struct WifiCredential
+{
     const char* ssid;
     const char* password;
 };
 
 #if __has_include("wifi_credentials.h")
 #if defined(WIFI_CREDENTIALS_COUNT)
+inline constexpr const WifiCredential* kWifiCredentials = WIFI_CREDENTIALS;
 constexpr size_t kWifiCredentialCount = WIFI_CREDENTIALS_COUNT;
 #else
-constexpr WifiCredential WIFI_CREDENTIALS[] = {
+constexpr WifiCredential kDefaultWifiCredentials[] = {
     {WIFI_SSID, WIFI_PASSWORD},
 };
-constexpr size_t kWifiCredentialCount = 1;
+inline constexpr const WifiCredential* kWifiCredentials = kDefaultWifiCredentials;
+constexpr size_t kWifiCredentialCount =
+    sizeof(kDefaultWifiCredentials) / sizeof(kDefaultWifiCredentials[0]);
 #endif
 #else
-constexpr WifiCredential WIFI_CREDENTIALS[] = {
+constexpr WifiCredential kDefaultWifiCredentials[] = {
     {"", ""},
 };
-constexpr size_t kWifiCredentialCount = 1;
+inline constexpr const WifiCredential* kWifiCredentials = kDefaultWifiCredentials;
+constexpr size_t kWifiCredentialCount =
+    sizeof(kDefaultWifiCredentials) / sizeof(kDefaultWifiCredentials[0]);
 #endif
 
+// The Wi-Fi manager keeps a small amount of explicit timing state rather than
+// relying on blocking waits everywhere. That lets the main loop stay responsive
+// while DHCP, DNS, and retry behavior are still visible on the status page.
 WifiStatus g_status = {};
 bool g_cyw43_initialized = false;
 int g_last_observed_link_status = CYW43_LINK_DOWN;
@@ -97,6 +108,7 @@ bool g_probe_in_flight = false;
 bool g_netbios_started = false;
 bool g_sntp_started = false;
 
+/// @brief Returns whether one configured Wi-Fi credential has a usable SSID.
 bool credential_valid(const WifiCredential& credential)
 {
     return credential.ssid && credential.ssid[0] != '\0';
@@ -104,57 +116,64 @@ bool credential_valid(const WifiCredential& credential)
 
 const WifiCredential* active_credential()
 {
-    for (size_t i = 0; i < kWifiCredentialCount; ++i) {
-        if (credential_valid(WIFI_CREDENTIALS[i])) {
-            return &WIFI_CREDENTIALS[i];
+    // The first valid entry wins so a local credentials header can carry a
+    // small ordered list of preferred networks without changing the state machine.
+    for (size_t i = 0; i < kWifiCredentialCount; ++i)
+    {
+        if (credential_valid(kWifiCredentials[i]))
+        {
+            return &kWifiCredentials[i];
         }
     }
 
     return nullptr;
 }
 
+/// @brief Returns the credential password or `nullptr` for open networks.
 const char* credential_password(const WifiCredential& credential)
 {
     return (credential.password && credential.password[0] != '\0') ? credential.password : nullptr;
 }
 
+/// @brief Copies text into a fixed-size status buffer.
 void copy_text(std::array<char, 33>& dst, const char* src)
 {
+    // The UI model stores fixed-size text snapshots so screen rendering never
+    // depends on borrowed pointers into lwIP or temporary parse buffers.
     dst.fill('\0');
-    if (!src) {
+    if (!src)
+    {
         return;
     }
 
     std::snprintf(dst.data(), dst.size(), "%s", src);
 }
 
+/// @brief Copies an IPv4 string into the fixed-size status buffer.
 void copy_ip_text(std::array<char, 16>& dst, const char* src)
 {
     dst.fill('\0');
-    if (!src) {
+    if (!src)
+    {
         return;
     }
 
     std::snprintf(dst.data(), dst.size(), "%s", src);
 }
 
+/// @brief Formats the station MAC address into human-readable text.
 void copy_mac_text(const uint8_t mac[6])
 {
     g_status.mac_address.fill('\0');
-    std::snprintf(g_status.mac_address.data(),
-                  g_status.mac_address.size(),
-                  "%02X:%02X:%02X:%02X:%02X:%02X",
-                  mac[0],
-                  mac[1],
-                  mac[2],
-                  mac[3],
-                  mac[4],
-                  mac[5]);
+    std::snprintf(g_status.mac_address.data(), g_status.mac_address.size(),
+                  "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+/// @brief Returns the compact text label for a CYW43 auth mode.
 const char* auth_mode_text(uint32_t auth_mode)
 {
-    switch (auth_mode) {
+    switch (auth_mode)
+    {
     case CYW43_AUTH_OPEN:
         return "OPEN";
     case CYW43_AUTH_WPA_TKIP_PSK:
@@ -168,22 +187,28 @@ const char* auth_mode_text(uint32_t auth_mode)
     }
 }
 
+/// @brief Chooses the auth mode implied by the configured credential.
 uint32_t configured_auth_mode(const WifiCredential& credential)
 {
-    return (credential.password && credential.password[0] != '\0') ? kConfiguredWifiAuth : CYW43_AUTH_OPEN;
+    return (credential.password && credential.password[0] != '\0') ? kConfiguredWifiAuth
+                                                                   : CYW43_AUTH_OPEN;
 }
 
+/// @brief Copies the current auth-mode label into the status snapshot.
 void copy_auth_mode(uint32_t auth_mode)
 {
     g_status.auth_mode.fill('\0');
-    std::snprintf(g_status.auth_mode.data(), g_status.auth_mode.size(), "%s", auth_mode_text(auth_mode));
+    std::snprintf(g_status.auth_mode.data(), g_status.auth_mode.size(), "%s",
+                  auth_mode_text(auth_mode));
 }
 
+/// @brief Clears the cached IP address text.
 void clear_ip_address()
 {
     g_status.ip_address.fill('\0');
 }
 
+/// @brief Clears the public internet probe status fields.
 void reset_internet_probe_status()
 {
     g_status.internet_reachable = false;
@@ -191,6 +216,7 @@ void reset_internet_probe_status()
     g_status.internet_rtt_ms = -1;
 }
 
+/// @brief Clears all internal timers associated with internet probing.
 void reset_internet_probe_timers()
 {
     g_probe_in_flight = false;
@@ -199,9 +225,13 @@ void reset_internet_probe_timers()
     g_next_probe = nil_time;
 }
 
+/// @brief Starts SNTP once the station has a usable network path.
+/// @details Time sync is deferred until Wi-Fi is genuinely up so connection
+/// failures remain attributable to association or DHCP rather than later NTP noise.
 void start_sntp_if_needed()
 {
-    if (g_sntp_started) {
+    if (g_sntp_started)
+    {
         return;
     }
 
@@ -215,9 +245,11 @@ void start_sntp_if_needed()
     std::printf("WiFi SNTP started with server %s\n", kNtpServerHostName);
 }
 
+/// @brief Stops SNTP if time synchronization was previously started.
 void stop_sntp_if_started()
 {
-    if (!g_sntp_started) {
+    if (!g_sntp_started)
+    {
         return;
     }
 
@@ -228,24 +260,28 @@ void stop_sntp_if_started()
     g_sntp_started = false;
 }
 
+/// @brief Refreshes the cached IP address from lwIP.
 void update_ip_address()
 {
     clear_ip_address();
 
     cyw43_arch_lwip_begin();
-    if (netif_default) {
+    if (netif_default)
+    {
         const char* ip_text = ip4addr_ntoa(netif_ip4_addr(netif_default));
         copy_ip_text(g_status.ip_address, ip_text);
     }
     cyw43_arch_lwip_end();
 }
 
+/// @brief Returns whether the default netif currently has a usable IPv4 address.
 bool has_ipv4_address()
 {
     bool has_address = false;
 
     cyw43_arch_lwip_begin();
-    if (netif_default) {
+    if (netif_default)
+    {
         const ip4_addr_t* address = netif_ip4_addr(netif_default);
         has_address = address && !ip4_addr_isany_val(*address);
     }
@@ -254,19 +290,25 @@ bool has_ipv4_address()
     return has_address;
 }
 
+/// @brief Refreshes the cached station MAC address.
 void update_mac_address()
 {
     uint8_t mac[6] = {};
-    if (cyw43_wifi_get_mac(&cyw43_state, CYW43_ITF_STA, mac) == 0) {
+    if (cyw43_wifi_get_mac(&cyw43_state, CYW43_ITF_STA, mac) == 0)
+    {
         copy_mac_text(mac);
-    } else {
+    }
+    else
+    {
         g_status.mac_address.fill('\0');
     }
 }
 
+/// @brief Parses one IPv4 configuration field and logs failures with context.
 bool parse_ip4_or_log(const char* text, ip4_addr_t* out, const char* label)
 {
-    if (!text || !ip4addr_aton(text, out)) {
+    if (!text || !ip4addr_aton(text, out))
+    {
         std::printf("WiFi static IP config invalid %s='%s'\n", label, text ? text : "(null)");
         return false;
     }
@@ -274,23 +316,32 @@ bool parse_ip4_or_log(const char* text, ip4_addr_t* out, const char* label)
     return true;
 }
 
+/// @brief Applies the configured static IPv4 settings to the active netif.
+/// @details This is only used as a recovery path for networks where association
+/// succeeds but DHCP never completes, so the firmware still defaults to DHCP.
 bool apply_static_ip_config()
 {
-    if (!kUseStaticIp) {
+    if (!kUseStaticIp)
+    {
         return false;
     }
 
+    // Static IP is treated as an explicit recovery path for networks where the
+    // radio joins successfully but DHCP never converges. It is not the default
+    // path because DHCP keeps the firmware more portable between networks.
     ip4_addr_t address;
     ip4_addr_t netmask;
     ip4_addr_t gateway;
     if (!parse_ip4_or_log(kStaticIpAddress, &address, "addr") ||
         !parse_ip4_or_log(kStaticIpNetmask, &netmask, "netmask") ||
-        !parse_ip4_or_log(kStaticIpGateway, &gateway, "gateway")) {
+        !parse_ip4_or_log(kStaticIpGateway, &gateway, "gateway"))
+    {
         return false;
     }
 
     cyw43_arch_lwip_begin();
-    if (!netif_default) {
+    if (!netif_default)
+    {
         cyw43_arch_lwip_end();
         std::printf("WiFi static IP config skipped: no default netif\n");
         return false;
@@ -298,27 +349,30 @@ bool apply_static_ip_config()
 
     dhcp_stop(netif_default);
     netif_set_addr(netif_default, &address, &netmask, &gateway);
-    if (kStaticIpDns && kStaticIpDns[0] != '\0') {
+    if (kStaticIpDns && kStaticIpDns[0] != '\0')
+    {
         ip_addr_t dns;
-        if (ipaddr_aton(kStaticIpDns, &dns)) {
+        if (ipaddr_aton(kStaticIpDns, &dns))
+        {
             dns_setserver(0, &dns);
-        } else {
+        }
+        else
+        {
             std::printf("WiFi static IP config invalid dns='%s'\n", kStaticIpDns);
         }
     }
     cyw43_arch_lwip_end();
 
     update_ip_address();
-    std::printf("WiFi static IP applied: ip=%s gw=%s mask=%s\n",
-                kStaticIpAddress,
-                kStaticIpGateway,
+    std::printf("WiFi static IP applied: ip=%s gw=%s mask=%s\n", kStaticIpAddress, kStaticIpGateway,
                 kStaticIpNetmask);
     return true;
 }
 
 WifiConnectionState state_from_link_status(int link_status)
 {
-    switch (link_status) {
+    switch (link_status)
+    {
     case CYW43_LINK_JOIN:
     case CYW43_LINK_NOIP:
         return WifiConnectionState::WaitingForIp;
@@ -335,22 +389,29 @@ WifiConnectionState state_from_link_status(int link_status)
     }
 }
 
+/// @brief Schedules the next Wi-Fi reconnect attempt.
 void schedule_retry()
 {
     g_next_retry = make_timeout_time_ms(kRetryDelayMs);
 }
 
+/// @brief Starts the wait-for-DHCP deadline timer.
 void schedule_wait_for_ip_deadline()
 {
     g_wait_for_ip_deadline = make_timeout_time_ms(kDhcpWaitTimeoutMs);
 }
 
+/// @brief Advertises the device name through both lwIP hostname and NetBIOS.
+/// @details Using both mechanisms makes the Pico easier to discover from mixed
+/// desktop and mobile clients during local-network bring-up.
 void advertise_hostname()
 {
     cyw43_arch_lwip_begin();
-    if (netif_default) {
+    if (netif_default)
+    {
         netif_set_hostname(netif_default, kAdvertisedHostName);
-        if (!g_netbios_started) {
+        if (!g_netbios_started)
+        {
             netbiosns_init();
             netbiosns_set_name(kAdvertisedHostName);
             g_netbios_started = true;
@@ -359,11 +420,15 @@ void advertise_hostname()
     cyw43_arch_lwip_end();
 }
 
+/// @brief Completes one asynchronous internet reachability probe.
+/// @details A successful DNS lookup is treated as a lightweight signal that the
+/// device has a usable upstream path, not just a local Wi-Fi association.
 void dns_probe_found(const char* name, const ip_addr_t* ipaddr, void* callback_arg)
 {
     (void)name;
     (void)callback_arg;
-    if (!g_probe_in_flight) {
+    if (!g_probe_in_flight)
+    {
         return;
     }
 
@@ -373,25 +438,32 @@ void dns_probe_found(const char* name, const ip_addr_t* ipaddr, void* callback_a
     g_probe_in_flight = false;
     g_probe_deadline = nil_time;
     g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
-    PERIODIC_LOG("WiFi internet probe %s host=%s\n", ipaddr ? "ok" : "failed", kInternetProbeHostName);
+    PERIODIC_LOG("WiFi internet probe %s host=%s\n", ipaddr ? "ok" : "failed",
+                 kInternetProbeHostName);
 }
 
+/// @brief Launches one asynchronous DNS-based internet reachability probe.
+/// @details DNS is used here because lwIP already exposes the resolver path and
+/// it is lighter than introducing an HTTP or ICMP-specific health check.
 bool start_dns_probe()
 {
     ip_addr_t resolved = {};
 
     cyw43_arch_lwip_begin();
-    const err_t result = dns_gethostbyname(kInternetProbeHostName, &resolved, dns_probe_found, nullptr);
+    const err_t result =
+        dns_gethostbyname(kInternetProbeHostName, &resolved, dns_probe_found, nullptr);
     cyw43_arch_lwip_end();
 
-    if (result == ERR_OK) {
+    if (result == ERR_OK)
+    {
         g_probe_in_flight = true;
         g_probe_started_at = get_absolute_time();
         dns_probe_found(kInternetProbeHostName, &resolved, nullptr);
         return true;
     }
 
-    if (result != ERR_INPROGRESS) {
+    if (result != ERR_INPROGRESS)
+    {
         std::printf("WiFi internet probe start failed: %d\n", static_cast<int>(result));
         g_status.internet_reachable = false;
         g_status.internet_probe_pending = false;
@@ -408,10 +480,18 @@ bool start_dns_probe()
     return true;
 }
 
+/// @brief Advances the periodic internet reachability probe state.
+/// @details Probe state is explicitly reset when Wi-Fi or IP state drops so the
+/// UI never shows stale "internet ok" information after a disconnect.
 bool update_internet_probe()
 {
-    if (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0]) {
-        if (g_status.internet_probe_pending || g_status.internet_reachable || g_status.internet_rtt_ms >= 0) {
+    if (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0])
+    {
+        // Probe state is cleared immediately when link/IP state drops so the
+        // status page never shows stale "internet ok" information after disconnect.
+        if (g_status.internet_probe_pending || g_status.internet_reachable ||
+            g_status.internet_rtt_ms >= 0)
+        {
             reset_internet_probe_status();
             reset_internet_probe_timers();
             return true;
@@ -419,8 +499,11 @@ bool update_internet_probe()
         return false;
     }
 
-    if (g_probe_in_flight) {
-        if (!is_nil_time(g_probe_deadline) && absolute_time_diff_us(get_absolute_time(), g_probe_deadline) <= 0) {
+    if (g_probe_in_flight)
+    {
+        if (!is_nil_time(g_probe_deadline) &&
+            absolute_time_diff_us(get_absolute_time(), g_probe_deadline) <= 0)
+        {
             g_probe_in_flight = false;
             g_probe_deadline = nil_time;
             g_status.internet_probe_pending = false;
@@ -433,7 +516,8 @@ bool update_internet_probe()
         return false;
     }
 
-    if (is_nil_time(g_next_probe) || absolute_time_diff_us(get_absolute_time(), g_next_probe) <= 0) {
+    if (is_nil_time(g_next_probe) || absolute_time_diff_us(get_absolute_time(), g_next_probe) <= 0)
+    {
         g_next_probe = nil_time;
         return start_dns_probe();
     }
@@ -441,10 +525,14 @@ bool update_internet_probe()
     return false;
 }
 
+/// @brief Attempts one Wi-Fi connection using the highest-priority configured credential.
+/// @details The status model is populated before association completes so the UI
+/// can explain what network and auth mode the firmware is currently trying.
 bool attempt_connect()
 {
     const WifiCredential* credential = active_credential();
-    if (!credential || !credential_valid(*credential)) {
+    if (!credential || !credential_valid(*credential))
+    {
         return false;
     }
 
@@ -455,15 +543,11 @@ bool attempt_connect()
     g_status.state = WifiConnectionState::Connecting;
     g_status.last_error = 0;
 
-    std::printf("WiFi connecting to SSID '%s' auth=%s timeout=%lums\n",
-                credential->ssid,
-                auth_mode_text(auth_mode),
-                static_cast<unsigned long>(kConnectTimeoutMs));
+    std::printf("WiFi connecting to SSID '%s' auth=%s timeout=%lums\n", credential->ssid,
+                auth_mode_text(auth_mode), static_cast<unsigned long>(kConnectTimeoutMs));
 
-    const int rc = cyw43_arch_wifi_connect_timeout_ms(credential->ssid,
-                                                      credential_password(*credential),
-                                                      auth_mode,
-                                                      kConnectTimeoutMs);
+    const int rc = cyw43_arch_wifi_connect_timeout_ms(
+        credential->ssid, credential_password(*credential), auth_mode, kConnectTimeoutMs);
 
     const int link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
     g_last_observed_link_status = link_status;
@@ -471,7 +555,10 @@ bool attempt_connect()
     g_status.last_error = rc;
     const bool ip_ready = has_ipv4_address();
 
-    if (rc == PICO_OK && (link_status == CYW43_LINK_UP || ip_ready)) {
+    // lwIP can already have an address by the time the link result is checked,
+    // so either signal is enough to treat the connection as usable here.
+    if (rc == PICO_OK && (link_status == CYW43_LINK_UP || ip_ready))
+    {
         apply_static_ip_config();
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;
@@ -479,14 +566,15 @@ bool attempt_connect()
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
         g_next_probe = get_absolute_time();
-        PERIODIC_LOG("WiFi connected to '%s' ip=%s\n",
-                     credential->ssid,
+        PERIODIC_LOG("WiFi connected to '%s' ip=%s\n", credential->ssid,
                      g_status.ip_address[0] ? g_status.ip_address.data() : "-");
         return true;
     }
 
-    if (rc == PICO_OK && (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP)) {
-        if (kUseStaticIp && apply_static_ip_config()) {
+    if (rc == PICO_OK && (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP))
+    {
+        if (kUseStaticIp && apply_static_ip_config())
+        {
             g_status.state = WifiConnectionState::Connected;
             start_sntp_if_needed();
             g_next_retry = nil_time;
@@ -498,25 +586,30 @@ bool attempt_connect()
         g_status.state = WifiConnectionState::WaitingForIp;
         g_next_retry = nil_time;
         schedule_wait_for_ip_deadline();
-        PERIODIC_LOG("WiFi joined '%s'; waiting for DHCP (link=%d)\n", credential->ssid, link_status);
+        PERIODIC_LOG("WiFi joined '%s'; waiting for DHCP (link=%d)\n", credential->ssid,
+                     link_status);
         return true;
     }
 
-    if (rc == PICO_ERROR_BADAUTH) {
+    if (rc == PICO_ERROR_BADAUTH)
+    {
         g_status.state = WifiConnectionState::AuthFailed;
-    } else if (rc == PICO_ERROR_TIMEOUT && link_status == CYW43_LINK_NONET) {
+    }
+    else if (rc == PICO_ERROR_TIMEOUT && link_status == CYW43_LINK_NONET)
+    {
         g_status.state = WifiConnectionState::NoNetwork;
-    } else if (rc == PICO_ERROR_TIMEOUT || rc == PICO_ERROR_CONNECT_FAILED) {
+    }
+    else if (rc == PICO_ERROR_TIMEOUT || rc == PICO_ERROR_CONNECT_FAILED)
+    {
         g_status.state = WifiConnectionState::ConnectFailed;
-    } else {
+    }
+    else
+    {
         g_status.state = state_from_link_status(link_status);
     }
 
-    std::printf("WiFi connect failed for '%s' rc=%d link=%d auth=%s\n",
-                credential->ssid,
-                rc,
-                link_status,
-                auth_mode_text(auth_mode));
+    std::printf("WiFi connect failed for '%s' rc=%d link=%d auth=%s\n", credential->ssid, rc,
+                link_status, auth_mode_text(auth_mode));
     g_wait_for_ip_deadline = nil_time;
     reset_internet_probe_status();
     reset_internet_probe_timers();
@@ -525,10 +618,12 @@ bool attempt_connect()
     return true;
 }
 
-}  // namespace
+} // namespace
 
-namespace wifi_manager {
+namespace wifi_manager
+{
 
+/// @brief Initializes the Wi-Fi manager and starts the first connect attempt.
 void init()
 {
     g_status = {};
@@ -542,7 +637,10 @@ void init()
     g_status.auth_mode.fill('\0');
     g_status.ssid.fill('\0');
 
-    if (!g_status.credentials_present) {
+    // Bail out early if there is nothing to connect to; the rest of the
+    // manager assumes at least one candidate credential exists.
+    if (!g_status.credentials_present)
+    {
         g_status.state = WifiConnectionState::Unconfigured;
         std::printf("WiFi disabled: no credentials configured\n");
         return;
@@ -552,8 +650,11 @@ void init()
     copy_text(g_status.ssid, credential->ssid);
     copy_auth_mode(configured_auth_mode(*credential));
 
+    // Bring up the radio before publishing any identity details, because the
+    // MAC address and hostname advertisement depend on cyw43 being active.
     const int rc = cyw43_arch_init_with_country(kWifiCountry);
-    if (rc != 0) {
+    if (rc != 0)
+    {
         g_status.state = WifiConnectionState::Error;
         g_status.last_error = rc;
         std::printf("WiFi init failed: %d\n", rc);
@@ -566,28 +667,36 @@ void init()
     advertise_hostname();
     std::printf("WiFi country code set to 0x%08lx\n", static_cast<unsigned long>(kWifiCountry));
     std::printf("WiFi MAC %s host=%s\n",
-                g_status.mac_address[0] ? g_status.mac_address.data() : "-",
-                kAdvertisedHostName);
+                g_status.mac_address[0] ? g_status.mac_address.data() : "-", kAdvertisedHostName);
 
     attempt_connect();
 }
 
+/// @brief Advances the Wi-Fi connection state machine.
 bool update()
 {
-    if (!g_cyw43_initialized) {
+    if (!g_cyw43_initialized)
+    {
         return false;
     }
 
     bool changed = false;
 
+    // Poll both cyw43 link state and lwIP IP state every loop because they do
+    // not always transition at the same moment.
     const int link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
     const bool ip_ready = has_ipv4_address();
-    if (link_status != g_last_observed_link_status) {
+    if (link_status != g_last_observed_link_status)
+    {
         g_last_observed_link_status = link_status;
         g_status.link_status = link_status;
         PERIODIC_LOG("WiFi link status changed: %d\n", link_status);
 
-        if (link_status == CYW43_LINK_UP || ip_ready) {
+        // cyw43 link notifications and lwIP IP state do not always advance in
+        // lockstep, so the state machine deliberately cross-checks both before
+        // deciding whether the firmware is truly connected.
+        if (link_status == CYW43_LINK_UP || ip_ready)
+        {
             apply_static_ip_config();
             update_ip_address();
             g_status.state = WifiConnectionState::Connected;
@@ -595,8 +704,11 @@ bool update()
             g_next_retry = nil_time;
             g_wait_for_ip_deadline = nil_time;
             g_next_probe = get_absolute_time();
-        } else if (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP) {
-            if (kUseStaticIp && apply_static_ip_config()) {
+        }
+        else if (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP)
+        {
+            if (kUseStaticIp && apply_static_ip_config())
+            {
                 g_status.state = WifiConnectionState::Connected;
                 start_sntp_if_needed();
                 g_next_retry = nil_time;
@@ -606,10 +718,13 @@ bool update()
                 return changed;
             }
             g_status.state = WifiConnectionState::WaitingForIp;
-            if (is_nil_time(g_wait_for_ip_deadline)) {
+            if (is_nil_time(g_wait_for_ip_deadline))
+            {
                 schedule_wait_for_ip_deadline();
             }
-        } else {
+        }
+        else
+        {
             clear_ip_address();
             g_status.state = state_from_link_status(link_status);
             g_wait_for_ip_deadline = nil_time;
@@ -622,7 +737,10 @@ bool update()
         changed = true;
     }
 
-    if (ip_ready && (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0])) {
+    if (ip_ready && (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0]))
+    {
+        // This reconciliation path exists because DHCP can complete after the
+        // initial link transition has already been observed and logged.
         g_status.link_status = link_status;
         g_last_observed_link_status = link_status;
         apply_static_ip_config();
@@ -635,14 +753,17 @@ bool update()
         changed = true;
     }
 
-    if (!is_nil_time(g_wait_for_ip_deadline) && absolute_time_diff_us(get_absolute_time(), g_wait_for_ip_deadline) <= 0) {
+    if (!is_nil_time(g_wait_for_ip_deadline) &&
+        absolute_time_diff_us(get_absolute_time(), g_wait_for_ip_deadline) <= 0)
+    {
         PERIODIC_LOG("WiFi DHCP wait expired; retrying connection\n");
         g_wait_for_ip_deadline = nil_time;
         schedule_retry();
         changed = true;
     }
 
-    if (!is_nil_time(g_next_retry) && absolute_time_diff_us(get_absolute_time(), g_next_retry) <= 0) {
+    if (!is_nil_time(g_next_retry) && absolute_time_diff_us(get_absolute_time(), g_next_retry) <= 0)
+    {
         g_next_retry = nil_time;
         changed = attempt_connect() || changed;
     }
@@ -657,4 +778,4 @@ const WifiStatus& status()
     return g_status;
 }
 
-}  // namespace wifi_manager
+} // namespace wifi_manager

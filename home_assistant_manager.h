@@ -2,7 +2,8 @@
 
 #include "console_model.h"
 
-namespace home_assistant_manager {
+namespace home_assistant_manager
+{
 
 /// @brief Initializes the Home Assistant REST integration state.
 /// @details This parses the local REST endpoint configuration and seeds the
@@ -18,4 +19,4 @@ bool update(const WifiStatus& wifi_status);
 /// @brief Returns the latest Home Assistant status snapshot for the UI/controller.
 const HomeAssistantStatus& status();
 
-}  // namespace home_assistant_manager
+} // namespace home_assistant_manager

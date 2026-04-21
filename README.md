@@ -151,11 +151,6 @@ hardware is connected.
 - `CMakeLists.txt`
   Pico SDK build configuration for the firmware target.
 
-## Other Files In The Repo
-
-Some other `.pio` files are present from earlier experiments or alternate ideas.
-At the moment, `el320_raster.pio` is the one used by the build.
-
 ## Signal Mapping
 
 The active firmware expects four contiguous GPIO pins starting at GPIO2:

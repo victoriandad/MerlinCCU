@@ -4,7 +4,8 @@
 
 #include "hardware/pio.h"
 
-namespace display {
+namespace display
+{
 
 /// @brief Initializes the panel scanout engine.
 /// @details This sets up the PIO state machine and the DMA loop that repeatedly
@@ -21,4 +22,4 @@ void set_clkdiv(float clkdiv);
 /// the new raster to be adopted at a safe frame boundary.
 void present(const uint8_t* ui_fb);
 
-}  // namespace display
+} // namespace display

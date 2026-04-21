@@ -5,13 +5,14 @@
 #include "fonts.h"
 #include "title_font_8x12.h"
 
-namespace fonts::bitmap {
+namespace fonts::bitmap
+{
 
 inline constexpr int kFirstChar = 32;
 inline constexpr int kLastChar = 126;
 inline constexpr int kGlyphCount = kLastChar - kFirstChar + 1;
 
-inline constexpr uint8_t FONT_8X12[kGlyphCount][12] = {
+inline constexpr uint8_t kFont8x12Rows[kGlyphCount][12] = {
     /* 32 */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     /* 33 */ {0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x18, 0x18, 0x00, 0x00},
     /* 34 */ {0x00, 0x00, 0x28, 0x28, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -109,7 +110,7 @@ inline constexpr uint8_t FONT_8X12[kGlyphCount][12] = {
     /* 126 */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE4, 0x9C, 0x00, 0x00, 0x00, 0x00},
 };
 
-inline constexpr uint8_t FONT_8X14[kGlyphCount][14] = {
+inline constexpr uint8_t kFont8x14Rows[kGlyphCount][14] = {
     /* 32 */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     /* 33 */ {0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00},
     /* 34 */ {0x00, 0x6C, 0x6C, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -207,29 +208,42 @@ inline constexpr uint8_t FONT_8X14[kGlyphCount][14] = {
     /* 126 */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x62, 0x92, 0x8C, 0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
+/// @brief Returns the 8x12 bitmap rows for one ASCII character.
+/// @details Unsupported characters fall back to space so callers can render arbitrary text
+/// without having to guard every lookup.
 inline const uint8_t* lookup_8x12(char c)
 {
-    if (c < kFirstChar || c > kLastChar) {
+    if (c < kFirstChar || c > kLastChar)
+    {
         c = ' ';
     }
-    return FONT_8X12[static_cast<int>(c) - kFirstChar];
+    return kFont8x12Rows[static_cast<int>(c) - kFirstChar];
 }
 
+/// @brief Returns the 8x14 bitmap rows for one ASCII character.
+/// @details Unsupported characters fall back to space so higher-level text layout code can stay
+/// simple and deterministic.
 inline const uint8_t* lookup_8x14(char c)
 {
-    if (c < kFirstChar || c > kLastChar) {
+    if (c < kFirstChar || c > kLastChar)
+    {
         c = ' ';
     }
-    return FONT_8X14[static_cast<int>(c) - kFirstChar];
+    return kFont8x14Rows[static_cast<int>(c) - kFirstChar];
 }
 
-}  // namespace fonts::bitmap
+} // namespace fonts::bitmap
 
-namespace fonts {
+namespace fonts
+{
 
+/// @brief Routes a font-face request to the matching bitmap-backed lookup table.
+/// @details This keeps the renderer insulated from which faces are row-based bitmaps versus the
+/// compact 5x7 glyph format.
 inline const uint8_t* lookup_bitmap_rows(FontFace font, char c)
 {
-    switch (font) {
+    switch (font)
+    {
     case FontFace::FontTitle8x12:
         return title8x12::lookup(c);
     case FontFace::Font8x12:
@@ -243,9 +257,13 @@ inline const uint8_t* lookup_bitmap_rows(FontFace font, char c)
     return nullptr;
 }
 
+/// @brief Returns the storage width used by one font face.
+/// @details Layout code uses the storage width rather than the drawn width so clipping and text
+/// advances stay consistent across bitmap font variants.
 inline int font_width(FontFace font)
 {
-    switch (font) {
+    switch (font)
+    {
     case FontFace::Font5x7:
         return 5;
     case FontFace::FontTitle8x12:
@@ -257,9 +275,12 @@ inline int font_width(FontFace font)
     return 5;
 }
 
+/// @brief Returns the storage height used by one font face.
+/// @details This lets rendering and measurement code share the same font geometry rules.
 inline int font_height(FontFace font)
 {
-    switch (font) {
+    switch (font)
+    {
     case FontFace::Font5x7:
         return 7;
     case FontFace::FontTitle8x12:
@@ -273,31 +294,41 @@ inline int font_height(FontFace font)
     return 7;
 }
 
-namespace detail {
+namespace detail
+{
 
+/// @brief Computes draw bounds and advance for a compact 5x7 glyph.
+/// @details Variable-width metrics prevent narrow characters from wasting horizontal space on a
+/// small display where every pixel of label width matters.
 inline GlyphMetrics glyph_metrics_5x7(const Glyph5x7* glyph)
 {
     constexpr uint8_t kSpaceAdvance = 3;
-    if (glyph == nullptr) {
+    if (glyph == nullptr)
+    {
         return {0, 0, kSpaceAdvance};
     }
 
     int first = 5;
     int last = -1;
 
-    for (int col = 0; col < 5; ++col) {
-        if (glyph->col[col] == 0) {
+    for (int col = 0; col < 5; ++col)
+    {
+        if (glyph->col[col] == 0)
+        {
             continue;
         }
-        if (col < first) {
+        if (col < first)
+        {
             first = col;
         }
-        if (col > last) {
+        if (col > last)
+        {
             last = col;
         }
     }
 
-    if (last < first) {
+    if (last < first)
+    {
         return {0, 0, kSpaceAdvance};
     }
 
@@ -305,32 +336,42 @@ inline GlyphMetrics glyph_metrics_5x7(const Glyph5x7* glyph)
     return {static_cast<uint8_t>(first), draw_width, draw_width};
 }
 
-inline GlyphMetrics glyph_metrics_bitmap_rows(
-    const uint8_t* rows, int storage_width, int height, uint8_t empty_advance)
+/// @brief Computes draw bounds and advance for a row-based bitmap glyph.
+/// @details Bitmap fonts are stored at a fixed cell width, but trimming empty columns keeps text
+/// centering and wrapping visually tighter on the panel.
+inline GlyphMetrics glyph_metrics_bitmap_rows(const uint8_t* rows, int storage_width, int height,
+                                              uint8_t empty_advance)
 {
-    if (rows == nullptr) {
+    if (rows == nullptr)
+    {
         return {0, 0, empty_advance};
     }
 
     int first = storage_width;
     int last = -1;
 
-    for (int row = 0; row < height; ++row) {
+    for (int row = 0; row < height; ++row)
+    {
         const uint8_t bits = rows[row];
-        for (int col = 0; col < storage_width; ++col) {
-            if ((bits & (0x80u >> col)) == 0) {
+        for (int col = 0; col < storage_width; ++col)
+        {
+    if ((bits & (0x80U >> col)) == 0)
+            {
                 continue;
             }
-            if (col < first) {
+            if (col < first)
+            {
                 first = col;
             }
-            if (col > last) {
+            if (col > last)
+            {
                 last = col;
             }
         }
     }
 
-    if (last < first) {
+    if (last < first)
+    {
         return {0, 0, empty_advance};
     }
 
@@ -338,19 +379,23 @@ inline GlyphMetrics glyph_metrics_bitmap_rows(
     return {static_cast<uint8_t>(first), draw_width, draw_width};
 }
 
-}  // namespace detail
+} // namespace detail
 
+/// @brief Returns display metrics for one glyph in the requested font face.
+/// @details Callers use one unified metric path so text layout does not need per-font special
+/// cases.
 inline GlyphMetrics glyph_metrics(FontFace font, char c)
 {
-    if (font == FontFace::Font5x7) {
+    if (font == FontFace::Font5x7)
+    {
         return detail::glyph_metrics_5x7(lookup_5x7(c));
     }
 
     const int storage_width = font_width(font);
     const int height = font_height(font);
     const uint8_t empty_advance = static_cast<uint8_t>((storage_width + 1) / 2);
-    return detail::glyph_metrics_bitmap_rows(
-        lookup_bitmap_rows(font, c), storage_width, height, empty_advance);
+    return detail::glyph_metrics_bitmap_rows(lookup_bitmap_rows(font, c), storage_width, height,
+                                             empty_advance);
 }
 
-}  // namespace fonts
+} // namespace fonts

@@ -2,52 +2,32 @@
 
 #include <cstddef>
 
-namespace {
+namespace
+{
 
-constexpr KeyLegend KEY_LEGENDS[] = {
-    {"ALERT", nullptr},
-    {"TEST", nullptr},
-    {"BRT", nullptr},
-    {"DIM", nullptr},
-    {"LTRS", nullptr},
-    {"BACK STEP", nullptr},
-    {"LEFT", nullptr},
-    {"RIGHT", nullptr},
-    {"/", nullptr},
-    {"CLR", nullptr},
-    {"A", "COMM"},
-    {"B", "R NAV"},
-    {"C", "PERF"},
-    {"D", "AMS"},
-    {"E", "MAINT"},
-    {"F", "IFF"},
-    {"G", "TOTES"},
-    {"H", "DSPLY"},
-    {"I", "D LINK"},
-    {"J", "1"},
-    {"K", "2"},
-    {"L", "3"},
-    {"M", "SONICS"},
-    {"N", "RADAR"},
-    {"O", "ESM"},
-    {"P", "4"},
-    {"Q", "5"},
-    {"R", "6"},
-    {"S", "STORES"},
-    {"T", "ADS"},
-    {"U", nullptr},
-    {"V", "7"},
-    {"W", "8"},
-    {"X", "9"},
-    {"Y", "T NAV"},
-    {"Z", "T DATA"},
-    {"T FUNC", nullptr},
-    {".", nullptr},
-    {"0", nullptr},
-    {"SPC", nullptr}
-};
+/// @brief Maps each physical hard key to its primary and alternate panel legends.
+/// @details Keeping the legends in enum order lets the UI render the keypad labels without
+/// duplicating text tables across multiple screens or diagnostics views.
+constexpr KeyLegend kKeyLegends[] = {
+    {"ALERT", nullptr},  {"TEST", nullptr},  {"BRT", nullptr},
+    {"DIM", nullptr},    {"LTRS", nullptr},  {"BACK STEP", nullptr},
+    {"LEFT", nullptr},   {"RIGHT", nullptr}, {"/", nullptr},
+    {"CLR", nullptr},    {"A", "COMM"},      {"B", "R NAV"},
+    {"C", "PERF"},       {"D", "AMS"},       {"E", "MAINT"},
+    {"F", "IFF"},        {"G", "TOTES"},     {"H", "DSPLY"},
+    {"I", "D LINK"},     {"J", "1"},         {"K", "2"},
+    {"L", "3"},          {"M", "SONICS"},    {"N", "RADAR"},
+    {"O", "ESM"},        {"P", "4"},         {"Q", "5"},
+    {"R", "6"},          {"S", "STORES"},    {"T", "ADS"},
+    {"U", nullptr},      {"V", "7"},         {"W", "8"},
+    {"X", "9"},          {"Y", "T NAV"},     {"Z", "T DATA"},
+    {"T FUNC", nullptr}, {".", nullptr},     {"0", nullptr},
+    {"SPC", nullptr}};
 
-constexpr SoftKeyMap DEFAULT_SOFTKEYS = {{
+/// @brief Neutral softkey labels and routes used when a page does not own a slot.
+/// @details Pages start from this baseline and override only the softkeys they need, which
+/// keeps the inactive state consistent across the UI.
+constexpr SoftKeyMap kDefaultSoftkeys = {{
     {"L1", SoftKeyRoute::None, false},
     {"L2", SoftKeyRoute::None, false},
     {"L3", SoftKeyRoute::None, false},
@@ -60,25 +40,32 @@ constexpr SoftKeyMap DEFAULT_SOFTKEYS = {{
     {"R5", SoftKeyRoute::None, false},
 }};
 
-}  // namespace
+} // namespace
 
-static_assert((sizeof(KEY_LEGENDS) / sizeof(KEY_LEGENDS[0])) == static_cast<size_t>(HardKeyId::Count),
+static_assert((sizeof(kKeyLegends) / sizeof(kKeyLegends[0])) ==
+                  static_cast<size_t>(HardKeyId::Count),
               "Key legend table must match HardKeyId");
 
 const KeyLegend& key_legend(HardKeyId key)
 {
-    return KEY_LEGENDS[static_cast<size_t>(key)];
+    return kKeyLegends[static_cast<size_t>(key)];
 }
 
 ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
+
+    // Start in the diagnostics-oriented menu so bring-up always lands on a page
+    // that is useful even before the rest of the aircraft-style UI is complete.
     state.active_page = MenuPage::KeypadDebug;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
     state.panel_brightness = BrightnessLevel::Medium;
     state.key_backlight_brightness = BrightnessLevel::Medium;
+
+    // Treat every integration as unavailable until its manager explicitly
+    // proves otherwise; this avoids boot code implying connectivity too early.
     state.wifi_status.state = WifiConnectionState::Disabled;
     state.wifi_status.credentials_present = false;
     state.wifi_status.internet_reachable = false;
@@ -90,6 +77,7 @@ ConsoleState make_default_console_state()
     state.wifi_status.mac_address.fill('\0');
     state.wifi_status.ssid.fill('\0');
     state.wifi_status.ip_address.fill('\0');
+
     state.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
     state.home_assistant_status.configured = false;
     state.home_assistant_status.self_entity_published = false;
@@ -103,12 +91,17 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.weather_condition.fill('\0');
     state.home_assistant_status.weather_temperature.fill('\0');
     state.home_assistant_status.weather_forecast_count = 0;
-    for (auto& entry : state.home_assistant_status.weather_forecast) {
+
+    // Forecast rows are fully cleared so pages can safely treat an empty string
+    // as "no data yet" without tracking separate validity flags.
+    for (auto& entry : state.home_assistant_status.weather_forecast)
+    {
         entry.time_text.fill('\0');
         entry.temperature_text.fill('\0');
         entry.condition_text.fill('\0');
     }
     state.home_assistant_status.self_entity_id.fill('\0');
+
     state.mqtt_status.state = MqttConnectionState::Disabled;
     state.mqtt_status.configured = false;
     state.mqtt_status.discovery_published = false;
@@ -117,6 +110,9 @@ ConsoleState make_default_console_state()
     state.mqtt_status.device_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
+
+    // The keypad debug surface is always present, so its snapshot fields start
+    // cleared rather than being allocated lazily later.
     state.keypad_debug_status.last_button_name.fill('\0');
     state.keypad_debug_status.last_event_type.fill('\0');
     state.keypad_debug_status.event_count = 0;
@@ -131,7 +127,10 @@ ConsoleState make_default_console_state()
     state.keypad_debug_status.drive_5_hits.fill('\0');
     state.keypad_debug_status.drive_20_hits.fill('\0');
     state.keypad_debug_status.drive_22_hits.fill('\0');
+
+    // Lamps and softkeys are initialized explicitly so the controller can treat
+    // the whole state object as immediately usable after construction.
     state.lamps.fill(LampMode::Off);
-    state.softkeys = DEFAULT_SOFTKEYS;
+    state.softkeys = kDefaultSoftkeys;
     return state;
 }

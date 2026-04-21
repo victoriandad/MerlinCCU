@@ -4,7 +4,8 @@
 
 #include "console_model.h"
 
-namespace screen_banners {
+namespace screen_banners
+{
 
 /// @brief Draws the shared top banner used by Merlin CCU pages.
 /// @param fb Target framebuffer in UI coordinates.
@@ -21,4 +22,4 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
 /// @param title Null-terminated title text shown in the header banner.
 void draw_standard_banners(uint8_t* fb, const ConsoleState& console_state, const char* title);
 
-}  // namespace screen_banners
+} // namespace screen_banners

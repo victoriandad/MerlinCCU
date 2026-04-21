@@ -6,11 +6,11 @@
 // Use -1 for any line that is not wired yet.
 // The defaults below assume active-low monitoring with pull-ups enabled.
 
-inline constexpr int KEYPAD_PANEL_PIN_5_GPIO  = 6;
-inline constexpr int KEYPAD_PANEL_PIN_6_GPIO  = 7;
-inline constexpr int KEYPAD_PANEL_PIN_7_GPIO  = 8;
-inline constexpr int KEYPAD_PANEL_PIN_8_GPIO  = 9;
-inline constexpr int KEYPAD_PANEL_PIN_9_GPIO  = 10;
+inline constexpr int KEYPAD_PANEL_PIN_5_GPIO = 6;
+inline constexpr int KEYPAD_PANEL_PIN_6_GPIO = 7;
+inline constexpr int KEYPAD_PANEL_PIN_7_GPIO = 8;
+inline constexpr int KEYPAD_PANEL_PIN_8_GPIO = 9;
+inline constexpr int KEYPAD_PANEL_PIN_9_GPIO = 10;
 inline constexpr int KEYPAD_PANEL_PIN_10_GPIO = 11;
 inline constexpr int KEYPAD_PANEL_PIN_11_GPIO = 12;
 inline constexpr int KEYPAD_PANEL_PIN_14_GPIO = 20;

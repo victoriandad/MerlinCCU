@@ -3,9 +3,11 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 
-namespace screen_banners {
+namespace screen_banners
+{
 
-namespace {
+namespace
+{
 
 /// @brief Shared banner height in UI pixels.
 constexpr int kBannerHeight = 18;
@@ -58,11 +60,13 @@ void draw_internet_icon(uint8_t* fb, int x, int y, bool reachable, bool pending)
     constexpr bool kIconOn = true;
     draw_wifi_symbol(fb, x, y, kIconOn);
 
-    if (reachable) {
+    if (reachable)
+    {
         return;
     }
 
-    if (pending) {
+    if (pending)
+    {
         framebuffer::draw_line(fb, x + 12, y + 3, x + 15, y + 3, kIconOn);
         framebuffer::draw_line(fb, x + 13, y + 2, x + 13, y + 5, kIconOn);
         return;
@@ -75,7 +79,8 @@ void draw_internet_icon(uint8_t* fb, int x, int y, bool reachable, bool pending)
 /// @brief Returns true while the Home Assistant client is actively trying to connect.
 bool home_assistant_pending(const HomeAssistantStatus& status)
 {
-    switch (status.state) {
+    switch (status.state)
+    {
     case HomeAssistantConnectionState::WaitingForWifi:
     case HomeAssistantConnectionState::Resolving:
     case HomeAssistantConnectionState::Connecting:
@@ -104,19 +109,22 @@ void draw_home_assistant_symbol(uint8_t* fb, int x, int y, bool on)
 /// @brief Draws the compact header Home Assistant connectivity icon.
 void draw_home_assistant_icon(uint8_t* fb, int x, int y, const HomeAssistantStatus& status)
 {
-    if (!status.configured) {
+    if (!status.configured)
+    {
         return;
     }
 
     constexpr bool kIconOn = true;
     draw_home_assistant_symbol(fb, x, y, kIconOn);
 
-    if (home_assistant_connected(status)) {
+    if (home_assistant_connected(status))
+    {
         framebuffer::fill_rect(fb, x + 5, y + 6, 2, 4, kIconOn);
         return;
     }
 
-    if (home_assistant_pending(status)) {
+    if (home_assistant_pending(status))
+    {
         framebuffer::draw_line(fb, x + 5, y + 5, x + 5, y + 9, kIconOn);
         framebuffer::draw_line(fb, x + 3, y + 7, x + 7, y + 7, kIconOn);
         return;
@@ -126,40 +134,50 @@ void draw_home_assistant_icon(uint8_t* fb, int x, int y, const HomeAssistantStat
     framebuffer::draw_line(fb, x + 1, y + 10, x + 10, y + 1, kIconOn);
 }
 
-}  // namespace
+} // namespace
 
+/// @brief Draws the shared top-of-screen banner for menu pages.
 void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const char* title)
 {
-    const char* time_text = console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--";
+    // The header packs title, connectivity, and time into one shared strip so
+    // every page can spend the rest of the screen on its own content.
+    const char* time_text =
+        console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--";
     const int title_width = framebuffer::measure_text(title, fonts::FontFace::FontTitle8x12, 1);
     const int time_width = framebuffer::measure_text(time_text, fonts::FontFace::Font8x12, 1);
     const int home_assistant_icon_width =
         console_state.home_assistant_status.configured ? kHeaderHomeAssistantIconWidth : 0;
-    const int time_x = UI_WIDTH - kHeaderStatusRightInset - time_width;
+    const int time_x = kUiWidth - kHeaderStatusRightInset - time_width;
     const int icon_x = time_x - kHeaderStatusGap - kHeaderStatusIconWidth;
     const int home_assistant_icon_x =
-        icon_x - ((home_assistant_icon_width > 0) ? (kHeaderStatusIconGap + home_assistant_icon_width) : 0);
+        icon_x -
+        ((home_assistant_icon_width > 0) ? (kHeaderStatusIconGap + home_assistant_icon_width) : 0);
 
-    framebuffer::draw_hline(fb, 0, UI_WIDTH - 1, kHeaderBannerY + kBannerHeight - 1, true);
-    framebuffer::draw_text(
-        fb, (UI_WIDTH / 2) - (title_width / 2), kHeaderTextY, title, true, fonts::FontFace::FontTitle8x12, 1);
-    if (home_assistant_icon_width > 0) {
-        draw_home_assistant_icon(fb,
-                                 home_assistant_icon_x,
-                                 kHeaderStatusIconY,
+    // Draw the shared frame first so the remaining elements can key off its
+    // baseline and right-edge measurements.
+    framebuffer::draw_hline(fb, 0, kUiWidth - 1, kHeaderBannerY + kBannerHeight - 1, true);
+    framebuffer::draw_text(fb, (kUiWidth / 2) - (title_width / 2), kHeaderTextY, title, true,
+                           fonts::FontFace::FontTitle8x12, 1);
+
+    // Connectivity icons are clustered next to the clock so they read as one
+    // compact status area rather than competing with the centered page title.
+    if (home_assistant_icon_width > 0)
+    {
+        draw_home_assistant_icon(fb, home_assistant_icon_x, kHeaderStatusIconY,
                                  console_state.home_assistant_status);
     }
-    draw_internet_icon(fb,
-                       icon_x,
-                       kHeaderStatusIconY,
-                       console_state.wifi_status.internet_reachable,
+    draw_internet_icon(fb, icon_x, kHeaderStatusIconY, console_state.wifi_status.internet_reachable,
                        console_state.wifi_status.internet_probe_pending);
-    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true, fonts::FontFace::Font8x12, 1);
+    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true, fonts::FontFace::Font8x12,
+                           1);
 }
 
+/// @brief Draws the standard banner set used by the current UI pages.
 void draw_standard_banners(uint8_t* fb, const ConsoleState& console_state, const char* title)
 {
+    // This wrapper exists so more banner variants can be added later without
+    // changing every caller that currently wants the standard header.
     draw_header_banner(fb, console_state, title);
 }
 
-}  // namespace screen_banners
+} // namespace screen_banners

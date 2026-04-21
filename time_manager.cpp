@@ -5,7 +5,8 @@
 
 #include "pico/stdlib.h"
 
-namespace {
+namespace
+{
 
 /// @brief Monotonic period used to refresh the formatted clock text.
 constexpr uint32_t kTimeTextUpdateIntervalMs = 1000;
@@ -15,7 +16,8 @@ uint32_t g_last_ntp_epoch_utc = 0;
 absolute_time_t g_last_ntp_sync_time = nil_time;
 absolute_time_t g_next_time_text_update = nil_time;
 
-struct DateTimeParts {
+struct DateTimeParts
+{
     int year;
     int month;
     int day;
@@ -27,7 +29,7 @@ struct DateTimeParts {
 /// @brief Converts a Unix UTC epoch into broken-down UTC calendar fields.
 DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
 {
-    const uint32_t day_seconds = 24u * 60u * 60u;
+    const uint32_t day_seconds = 24U * 60U * 60U;
     const uint32_t days = epoch_seconds / day_seconds;
     const uint32_t seconds_of_day = epoch_seconds % day_seconds;
 
@@ -46,9 +48,9 @@ DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
     parts.year = year;
     parts.month = static_cast<int>(month);
     parts.day = static_cast<int>(day);
-    parts.hour = static_cast<int>(seconds_of_day / 3600u);
-    parts.minute = static_cast<int>((seconds_of_day % 3600u) / 60u);
-    parts.second = static_cast<int>(seconds_of_day % 60u);
+    parts.hour = static_cast<int>(seconds_of_day / 3600U);
+    parts.minute = static_cast<int>((seconds_of_day % 3600U) / 60U);
+    parts.second = static_cast<int>(seconds_of_day % 60U);
     return parts;
 }
 
@@ -62,7 +64,8 @@ bool is_leap_year(int year)
 int days_in_month(int year, int month)
 {
     static constexpr int kDaysPerMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    if (month == 2 && is_leap_year(year)) {
+    if (month == 2 && is_leap_year(year))
+    {
         return 29;
     }
     return kDaysPerMonth[month - 1];
@@ -72,7 +75,8 @@ int days_in_month(int year, int month)
 int weekday_from_ymd(int year, int month, int day)
 {
     static constexpr int kMonthOffsets[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
-    if (month < 3) {
+    if (month < 3)
+    {
         --year;
     }
     return (year + year / 4 - year / 100 + year / 400 + kMonthOffsets[month - 1] + day) % 7;
@@ -89,14 +93,17 @@ int last_sunday_of_month(int year, int month)
 bool uk_daylight_saving_active_utc(uint32_t epoch_seconds)
 {
     const DateTimeParts utc = unix_time_to_utc(epoch_seconds);
-    if (utc.month < 3 || utc.month > 10) {
+    if (utc.month < 3 || utc.month > 10)
+    {
         return false;
     }
-    if (utc.month > 3 && utc.month < 10) {
+    if (utc.month > 3 && utc.month < 10)
+    {
         return true;
     }
 
-    if (utc.month == 3) {
+    if (utc.month == 3)
+    {
         const int change_day = last_sunday_of_month(utc.year, 3);
         return utc.day > change_day || (utc.day == change_day && utc.hour >= 1);
     }
@@ -108,14 +115,16 @@ bool uk_daylight_saving_active_utc(uint32_t epoch_seconds)
 /// @brief Returns the current local epoch derived from the last SNTP sync point.
 uint32_t current_local_epoch_seconds()
 {
-    if (!g_status.synced || is_nil_time(g_last_ntp_sync_time)) {
+    if (!g_status.synced || is_nil_time(g_last_ntp_sync_time))
+    {
         return 0;
     }
 
     const int64_t elapsed_us = absolute_time_diff_us(g_last_ntp_sync_time, get_absolute_time());
-    const uint32_t elapsed_seconds = elapsed_us > 0 ? static_cast<uint32_t>(elapsed_us / 1000000) : 0;
+    const uint32_t elapsed_seconds =
+        elapsed_us > 0 ? static_cast<uint32_t>(elapsed_us / 1000000) : 0;
     const uint32_t utc_epoch = g_last_ntp_epoch_utc + elapsed_seconds;
-    return utc_epoch + (uk_daylight_saving_active_utc(utc_epoch) ? 3600u : 0u);
+    return utc_epoch + (uk_daylight_saving_active_utc(utc_epoch) ? 3600U : 0U);
 }
 
 /// @brief Refreshes the user-facing `HH:MM` time text.
@@ -124,12 +133,16 @@ bool update_time_text()
     const char* previous_text = g_status.time_text.data();
     char next_text[sizeof(g_status.time_text)] = {};
 
-    if (g_status.synced) {
+    // The formatted string is rebuilt from the stored sync point each time so
+    // the UI stays monotonic without needing a separate RTC subsystem.
+    if (g_status.synced)
+    {
         const DateTimeParts local = unix_time_to_utc(current_local_epoch_seconds());
         std::snprintf(next_text, sizeof(next_text), "%02d:%02d", local.hour, local.minute);
     }
 
-    if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0) {
+    if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0)
+    {
         return false;
     }
 
@@ -138,20 +151,26 @@ bool update_time_text()
     return true;
 }
 
-}  // namespace
+} // namespace
 
 extern "C" void merlinccu_set_ntp_time(uint32_t sec)
 {
+    // SNTP hands us UTC seconds, while the display path wants a rolling local
+    // clock, so we store both the epoch and the moment it was received.
     g_last_ntp_epoch_utc = sec;
     g_last_ntp_sync_time = get_absolute_time();
     g_next_time_text_update = nil_time;
     g_status.synced = true;
 }
 
-namespace time_manager {
+namespace time_manager
+{
 
+/// @brief Resets the time manager to an unsynchronized startup state.
 void init()
 {
+    // Time starts unsynced on every boot so stale values are never carried
+    // forward if network time is unavailable later.
     g_status = {};
     g_status.synced = false;
     g_status.time_text.fill('\0');
@@ -160,13 +179,19 @@ void init()
     g_next_time_text_update = nil_time;
 }
 
+/// @brief Refreshes the cached display time text when its update period expires.
 bool update()
 {
-    if (!g_status.synced) {
+    if (!g_status.synced)
+    {
         return false;
     }
 
-    if (is_nil_time(g_next_time_text_update) || absolute_time_diff_us(get_absolute_time(), g_next_time_text_update) <= 0) {
+    // The text is only regenerated once per second because the UI only shows
+    // `HH:MM`, so anything faster would just waste redraw work.
+    if (is_nil_time(g_next_time_text_update) ||
+        absolute_time_diff_us(get_absolute_time(), g_next_time_text_update) <= 0)
+    {
         const bool changed = update_time_text();
         g_next_time_text_update = make_timeout_time_ms(kTimeTextUpdateIntervalMs);
         return changed;
@@ -180,4 +205,4 @@ const TimeStatus& status()
     return g_status;
 }
 
-}  // namespace time_manager
+} // namespace time_manager

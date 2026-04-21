@@ -5,7 +5,8 @@
 #include <cstdint>
 
 /// @brief Physical softkeys mounted beside the display.
-enum class SoftKeyId : uint8_t {
+enum class SoftKeyId : uint8_t
+{
     Left1 = 0,
     Left2,
     Left3,
@@ -20,7 +21,8 @@ enum class SoftKeyId : uint8_t {
 };
 
 /// @brief Physical hard keys on the Merlin front panel.
-enum class HardKeyId : uint8_t {
+enum class HardKeyId : uint8_t
+{
     Alert = 0,
     Test,
     Brt,
@@ -65,7 +67,8 @@ enum class HardKeyId : uint8_t {
 };
 
 /// @brief Panel annunciators and lighting channels.
-enum class LampId : uint8_t {
+enum class LampId : uint8_t
+{
     AlertLamp = 0,
     TestLamp,
     KeyBacklight,
@@ -74,7 +77,8 @@ enum class LampId : uint8_t {
 };
 
 /// @brief Visual lamp state for annunciators.
-enum class LampMode : uint8_t {
+enum class LampMode : uint8_t
+{
     Off = 0,
     On,
     FlashSlow,
@@ -82,13 +86,15 @@ enum class LampMode : uint8_t {
 };
 
 /// @brief Text entry mode controlled by the `LTRS` key.
-enum class LetterMode : uint8_t {
+enum class LetterMode : uint8_t
+{
     Off = 0,
     On,
 };
 
 /// @brief Brightness level placeholder for panel and key lighting.
-enum class BrightnessLevel : uint8_t {
+enum class BrightnessLevel : uint8_t
+{
     Off = 0,
     Low,
     Medium,
@@ -96,7 +102,8 @@ enum class BrightnessLevel : uint8_t {
 };
 
 /// @brief High-level alert state that can be driven from Home Assistant later.
-enum class AlertSeverity : uint8_t {
+enum class AlertSeverity : uint8_t
+{
     None = 0,
     Message,
     Warning,
@@ -104,7 +111,8 @@ enum class AlertSeverity : uint8_t {
 };
 
 /// @brief High-level system test state associated with the TEST key/lamp.
-enum class SystemTestState : uint8_t {
+enum class SystemTestState : uint8_t
+{
     Idle = 0,
     Running,
     Passed,
@@ -112,7 +120,8 @@ enum class SystemTestState : uint8_t {
 };
 
 /// @brief High-level menu pages shown on the display.
-enum class MenuPage : uint8_t {
+enum class MenuPage : uint8_t
+{
     Home = 0,
     Status,
     Settings,
@@ -122,7 +131,8 @@ enum class MenuPage : uint8_t {
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
-enum class WifiConnectionState : uint8_t {
+enum class WifiConnectionState : uint8_t
+{
     Disabled = 0,
     Unconfigured,
     Initializing,
@@ -137,7 +147,8 @@ enum class WifiConnectionState : uint8_t {
 };
 
 /// @brief High-level Home Assistant connectivity state.
-enum class HomeAssistantConnectionState : uint8_t {
+enum class HomeAssistantConnectionState : uint8_t
+{
     Disabled = 0,
     Unconfigured,
     WaitingForWifi,
@@ -150,7 +161,8 @@ enum class HomeAssistantConnectionState : uint8_t {
 };
 
 /// @brief High-level MQTT connectivity state for Home Assistant discovery.
-enum class MqttConnectionState : uint8_t {
+enum class MqttConnectionState : uint8_t
+{
     Disabled = 0,
     Unconfigured,
     WaitingForWifi,
@@ -162,7 +174,8 @@ enum class MqttConnectionState : uint8_t {
 };
 
 /// @brief Snapshot of Wi-Fi state suitable for UI and controller use.
-struct WifiStatus {
+struct WifiStatus
+{
     WifiConnectionState state;
     bool credentials_present;
     bool internet_reachable;
@@ -177,7 +190,8 @@ struct WifiStatus {
 };
 
 /// @brief Snapshot of time state suitable for UI and controller use.
-struct TimeStatus {
+struct TimeStatus
+{
     bool synced;
     std::array<char, 6> time_text;
 };
@@ -185,23 +199,26 @@ struct TimeStatus {
 inline constexpr size_t kWeatherForecastEntryCount = 10;
 
 /// @brief One compact hourly forecast entry for the Home page.
-struct WeatherForecastEntry {
+struct WeatherForecastEntry
+{
     std::array<char, 6> time_text;
     std::array<char, 12> temperature_text;
     std::array<char, 8> wind_text;
     std::array<char, 20> condition_text;
 };
 
+/// @brief Compares two forecast rows field-by-field.
+/// @details Equality is used to detect whether the rendered forecast content actually changed so
+/// the UI can avoid redundant churn when Home Assistant data is stable.
 inline bool operator==(const WeatherForecastEntry& lhs, const WeatherForecastEntry& rhs)
 {
-    return lhs.time_text == rhs.time_text &&
-           lhs.temperature_text == rhs.temperature_text &&
-           lhs.wind_text == rhs.wind_text &&
-           lhs.condition_text == rhs.condition_text;
+    return lhs.time_text == rhs.time_text && lhs.temperature_text == rhs.temperature_text &&
+           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
 }
 
 /// @brief Snapshot of Home Assistant state suitable for UI and controller use.
-struct HomeAssistantStatus {
+struct HomeAssistantStatus
+{
     HomeAssistantConnectionState state;
     bool configured;
     bool self_entity_published;
@@ -223,7 +240,8 @@ struct HomeAssistantStatus {
 };
 
 /// @brief Snapshot of MQTT discovery state suitable for UI and controller use.
-struct MqttStatus {
+struct MqttStatus
+{
     MqttConnectionState state;
     bool configured;
     bool discovery_published;
@@ -233,7 +251,8 @@ struct MqttStatus {
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
-enum class SoftKeyRoute : uint8_t {
+enum class SoftKeyRoute : uint8_t
+{
     None = 0,
     GoHome,
     GoStatus,
@@ -252,7 +271,8 @@ enum class SoftKeyRoute : uint8_t {
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
-struct SoftKeyAction {
+struct SoftKeyAction
+{
     const char* label;
     SoftKeyRoute route;
     bool enabled;
@@ -262,13 +282,15 @@ struct SoftKeyAction {
 using SoftKeyMap = std::array<SoftKeyAction, static_cast<size_t>(SoftKeyId::Count)>;
 
 /// @brief One key meaning in the current letter mode.
-struct KeyLegend {
+struct KeyLegend
+{
     const char* primary;
     const char* alternate;
 };
 
 /// @brief Snapshot of keypad bring-up state shown on the diagnostics page.
-struct KeypadDebugStatus {
+struct KeypadDebugStatus
+{
     std::array<char, 24> last_button_name;
     std::array<char, 10> last_event_type;
     uint32_t event_count;
@@ -286,7 +308,8 @@ struct KeypadDebugStatus {
 };
 
 /// @brief Captures the logical front-panel state independent of hardware wiring.
-struct ConsoleState {
+struct ConsoleState
+{
     MenuPage active_page;
     LetterMode letter_mode;
     AlertSeverity alert_severity;

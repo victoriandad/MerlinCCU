@@ -1,51 +1,69 @@
 #include "console_controller.h"
 
 #include <cstddef>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
 #include "debug_logging.h"
 
-namespace console_controller {
+namespace console_controller
+{
 
-namespace {
+namespace
+{
 
+// The console controller owns the user-facing aggregate state. Subsystem
+// managers push snapshots into it, while button events mutate the menu and
+// annunciator model from one central place.
 ConsoleState g_console_state = make_default_console_state();
 constexpr size_t kSoftkeyLabelCapacity = 48;
-std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_overrides = {};
+std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
+    g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
 
+/// @brief Converts a lamp enum into a stable array index.
+/// @details The controller stores lamp state in dense arrays so the UI update path can avoid
+/// repeated switch statements when it touches annunciator data.
 constexpr size_t lamp_index(LampId lamp)
 {
     return static_cast<size_t>(lamp);
 }
 
+/// @brief Converts a softkey enum into a stable array index.
+/// @details Softkey labels, routes, and override state all share enum-ordered arrays so one
+/// index helper keeps the mapping explicit and consistent.
 constexpr size_t softkey_index(SoftKeyId key)
 {
     return static_cast<size_t>(key);
 }
 
+/// @brief Formats the list of currently active keypad panel pins.
 void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
                                  std::array<char, 48>& out_text)
 {
     out_text.fill('\0');
     size_t used = 0;
-    for (const auto& line : keypad_status.lines) {
-        if (!line.configured || !line.active) {
+
+    // These helpers flatten the electrical keypad snapshot into compact text so
+    // the debug page can show bench-oriented panel-pin numbers directly.
+    for (const auto& line : keypad_status.lines)
+    {
+        if (!line.configured || !line.active)
+        {
             continue;
         }
 
-        const int written = std::snprintf(out_text.data() + used,
-                                          out_text.size() - used,
-                                          "%s%u",
-                                          (used == 0) ? "" : " ",
-                                          static_cast<unsigned>(line.panel_pin));
-        if (written <= 0) {
+        const int written =
+            std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
+                          (used == 0) ? "" : " ", static_cast<unsigned>(line.panel_pin));
+        if (written <= 0)
+        {
             break;
         }
 
         const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used)) {
+        if (write_size >= (out_text.size() - used))
+        {
             used = out_text.size() - 1;
             break;
         }
@@ -53,27 +71,30 @@ void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
     }
 }
 
+/// @brief Formats the panel-pin list for the current probe hit mask.
 void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
                                     std::array<char, 48>& out_text)
 {
     out_text.fill('\0');
     size_t used = 0;
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
-        if ((keypad_status.probe_hit_mask & (1u << i)) == 0) {
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
+    {
+        if ((keypad_status.probe_hit_mask & (1U << i)) == 0)
+        {
             continue;
         }
 
-        const int written = std::snprintf(out_text.data() + used,
-                                          out_text.size() - used,
-                                          "%s%u",
+        const int written = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
                                           (used == 0) ? "" : " ",
                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (written <= 0) {
+        if (written <= 0)
+        {
             break;
         }
 
         const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used)) {
+        if (write_size >= (out_text.size() - used))
+        {
             used = out_text.size() - 1;
             break;
         }
@@ -81,46 +102,52 @@ void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
     }
 }
 
+/// @brief Formats the hit list for one specific driven keypad panel pin.
 void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                    uint8_t drive_panel_pin,
-                                    std::array<char, 24>& out_text)
+                                    uint8_t drive_panel_pin, std::array<char, 24>& out_text)
 {
     out_text.fill('\0');
 
     size_t drive_index = keypad_status.lines.size();
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
-        if (keypad_status.lines[i].panel_pin == drive_panel_pin) {
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
+    {
+        if (keypad_status.lines[i].panel_pin == drive_panel_pin)
+        {
             drive_index = i;
             break;
         }
     }
 
-    if (drive_index >= keypad_status.lines.size()) {
+    if (drive_index >= keypad_status.lines.size())
+    {
         return;
     }
 
     const uint16_t hit_mask = keypad_status.probe_hits_by_drive[drive_index];
-    if (hit_mask == 0) {
+    if (hit_mask == 0)
+    {
         return;
     }
 
     size_t used = 0;
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i) {
-        if ((hit_mask & (1u << i)) == 0) {
+    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
+    {
+        if ((hit_mask & (1U << i)) == 0)
+        {
             continue;
         }
 
-        const int written = std::snprintf(out_text.data() + used,
-                                          out_text.size() - used,
-                                          "%s%u",
+        const int written = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
                                           (used == 0) ? "" : " ",
                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (written <= 0) {
+        if (written <= 0)
+        {
             break;
         }
 
         const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_text.size() - used)) {
+        if (write_size >= (out_text.size() - used))
+        {
             used = out_text.size() - 1;
             break;
         }
@@ -128,10 +155,15 @@ void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
     }
 }
 
+/// @brief Applies any temporary softkey label overrides onto a page map.
 void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 {
-    for (size_t i = 0; i < g_softkey_label_override_active.size(); ++i) {
-        if (!g_softkey_label_override_active[i]) {
+    // Overrides are applied last so page defaults remain the single source of
+    // truth unless a diagnostics or test flow deliberately replaces a label.
+    for (size_t i = 0; i < g_softkey_label_override_active.size(); ++i)
+    {
+        if (!g_softkey_label_override_active[i])
+        {
             continue;
         }
 
@@ -139,9 +171,11 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
     }
 }
 
+/// @brief Maps a physical bezel button to its logical softkey slot.
 SoftKeyId softkey_id_from_button(ButtonId button)
 {
-    switch (button) {
+    switch (button)
+    {
     case ButtonId::LeftTop:
         return SoftKeyId::Left1;
     case ButtonId::LeftUpper:
@@ -167,6 +201,7 @@ SoftKeyId softkey_id_from_button(ButtonId button)
     }
 }
 
+/// @brief Rebuilds the current softkey map from the active console state.
 void update_softkeys_from_state()
 {
     SoftKeyMap softkeys = {{
@@ -182,39 +217,50 @@ void update_softkeys_from_state()
         {"", SoftKeyRoute::None, false},
     }};
 
-    switch (g_console_state.active_page) {
+    // Each page declares only the actions that make sense in that context. The
+    // disabled slots stay blank so the bezel still feels intentional.
+    switch (g_console_state.active_page)
+    {
     case MenuPage::Home:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"STATUS", SoftKeyRoute::GoStatus, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
         softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
         softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
-        softkeys[softkey_index(SoftKeyId::Right4)] = {
-            "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT SOURCE", SoftKeyRoute::GoWeatherSources, true};
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"PANEL +", SoftKeyRoute::PanelBrighter,
+                                                      g_console_state.panel_brightness !=
+                                                          BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT SOURCE",
+                                                      SoftKeyRoute::GoWeatherSources, true};
         break;
     case MenuPage::Status:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"CLR ALRT", SoftKeyRoute::ClearAlert,
-                                                      g_console_state.alert_severity != AlertSeverity::None};
+                                                      g_console_state.alert_severity !=
+                                                          AlertSeverity::None};
         softkeys[softkey_index(SoftKeyId::Right5)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         break;
     case MenuPage::Settings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetConsoleState, true};
-        softkeys[softkey_index(SoftKeyId::Left4)] = {
-            "KEYS +", SoftKeyRoute::KeysBrighter, g_console_state.key_backlight_brightness != BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Left5)] = {
-            "KEYS -", SoftKeyRoute::KeysDimmer, g_console_state.key_backlight_brightness != BrightnessLevel::Off};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetConsoleState,
+                                                     true};
+        softkeys[softkey_index(SoftKeyId::Left4)] = {"KEYS +", SoftKeyRoute::KeysBrighter,
+                                                     g_console_state.key_backlight_brightness !=
+                                                         BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {"KEYS -", SoftKeyRoute::KeysDimmer,
+                                                     g_console_state.key_backlight_brightness !=
+                                                         BrightnessLevel::Off};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
         softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
         softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
-        softkeys[softkey_index(SoftKeyId::Right4)] = {
-            "PANEL +", SoftKeyRoute::PanelBrighter, g_console_state.panel_brightness != BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {
-            "PANEL -", SoftKeyRoute::PanelDimmer, g_console_state.panel_brightness != BrightnessLevel::Off};
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"PANEL +", SoftKeyRoute::PanelBrighter,
+                                                      g_console_state.panel_brightness !=
+                                                          BrightnessLevel::High};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"PANEL -", SoftKeyRoute::PanelDimmer,
+                                                      g_console_state.panel_brightness !=
+                                                          BrightnessLevel::Off};
         break;
     case MenuPage::WeatherSources:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
@@ -225,7 +271,8 @@ void update_softkeys_from_state()
     case MenuPage::Alignment:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"Short", SoftKeyRoute::None, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"Status page", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"Left softkey label", SoftKeyRoute::None, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"Left softkey label", SoftKeyRoute::None,
+                                                     true};
         softkeys[softkey_index(SoftKeyId::Left4)] = {"1234 / 5678", SoftKeyRoute::None, true};
         softkeys[softkey_index(SoftKeyId::Left5)] = {"Reset panel state", SoftKeyRoute::None, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"Alert", SoftKeyRoute::None, true};
@@ -241,13 +288,17 @@ void update_softkeys_from_state()
         break;
     }
 
+    // Any temporary label overrides are layered on after the page defaults so
+    // experiments do not need to duplicate the entire softkey map.
     apply_softkey_label_overrides(softkeys);
     g_console_state.softkeys = softkeys;
 }
 
+/// @brief Advances the alert annunciator through its test cycle.
 AlertSeverity next_alert_severity(AlertSeverity severity)
 {
-    switch (severity) {
+    switch (severity)
+    {
     case AlertSeverity::None:
         return AlertSeverity::Message;
     case AlertSeverity::Message:
@@ -261,9 +312,11 @@ AlertSeverity next_alert_severity(AlertSeverity severity)
     return AlertSeverity::None;
 }
 
+/// @brief Advances the test annunciator through its demo states.
 SystemTestState next_test_state(SystemTestState state)
 {
-    switch (state) {
+    switch (state)
+    {
     case SystemTestState::Idle:
         return SystemTestState::Running;
     case SystemTestState::Running:
@@ -277,9 +330,13 @@ SystemTestState next_test_state(SystemTestState state)
     return SystemTestState::Idle;
 }
 
+/// @brief Recomputes lamp outputs from the current logical console state.
 void update_lamps_from_state()
 {
-    switch (g_console_state.alert_severity) {
+    // Alert and test lamps mirror the current logical state so the front panel
+    // behaves like annunciators rather than generic status LEDs.
+    switch (g_console_state.alert_severity)
+    {
     case AlertSeverity::None:
         g_console_state.lamps[lamp_index(LampId::AlertLamp)] = LampMode::Off;
         break;
@@ -294,7 +351,8 @@ void update_lamps_from_state()
         break;
     }
 
-    switch (g_console_state.test_state) {
+    switch (g_console_state.test_state)
+    {
     case SystemTestState::Idle:
         g_console_state.lamps[lamp_index(LampId::TestLamp)] = LampMode::Off;
         break;
@@ -309,28 +367,43 @@ void update_lamps_from_state()
         break;
     }
 
+    // Backlights are modeled as simple on/off lamps for now because the UI only
+    // needs to show whether brightness is disabled, not the PWM details.
     g_console_state.lamps[lamp_index(LampId::KeyBacklight)] =
-        (g_console_state.key_backlight_brightness == BrightnessLevel::Off) ? LampMode::Off : LampMode::On;
+        (g_console_state.key_backlight_brightness == BrightnessLevel::Off) ? LampMode::Off
+                                                                           : LampMode::On;
 
     g_console_state.lamps[lamp_index(LampId::PanelBacklight)] =
         (g_console_state.panel_brightness == BrightnessLevel::Off) ? LampMode::Off : LampMode::On;
 }
 
+/// @brief Returns the next brighter backlight level without exceeding the max.
 BrightnessLevel brighter(BrightnessLevel level)
 {
-    if (level == BrightnessLevel::High) return BrightnessLevel::High;
+    if (level == BrightnessLevel::High)
+    {
+        return BrightnessLevel::High;
+    }
     return static_cast<BrightnessLevel>(static_cast<uint8_t>(level) + 1);
 }
 
+/// @brief Returns the next dimmer backlight level without going below off.
 BrightnessLevel dimmer(BrightnessLevel level)
 {
-    if (level == BrightnessLevel::Off) return BrightnessLevel::Off;
+    if (level == BrightnessLevel::Off)
+    {
+        return BrightnessLevel::Off;
+    }
     return static_cast<BrightnessLevel>(static_cast<uint8_t>(level) - 1);
 }
 
+/// @brief Applies one softkey action to the console state.
 bool apply_softkey_route(SoftKeyRoute route)
 {
-    switch (route) {
+    // Route handling mutates only the console model. Rendering and hardware
+    // reactions happen later from the updated shared state.
+    switch (route)
+    {
     case SoftKeyRoute::None:
         return false;
     case SoftKeyRoute::GoHome:
@@ -362,31 +435,37 @@ bool apply_softkey_route(SoftKeyRoute route)
         g_console_state = make_default_console_state();
         return true;
     case SoftKeyRoute::ClearAlert:
-        if (g_console_state.alert_severity == AlertSeverity::None) {
+        if (g_console_state.alert_severity == AlertSeverity::None)
+        {
             return false;
         }
         g_console_state.alert_severity = AlertSeverity::None;
         return true;
     case SoftKeyRoute::PanelBrighter:
-        if (g_console_state.panel_brightness == BrightnessLevel::High) {
+        if (g_console_state.panel_brightness == BrightnessLevel::High)
+        {
             return false;
         }
         g_console_state.panel_brightness = brighter(g_console_state.panel_brightness);
         return true;
     case SoftKeyRoute::PanelDimmer:
-        if (g_console_state.panel_brightness == BrightnessLevel::Off) {
+        if (g_console_state.panel_brightness == BrightnessLevel::Off)
+        {
             return false;
         }
         g_console_state.panel_brightness = dimmer(g_console_state.panel_brightness);
         return true;
     case SoftKeyRoute::KeysBrighter:
-        if (g_console_state.key_backlight_brightness == BrightnessLevel::High) {
+        if (g_console_state.key_backlight_brightness == BrightnessLevel::High)
+        {
             return false;
         }
-        g_console_state.key_backlight_brightness = brighter(g_console_state.key_backlight_brightness);
+        g_console_state.key_backlight_brightness =
+            brighter(g_console_state.key_backlight_brightness);
         return true;
     case SoftKeyRoute::KeysDimmer:
-        if (g_console_state.key_backlight_brightness == BrightnessLevel::Off) {
+        if (g_console_state.key_backlight_brightness == BrightnessLevel::Off)
+        {
             return false;
         }
         g_console_state.key_backlight_brightness = dimmer(g_console_state.key_backlight_brightness);
@@ -396,13 +475,18 @@ bool apply_softkey_route(SoftKeyRoute route)
     return false;
 }
 
-}  // namespace
+} // namespace
 
+/// @brief Initializes the console controller state and derived outputs.
 void init()
 {
     g_console_state = make_default_console_state();
     g_softkey_label_override_active.fill(false);
-    for (auto& label : g_softkey_label_overrides) {
+
+    // Override storage is cleared explicitly so later strcmp checks can safely
+    // treat an all-zero buffer as "no custom label".
+    for (auto& label : g_softkey_label_overrides)
+    {
         label.fill('\0');
     }
     update_softkeys_from_state();
@@ -414,8 +498,11 @@ const ConsoleState& state()
     return g_console_state;
 }
 
+/// @brief Updates the cached Wi-Fi snapshot in the console model.
 bool set_wifi_status(const WifiStatus& wifi_status)
 {
+    // These setters short-circuit unchanged snapshots so the UI does not redraw
+    // every loop when the subsystem state is stable.
     const bool changed =
         g_console_state.wifi_status.state != wifi_status.state ||
         g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
@@ -429,7 +516,8 @@ bool set_wifi_status(const WifiStatus& wifi_status)
         g_console_state.wifi_status.ssid != wifi_status.ssid ||
         g_console_state.wifi_status.ip_address != wifi_status.ip_address;
 
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
@@ -438,12 +526,14 @@ bool set_wifi_status(const WifiStatus& wifi_status)
     return true;
 }
 
+/// @brief Updates the cached time snapshot in the console model.
 bool set_time_status(const TimeStatus& time_status)
 {
     const bool changed = g_console_state.time_status.synced != time_status.synced ||
                          g_console_state.time_status.time_text != time_status.time_text;
 
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
@@ -452,29 +542,43 @@ bool set_time_status(const TimeStatus& time_status)
     return true;
 }
 
+/// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
     const bool changed =
         g_console_state.home_assistant_status.state != home_assistant_status.state ||
         g_console_state.home_assistant_status.configured != home_assistant_status.configured ||
-        g_console_state.home_assistant_status.self_entity_published != home_assistant_status.self_entity_published ||
+        g_console_state.home_assistant_status.self_entity_published !=
+            home_assistant_status.self_entity_published ||
         g_console_state.home_assistant_status.last_error != home_assistant_status.last_error ||
-        g_console_state.home_assistant_status.last_http_status != home_assistant_status.last_http_status ||
+        g_console_state.home_assistant_status.last_http_status !=
+            home_assistant_status.last_http_status ||
         g_console_state.home_assistant_status.host != home_assistant_status.host ||
-        g_console_state.home_assistant_status.tracked_entity_id != home_assistant_status.tracked_entity_id ||
-        g_console_state.home_assistant_status.tracked_entity_state != home_assistant_status.tracked_entity_state ||
-        g_console_state.home_assistant_status.weather_entity_id != home_assistant_status.weather_entity_id ||
-        g_console_state.home_assistant_status.weather_source_hint != home_assistant_status.weather_source_hint ||
-        g_console_state.home_assistant_status.weather_condition != home_assistant_status.weather_condition ||
-        g_console_state.home_assistant_status.weather_temperature != home_assistant_status.weather_temperature ||
-        g_console_state.home_assistant_status.weather_wind_unit != home_assistant_status.weather_wind_unit ||
+        g_console_state.home_assistant_status.tracked_entity_id !=
+            home_assistant_status.tracked_entity_id ||
+        g_console_state.home_assistant_status.tracked_entity_state !=
+            home_assistant_status.tracked_entity_state ||
+        g_console_state.home_assistant_status.weather_entity_id !=
+            home_assistant_status.weather_entity_id ||
+        g_console_state.home_assistant_status.weather_source_hint !=
+            home_assistant_status.weather_source_hint ||
+        g_console_state.home_assistant_status.weather_condition !=
+            home_assistant_status.weather_condition ||
+        g_console_state.home_assistant_status.weather_temperature !=
+            home_assistant_status.weather_temperature ||
+        g_console_state.home_assistant_status.weather_wind_unit !=
+            home_assistant_status.weather_wind_unit ||
         g_console_state.home_assistant_status.sunrise_text != home_assistant_status.sunrise_text ||
         g_console_state.home_assistant_status.sunset_text != home_assistant_status.sunset_text ||
-        g_console_state.home_assistant_status.weather_forecast_count != home_assistant_status.weather_forecast_count ||
-        g_console_state.home_assistant_status.weather_forecast != home_assistant_status.weather_forecast ||
-        g_console_state.home_assistant_status.self_entity_id != home_assistant_status.self_entity_id;
+        g_console_state.home_assistant_status.weather_forecast_count !=
+            home_assistant_status.weather_forecast_count ||
+        g_console_state.home_assistant_status.weather_forecast !=
+            home_assistant_status.weather_forecast ||
+        g_console_state.home_assistant_status.self_entity_id !=
+            home_assistant_status.self_entity_id;
 
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
@@ -483,6 +587,7 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
     return true;
 }
 
+/// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
     const bool changed =
@@ -493,7 +598,8 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
         g_console_state.mqtt_status.broker != mqtt_status.broker ||
         g_console_state.mqtt_status.device_id != mqtt_status.device_id;
 
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
@@ -502,6 +608,7 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     return true;
 }
 
+/// @brief Updates the keypad diagnostics snapshot shown by the UI.
 bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 {
     std::array<char, 48> active_panel_pins = {};
@@ -509,6 +616,9 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     std::array<char, 24> drive_5_hits = {};
     std::array<char, 24> drive_20_hits = {};
     std::array<char, 24> drive_22_hits = {};
+
+    // Build the display strings up front so the change detection compares the
+    // exact text the diagnostics page will eventually render.
     build_active_panel_pin_text(keypad_status, active_panel_pins);
     build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
     build_drive_hit_panel_pin_text(keypad_status, 5, drive_5_hits);
@@ -520,7 +630,8 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
         g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
         g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
         g_console_state.keypad_debug_status.active_panel_pins != active_panel_pins ||
-        g_console_state.keypad_debug_status.probe_drive_panel_pin != keypad_status.probe_drive_panel_pin ||
+        g_console_state.keypad_debug_status.probe_drive_panel_pin !=
+            keypad_status.probe_drive_panel_pin ||
         g_console_state.keypad_debug_status.probe_hit_mask != keypad_status.probe_hit_mask ||
         g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
         g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins ||
@@ -528,7 +639,8 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
         g_console_state.keypad_debug_status.drive_20_hits != drive_20_hits ||
         g_console_state.keypad_debug_status.drive_22_hits != drive_22_hits;
 
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
@@ -547,13 +659,18 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     return true;
 }
 
+/// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {
     const size_t index = softkey_index(key);
     const bool clear_override = (label == nullptr) || (label[0] == '\0');
 
-    if (clear_override) {
-        if (!g_softkey_label_override_active[index] && g_softkey_label_overrides[index][0] == '\0') {
+    // Clearing the override falls back to the page-defined label instead of
+    // keeping an empty string that would mask the underlying softkey action.
+    if (clear_override)
+    {
+        if (!g_softkey_label_override_active[index] && g_softkey_label_overrides[index][0] == '\0')
+        {
             return false;
         }
 
@@ -568,24 +685,30 @@ bool set_softkey_label(SoftKeyId key, const char* label)
 
     const bool changed = !g_softkey_label_override_active[index] ||
                          std::strcmp(g_softkey_label_overrides[index].data(), copied_label) != 0;
-    if (!changed) {
+    if (!changed)
+    {
         return false;
     }
 
-    std::snprintf(g_softkey_label_overrides[index].data(), g_softkey_label_overrides[index].size(), "%s", copied_label);
+    std::snprintf(g_softkey_label_overrides[index].data(), g_softkey_label_overrides[index].size(),
+                  "%s", copied_label);
     g_softkey_label_override_active[index] = true;
     update_softkeys_from_state();
     return true;
 }
 
+/// @brief Records one button event and applies any enabled softkey action.
 bool handle_button_event(const ButtonEvent& event)
 {
-    if (event.type == ButtonEventType::None) {
+    if (event.type == ButtonEventType::None)
+    {
         return false;
     }
 
     bool changed = false;
 
+    // Every edge is recorded for the keypad debug page, even if the button does
+    // not map to an enabled softkey on the current page.
     const char* event_name = input::button_name(event.id);
     const char* event_type = (event.type == ButtonEventType::Pressed) ? "Pressed" : "Released";
     char button_name[sizeof(g_console_state.keypad_debug_status.last_button_name)] = {};
@@ -593,34 +716,42 @@ bool handle_button_event(const ButtonEvent& event)
     char event_type_text[sizeof(g_console_state.keypad_debug_status.last_event_type)] = {};
     std::snprintf(event_type_text, sizeof(event_type_text), "%s", event_type);
 
-    if (std::strcmp(g_console_state.keypad_debug_status.last_button_name.data(), button_name) != 0 ||
-        std::strcmp(g_console_state.keypad_debug_status.last_event_type.data(), event_type_text) != 0) {
+    if (std::strcmp(g_console_state.keypad_debug_status.last_button_name.data(), button_name) !=
+            0 ||
+        std::strcmp(g_console_state.keypad_debug_status.last_event_type.data(), event_type_text) !=
+            0)
+    {
         std::snprintf(g_console_state.keypad_debug_status.last_button_name.data(),
-                      g_console_state.keypad_debug_status.last_button_name.size(),
-                      "%s",
+                      g_console_state.keypad_debug_status.last_button_name.size(), "%s",
                       button_name);
         std::snprintf(g_console_state.keypad_debug_status.last_event_type.data(),
-                      g_console_state.keypad_debug_status.last_event_type.size(),
-                      "%s",
+                      g_console_state.keypad_debug_status.last_event_type.size(), "%s",
                       event_type_text);
         changed = true;
     }
     ++g_console_state.keypad_debug_status.event_count;
     changed = true;
 
-    if (event.type != ButtonEventType::Pressed) {
+    // Only press events drive menu navigation; release events are still logged
+    // for diagnostics but do not retrigger actions.
+    if (event.type != ButtonEventType::Pressed)
+    {
         return changed;
     }
 
     const SoftKeyId key = softkey_id_from_button(event.id);
     const SoftKeyAction& action = g_console_state.softkeys[softkey_index(key)];
-    if (!action.enabled) {
+    if (!action.enabled)
+    {
         return changed;
     }
 
+    // The route mutates the logical console state first, then softkeys and lamp
+    // outputs are recomputed from that new state as a separate step.
     const bool route_changed = apply_softkey_route(action.route);
 
-    if (!route_changed) {
+    if (!route_changed)
+    {
         return changed;
     }
 
@@ -636,4 +767,4 @@ bool handle_button_event(const ButtonEvent& event)
     return true;
 }
 
-}  // namespace console_controller
+} // namespace console_controller

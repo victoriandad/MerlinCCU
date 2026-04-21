@@ -4,7 +4,8 @@
 
 #include "console_model.h"
 
-namespace time_manager {
+namespace time_manager
+{
 
 /// @brief Initializes the local time tracking state.
 /// @details The actual wall-clock source comes from lwIP SNTP via
@@ -18,14 +19,15 @@ bool update();
 /// @brief Returns the latest time status snapshot for the UI/controller.
 const TimeStatus& status();
 
-}  // namespace time_manager
+} // namespace time_manager
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-/// @brief Receives a UTC epoch update from the lwIP SNTP callback path.
-void merlinccu_set_ntp_time(uint32_t sec);
+    /// @brief Receives a UTC epoch update from the lwIP SNTP callback path.
+    void merlinccu_set_ntp_time(uint32_t sec);
 
 #ifdef __cplusplus
 }

@@ -8,7 +8,8 @@
 /// @details These names describe the current screen-side button positions only.
 /// Real GPIO assignments still live in `input.cpp` and can remain unassigned
 /// until the keyboard hardware is wired.
-enum class ButtonId : uint8_t {
+enum class ButtonId : uint8_t
+{
     LeftTop = 0,
     LeftUpper,
     LeftMiddle,
@@ -23,14 +24,16 @@ enum class ButtonId : uint8_t {
 };
 
 /// @brief Debounced button edge types surfaced to the rest of the firmware.
-enum class ButtonEventType : uint8_t {
+enum class ButtonEventType : uint8_t
+{
     None = 0,
     Pressed,
     Released,
 };
 
 /// @brief One debounced logical button event.
-struct ButtonEvent {
+struct ButtonEvent
+{
     ButtonId id;
     ButtonEventType type;
 };
@@ -38,7 +41,8 @@ struct ButtonEvent {
 inline constexpr size_t kKeypadObservedLineCount = 16;
 
 /// @brief One observed front-panel matrix line wired to a Pico GPIO.
-struct KeypadObservedLine {
+struct KeypadObservedLine
+{
     uint8_t panel_pin;
     int8_t pico_gpio;
     bool configured;
@@ -46,7 +50,8 @@ struct KeypadObservedLine {
 };
 
 /// @brief Raw keypad monitor snapshot for bring-up work.
-struct KeypadMonitorStatus {
+struct KeypadMonitorStatus
+{
     uint32_t active_mask;
     uint8_t configured_count;
     uint8_t active_count;
@@ -58,7 +63,8 @@ struct KeypadMonitorStatus {
     std::array<uint16_t, kKeypadObservedLineCount> probe_hits_by_drive;
 };
 
-namespace input {
+namespace input
+{
 
 /// @brief Initializes any configured keypad GPIOs and debounce state.
 void init();
@@ -77,4 +83,4 @@ const KeypadMonitorStatus& keypad_monitor_status();
 /// Higher-level behavior is handled later by `console_controller`.
 void handle_button_event(const ButtonEvent& event);
 
-}  // namespace input
+} // namespace input
