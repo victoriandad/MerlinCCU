@@ -45,7 +45,9 @@ add_executable(MerlinCCU
     mqtt_manager.cpp
     screen_banners.cpp
     screens.cpp
+    screensaver_clock.cpp
     screensaver_life.cpp
+    screensaver_starfield.cpp
     time_manager.cpp
     wifi_manager.cpp
 )

@@ -106,6 +106,17 @@ constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
     // The controller already understands Back Step even though the physical
     // matrix decode still needs to be wired into this scan table later.
     {ButtonId::BackStep, -1, true, "BACK STEP"},
+    {ButtonId::Clr, -1, true, "CLR"},
+    {ButtonId::Digit1, -1, true, "1"},
+    {ButtonId::Digit2, -1, true, "2"},
+    {ButtonId::Digit3, -1, true, "3"},
+    {ButtonId::Digit4, -1, true, "4"},
+    {ButtonId::Digit5, -1, true, "5"},
+    {ButtonId::Digit6, -1, true, "6"},
+    {ButtonId::Digit7, -1, true, "7"},
+    {ButtonId::Digit8, -1, true, "8"},
+    {ButtonId::Digit9, -1, true, "9"},
+    {ButtonId::Digit0, -1, true, "0"},
 }};
 
 /// @brief Confirmed matrix closures for the currently supported front-panel buttons.
@@ -123,6 +134,17 @@ constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
     {ButtonId::RightLower, 10, 15},
     {ButtonId::RightBottom, 11, 15},
     {ButtonId::BackStep, 6, 20},
+    {ButtonId::Clr, 6, 16},
+    {ButtonId::Digit1, 8, 18},
+    {ButtonId::Digit2, 8, 17},
+    {ButtonId::Digit3, 8, 16},
+    {ButtonId::Digit4, 9, 18},
+    {ButtonId::Digit5, 9, 17},
+    {ButtonId::Digit6, 9, 16},
+    {ButtonId::Digit7, 10, 18},
+    {ButtonId::Digit8, 10, 17},
+    {ButtonId::Digit9, 10, 16},
+    {ButtonId::Digit0, 11, 17},
 }};
 
 /// @brief Ribbon-pin to Pico-GPIO mapping for the keypad matrix probe logic.

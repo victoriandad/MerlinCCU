@@ -14,7 +14,8 @@ namespace screensaver_life
 {
 
 /// @brief Seeds the Conway's Game of Life field used by the screensaver.
-void init();
+/// @param seed_fb Optional framebuffer snapshot used as the opening Life seed.
+void init(const uint8_t* seed_fb = nullptr);
 
 /// @brief Advances one Life generation and renders it into the target framebuffer.
 /// @param fb Target UI framebuffer.
