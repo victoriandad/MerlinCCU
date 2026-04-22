@@ -31,6 +31,11 @@ enum class ScreenMode : uint8_t
     LifeScreensaver,
 };
 
+/// @brief Menu loop sleep used between input polls and conditional redraws.
+/// @details This remains comfortably above the debounce interval while still
+/// sampling short softkey presses much more reliably than the previous 100 ms.
+inline constexpr uint32_t kMenuLoopSleepMs = 20U;
+
 } // namespace
 
 /// @brief Firmware entry point.
@@ -191,7 +196,7 @@ int main()
                 framebuffer::swap();
                 display::present(framebuffer::front());
             }
-            sleep_ms(100);
+            sleep_ms(kMenuLoopSleepMs);
         }
     }
 

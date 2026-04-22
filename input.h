@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
-/// @brief Logical button identifiers for the unfinished CCU keypad matrix.
-/// @details These names describe the current screen-side button positions only.
-/// Real GPIO assignments still live in `input.cpp` and can remain unassigned
-/// until the keyboard hardware is wired.
+/// @brief Logical button identifiers surfaced by the unfinished CCU keypad scan.
+/// @details The list currently covers the ten bezel softkeys plus `BackStep`
+/// so the menu controller can own the navigation rules before every hardware
+/// key has been fully mapped.
 enum class ButtonId : uint8_t
 {
     LeftTop = 0,
@@ -20,6 +20,7 @@ enum class ButtonId : uint8_t
     RightMiddle,
     RightLower,
     RightBottom,
+    BackStep,
     Count,
 };
 

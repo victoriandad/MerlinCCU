@@ -123,9 +123,13 @@ enum class SystemTestState : uint8_t
 enum class MenuPage : uint8_t
 {
     Home = 0,
+    Weather,
     Status,
     Settings,
+    WifiSettings,
+    ScreenSaverSettings,
     WeatherSources,
+    TimeZoneSettings,
     Alignment,
     KeypadDebug,
 };
@@ -198,7 +202,7 @@ struct TimeStatus
 
 inline constexpr size_t kWeatherForecastEntryCount = 10;
 
-/// @brief One compact hourly forecast entry for the Home page.
+/// @brief One compact hourly forecast entry for the dedicated weather page.
 struct WeatherForecastEntry
 {
     std::array<char, 6> time_text;
@@ -250,15 +254,52 @@ struct MqttStatus
     std::array<char, 32> device_id;
 };
 
+/// @brief Selectable weather backends exposed to the CCU UI.
+enum class WeatherSource : uint8_t
+{
+    HomeAssistant = 0,
+    MetOffice,
+    BbcWeather,
+};
+
+/// @brief Selectable time-zone presets exposed by the current menu flow.
+enum class TimeZoneSelection : uint8_t
+{
+    AtlanticStandard = 0,
+    ArgentinaStandard,
+    SouthGeorgia,
+    Azores,
+    EuropeLondon,
+    CentralEuropean,
+    EasternEuropean,
+    ArabiaStandard,
+    GulfStandard,
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
 {
     None = 0,
     GoHome,
+    GoWeather,
     GoStatus,
     GoSettings,
+    GoWifiSettings,
+    GoScreenSaverSettings,
     GoWeatherSources,
+    GoTimeZoneSettings,
     GoKeypadDebug,
+    SelectWeatherHomeAssistant,
+    SelectWeatherMetOffice,
+    SelectWeatherBbcWeather,
+    SelectTimeZoneWest1,
+    SelectTimeZoneWest2,
+    SelectTimeZoneWest3,
+    SelectTimeZoneWest4,
+    SelectTimeZoneEast1,
+    SelectTimeZoneEast2,
+    SelectTimeZoneEast3,
+    SelectTimeZoneEast4,
     CycleAlert,
     ToggleLetters,
     CycleTest,
@@ -276,6 +317,7 @@ struct SoftKeyAction
     const char* label;
     SoftKeyRoute route;
     bool enabled;
+    bool inverted = false;
 };
 
 /// @brief The ten softkey assignments around the screen.
@@ -291,9 +333,7 @@ struct KeyLegend
 /// @brief Snapshot of keypad bring-up state shown on the diagnostics page.
 struct KeypadDebugStatus
 {
-    std::array<char, 24> last_button_name;
-    std::array<char, 10> last_event_type;
-    uint32_t event_count;
+    std::array<char, 24> pressed_key_name;
     uint32_t active_mask;
     uint8_t configured_count;
     uint8_t active_count;
@@ -302,15 +342,14 @@ struct KeypadDebugStatus
     uint32_t probe_hit_mask;
     uint8_t probe_hit_count;
     std::array<char, 48> probe_hit_panel_pins;
-    std::array<char, 24> drive_5_hits;
-    std::array<char, 24> drive_20_hits;
-    std::array<char, 24> drive_22_hits;
 };
 
 /// @brief Captures the logical front-panel state independent of hardware wiring.
 struct ConsoleState
 {
     MenuPage active_page;
+    WeatherSource weather_source;
+    TimeZoneSelection time_zone;
     LetterMode letter_mode;
     AlertSeverity alert_severity;
     SystemTestState test_state;

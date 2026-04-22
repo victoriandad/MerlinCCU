@@ -73,6 +73,17 @@ struct ProbeHits
     uint8_t count = 0;
 };
 
+/// @brief Matrix closure definition for one logical front-panel button.
+/// @details The panel-pin pairs come from the confirmed bench matrix map in
+/// `README.md`, which lets the firmware emit real button events before any
+/// dedicated per-button GPIO wiring exists.
+struct MatrixButtonConfig
+{
+    ButtonId id;
+    uint8_t panel_pin_a;
+    uint8_t panel_pin_b;
+};
+
 constexpr int kButtonDebounceMs = 25;
 constexpr int64_t kButtonDebounceUs = static_cast<int64_t>(kButtonDebounceMs) * 1000;
 constexpr uint32_t kKeypadProbeSettleUs = 20U;
@@ -82,16 +93,36 @@ constexpr size_t kButtonCount = static_cast<size_t>(ButtonId::Count);
 /// @details This table ties each logical `ButtonId` to the eventual GPIO mapping so the
 /// debounce and polling code stays generic while the hardware breakout evolves.
 constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
-    {ButtonId::LeftTop, -1, true, "LeftTop"},
-    {ButtonId::LeftUpper, -1, true, "LeftUpper"},
-    {ButtonId::LeftMiddle, -1, true, "LeftMiddle"},
-    {ButtonId::LeftLower, -1, true, "LeftLower"},
-    {ButtonId::LeftBottom, -1, true, "LeftBottom"},
-    {ButtonId::RightTop, -1, true, "RightTop"},
-    {ButtonId::RightUpper, -1, true, "RightUpper"},
-    {ButtonId::RightMiddle, -1, true, "RightMiddle"},
-    {ButtonId::RightLower, -1, true, "RightLower"},
-    {ButtonId::RightBottom, -1, true, "RightBottom"},
+    {ButtonId::LeftTop, -1, true, "L1"},
+    {ButtonId::LeftUpper, -1, true, "L2"},
+    {ButtonId::LeftMiddle, -1, true, "L3"},
+    {ButtonId::LeftLower, -1, true, "L4"},
+    {ButtonId::LeftBottom, -1, true, "L5"},
+    {ButtonId::RightTop, -1, true, "R1"},
+    {ButtonId::RightUpper, -1, true, "R2"},
+    {ButtonId::RightMiddle, -1, true, "R3"},
+    {ButtonId::RightLower, -1, true, "R4"},
+    {ButtonId::RightBottom, -1, true, "R5"},
+    // The controller already understands Back Step even though the physical
+    // matrix decode still needs to be wired into this scan table later.
+    {ButtonId::BackStep, -1, true, "BACK STEP"},
+}};
+
+/// @brief Confirmed matrix closures for the currently supported front-panel buttons.
+/// @details Side softkeys and `BackStep` are decoded from the scanned matrix so
+/// navigation works on real hardware using the measured ribbon-pin map.
+constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
+    {ButtonId::LeftTop, 7, 22},
+    {ButtonId::LeftUpper, 8, 22},
+    {ButtonId::LeftMiddle, 9, 22},
+    {ButtonId::LeftLower, 10, 22},
+    {ButtonId::LeftBottom, 11, 22},
+    {ButtonId::RightTop, 7, 15},
+    {ButtonId::RightUpper, 8, 15},
+    {ButtonId::RightMiddle, 9, 15},
+    {ButtonId::RightLower, 10, 15},
+    {ButtonId::RightBottom, 11, 15},
+    {ButtonId::BackStep, 6, 20},
 }};
 
 /// @brief Ribbon-pin to Pico-GPIO mapping for the keypad matrix probe logic.
@@ -132,6 +163,55 @@ constexpr uint32_t observed_line_active_bit(size_t line_index)
 {
     return static_cast<uint32_t>(1U << line_index);
 }
+
+/// @brief Returns the dense state-array index for one logical button id.
+constexpr size_t button_index(ButtonId id)
+{
+    return static_cast<size_t>(id);
+}
+
+/// @brief Looks up the observed-line slot for one panel pin number.
+size_t observed_line_index_for_panel_pin(uint8_t panel_pin)
+{
+    for (size_t i = 0; i < kObservedLines.size(); ++i)
+    {
+        if (kObservedLines[i].panel_pin == panel_pin)
+        {
+            return i;
+        }
+    }
+
+    return kObservedLines.size();
+}
+
+/// @brief Returns whether the current scan shows a closure between two panel pins.
+bool panel_pins_are_closed(uint8_t panel_pin_a, uint8_t panel_pin_b)
+{
+    const size_t kIndexA = observed_line_index_for_panel_pin(panel_pin_a);
+    const size_t kIndexB = observed_line_index_for_panel_pin(panel_pin_b);
+    if (kIndexA >= kObservedLines.size() || kIndexB >= kObservedLines.size())
+    {
+        return false;
+    }
+
+    const bool kConfiguredA = kObservedLines[kIndexA].pico_gpio >= 0;
+    const bool kConfiguredB = kObservedLines[kIndexB].pico_gpio >= 0;
+    if (!kConfiguredA || !kConfiguredB)
+    {
+        return false;
+    }
+
+    const uint16_t kBitA = observed_line_hit_bit(kIndexA);
+    const uint16_t kBitB = observed_line_hit_bit(kIndexB);
+    return ((g_probe_hits_by_drive[kIndexA] & kBitB) != 0) ||
+           ((g_probe_hits_by_drive[kIndexB] & kBitA) != 0);
+}
+
+ButtonEvent poll_button_state(ButtonState& state, ButtonId id, bool pressed);
+ButtonEvent poll_matrix_button(ButtonState& state, const MatrixButtonConfig& button);
+void initialize_matrix_button_states();
+bool button_has_direct_gpio(ButtonId id);
+ButtonEvent poll_matrix_buttons();
 
 /// @brief Restores one configured keypad line to its passive input state.
 void configure_observed_line_as_input(const ObservedLineConfig& line)
@@ -379,28 +459,80 @@ ButtonEvent poll_button(ButtonState& state, const ButtonConfig& button)
     }
 
     const bool kRawLevel = gpio_get(static_cast<uint>(button.pin));
+    const bool kPressed = button_level_is_pressed(kRawLevel, button);
+    return poll_button_state(state, button.id, kPressed);
+}
+
+/// @brief Debounces one already-decoded pressed state into a button edge event.
+ButtonEvent poll_button_state(ButtonState& state, ButtonId id, bool pressed)
+{
     const absolute_time_t kNow = get_absolute_time();
 
-    if (kRawLevel != state.raw_level)
+    if (pressed != state.raw_level)
     {
-        state.raw_level = kRawLevel;
+        state.raw_level = pressed;
         state.last_change_time = kNow;
-        return {button.id, ButtonEventType::None};
+        return {id, ButtonEventType::None};
     }
 
     if (absolute_time_diff_us(state.last_change_time, kNow) < kButtonDebounceUs)
     {
-        return {button.id, ButtonEventType::None};
+        return {id, ButtonEventType::None};
     }
 
-    const bool kPressed = button_level_is_pressed(kRawLevel, button);
-    if (kPressed == state.stable_pressed)
+    if (pressed == state.stable_pressed)
     {
-        return {button.id, ButtonEventType::None};
+        return {id, ButtonEventType::None};
     }
 
-    state.stable_pressed = kPressed;
-    return {button.id, kPressed ? ButtonEventType::Pressed : ButtonEventType::Released};
+    state.stable_pressed = pressed;
+    return {id, pressed ? ButtonEventType::Pressed : ButtonEventType::Released};
+}
+
+/// @brief Polls and debounces one logical button decoded from the keypad matrix.
+ButtonEvent poll_matrix_button(ButtonState& state, const MatrixButtonConfig& button)
+{
+    const bool kPressed = panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b);
+    return poll_button_state(state, button.id, kPressed);
+}
+
+/// @brief Seeds debounced matrix-button state from the current closure snapshot.
+void initialize_matrix_button_states()
+{
+    for (const MatrixButtonConfig& button : kMatrixButtons)
+    {
+        ButtonState& state = g_button_states[button_index(button.id)];
+        const bool kPressed = panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b);
+        state.raw_level = kPressed;
+        state.stable_pressed = kPressed;
+    }
+}
+
+/// @brief Returns true when the button has a dedicated direct-GPIO input.
+bool button_has_direct_gpio(ButtonId id)
+{
+    const ButtonConfig& button = kButtons[button_index(id)];
+    return button.pin >= 0;
+}
+
+/// @brief Returns the first debounced matrix button edge seen in the current scan.
+ButtonEvent poll_matrix_buttons()
+{
+    for (const MatrixButtonConfig& button : kMatrixButtons)
+    {
+        if (button_has_direct_gpio(button.id))
+        {
+            continue;
+        }
+
+        ButtonEvent event = poll_matrix_button(g_button_states[button_index(button.id)], button);
+        if (event.type != ButtonEventType::None)
+        {
+            return event;
+        }
+    }
+
+    return {ButtonId::LeftTop, ButtonEventType::None};
 }
 
 } // namespace
@@ -435,8 +567,9 @@ void init()
         }
 
         const bool kRawLevel = gpio_get(static_cast<uint>(button.pin));
-        g_button_states[i].raw_level = kRawLevel;
-        g_button_states[i].stable_pressed = button_level_is_pressed(kRawLevel, button);
+        const bool kPressed = button_level_is_pressed(kRawLevel, button);
+        g_button_states[i].raw_level = kPressed;
+        g_button_states[i].stable_pressed = kPressed;
     }
 
     // Observed keypad lines are separate from direct buttons; they are all left
@@ -463,6 +596,7 @@ void init()
     // Prime the diagnostics snapshot immediately so the status page has useful
     // keypad information even before the first poll loop iteration.
     refresh_keypad_monitor_status();
+    initialize_matrix_button_states();
     log_keypad_probe_results_if_changed();
 }
 
@@ -497,6 +631,12 @@ ButtonEvent poll_buttons()
         {
             return event;
         }
+    }
+
+    const ButtonEvent kMatrixEvent = poll_matrix_buttons();
+    if (kMatrixEvent.type != ButtonEventType::None)
+    {
+        return kMatrixEvent;
     }
 
     return {ButtonId::LeftTop, ButtonEventType::None};

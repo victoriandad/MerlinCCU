@@ -28,16 +28,16 @@ constexpr KeyLegend kKeyLegends[] = {
 /// @details Pages start from this baseline and override only the softkeys they need, which
 /// keeps the inactive state consistent across the UI.
 constexpr SoftKeyMap kDefaultSoftkeys = {{
-    {"L1", SoftKeyRoute::None, false},
-    {"L2", SoftKeyRoute::None, false},
-    {"L3", SoftKeyRoute::None, false},
-    {"L4", SoftKeyRoute::None, false},
-    {"L5", SoftKeyRoute::None, false},
-    {"R1", SoftKeyRoute::None, false},
-    {"R2", SoftKeyRoute::None, false},
-    {"R3", SoftKeyRoute::None, false},
-    {"R4", SoftKeyRoute::None, false},
-    {"R5", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
+    {"", SoftKeyRoute::None, false},
 }};
 
 } // namespace
@@ -55,9 +55,11 @@ ConsoleState make_default_console_state()
 {
     ConsoleState state = {};
 
-    // Start in the diagnostics-oriented menu so bring-up always lands on a page
-    // that is useful even before the rest of the aircraft-style UI is complete.
-    state.active_page = MenuPage::KeypadDebug;
+    // Boot into the top-level home menu so the front panel always opens on the
+    // clean navigation shell instead of a diagnostics surface.
+    state.active_page = MenuPage::Home;
+    state.weather_source = WeatherSource::HomeAssistant;
+    state.time_zone = TimeZoneSelection::EuropeLondon;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
@@ -113,9 +115,7 @@ ConsoleState make_default_console_state()
 
     // The keypad debug surface is always present, so its snapshot fields start
     // cleared rather than being allocated lazily later.
-    state.keypad_debug_status.last_button_name.fill('\0');
-    state.keypad_debug_status.last_event_type.fill('\0');
-    state.keypad_debug_status.event_count = 0;
+    state.keypad_debug_status.pressed_key_name.fill('\0');
     state.keypad_debug_status.active_mask = 0;
     state.keypad_debug_status.configured_count = 0;
     state.keypad_debug_status.active_count = 0;
@@ -124,10 +124,6 @@ ConsoleState make_default_console_state()
     state.keypad_debug_status.probe_hit_mask = 0;
     state.keypad_debug_status.probe_hit_count = 0;
     state.keypad_debug_status.probe_hit_panel_pins.fill('\0');
-    state.keypad_debug_status.drive_5_hits.fill('\0');
-    state.keypad_debug_status.drive_20_hits.fill('\0');
-    state.keypad_debug_status.drive_22_hits.fill('\0');
-
     // Lamps and softkeys are initialized explicitly so the controller can treat
     // the whole state object as immediately usable after construction.
     state.lamps.fill(LampMode::Off);

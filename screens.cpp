@@ -185,23 +185,96 @@ const char* mqtt_state_text(MqttConnectionState state)
     return "?";
 }
 
+/// @brief Returns the user-facing label for the currently selected weather source.
+const char* weather_source_text(WeatherSource source)
+{
+    switch (source)
+    {
+    case WeatherSource::HomeAssistant:
+        return "Home Assistant";
+    case WeatherSource::MetOffice:
+        return "Met Office";
+    case WeatherSource::BbcWeather:
+        return "BBC Weather";
+    }
+
+    return "?";
+}
+
+/// @brief Returns whether the selected weather source is still only a stub.
+bool weather_source_is_stub(WeatherSource source)
+{
+    switch (source)
+    {
+    case WeatherSource::HomeAssistant:
+        return false;
+    case WeatherSource::MetOffice:
+    case WeatherSource::BbcWeather:
+        return true;
+    }
+
+    return true;
+}
+
+/// @brief Returns the user-facing label for the currently selected time zone.
+const char* time_zone_text(TimeZoneSelection zone)
+{
+    switch (zone)
+    {
+    case TimeZoneSelection::AtlanticStandard:
+        return "Atlantic Standard Time";
+    case TimeZoneSelection::ArgentinaStandard:
+        return "Argentina Time";
+    case TimeZoneSelection::SouthGeorgia:
+        return "South Georgia Time";
+    case TimeZoneSelection::Azores:
+        return "Azores Time";
+    case TimeZoneSelection::EuropeLondon:
+        return "Europe/London";
+    case TimeZoneSelection::CentralEuropean:
+        return "Central European Time";
+    case TimeZoneSelection::EasternEuropean:
+        return "Eastern European Time";
+    case TimeZoneSelection::ArabiaStandard:
+        return "Arabia Standard Time";
+    case TimeZoneSelection::GulfStandard:
+        return "Gulf Standard Time";
+    }
+
+    return "?";
+}
+
+/// @brief Returns the clock zone the firmware is actually applying today.
+const char* applied_time_zone_text()
+{
+    return "Europe/London";
+}
+
 /// @brief Returns the page title that matches the active menu route.
 const char* menu_page_title(MenuPage page)
 {
     switch (page)
     {
     case MenuPage::Home:
+        return "HOME";
+    case MenuPage::Weather:
         return "WEATHER";
     case MenuPage::Status:
-        return "STATUS";
+        return "HOME ASSISTANT";
     case MenuPage::Settings:
         return "SETTINGS";
+    case MenuPage::WifiSettings:
+        return "WIFI";
+    case MenuPage::ScreenSaverSettings:
+        return "SCREEN SAVER";
     case MenuPage::WeatherSources:
-        return "SOURCES";
+        return "WEATHER SOURCE";
+    case MenuPage::TimeZoneSettings:
+        return "TIME ZONE";
     case MenuPage::Alignment:
         return "ALIGN";
     case MenuPage::KeypadDebug:
-        return "KEYPAD";
+        return "KEYPAD DEBUG";
     }
 
     return "MENU";
@@ -236,7 +309,7 @@ constexpr SoftkeyLayout kSoftkeyLayout = {
     .top_y = 41,
     .pitch = 57,
     .text_inset = 4,
-    .line_gap = 2,
+    .line_gap = 4,
 };
 
 /// @brief Returns the top edge of the indexed softkey label block.
@@ -252,11 +325,27 @@ constexpr int softkey_center_y_for_index(int index)
 }
 
 /// @brief Chooses the softkey font for the active page.
-/// @details Alignment uses a larger font so the calibration labels stay legible
-/// from a distance while the rest of the menu system favors denser text.
+/// @details Selection-heavy pages use the denser face so two-line labels fit
+/// comfortably, while diagnostic/detail pages can use the larger font.
 fonts::FontFace softkey_label_font(MenuPage page)
 {
-    return (page == MenuPage::Alignment) ? fonts::FontFace::Font8x12 : fonts::FontFace::Font5x7;
+    switch (page)
+    {
+    case MenuPage::Home:
+    case MenuPage::Settings:
+    case MenuPage::WeatherSources:
+    case MenuPage::TimeZoneSettings:
+        return fonts::FontFace::Font5x7;
+    case MenuPage::Weather:
+    case MenuPage::Status:
+    case MenuPage::WifiSettings:
+    case MenuPage::ScreenSaverSettings:
+    case MenuPage::Alignment:
+    case MenuPage::KeypadDebug:
+        return fonts::FontFace::Font8x12;
+    }
+
+    return fonts::FontFace::Font5x7;
 }
 
 /// @brief Returns the maximum drawable width for one softkey label line.
@@ -294,6 +383,12 @@ struct WrappedSoftkeyLabel
     char line_one[48];
     char line_two[48];
     int line_count;
+};
+
+struct DetailRow
+{
+    const char* label;
+    const char* value;
 };
 
 /// @brief Copies one bounded label slice into a temporary line buffer.
@@ -440,6 +535,107 @@ WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font)
     return wrap_label_two_lines(label, font, softkey_label_max_width());
 }
 
+/// @brief Draws one aligned detail row for information-oriented pages.
+/// @details Labels stay uppercase and compact on the left while values remain
+/// free to use mixed case on the right for readability.
+void draw_detail_row(uint8_t* fb, int y, const DetailRow& row, bool draw_divider)
+{
+    constexpr int kLabelX = 50;
+    constexpr int kValueX = 156;
+    constexpr int kDividerLeftX = 46;
+    constexpr int kDividerRightX = kUiWidth - 46;
+    constexpr int kDividerOffsetY = 15;
+    constexpr int kValueBaselineOffsetY = 1;
+
+    const char* value = (row.value != nullptr && row.value[0] != '\0') ? row.value : "-";
+    framebuffer::draw_text(fb, kLabelX, y, row.label, true, fonts::FontFace::FontTitle8x12, 1);
+    framebuffer::draw_text(fb, kValueX, y + kValueBaselineOffsetY, value, true,
+                           fonts::FontFace::Font5x7, 1);
+
+    if (draw_divider)
+    {
+        framebuffer::draw_hline(fb, kDividerLeftX, kDividerRightX, y + kDividerOffsetY, true);
+    }
+}
+
+/// @brief Draws a consistent stacked detail layout without heavy framing.
+/// @details The same helper keeps diagnostics and status pages visually aligned
+/// once their surrounding boxes have been removed.
+void draw_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y = 46,
+                      int row_pitch = 18, bool draw_dividers = true)
+{
+    for (size_t i = 0; i < count; ++i)
+    {
+        draw_detail_row(fb, start_y + (static_cast<int>(i) * row_pitch), rows[i],
+                        draw_dividers && (i + 1 < count));
+    }
+}
+
+/// @brief Draws the standard row-based presentation used by information pages.
+/// @details The top banner carries the page title, so the body can stay clean
+/// and consistent without extra boxes, subtitles, or divider lines.
+void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
+{
+    constexpr int kInfoPageStartY = 42;
+    constexpr int kInfoPageRowPitch = 18;
+    draw_detail_rows(fb, rows, count, kInfoPageStartY, kInfoPageRowPitch, false);
+}
+
+/// @brief Extracts the inner text from a bracketed softkey value line.
+/// @details Selection labels are still authored as `[value]`, but the renderer
+/// can choose to draw larger brackets around the value instead of tiny glyphs.
+bool extract_bracketed_softkey_value(const char* line_text, char* out_value, size_t out_size)
+{
+    if (line_text == nullptr || out_value == nullptr || out_size == 0)
+    {
+        return false;
+    }
+
+    const size_t kLength = std::strlen(line_text);
+    if (kLength < 3 || line_text[0] != '[' || line_text[kLength - 1] != ']')
+    {
+        return false;
+    }
+
+    copy_softkey_label_slice(out_value, out_size, line_text + 1, kLength - 2);
+    return true;
+}
+
+/// @brief Returns the bracket depth used around one rendered softkey selection.
+constexpr int softkey_bracket_depth(fonts::FontFace font)
+{
+    switch (font)
+    {
+    case fonts::FontFace::Font5x7:
+        return 2;
+    case fonts::FontFace::FontTitle8x12:
+    case fonts::FontFace::Font8x12:
+    case fonts::FontFace::Font8x14:
+        return 3;
+    }
+
+    return 2;
+}
+
+/// @brief Draws one oversized square bracket pair around a softkey value.
+/// @details The brackets are rendered as simple line primitives so they stay
+/// readable even when the underlying bitmap font has tiny punctuation glyphs.
+void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
+                                     int total_width, fonts::FontFace font, bool on)
+{
+    const int kDepth = softkey_bracket_depth(font);
+    const int kRightX = left_x + total_width - 1;
+    const int kBottomY = top_y + total_height - 1;
+
+    framebuffer::draw_vline(fb, left_x, top_y, kBottomY, on);
+    framebuffer::draw_hline(fb, left_x, left_x + kDepth, top_y, on);
+    framebuffer::draw_hline(fb, left_x, left_x + kDepth, kBottomY, on);
+
+    framebuffer::draw_vline(fb, kRightX, top_y, kBottomY, on);
+    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, top_y, on);
+    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, kBottomY, on);
+}
+
 /// @brief Parses a `HH:MM` string into minutes after midnight.
 /// @details A tiny local parser keeps the firmware independent of heavier
 /// locale/time helpers that are unnecessary on the Pico.
@@ -478,7 +674,7 @@ struct ForecastDisplayWindow
     uint8_t count;
 };
 
-/// @brief Chooses which forecast entries should be shown first on the home page.
+/// @brief Chooses which forecast entries should be shown first on the weather page.
 /// @details Home Assistant forecast rows only expose time-of-day strings here,
 /// so this helper reconstructs a forward-looking window anchored on the current
 /// hour instead of blindly starting from element zero.
@@ -591,13 +787,47 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
             return;
         }
 
-        const int kLabelWidth = text_width(line_text, font);
+        char bracketed_value[48] = {};
+        const bool kBracketedValue =
+            extract_bracketed_softkey_value(line_text, bracketed_value, sizeof(bracketed_value));
+        const int kBracketDepth = softkey_bracket_depth(font);
+        constexpr int kBracketGap = 2;
+        constexpr int kBracketPadY = 2;
+        const int kInnerTextWidth =
+            kBracketedValue ? text_width(bracketed_value, font) : text_width(line_text, font);
+        const int kLabelWidth =
+            kBracketedValue ? (kInnerTextWidth + (kBracketDepth * 2) + (kBracketGap * 2))
+                            : kInnerTextWidth;
         const int kTextX =
             left_side
                 ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
                 : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kLabelWidth);
         const int kTextY = kBlockTopY + (line_index * (kLineHeight + kSoftkeyLayout.line_gap));
-        framebuffer::draw_text(fb, kTextX, kTextY, line_text, true, font, 1);
+        const int kBracketTopY = kTextY - kBracketPadY;
+        const int kBracketHeight = kLineHeight + (kBracketPadY * 2);
+        const bool kTextOn = !action.inverted;
+        if (action.inverted)
+        {
+            constexpr int kHighlightPadX = 1;
+            constexpr int kHighlightPadY = 1;
+            const int kHighlightTopY = (kBracketedValue ? kBracketTopY : kTextY) - kHighlightPadY;
+            const int kHighlightHeight =
+                (kBracketedValue ? kBracketHeight : kLineHeight) + (kHighlightPadY * 2);
+            framebuffer::fill_rect(fb, kTextX - kHighlightPadX, kHighlightTopY,
+                                   kLabelWidth + (kHighlightPadX * 2),
+                                   kHighlightHeight, true);
+        }
+
+        if (!kBracketedValue)
+        {
+            framebuffer::draw_text(fb, kTextX, kTextY, line_text, kTextOn, font, 1);
+            return;
+        }
+
+        const int kInnerTextX = kTextX + kBracketDepth + kBracketGap;
+        draw_softkey_selection_brackets(fb, kTextX, kBracketTopY, kBracketHeight, kLabelWidth,
+                                        font, kTextOn);
+        framebuffer::draw_text(fb, kInnerTextX, kTextY, bracketed_value, kTextOn, font, 1);
     };
 
     draw_line(kWrapped.line_one, 0);
@@ -607,23 +837,28 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
     }
 }
 
-/// @brief Converts a softkey enum into the backing array index.
-constexpr size_t softkey_map_index(SoftKeyId key)
-{
-    return static_cast<size_t>(key);
-}
-
 /// @brief Returns the best weather-source label available for the footer.
 /// @details Runtime hints take priority so the UI can show the actual selected
 /// source rather than only the build-time default.
 const char* weather_source_label_text(const ConsoleState& console_state)
 {
+    if (console_state.weather_source == WeatherSource::MetOffice)
+    {
+        return "Met Office";
+    }
+
+    if (console_state.weather_source == WeatherSource::BbcWeather)
+    {
+        return "BBC Weather";
+    }
+
     if (console_state.home_assistant_status.weather_source_hint[0] != '\0')
     {
         return console_state.home_assistant_status.weather_source_hint.data();
     }
 
-    return HOME_ASSISTANT_WEATHER_SOURCE_LABEL[0] ? HOME_ASSISTANT_WEATHER_SOURCE_LABEL : "Weather";
+    return HOME_ASSISTANT_WEATHER_SOURCE_LABEL[0] ? HOME_ASSISTANT_WEATHER_SOURCE_LABEL
+                                                  : "Home Assistant";
 }
 
 /// @brief Returns whether there is enough sun-time data to render that section.
@@ -633,7 +868,7 @@ bool weather_sun_times_available(const ConsoleState& console_state)
            console_state.home_assistant_status.sunset_text[0] != '\0';
 }
 
-/// @brief Draws sunrise and sunset information for the weather home page.
+/// @brief Draws sunrise and sunset information for the dedicated weather page.
 /// @details The block collapses to one centered line when only one value is
 /// available so the footer still looks intentional instead of half-empty.
 void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
@@ -644,13 +879,13 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 
     if (console_state.home_assistant_status.sunrise_text[0] != '\0')
     {
-        std::snprintf(sunrise_label, sizeof(sunrise_label), "SUNRISE %s",
+        std::snprintf(sunrise_label, sizeof(sunrise_label), "Sunrise %s",
                       console_state.home_assistant_status.sunrise_text.data());
     }
 
     if (console_state.home_assistant_status.sunset_text[0] != '\0')
     {
-        std::snprintf(sunset_label, sizeof(sunset_label), "SUNSET %s",
+        std::snprintf(sunset_label, sizeof(sunset_label), "Sunset %s",
                       console_state.home_assistant_status.sunset_text.data());
     }
 
@@ -673,29 +908,6 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
     draw_centered_text(fb, kUiWidth / 2, weather_sun_times_y(), label, true, kSunFont, 1);
 }
 
-/// @brief Draws the visual guide for one physical softkey position.
-/// @details The guide marks where the real panel button sits so text can remain
-/// offset from the bezel while still reading as tied to that input.
-void draw_softkey_guide(uint8_t* fb, int index, bool left_side)
-{
-    const int kCenterY = softkey_center_y_for_index(index);
-    const int kGuideX = left_side ? 1 : (kUiWidth - 2);
-    const int kFillX = left_side ? 0 : (kUiWidth - 3);
-
-    framebuffer::draw_vline(fb, kGuideX, kCenterY - 6, kCenterY + 6, true);
-    framebuffer::fill_rect(fb, kFillX, kCenterY - 1, 3, 3, true);
-}
-
-/// @brief Draws all left and right softkey guides around the content area.
-void draw_softkey_guides(uint8_t* fb)
-{
-    for (int i = 0; i < 5; ++i)
-    {
-        draw_softkey_guide(fb, i, true);
-        draw_softkey_guide(fb, i, false);
-    }
-}
-
 /// @brief Draws every softkey label for the current menu page.
 /// @details Labels are rendered separately from the page body so most pages can
 /// share the same bezel framing while only the content region changes.
@@ -709,15 +921,6 @@ void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
                            kLabelFont);
     }
-}
-
-/// @brief Draws the common inner panel frame used by menu pages.
-/// @details Reusing one bezel silhouette helps the menus read like part of the
-/// physical console instead of a collection of unrelated test screens.
-void draw_panel_frame(uint8_t* fb)
-{
-    framebuffer::draw_rect(fb, 40, 40, kUiWidth - 80, 206, true);
-    framebuffer::draw_rect(fb, 46, 46, kUiWidth - 92, 194, true);
 }
 
 /// @brief Draws the weather-source attribution footer.
@@ -748,25 +951,19 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
     }
 }
 
-/// @brief Draws the lone explicit softkey shown on the home page.
-/// @details The home page reserves most of the screen for weather data, so only
-/// the key that matters there is drawn instead of the full ten-key legend set.
-void draw_home_page_softkey(uint8_t* fb, const ConsoleState& console_state)
+/// @brief Leaves a top-level menu page intentionally blank in the center area.
+/// @details Label-only shells rely on the surrounding softkeys rather than any
+/// center content, which keeps those pages deliberately sparse.
+void draw_blank_menu_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    const SoftKeyAction& action = console_state.softkeys[softkey_map_index(SoftKeyId::Right5)];
-    if (action.label == nullptr || action.label[0] == '\0')
-    {
-        return;
-    }
-
-    draw_softkey_label(fb, softkey_y_for_index(4), action, false,
-                       softkey_label_font(console_state.active_page));
-    draw_softkey_guide(fb, 4, false);
+    (void)fb;
+    (void)console_state;
 }
 
-/// @brief Produces the most useful short weather-status fallback string.
-/// @details HTTP status is surfaced first because it is usually more actionable
-/// during integration than a generic connection-state label.
+/// @brief Produces a short user-facing weather-status fallback string.
+/// @details The weather page is meant for end users rather than diagnostics, so
+/// transport-layer details such as HTTP and socket codes are intentionally
+/// collapsed into plain-language availability messages.
 const char* weather_status_detail(const HomeAssistantStatus& status, char* buffer,
                                   size_t buffer_size)
 {
@@ -777,27 +974,84 @@ const char* weather_status_detail(const HomeAssistantStatus& status, char* buffe
 
     buffer[0] = '\0';
 
-    if (status.last_http_status > 0)
+    if (status.last_http_status > 0 || status.last_error != 0)
     {
-        std::snprintf(buffer, buffer_size, "HTTP %d", status.last_http_status);
-        return buffer;
-    }
-
-    if (status.last_error != 0)
-    {
-        std::snprintf(buffer, buffer_size, "NET ERR %d", status.last_error);
+        std::snprintf(buffer, buffer_size, "NO DATA AVAILABLE");
         return buffer;
     }
 
     return home_assistant_state_text(status.state);
 }
 
-/// @brief Draws the default home page with either forecast rows or summary text.
-/// @details The layout prefers live hourly data when available, then degrades to
-/// a centered summary so the page still feels complete during startup or errors.
+/// @brief Converts a weather phrase to simple title case for display.
+/// @details Home Assistant conditions can arrive in machine-friendly casing, so
+/// this keeps user-facing weather text readable without affecting status labels.
+void format_weather_phrase(const char* source, char* dest, size_t dest_size)
+{
+    if (dest == nullptr || dest_size == 0)
+    {
+        return;
+    }
+
+    if (source == nullptr || source[0] == '\0')
+    {
+        dest[0] = '\0';
+        return;
+    }
+
+    bool new_word = true;
+    size_t out_index = 0;
+    for (size_t i = 0; source[i] != '\0' && out_index + 1 < dest_size; ++i)
+    {
+        char c = source[i];
+        if (c == '_' || c == '-')
+        {
+            c = ' ';
+        }
+
+        if (c >= 'A' && c <= 'Z')
+        {
+            c = new_word ? c : static_cast<char>(c - 'A' + 'a');
+        }
+        else if (c >= 'a' && c <= 'z')
+        {
+            c = new_word ? static_cast<char>(c - 'a' + 'A') : c;
+        }
+
+        dest[out_index++] = c;
+        new_word = (c == ' ');
+    }
+
+    dest[out_index] = '\0';
+}
+
+/// @brief Draws the clean top-level home menu.
+/// @details The page body is intentionally empty so the only visual affordances
+/// are the surrounding labels for the next level of navigation.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    draw_blank_menu_page(fb, console_state);
+}
+
+/// @brief Draws the live weather page reached directly from Home.
+/// @details This keeps the richer forecast-first presentation that existed
+/// before the menu cleanup, including the no-data summary path.
+void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (weather_source_is_stub(console_state.weather_source))
+    {
+        const DetailRow rows[] = {
+            {"SOURCE", weather_source_text(console_state.weather_source)},
+            {"STATUS", "Stub only"},
+            {"DETAIL", "Provider integration pending"},
+        };
+        draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+        return;
+    }
+
     char status_detail[24] = {};
+    char formatted_condition[32] = {};
+    char formatted_forecast_condition[24] = {};
     const bool kWeatherConfigured =
         console_state.home_assistant_status.weather_entity_id[0] != '\0';
     const ForecastDisplayWindow kForecastWindow = active_forecast_window(console_state);
@@ -812,14 +1066,14 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                 ? console_state.home_assistant_status.weather_condition.data()
                 : (console_state.home_assistant_status.state ==
                            HomeAssistantConnectionState::Connected
-                       ? "NO DATA"
+                       ? "NO DATA AVAILABLE"
                        : weather_status_detail(console_state.home_assistant_status, status_detail,
                                                sizeof(status_detail)));
         weather_temperature = console_state.home_assistant_status.weather_temperature.data();
 
         if (console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected)
         {
-            weather_footer = "NO HOURLY FORECAST";
+            weather_footer = "NO DATA AVAILABLE";
         }
         else if (console_state.home_assistant_status.state ==
                      HomeAssistantConnectionState::Resolving ||
@@ -837,14 +1091,24 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
             weather_footer = weather_status_detail(console_state.home_assistant_status,
                                                    status_detail, sizeof(status_detail));
         }
+
+        if (console_state.home_assistant_status.weather_condition[0] != '\0')
+        {
+            format_weather_phrase(console_state.home_assistant_status.weather_condition.data(),
+                                  formatted_condition, sizeof(formatted_condition));
+            weather_condition = formatted_condition;
+        }
     }
 
     if (kForecastWindow.count > 0)
     {
-        framebuffer::draw_text(fb, 12, 36, "TIME", true, 1, 1);
-        framebuffer::draw_text(fb, 60, 36, "TEMP", true, 1, 1);
-        framebuffer::draw_text(fb, 102, 36, "WIND mph", true, 1, 1);
-        framebuffer::draw_text(fb, 160, 36, "CONDITIONS", true, 1, 1);
+        constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
+        constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
+
+        framebuffer::draw_text(fb, 12, 36, "Time", true, kForecastHeaderFont, 1);
+        framebuffer::draw_text(fb, 60, 36, "Temp", true, kForecastHeaderFont, 1);
+        framebuffer::draw_text(fb, 102, 36, "Wind mph", true, kForecastHeaderFont, 1);
+        framebuffer::draw_text(fb, 160, 36, "Conditions", true, kForecastHeaderFont, 1);
         framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
 
         for (uint8_t i = 0; i < kForecastWindow.count; ++i)
@@ -853,13 +1117,19 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                 console_state.home_assistant_status
                     .weather_forecast[kForecastWindow.first_index + i];
             const int kRowY = 54 + (static_cast<int>(i) * 18);
-            framebuffer::draw_text(fb, 12, kRowY, entry.time_text.data(), true,
-                                   fonts::FontFace::Font8x12, 1);
+            format_weather_phrase(entry.condition_text.data(), formatted_forecast_condition,
+                                  sizeof(formatted_forecast_condition));
+            framebuffer::draw_text(fb, 12, kRowY, entry.time_text.data(), true, kForecastBodyFont,
+                                   1);
             framebuffer::draw_text(fb, 60, kRowY, entry.temperature_text.data(), true,
-                                   fonts::FontFace::Font8x12, 1);
-            framebuffer::draw_text(fb, 102, kRowY, entry.wind_text.data(), true,
-                                   fonts::FontFace::Font8x12, 1);
-            framebuffer::draw_text(fb, 160, kRowY + 3, entry.condition_text.data(), true, 1, 1);
+                                   kForecastBodyFont, 1);
+            framebuffer::draw_text(fb, 102, kRowY, entry.wind_text.data(), true, kForecastBodyFont,
+                                   1);
+            framebuffer::draw_text(
+                fb, 160, kRowY,
+                formatted_forecast_condition[0] != '\0' ? formatted_forecast_condition
+                                                        : entry.condition_text.data(),
+                true, kForecastBodyFont, 1);
         }
         if (kWeatherConfigured && weather_sun_times_available(console_state))
         {
@@ -891,165 +1161,122 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
     }
 }
 
-/// @brief Draws the weather-source management page.
-/// @details This page currently acts as an information and placeholder surface
-/// so the menu structure can stabilize before source switching is fully wired.
+/// @brief Draws the weather-source selection page under Settings.
+/// @details The selection is expressed entirely through the softkey labels, so
+/// the center area stays empty unless a future request needs more detail.
 void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_panel_frame(fb);
-    draw_centered_text(fb, kUiWidth / 2, 56, "SOURCES", true, fonts::FontFace::FontTitle8x12, 1);
-
-    framebuffer::draw_text(fb, 54, 84, "CURRENT SOURCE", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 100, weather_source_label_text(console_state), true, 1, 1);
-    framebuffer::draw_text(fb, 54, 116,
-                           console_state.home_assistant_status.weather_entity_id[0]
-                               ? console_state.home_assistant_status.weather_entity_id.data()
-                               : "-",
-                           true, 1, 1);
-
-    framebuffer::draw_hline(fb, 54, kUiWidth - 54, 136, true);
-    framebuffer::draw_text(fb, 54, 152, "SOURCE SLOT 2", true, 1, 1);
-    framebuffer::draw_text(fb, 144, 152, "RESERVED", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 168, "SOURCE SLOT 3", true, 1, 1);
-    framebuffer::draw_text(fb, 144, 168, "RESERVED", true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 204, "Selection UI placeholder", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 220, "source switching not yet wired", true, 1, 1);
+    draw_blank_menu_page(fb, console_state);
 }
 
-/// @brief Draws the consolidated status diagnostics page.
-/// @details The page is intentionally dense so the most important network and
-/// integration state can be inspected from one screen during bring-up.
+/// @brief Draws the Home Assistant status page.
+/// @details The page keeps the useful integration data but avoids extra title
+/// blocks and row dividers now that the top banner already carries the heading.
 void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_panel_frame(fb);
-    draw_centered_text(fb, kUiWidth / 2, 56, "STATUS", true, fonts::FontFace::FontTitle8x12, 1);
-
-    framebuffer::draw_text(fb, 54, 84, "TIME", true, 1, 1);
-    framebuffer::draw_text(
-        fb, 116, 84,
-        console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--",
-        true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 100, "WIFI", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 100, wifi_state_text(console_state.wifi_status.state), true, 1,
-                           1);
-
-    framebuffer::draw_text(fb, 54, 116, "SSID", true, 1, 1);
-    framebuffer::draw_text(
-        fb, 116, 116,
-        console_state.wifi_status.credentials_present ? console_state.wifi_status.ssid.data() : "-",
-        true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 132, "IP", true, 1, 1);
-    framebuffer::draw_text(
-        fb, 116, 132,
-        console_state.wifi_status.ip_address[0] ? console_state.wifi_status.ip_address.data() : "-",
-        true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 148, "HA", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 148,
-                           home_assistant_state_text(console_state.home_assistant_status.state),
-                           true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 164, "HOST", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 164,
-                           console_state.home_assistant_status.host[0]
-                               ? console_state.home_assistant_status.host.data()
-                               : "-",
-                           true, 1, 1);
-
-    framebuffer::draw_text(fb, 54, 180, "HTTP", true, 1, 1);
+    char http_text[12] = {};
     if (console_state.home_assistant_status.last_http_status > 0)
     {
-        char http_text[8] = {};
         std::snprintf(http_text, sizeof(http_text), "%d",
                       console_state.home_assistant_status.last_http_status);
-        framebuffer::draw_text(fb, 116, 180, http_text, true, 1, 1);
     }
     else
     {
-        framebuffer::draw_text(fb, 116, 180, "-", true, 1, 1);
+        std::snprintf(http_text, sizeof(http_text), "-");
     }
 
-    framebuffer::draw_text(fb, 54, 196, "ENT", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 196,
-                           console_state.home_assistant_status.tracked_entity_state[0]
-                               ? console_state.home_assistant_status.tracked_entity_state.data()
-                               : "-",
-                           true, 1, 1);
+    const DetailRow rows[] = {
+        {"TIME", console_state.time_status.synced ? console_state.time_status.time_text.data()
+                                                  : "--:--"},
+        {"WIFI", wifi_state_text(console_state.wifi_status.state)},
+        {"SSID", console_state.wifi_status.credentials_present
+                     ? console_state.wifi_status.ssid.data()
+                     : "-"},
+        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
+                           ? console_state.wifi_status.ip_address.data()
+                           : "-"},
+        {"HA STATE", home_assistant_state_text(console_state.home_assistant_status.state)},
+        {"HA HOST", console_state.home_assistant_status.host[0]
+                        ? console_state.home_assistant_status.host.data()
+                        : "-"},
+        {"HTTP", http_text},
+        {"ENTITY", console_state.home_assistant_status.tracked_entity_state[0]
+                       ? console_state.home_assistant_status.tracked_entity_state.data()
+                       : "-"},
+        {"MQTT", mqtt_state_text(console_state.mqtt_status.state)},
+        {"DISCOVERY", console_state.mqtt_status.discovery_published ? "READY" : "-"},
+    };
 
-    framebuffer::draw_text(fb, 54, 212, "MQTT", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 212, mqtt_state_text(console_state.mqtt_status.state), true, 1,
-                           1);
-
-    framebuffer::draw_text(fb, 54, 228, "DISC", true, 1, 1);
-    framebuffer::draw_text(
-        fb, 116, 228, console_state.mqtt_status.discovery_published ? "READY" : "-", true, 1, 1);
+    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the settings legend page.
-/// @details This currently serves as an operator cheat sheet for the physical
-/// keys while the deeper configuration flows are still evolving.
+/// @brief Draws the clean settings routing page.
+/// @details Like the home page, the center area stays empty so the menu feels
+/// like a simple directory of subpages rather than a mixed menu/status screen.
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_panel_frame(fb);
-    draw_centered_text(fb, kUiWidth / 2, 56, "SETTINGS", true, fonts::FontFace::FontTitle8x12, 1);
+    draw_blank_menu_page(fb, console_state);
+}
 
-    framebuffer::draw_text(fb, 54, 86, "RIGHT SIDE", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 102, "ALERT  LTRS  TEST", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 118, "PANEL + PANEL -", true, 1, 1);
+/// @brief Draws the Wi-Fi information page.
+/// @details The Wi-Fi view now matches the same row layout used by the other
+/// information pages instead of carrying its own boxed presentation.
+void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    const DetailRow rows[] = {
+        {"SSID", console_state.wifi_status.ssid[0] ? console_state.wifi_status.ssid.data()
+                                                   : "Not Set"},
+        {"STATUS", wifi_state_text(console_state.wifi_status.state)},
+        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
+                           ? console_state.wifi_status.ip_address.data()
+                           : "-"},
+        {"AUTH", console_state.wifi_status.auth_mode[0]
+                     ? console_state.wifi_status.auth_mode.data()
+                     : "-"},
+        {"MAC", console_state.wifi_status.mac_address[0]
+                    ? console_state.wifi_status.mac_address.data()
+                    : "-"},
+    };
 
-    framebuffer::draw_text(fb, 54, 146, "LEFT SIDE", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 162, "HOME  STATUS  RESET", true, 1, 1);
-    framebuffer::draw_text(fb, 54, 178, "KEYS + KEYS -", true, 1, 1);
+    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+}
 
-    framebuffer::draw_text(fb, 54, 206, "LTRS", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 206, letter_mode_text(console_state.letter_mode), true, 1, 1);
+/// @brief Draws the screen-saver information page.
+/// @details This page now follows the same stripped-back presentation as the
+/// rest of the information views.
+void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)console_state;
 
-    framebuffer::draw_text(fb, 54, 222, "ALERT", true, 1, 1);
-    framebuffer::draw_text(fb, 116, 222, alert_severity_text(console_state.alert_severity), true, 1,
-                           1);
+    const DetailRow rows[] = {
+        {"CURRENT", "Life"},
+        {"STATUS", "Fixed in firmware"},
+        {"DETAIL", "Selection UI pending"},
+    };
+
+    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+}
+
+/// @brief Draws the time-zone selection summary page.
+/// @details Like the weather-source page, this stays visually empty in the
+/// center and lets the surrounding labels do all of the work.
+void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_blank_menu_page(fb, console_state);
 }
 
 /// @brief Draws the keypad-debug diagnostics page.
-/// @details The goal here is hardware bring-up, so the screen prioritizes raw
-/// scan information and recent events over polished end-user presentation.
+/// @details The goal here is still hardware bring-up, but the layout now uses
+/// the same clean row styling as the status page instead of a boxed panel.
 void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kPanelLeft = 60;
-    constexpr int kPanelTop = 40;
-    constexpr int kPanelWidth = kUiWidth - 80;
-    constexpr int kPanelHeight = 200;
-    constexpr int kLabelX = 74;
-    constexpr int kValueX = 136;
-    constexpr int kDividerY = 144;
-
-    framebuffer::draw_rect(fb, kPanelLeft, kPanelTop, kPanelWidth, kPanelHeight, true);
-    draw_centered_text(fb, kPanelLeft + (kPanelWidth / 2), 56, "KEYPAD", true,
-                       fonts::FontFace::FontTitle8x12, 1);
-
-    framebuffer::draw_text(fb, kLabelX, 84, "ACTIVE", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 84,
-                           console_state.keypad_debug_status.active_panel_pins[0]
-                               ? console_state.keypad_debug_status.active_panel_pins.data()
-                               : "-",
-                           true, 1, 1);
-
-    framebuffer::draw_text(fb, kLabelX, 100, "MASK", true, 1, 1);
     char mask_text[16] = {};
     std::snprintf(mask_text, sizeof(mask_text), "0x%04lX",
                   static_cast<unsigned long>(console_state.keypad_debug_status.active_mask));
-    framebuffer::draw_text(fb, kValueX, 100, mask_text, true, 1, 1);
-
-    framebuffer::draw_text(fb, kLabelX, 116, "LINES", true, 1, 1);
     char lines_text[24] = {};
     std::snprintf(lines_text, sizeof(lines_text), "%u/%u",
                   static_cast<unsigned>(console_state.keypad_debug_status.active_count),
                   static_cast<unsigned>(console_state.keypad_debug_status.configured_count));
-    framebuffer::draw_text(fb, kValueX, 116, lines_text, true, 1, 1);
-
-    framebuffer::draw_text(fb, kLabelX, 132, "DRIVE", true, 1, 1);
     char drive_text[16] = {};
     if (console_state.keypad_debug_status.probe_drive_panel_pin != 0)
     {
@@ -1061,51 +1288,23 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
     {
         std::snprintf(drive_text, sizeof(drive_text), "-");
     }
-    framebuffer::draw_text(fb, kValueX, 132, drive_text, true, 1, 1);
 
-    framebuffer::draw_hline(fb, kLabelX, kPanelLeft + kPanelWidth - 14, kDividerY, true);
-    framebuffer::draw_text(fb, kLabelX, 156, "SENSE", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 156,
-                           console_state.keypad_debug_status.probe_hit_panel_pins[0]
-                               ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
-                               : "-",
-                           true, 1, 1);
-    framebuffer::draw_text(fb, kLabelX, 172, "LAST KEY", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 172,
-                           console_state.keypad_debug_status.last_button_name[0]
-                               ? console_state.keypad_debug_status.last_button_name.data()
-                               : "-",
-                           true, 1, 1);
-    framebuffer::draw_text(fb, kLabelX, 188, "EVENT", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 188,
-                           console_state.keypad_debug_status.last_event_type[0]
-                               ? console_state.keypad_debug_status.last_event_type.data()
-                               : "-",
-                           true, 1, 1);
-    framebuffer::draw_text(fb, kLabelX, 204, "COUNT", true, 1, 1);
-    char count_text[16] = {};
-    std::snprintf(count_text, sizeof(count_text), "%lu",
-                  static_cast<unsigned long>(console_state.keypad_debug_status.event_count));
-    framebuffer::draw_text(fb, kValueX, 204, count_text, true, 1, 1);
+    const DetailRow rows[] = {
+        {"KEY PRESSED", console_state.keypad_debug_status.pressed_key_name[0]
+                            ? console_state.keypad_debug_status.pressed_key_name.data()
+                            : "-"},
+        {"ACTIVE PINS", console_state.keypad_debug_status.active_panel_pins[0]
+                            ? console_state.keypad_debug_status.active_panel_pins.data()
+                            : "-"},
+        {"ACTIVE MASK", mask_text},
+        {"ACTIVE LINES", lines_text},
+        {"PROBE DRIVE", drive_text},
+        {"PROBE SENSE", console_state.keypad_debug_status.probe_hit_panel_pins[0]
+                            ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
+                            : "-"},
+    };
 
-    framebuffer::draw_text(fb, kLabelX, 212, "D05", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 212,
-                           console_state.keypad_debug_status.drive_5_hits[0]
-                               ? console_state.keypad_debug_status.drive_5_hits.data()
-                               : "-",
-                           true, 1, 1);
-    framebuffer::draw_text(fb, kLabelX, 224, "D20", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 224,
-                           console_state.keypad_debug_status.drive_20_hits[0]
-                               ? console_state.keypad_debug_status.drive_20_hits.data()
-                               : "-",
-                           true, 1, 1);
-    framebuffer::draw_text(fb, kLabelX, 236, "D22", true, 1, 1);
-    framebuffer::draw_text(fb, kValueX, 236,
-                           console_state.keypad_debug_status.drive_22_hits[0]
-                               ? console_state.keypad_debug_status.drive_22_hits.data()
-                               : "-",
-                           true, 1, 1);
+    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
 /// @brief Placeholder for the future alignment menu page.
@@ -1153,15 +1352,15 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 
     screen_banners::draw_standard_banners(fb, console_state,
                                           menu_page_title(console_state.active_page));
-    if (console_state.active_page != MenuPage::Home)
-    {
-        draw_softkeys(fb, console_state);
-    }
+    draw_softkeys(fb, console_state);
 
     switch (console_state.active_page)
     {
     case MenuPage::Home:
         draw_home_page(fb, console_state);
+        break;
+    case MenuPage::Weather:
+        draw_weather_page(fb, console_state);
         break;
     case MenuPage::Status:
         draw_status_page(fb, console_state);
@@ -1169,8 +1368,17 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::Settings:
         draw_settings_page(fb, console_state);
         break;
+    case MenuPage::WifiSettings:
+        draw_wifi_settings_page(fb, console_state);
+        break;
+    case MenuPage::ScreenSaverSettings:
+        draw_screen_saver_page(fb, console_state);
+        break;
     case MenuPage::WeatherSources:
         draw_weather_sources_page(fb, console_state);
+        break;
+    case MenuPage::TimeZoneSettings:
+        draw_time_zone_page(fb, console_state);
         break;
     case MenuPage::Alignment:
         draw_alignment_page(fb, console_state);
@@ -1178,15 +1386,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::KeypadDebug:
         draw_keypad_debug_page(fb, console_state);
         break;
-    }
-
-    if (console_state.active_page == MenuPage::Home)
-    {
-        draw_home_page_softkey(fb, console_state);
-    }
-    else
-    {
-        draw_softkey_guides(fb);
     }
 }
 

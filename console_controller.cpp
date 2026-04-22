@@ -17,9 +17,263 @@ namespace
 // annunciator model from one central place.
 ConsoleState g_console_state = make_default_console_state();
 constexpr size_t kSoftkeyLabelCapacity = 48;
+constexpr char kSelectedScreensaverText[] = "Life";
+std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
+    g_dynamic_softkey_labels = {};
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
     g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
+
+struct WeatherSourceDefinition
+{
+    WeatherSource source;
+    const char* selection_label;
+    const char* option_label;
+};
+
+struct TimeZoneDefinition
+{
+    TimeZoneSelection zone;
+    const char* selection_label;
+    const char* option_label;
+};
+
+constexpr std::array<WeatherSourceDefinition, 3> kWeatherSources = {{
+    {WeatherSource::HomeAssistant, "Home Assistant", "HOME ASSISTANT"},
+    {WeatherSource::MetOffice, "Met Office", "MET OFFICE"},
+    {WeatherSource::BbcWeather, "BBC Weather", "BBC WEATHER"},
+}};
+
+constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
+    {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
+    {TimeZoneSelection::ArgentinaStandard, "Argentina Time", "ARGENTINA"},
+    {TimeZoneSelection::SouthGeorgia, "South Georgia Time", "SOUTH GEORGIA"},
+    {TimeZoneSelection::Azores, "Azores Time", "AZORES"},
+    {TimeZoneSelection::EuropeLondon, "Europe/London", "LONDON"},
+    {TimeZoneSelection::CentralEuropean, "Central European Time", "CENTRAL EUROPEAN"},
+    {TimeZoneSelection::EasternEuropean, "Eastern European Time", "EASTERN EUROPEAN"},
+    {TimeZoneSelection::ArabiaStandard, "Arabia Standard Time", "ARABIA"},
+    {TimeZoneSelection::GulfStandard, "Gulf Standard Time", "GULF"},
+}};
+
+/// @brief Returns true when the panel pin is one of the confirmed matrix row pins.
+constexpr bool is_keypad_row_pin(uint8_t panel_pin)
+{
+    return panel_pin >= 5U && panel_pin <= 11U;
+}
+
+/// @brief Returns true when the panel pin is one of the confirmed matrix column pins.
+constexpr bool is_keypad_column_pin(uint8_t panel_pin)
+{
+    return panel_pin >= 15U && panel_pin <= 22U;
+}
+
+/// @brief Resolves one confirmed keypad matrix closure to its printed key legend.
+/// @details The mapping follows the bench-confirmed pairs documented in
+/// `README.md`, so the keypad debug page can show real legends like `LTRS`.
+const char* keypad_key_legend(uint8_t panel_pin_a, uint8_t panel_pin_b)
+{
+    uint8_t row_pin = panel_pin_a;
+    uint8_t column_pin = panel_pin_b;
+
+    if (is_keypad_column_pin(row_pin) && is_keypad_row_pin(column_pin))
+    {
+        row_pin = panel_pin_b;
+        column_pin = panel_pin_a;
+    }
+
+    if (!is_keypad_row_pin(row_pin) || !is_keypad_column_pin(column_pin))
+    {
+        return nullptr;
+    }
+
+    switch (row_pin)
+    {
+    case 5:
+        switch (column_pin)
+        {
+        case 20:
+            return "ALERT";
+        case 17:
+            return "TEST";
+        case 16:
+            return "BRT";
+        case 15:
+            return "DIM";
+        }
+        break;
+    case 6:
+        switch (column_pin)
+        {
+        case 21:
+            return "LTRS";
+        case 20:
+            return "BACK STEP";
+        case 19:
+            return "LEFT";
+        case 18:
+            return "RIGHT";
+        case 17:
+            return "/";
+        case 16:
+            return "CLR";
+        }
+        break;
+    case 7:
+        switch (column_pin)
+        {
+        case 22:
+            return "L1";
+        case 21:
+            return "A";
+        case 20:
+            return "B";
+        case 19:
+            return "C";
+        case 18:
+            return "D";
+        case 17:
+            return "E";
+        case 16:
+            return "F";
+        case 15:
+            return "R1";
+        }
+        break;
+    case 8:
+        switch (column_pin)
+        {
+        case 22:
+            return "L2";
+        case 21:
+            return "G";
+        case 20:
+            return "H";
+        case 19:
+            return "I";
+        case 18:
+            return "J";
+        case 17:
+            return "K";
+        case 16:
+            return "L";
+        case 15:
+            return "R2";
+        }
+        break;
+    case 9:
+        switch (column_pin)
+        {
+        case 22:
+            return "L3";
+        case 21:
+            return "M";
+        case 20:
+            return "N";
+        case 19:
+            return "O";
+        case 18:
+            return "P";
+        case 17:
+            return "Q";
+        case 16:
+            return "R";
+        case 15:
+            return "R3";
+        }
+        break;
+    case 10:
+        switch (column_pin)
+        {
+        case 22:
+            return "L4";
+        case 21:
+            return "S";
+        case 20:
+            return "T";
+        case 19:
+            return "U";
+        case 18:
+            return "V";
+        case 17:
+            return "W";
+        case 16:
+            return "X";
+        case 15:
+            return "R4";
+        }
+        break;
+    case 11:
+        switch (column_pin)
+        {
+        case 22:
+            return "L5";
+        case 21:
+            return "Y";
+        case 20:
+            return "Z";
+        case 19:
+            return "T FUNC";
+        case 18:
+            return ".";
+        case 17:
+            return "0";
+        case 16:
+            return "SPC";
+        case 15:
+            return "R5";
+        }
+        break;
+    }
+
+    return nullptr;
+}
+
+/// @brief Decodes the currently observed matrix closure set into one key legend.
+/// @details Symmetric probe hits for the same physical key are collapsed, while
+/// multiple simultaneous keys deliberately show `MULTI`.
+const char* decoded_pressed_key(const KeypadMonitorStatus& keypad_status)
+{
+    const char* decoded_key = nullptr;
+
+    for (size_t drive_index = 0; drive_index < keypad_status.lines.size(); ++drive_index)
+    {
+        const uint8_t drive_panel_pin = keypad_status.lines[drive_index].panel_pin;
+        const uint16_t hit_mask = keypad_status.probe_hits_by_drive[drive_index];
+        if (hit_mask == 0)
+        {
+            continue;
+        }
+
+        for (size_t sense_index = 0; sense_index < keypad_status.lines.size(); ++sense_index)
+        {
+            if ((hit_mask & (1U << sense_index)) == 0)
+            {
+                continue;
+            }
+
+            const uint8_t sense_panel_pin = keypad_status.lines[sense_index].panel_pin;
+            const char* legend = keypad_key_legend(drive_panel_pin, sense_panel_pin);
+            if (legend == nullptr)
+            {
+                continue;
+            }
+
+            if (decoded_key == nullptr)
+            {
+                decoded_key = legend;
+                continue;
+            }
+
+            if (std::strcmp(decoded_key, legend) != 0)
+            {
+                return "MULTI";
+            }
+        }
+    }
+
+    return (decoded_key != nullptr) ? decoded_key : "-";
+}
 
 /// @brief Converts a lamp enum into a stable array index.
 /// @details The controller stores lamp state in dense arrays so the UI update path can avoid
@@ -35,6 +289,61 @@ constexpr size_t lamp_index(LampId lamp)
 constexpr size_t softkey_index(SoftKeyId key)
 {
     return static_cast<size_t>(key);
+}
+
+/// @brief Returns the static metadata for one selectable weather source.
+const WeatherSourceDefinition& weather_source_definition(WeatherSource source)
+{
+    for (const WeatherSourceDefinition& definition : kWeatherSources)
+    {
+        if (definition.source == source)
+        {
+            return definition;
+        }
+    }
+
+    return kWeatherSources[0];
+}
+
+/// @brief Returns the ordered array index for the currently selected time zone.
+size_t time_zone_index(TimeZoneSelection zone)
+{
+    for (size_t i = 0; i < kTimeZones.size(); ++i)
+    {
+        if (kTimeZones[i].zone == zone)
+        {
+            return i;
+        }
+    }
+
+    for (size_t i = 0; i < kTimeZones.size(); ++i)
+    {
+        if (kTimeZones[i].zone == TimeZoneSelection::EuropeLondon)
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+/// @brief Returns the static metadata for one selectable time-zone preset.
+const TimeZoneDefinition& time_zone_definition(TimeZoneSelection zone)
+{
+    return kTimeZones[time_zone_index(zone)];
+}
+
+/// @brief Returns the selectable time zone at a relative offset from the current one.
+const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state, int offset)
+{
+    const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
+    const int kTargetIndex = kCurrentIndex + offset;
+    if (kTargetIndex < 0 || kTargetIndex >= static_cast<int>(kTimeZones.size()))
+    {
+        return nullptr;
+    }
+
+    return &kTimeZones[static_cast<size_t>(kTargetIndex)];
 }
 
 /// @brief Formats the list of currently active keypad panel pins.
@@ -102,59 +411,6 @@ void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
     }
 }
 
-/// @brief Formats the hit list for one specific driven keypad panel pin.
-void build_drive_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                    uint8_t drive_panel_pin, std::array<char, 24>& out_text)
-{
-    out_text.fill('\0');
-
-    size_t drive_index = keypad_status.lines.size();
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
-    {
-        if (keypad_status.lines[i].panel_pin == drive_panel_pin)
-        {
-            drive_index = i;
-            break;
-        }
-    }
-
-    if (drive_index >= keypad_status.lines.size())
-    {
-        return;
-    }
-
-    const uint16_t kHitMask = keypad_status.probe_hits_by_drive[drive_index];
-    if (kHitMask == 0)
-    {
-        return;
-    }
-
-    size_t used = 0;
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
-    {
-        if ((kHitMask & (1U << i)) == 0)
-        {
-            continue;
-        }
-
-        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                                           (used == 0) ? "" : " ",
-                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (kWritten <= 0)
-        {
-            break;
-        }
-
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
-        {
-            used = out_text.size() - 1;
-            break;
-        }
-        used += kWriteSize;
-    }
-}
-
 /// @brief Applies any temporary softkey label overrides onto a page map.
 void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 {
@@ -169,6 +425,101 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 
         softkeys[i].label = g_softkey_label_overrides[i].data();
     }
+}
+
+/// @brief Returns the configured or connected Wi-Fi name for the settings menu.
+const char* wifi_selection_text(const ConsoleState& console_state)
+{
+    if (console_state.wifi_status.ssid[0] != '\0')
+    {
+        return console_state.wifi_status.ssid.data();
+    }
+
+    return console_state.wifi_status.credentials_present ? "Configured" : "Not Set";
+}
+
+/// @brief Returns the currently selected weather-source label for menu softkeys.
+const char* weather_source_selection_text(const ConsoleState& console_state)
+{
+    return weather_source_definition(console_state.weather_source).selection_label;
+}
+
+/// @brief Returns the currently selected time-zone label for menu softkeys.
+const char* time_zone_selection_text(const ConsoleState& console_state)
+{
+    return time_zone_definition(console_state.time_zone).selection_label;
+}
+
+/// @brief Formats one two-line softkey label with a square-bracket selection.
+/// @details The controller owns these buffers so menu pages can rebuild labels
+/// whenever integration state changes without leaving dangling pointers behind.
+const char* build_selection_softkey_label(SoftKeyId key, const char* title, const char* selection)
+{
+    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
+    const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
+    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title, value);
+    return buffer.data();
+}
+
+/// @brief Returns the parent page for one menu route in the current hierarchy.
+MenuPage parent_page(MenuPage page)
+{
+    switch (page)
+    {
+    case MenuPage::Home:
+        return MenuPage::Home;
+    case MenuPage::Weather:
+    case MenuPage::Status:
+    case MenuPage::Settings:
+    case MenuPage::Alignment:
+        return MenuPage::Home;
+    case MenuPage::WifiSettings:
+    case MenuPage::ScreenSaverSettings:
+    case MenuPage::WeatherSources:
+    case MenuPage::TimeZoneSettings:
+    case MenuPage::KeypadDebug:
+        return MenuPage::Settings;
+    }
+
+    return MenuPage::Home;
+}
+
+/// @brief Moves the active page one level up the menu hierarchy.
+bool navigate_up_one_level()
+{
+    const MenuPage kParentPage = parent_page(g_console_state.active_page);
+    if (kParentPage == g_console_state.active_page)
+    {
+        return false;
+    }
+
+    g_console_state.active_page = kParentPage;
+    return true;
+}
+
+/// @brief Updates the selected weather source when a new provider is chosen.
+bool select_weather_source(WeatherSource source)
+{
+    if (g_console_state.weather_source == source)
+    {
+        return false;
+    }
+
+    g_console_state.weather_source = source;
+    return true;
+}
+
+/// @brief Updates the selected time zone by moving relative to the current choice.
+bool select_relative_time_zone(int offset)
+{
+    const TimeZoneDefinition* target = relative_time_zone_definition(g_console_state, offset);
+    if (target == nullptr || g_console_state.time_zone == target->zone)
+    {
+        return false;
+    }
+
+    g_console_state.time_zone = target->zone;
+    return true;
 }
 
 /// @brief Maps a physical bezel button to its logical softkey slot.
@@ -201,6 +552,29 @@ SoftKeyId softkey_id_from_button(ButtonId button)
     }
 }
 
+/// @brief Returns whether the input event belongs to one of the ten softkeys.
+bool button_maps_to_softkey(ButtonId button)
+{
+    switch (button)
+    {
+    case ButtonId::LeftTop:
+    case ButtonId::LeftUpper:
+    case ButtonId::LeftMiddle:
+    case ButtonId::LeftLower:
+    case ButtonId::LeftBottom:
+    case ButtonId::RightTop:
+    case ButtonId::RightUpper:
+    case ButtonId::RightMiddle:
+    case ButtonId::RightLower:
+    case ButtonId::RightBottom:
+        return true;
+    case ButtonId::BackStep:
+        return false;
+    }
+
+    return false;
+}
+
 /// @brief Rebuilds the current softkey map from the active console state.
 void update_softkeys_from_state()
 {
@@ -218,74 +592,140 @@ void update_softkeys_from_state()
     }};
 
     // Each page declares only the actions that make sense in that context. The
-    // disabled slots stay blank so the bezel still feels intentional.
+    // top-level menus are intentionally sparse, while deeper pages reserve `R5`
+    // as a consistent one-press jump home.
     switch (g_console_state.active_page)
     {
     case MenuPage::Home:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"STATUS", SoftKeyRoute::GoStatus, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
-        softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
-        softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
-        softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
-        softkeys[softkey_index(SoftKeyId::Right4)] = {"PANEL +", SoftKeyRoute::PanelBrighter,
-                                                      g_console_state.panel_brightness !=
-                                                          BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT SOURCE",
-                                                      SoftKeyRoute::GoWeatherSources, true};
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME ASSISTANT", SoftKeyRoute::GoStatus,
+                                                     true};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
+        softkeys[softkey_index(SoftKeyId::Right2)] = {
+            build_selection_softkey_label(SoftKeyId::Right2, "WEATHER",
+                                          weather_source_selection_text(g_console_state)),
+            SoftKeyRoute::GoWeather,
+            true,
+        };
+        break;
+    case MenuPage::Weather:
         break;
     case MenuPage::Status:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
-        softkeys[softkey_index(SoftKeyId::Right1)] = {"CLR ALRT", SoftKeyRoute::ClearAlert,
-                                                      g_console_state.alert_severity !=
-                                                          AlertSeverity::None};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         break;
     case MenuPage::Settings:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetConsoleState,
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(SoftKeyId::Left1, "WIFI",
+                                          wifi_selection_text(g_console_state)),
+            SoftKeyRoute::GoWifiSettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"KEYPAD DEBUG", SoftKeyRoute::GoKeypadDebug,
                                                      true};
-        softkeys[softkey_index(SoftKeyId::Left4)] = {"KEYS +", SoftKeyRoute::KeysBrighter,
-                                                     g_console_state.key_backlight_brightness !=
-                                                         BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Left5)] = {"KEYS -", SoftKeyRoute::KeysDimmer,
-                                                     g_console_state.key_backlight_brightness !=
-                                                         BrightnessLevel::Off};
-        softkeys[softkey_index(SoftKeyId::Right1)] = {"ALERT", SoftKeyRoute::CycleAlert, true};
-        softkeys[softkey_index(SoftKeyId::Right2)] = {"LTRS", SoftKeyRoute::ToggleLetters, true};
-        softkeys[softkey_index(SoftKeyId::Right3)] = {"TEST", SoftKeyRoute::CycleTest, true};
-        softkeys[softkey_index(SoftKeyId::Right4)] = {"PANEL +", SoftKeyRoute::PanelBrighter,
-                                                      g_console_state.panel_brightness !=
-                                                          BrightnessLevel::High};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"PANEL -", SoftKeyRoute::PanelDimmer,
-                                                      g_console_state.panel_brightness !=
-                                                          BrightnessLevel::Off};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            build_selection_softkey_label(SoftKeyId::Left3, "SCREEN SAVER",
+                                          kSelectedScreensaverText),
+            SoftKeyRoute::GoScreenSaverSettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            build_selection_softkey_label(SoftKeyId::Right1, "WEATHER",
+                                          weather_source_selection_text(g_console_state)),
+            SoftKeyRoute::GoWeatherSources,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Right3)] = {
+            build_selection_softkey_label(SoftKeyId::Right3, "TIME ZONE",
+                                          time_zone_selection_text(g_console_state)),
+            SoftKeyRoute::GoTimeZoneSettings,
+            true,
+        };
+        break;
+    case MenuPage::WifiSettings:
+    case MenuPage::ScreenSaverSettings:
         break;
     case MenuPage::WeatherSources:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"SELECT", SoftKeyRoute::None, false};
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            weather_source_definition(WeatherSource::HomeAssistant).option_label,
+            SoftKeyRoute::SelectWeatherHomeAssistant,
+            true,
+            g_console_state.weather_source == WeatherSource::HomeAssistant,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            weather_source_definition(WeatherSource::MetOffice).option_label,
+            SoftKeyRoute::SelectWeatherMetOffice,
+            true,
+            g_console_state.weather_source == WeatherSource::MetOffice,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            weather_source_definition(WeatherSource::BbcWeather).option_label,
+            SoftKeyRoute::SelectWeatherBbcWeather,
+            true,
+            g_console_state.weather_source == WeatherSource::BbcWeather,
+        };
         break;
+    case MenuPage::TimeZoneSettings:
+    {
+        const TimeZoneDefinition* west_one = relative_time_zone_definition(g_console_state, -1);
+        const TimeZoneDefinition* west_two = relative_time_zone_definition(g_console_state, -2);
+        const TimeZoneDefinition* west_three = relative_time_zone_definition(g_console_state, -3);
+        const TimeZoneDefinition* west_four = relative_time_zone_definition(g_console_state, -4);
+        const TimeZoneDefinition* east_one = relative_time_zone_definition(g_console_state, 1);
+        const TimeZoneDefinition* east_two = relative_time_zone_definition(g_console_state, 2);
+        const TimeZoneDefinition* east_three = relative_time_zone_definition(g_console_state, 3);
+        const TimeZoneDefinition* east_four = relative_time_zone_definition(g_console_state, 4);
+
+        if (west_one != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Left1)] = {west_one->option_label,
+                                                         SoftKeyRoute::SelectTimeZoneWest1, true};
+        }
+        if (west_two != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Left2)] = {west_two->option_label,
+                                                         SoftKeyRoute::SelectTimeZoneWest2, true};
+        }
+        if (west_three != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Left3)] = {west_three->option_label,
+                                                         SoftKeyRoute::SelectTimeZoneWest3, true};
+        }
+        if (west_four != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Left4)] = {west_four->option_label,
+                                                         SoftKeyRoute::SelectTimeZoneWest4, true};
+        }
+        if (east_one != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Right1)] = {east_one->option_label,
+                                                          SoftKeyRoute::SelectTimeZoneEast1, true};
+        }
+        if (east_two != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Right2)] = {east_two->option_label,
+                                                          SoftKeyRoute::SelectTimeZoneEast2, true};
+        }
+        if (east_three != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Right3)] = {
+                east_three->option_label,
+                SoftKeyRoute::SelectTimeZoneEast3,
+                true,
+            };
+        }
+        if (east_four != nullptr)
+        {
+            softkeys[softkey_index(SoftKeyId::Right4)] = {east_four->option_label,
+                                                          SoftKeyRoute::SelectTimeZoneEast4, true};
+        }
+        break;
+    }
     case MenuPage::Alignment:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"Short", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"Status page", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"Left softkey label", SoftKeyRoute::None,
-                                                     true};
-        softkeys[softkey_index(SoftKeyId::Left4)] = {"1234 / 5678", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Left5)] = {"Reset panel state", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Right1)] = {"Alert", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Right2)] = {"Panel +", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Right3)] = {"Two line wrap", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Right4)] = {"Tracked entity", SoftKeyRoute::None, true};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"Test / Dim mode", SoftKeyRoute::None, true};
-        break;
     case MenuPage::KeypadDebug:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME", SoftKeyRoute::GoHome, true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"STATUS", SoftKeyRoute::GoStatus, true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         break;
+    }
+
+    if (g_console_state.active_page != MenuPage::Home)
+    {
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
     }
 
     // Any temporary label overrides are layered on after the page defaults so
@@ -409,18 +849,52 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoHome:
         g_console_state.active_page = MenuPage::Home;
         return true;
+    case SoftKeyRoute::GoWeather:
+        g_console_state.active_page = MenuPage::Weather;
+        return true;
     case SoftKeyRoute::GoStatus:
         g_console_state.active_page = MenuPage::Status;
         return true;
     case SoftKeyRoute::GoSettings:
         g_console_state.active_page = MenuPage::Settings;
         return true;
+    case SoftKeyRoute::GoWifiSettings:
+        g_console_state.active_page = MenuPage::WifiSettings;
+        return true;
+    case SoftKeyRoute::GoScreenSaverSettings:
+        g_console_state.active_page = MenuPage::ScreenSaverSettings;
+        return true;
     case SoftKeyRoute::GoWeatherSources:
         g_console_state.active_page = MenuPage::WeatherSources;
+        return true;
+    case SoftKeyRoute::GoTimeZoneSettings:
+        g_console_state.active_page = MenuPage::TimeZoneSettings;
         return true;
     case SoftKeyRoute::GoKeypadDebug:
         g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
+    case SoftKeyRoute::SelectWeatherHomeAssistant:
+        return select_weather_source(WeatherSource::HomeAssistant);
+    case SoftKeyRoute::SelectWeatherMetOffice:
+        return select_weather_source(WeatherSource::MetOffice);
+    case SoftKeyRoute::SelectWeatherBbcWeather:
+        return select_weather_source(WeatherSource::BbcWeather);
+    case SoftKeyRoute::SelectTimeZoneWest1:
+        return select_relative_time_zone(-1);
+    case SoftKeyRoute::SelectTimeZoneWest2:
+        return select_relative_time_zone(-2);
+    case SoftKeyRoute::SelectTimeZoneWest3:
+        return select_relative_time_zone(-3);
+    case SoftKeyRoute::SelectTimeZoneWest4:
+        return select_relative_time_zone(-4);
+    case SoftKeyRoute::SelectTimeZoneEast1:
+        return select_relative_time_zone(1);
+    case SoftKeyRoute::SelectTimeZoneEast2:
+        return select_relative_time_zone(2);
+    case SoftKeyRoute::SelectTimeZoneEast3:
+        return select_relative_time_zone(3);
+    case SoftKeyRoute::SelectTimeZoneEast4:
+        return select_relative_time_zone(4);
     case SoftKeyRoute::CycleAlert:
         g_console_state.alert_severity = next_alert_severity(g_console_state.alert_severity);
         return true;
@@ -482,6 +956,11 @@ void init()
 {
     g_console_state = make_default_console_state();
     g_softkey_label_override_active.fill(false);
+
+    for (auto& label : g_dynamic_softkey_labels)
+    {
+        label.fill('\0');
+    }
 
     // Override storage is cleared explicitly so later strcmp checks can safely
     // treat an all-zero buffer as "no custom label".
@@ -613,31 +1092,26 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 {
     std::array<char, 48> active_panel_pins = {};
     std::array<char, 48> probe_hit_panel_pins = {};
-    std::array<char, 24> drive_5_hits = {};
-    std::array<char, 24> drive_20_hits = {};
-    std::array<char, 24> drive_22_hits = {};
+    std::array<char, 24> pressed_key_name = {};
 
     // Build the display strings up front so the change detection compares the
     // exact text the diagnostics page will eventually render.
     build_active_panel_pin_text(keypad_status, active_panel_pins);
     build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
-    build_drive_hit_panel_pin_text(keypad_status, 5, drive_5_hits);
-    build_drive_hit_panel_pin_text(keypad_status, 20, drive_20_hits);
-    build_drive_hit_panel_pin_text(keypad_status, 22, drive_22_hits);
+    std::snprintf(pressed_key_name.data(), pressed_key_name.size(), "%s",
+                  decoded_pressed_key(keypad_status));
 
     const bool kChanged =
         g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
         g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
         g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
+        g_console_state.keypad_debug_status.pressed_key_name != pressed_key_name ||
         g_console_state.keypad_debug_status.active_panel_pins != active_panel_pins ||
         g_console_state.keypad_debug_status.probe_drive_panel_pin !=
             keypad_status.probe_drive_panel_pin ||
         g_console_state.keypad_debug_status.probe_hit_mask != keypad_status.probe_hit_mask ||
         g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
-        g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins ||
-        g_console_state.keypad_debug_status.drive_5_hits != drive_5_hits ||
-        g_console_state.keypad_debug_status.drive_20_hits != drive_20_hits ||
-        g_console_state.keypad_debug_status.drive_22_hits != drive_22_hits;
+        g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins;
 
     if (!kChanged)
     {
@@ -647,14 +1121,12 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     g_console_state.keypad_debug_status.active_mask = keypad_status.active_mask;
     g_console_state.keypad_debug_status.configured_count = keypad_status.configured_count;
     g_console_state.keypad_debug_status.active_count = keypad_status.active_count;
+    g_console_state.keypad_debug_status.pressed_key_name = pressed_key_name;
     g_console_state.keypad_debug_status.active_panel_pins = active_panel_pins;
     g_console_state.keypad_debug_status.probe_drive_panel_pin = keypad_status.probe_drive_panel_pin;
     g_console_state.keypad_debug_status.probe_hit_mask = keypad_status.probe_hit_mask;
     g_console_state.keypad_debug_status.probe_hit_count = keypad_status.probe_hit_count;
     g_console_state.keypad_debug_status.probe_hit_panel_pins = probe_hit_panel_pins;
-    g_console_state.keypad_debug_status.drive_5_hits = drive_5_hits;
-    g_console_state.keypad_debug_status.drive_20_hits = drive_20_hits;
-    g_console_state.keypad_debug_status.drive_22_hits = drive_22_hits;
     update_softkeys_from_state();
     return true;
 }
@@ -706,45 +1178,43 @@ bool handle_button_event(const ButtonEvent& event)
         return false;
     }
 
-    bool changed = false;
-
-    // Every edge is recorded for the keypad debug page, even if the button does
-    // not map to an enabled softkey on the current page.
-    const char* event_name = input::button_name(event.id);
-    const char* event_type = (event.type == ButtonEventType::Pressed) ? "Pressed" : "Released";
-    char button_name[sizeof(g_console_state.keypad_debug_status.last_button_name)] = {};
-    std::snprintf(button_name, sizeof(button_name), "%s", event_name);
-    char event_type_text[sizeof(g_console_state.keypad_debug_status.last_event_type)] = {};
-    std::snprintf(event_type_text, sizeof(event_type_text), "%s", event_type);
-
-    if (std::strcmp(g_console_state.keypad_debug_status.last_button_name.data(), button_name) !=
-            0 ||
-        std::strcmp(g_console_state.keypad_debug_status.last_event_type.data(), event_type_text) !=
-            0)
-    {
-        std::snprintf(g_console_state.keypad_debug_status.last_button_name.data(),
-                      g_console_state.keypad_debug_status.last_button_name.size(), "%s",
-                      button_name);
-        std::snprintf(g_console_state.keypad_debug_status.last_event_type.data(),
-                      g_console_state.keypad_debug_status.last_event_type.size(), "%s",
-                      event_type_text);
-        changed = true;
-    }
-    ++g_console_state.keypad_debug_status.event_count;
-    changed = true;
-
-    // Only press events drive menu navigation; release events are still logged
-    // for diagnostics but do not retrigger actions.
+    // Only press events drive menu navigation. The keypad debug page now shows
+    // the live matrix decode directly, so release edges are ignored here.
     if (event.type != ButtonEventType::Pressed)
     {
-        return changed;
+        return false;
+    }
+
+    if (event.id == ButtonId::BackStep)
+    {
+        const bool kRouteChanged = navigate_up_one_level();
+        if (!kRouteChanged)
+        {
+            return false;
+        }
+
+        update_softkeys_from_state();
+        update_lamps_from_state();
+        PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+                     static_cast<unsigned>(g_console_state.active_page),
+                     (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
+                     static_cast<unsigned>(g_console_state.alert_severity),
+                     static_cast<unsigned>(g_console_state.test_state),
+                     static_cast<unsigned>(g_console_state.panel_brightness),
+                     static_cast<unsigned>(g_console_state.key_backlight_brightness));
+        return true;
+    }
+
+    if (!button_maps_to_softkey(event.id))
+    {
+        return false;
     }
 
     const SoftKeyId kEy = softkey_id_from_button(event.id);
     const SoftKeyAction& action = g_console_state.softkeys[softkey_index(kEy)];
     if (!action.enabled)
     {
-        return changed;
+        return false;
     }
 
     // The route mutates the logical console state first, then softkeys and lamp
@@ -753,7 +1223,7 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (!kRouteChanged)
     {
-        return changed;
+        return false;
     }
 
     update_softkeys_from_state();
