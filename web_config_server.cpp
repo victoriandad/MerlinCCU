@@ -441,9 +441,13 @@ void build_config_page(const char* message)
                  "<p class=\"hint\">Factory default is merlin; change it before using the page routinely.</p>"
                  "<label>New admin password</label><input name=\"admin_password_new\" type=\"password\" "
                  "autocomplete=\"new-password\"><label class=\"check\"><input type=\"checkbox\" "
-                 "name=\"require_admin\" %s>Require admin password for saves</label></section>",
+                 "name=\"require_admin\" %s>Require admin password for saves</label><label "
+                 "class=\"check\"><input type=\"checkbox\" name=\"remote_config\" %s>Enable local web "
+                 "configuration server</label><p class=\"hint\">Disable this if you only want setup changes "
+                 "to come from the front panel.</p></section>",
                  device_name, device_label, location, room,
-                 cfg.require_admin_password ? "checked" : "");
+                 cfg.require_admin_password ? "checked" : "",
+                 cfg.remote_config_enabled ? "checked" : "");
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Network</h2><label>Wi-Fi SSID</label><input "
@@ -714,6 +718,7 @@ const char* handle_config_post(const char* body)
         copy_text(cfg.admin_password, value);
     }
     cfg.require_admin_password = form_has_key(body, "require_admin");
+    cfg.remote_config_enabled = form_has_key(body, "remote_config");
 
     if (get_form_value(body, "wifi_ssid", value, sizeof(value)))
     {
@@ -803,7 +808,8 @@ const char* handle_config_post(const char* body)
     }
 
     console_controller::apply_runtime_config(config_manager::settings());
-    return "Configuration saved. Display settings applied now; network and integration changes take effect after reboot.";
+    console_controller::request_redraw();
+    return "Configuration saved. Display settings and local web-access policy apply now; Wi-Fi and integration transport changes take effect after reboot.";
 }
 
 /// @brief Sends one response and closes the TCP session.
@@ -1040,6 +1046,13 @@ bool update(const WifiStatus& wifi_status)
 
     if (!should_run && g_listener != nullptr)
     {
+        // Let the current browser request finish cleanly before the listener
+        // and session are torn down by a newly disabled local-web policy.
+        if (g_session.pcb != nullptr)
+        {
+            return false;
+        }
+
         stop_server();
         return true;
     }

@@ -329,6 +329,7 @@ int main()
             console_changed;
         console_changed =
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
+        console_changed = console_controller::consume_redraw_request() || console_changed;
 
         const uint16_t screen_saver_timeout_minutes =
             console_controller::state().screen_saver_timeout_minutes;

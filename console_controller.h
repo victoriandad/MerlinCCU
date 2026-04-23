@@ -16,6 +16,14 @@ const ConsoleState& state();
 /// @brief Applies persisted runtime preferences to the visible console state.
 bool apply_runtime_config(const RuntimeConfig& settings);
 
+/// @brief Requests a menu redraw after an out-of-band state change.
+/// @details This is used by flows such as the embedded web server where the
+/// shared configuration can change outside the button-driven menu loop.
+void request_redraw();
+
+/// @brief Returns and clears any pending redraw request.
+bool consume_redraw_request();
+
 /// @brief Copies the latest Wi-Fi status into the logical front-panel state.
 bool set_wifi_status(const WifiStatus& wifi_status);
 

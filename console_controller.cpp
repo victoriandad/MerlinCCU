@@ -16,6 +16,7 @@ namespace
 // managers push snapshots into it, while button events mutate the menu and
 // annunciator model from one central place.
 ConsoleState g_console_state = make_default_console_state();
+bool g_redraw_requested = false;
 constexpr size_t kSoftkeyLabelCapacity = 48;
 constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
@@ -24,6 +25,8 @@ std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyI
     g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
 std::array<char, 16> g_screen_saver_timeout_selection_text = {};
+
+void update_softkeys_from_state();
 
 struct WeatherSourceDefinition
 {
@@ -74,6 +77,40 @@ constexpr std::array<ScreenSaverDefinition, 8> kScreenSavers = {{
     {ScreenSaverSelection::Worms, "Worms", "WORMS"},
     {ScreenSaverSelection::Random, "Random", "RANDOM"},
 }};
+
+/// @brief Returns a short on/off label for selection-style softkeys.
+const char* enabled_selection_text(bool enabled)
+{
+    return enabled ? "Enabled" : "Disabled";
+}
+
+/// @brief Returns the concise admin-save policy label used by the menu.
+const char* admin_requirement_selection_text(bool require_admin_password)
+{
+    return require_admin_password ? "Required" : "Open";
+}
+
+/// @brief Persists one runtime-config mutation and refreshes the menu UI.
+/// @details Front-panel settings must write back to the same flash-backed
+/// configuration used by the web UI so the two surfaces never diverge.
+template <typename Mutator>
+bool persist_runtime_config_change(Mutator&& mutator)
+{
+    RuntimeConfig settings = config_manager::settings();
+    if (!mutator(settings))
+    {
+        return false;
+    }
+
+    if (!config_manager::save(settings))
+    {
+        return false;
+    }
+
+    (void)console_controller::apply_runtime_config(config_manager::settings());
+    console_controller::request_redraw();
+    return true;
+}
 
 /// @brief Returns true when the panel pin is one of the confirmed matrix row pins.
 constexpr bool is_keypad_row_pin(uint8_t panel_pin)
@@ -463,6 +500,12 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 /// @brief Returns the configured or connected Wi-Fi name for the settings menu.
 const char* wifi_selection_text(const ConsoleState& console_state)
 {
+    const RuntimeConfig& config = config_manager::settings();
+    if (config.wifi_ssid[0] != '\0')
+    {
+        return config.wifi_ssid.data();
+    }
+
     if (console_state.wifi_status.ssid[0] != '\0')
     {
         return console_state.wifi_status.ssid.data();
@@ -525,7 +568,11 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Settings:
     case MenuPage::Alignment:
         return MenuPage::Home;
+    case MenuPage::DeviceSettings:
+    case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
+    case MenuPage::HomeAssistantSettings:
+    case MenuPage::MqttSettings:
     case MenuPage::ScreenSaverSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
@@ -675,11 +722,9 @@ bool apply_screen_saver_timeout_digit(uint8_t digit)
 
     const bool kChanged =
         g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
-        g_console_state.screen_saver_timeout_replace_on_next_digit ||
-        g_console_state.screen_saver_timeout_minutes != kCandidateMinutes;
+        g_console_state.screen_saver_timeout_replace_on_next_digit;
     g_console_state.screen_saver_timeout_edit_minutes = kCandidateMinutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = false;
-    set_screen_saver_timeout_minutes(kCandidateMinutes);
     return kChanged;
 }
 
@@ -692,10 +737,8 @@ bool clear_screen_saver_timeout_edit()
     }
 
     const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != 0 ||
-                          g_console_state.screen_saver_timeout_minutes != 0 ||
                           !g_console_state.screen_saver_timeout_replace_on_next_digit;
     g_console_state.screen_saver_timeout_edit_minutes = 0;
-    set_screen_saver_timeout_minutes(0);
     g_console_state.screen_saver_timeout_replace_on_next_digit = true;
     return kChanged;
 }
@@ -730,38 +773,127 @@ bool handle_screen_saver_timeout_edit_event(const ButtonEvent& event)
 /// @brief Updates the selected weather source when a new provider is chosen.
 bool select_weather_source(WeatherSource source)
 {
-    if (g_console_state.weather_source == source)
-    {
-        return false;
-    }
+    return persist_runtime_config_change(
+        [source](RuntimeConfig& settings)
+        {
+            if (settings.weather_source == source)
+            {
+                return false;
+            }
 
-    g_console_state.weather_source = source;
-    return true;
+            settings.weather_source = source;
+            return true;
+        });
 }
 
 /// @brief Updates the selected time zone by moving relative to the current choice.
 bool select_relative_time_zone(int offset)
 {
     const TimeZoneDefinition* target = relative_time_zone_definition(g_console_state, offset);
-    if (target == nullptr || g_console_state.time_zone == target->zone)
+    if (target == nullptr)
     {
         return false;
     }
 
-    g_console_state.time_zone = target->zone;
-    return true;
+    return persist_runtime_config_change(
+        [target](RuntimeConfig& settings)
+        {
+            if (settings.time_zone == target->zone)
+            {
+                return false;
+            }
+
+            settings.time_zone = target->zone;
+            return true;
+        });
 }
 
 /// @brief Updates the selected screen saver when the user chooses a new stub.
 bool select_screen_saver(ScreenSaverSelection selection)
 {
-    if (g_console_state.screen_saver_selection == selection)
+    return persist_runtime_config_change(
+        [selection](RuntimeConfig& settings)
+        {
+            if (settings.screen_saver == selection)
+            {
+                return false;
+            }
+
+            settings.screen_saver = selection;
+            return true;
+        });
+}
+
+/// @brief Toggles whether the local web configuration server may run.
+bool toggle_remote_config_enabled()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.remote_config_enabled = !settings.remote_config_enabled;
+            return true;
+        });
+}
+
+/// @brief Toggles whether web saves require the admin password.
+bool toggle_require_admin_password()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.require_admin_password = !settings.require_admin_password;
+            return true;
+        });
+}
+
+/// @brief Toggles the Home Assistant REST integration enable flag.
+bool toggle_home_assistant_enabled()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.home_assistant_enabled = !settings.home_assistant_enabled;
+            return true;
+        });
+}
+
+/// @brief Toggles the MQTT discovery integration enable flag.
+bool toggle_mqtt_enabled()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.mqtt_enabled = !settings.mqtt_enabled;
+            return true;
+        });
+}
+
+/// @brief Persists the scratchpad timeout value when the user presses Enter.
+bool confirm_screen_saver_timeout_edit()
+{
+    if (!g_console_state.screen_saver_timeout_editing)
     {
         return false;
     }
 
-    g_console_state.screen_saver_selection = selection;
-    return true;
+    const uint16_t new_minutes = g_console_state.screen_saver_timeout_edit_minutes;
+    if (new_minutes != g_console_state.screen_saver_timeout_minutes &&
+        !persist_runtime_config_change(
+            [new_minutes](RuntimeConfig& settings)
+            {
+                if (settings.screen_saver_timeout_minutes == new_minutes)
+                {
+                    return false;
+                }
+
+                settings.screen_saver_timeout_minutes = new_minutes;
+                return true;
+            }))
+    {
+        return false;
+    }
+
+    return stop_screen_saver_timeout_editing();
 }
 
 /// @brief Maps a physical bezel button to its logical softkey slot.
@@ -855,21 +987,46 @@ void update_softkeys_from_state()
         break;
     case MenuPage::Settings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
-            build_selection_softkey_label(SoftKeyId::Left1, "WIFI",
+            build_selection_softkey_label(SoftKeyId::Left1, "DEVICE",
+                                          config_manager::settings().device_name.data()),
+            SoftKeyRoute::GoDeviceSettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left2, "SECURITY",
+                admin_requirement_selection_text(config_manager::settings().require_admin_password)),
+            SoftKeyRoute::GoSecuritySettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            build_selection_softkey_label(SoftKeyId::Left3, "WIFI",
                                           wifi_selection_text(g_console_state)),
             SoftKeyRoute::GoWifiSettings,
             true,
         };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"KEYPAD DEBUG", SoftKeyRoute::GoKeypadDebug,
-                                                     true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            build_selection_softkey_label(SoftKeyId::Left3, "SCREEN SAVER",
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left4, "HOME ASSISTANT",
+                enabled_selection_text(config_manager::settings().home_assistant_enabled)),
+            SoftKeyRoute::GoHomeAssistantSettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left5, "MQTT",
+                enabled_selection_text(config_manager::settings().mqtt_enabled)),
+            SoftKeyRoute::GoMqttSettings,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            build_selection_softkey_label(SoftKeyId::Right1, "SCREEN SAVER",
                                           screen_saver_selection_text(g_console_state)),
             SoftKeyRoute::GoScreenSaverSettings,
             true,
         };
-        softkeys[softkey_index(SoftKeyId::Right1)] = {
-            build_selection_softkey_label(SoftKeyId::Right1, "WEATHER",
+        softkeys[softkey_index(SoftKeyId::Right2)] = {
+            build_selection_softkey_label(SoftKeyId::Right2, "WEATHER",
                                           weather_source_selection_text(g_console_state)),
             SoftKeyRoute::GoWeatherSources,
             true,
@@ -880,8 +1037,50 @@ void update_softkeys_from_state()
             SoftKeyRoute::GoTimeZoneSettings,
             true,
         };
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD DEBUG", SoftKeyRoute::GoKeypadDebug,
+                                                      true};
+        break;
+    case MenuPage::DeviceSettings:
+        break;
+    case MenuPage::SecuritySettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "REMOTE CONFIG",
+                enabled_selection_text(config_manager::settings().remote_config_enabled)),
+            SoftKeyRoute::ToggleRemoteConfig,
+            true,
+            config_manager::settings().remote_config_enabled,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left2, "SAVE PASSWORD",
+                admin_requirement_selection_text(config_manager::settings().require_admin_password)),
+            SoftKeyRoute::ToggleRequireAdminPassword,
+            true,
+            config_manager::settings().require_admin_password,
+        };
         break;
     case MenuPage::WifiSettings:
+        break;
+    case MenuPage::HomeAssistantSettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "REST API",
+                enabled_selection_text(config_manager::settings().home_assistant_enabled)),
+            SoftKeyRoute::ToggleHomeAssistantEnabled,
+            true,
+            config_manager::settings().home_assistant_enabled,
+        };
+        break;
+    case MenuPage::MqttSettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "MQTT",
+                enabled_selection_text(config_manager::settings().mqtt_enabled)),
+            SoftKeyRoute::ToggleMqttEnabled,
+            true,
+            config_manager::settings().mqtt_enabled,
+        };
         break;
     case MenuPage::ScreenSaverSettings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
@@ -1170,9 +1369,25 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Settings;
         return true;
+    case SoftKeyRoute::GoDeviceSettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::DeviceSettings;
+        return true;
+    case SoftKeyRoute::GoSecuritySettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::SecuritySettings;
+        return true;
     case SoftKeyRoute::GoWifiSettings:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WifiSettings;
+        return true;
+    case SoftKeyRoute::GoHomeAssistantSettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::HomeAssistantSettings;
+        return true;
+    case SoftKeyRoute::GoMqttSettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::MqttSettings;
         return true;
     case SoftKeyRoute::GoScreenSaverSettings:
         stop_screen_saver_timeout_editing();
@@ -1181,7 +1396,7 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::EditScreenSaverTimeout:
         return start_screen_saver_timeout_editing();
     case SoftKeyRoute::ConfirmScreenSaverTimeout:
-        return stop_screen_saver_timeout_editing();
+        return confirm_screen_saver_timeout_edit();
     case SoftKeyRoute::GoWeatherSources:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WeatherSources;
@@ -1194,6 +1409,14 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
+    case SoftKeyRoute::ToggleRemoteConfig:
+        return toggle_remote_config_enabled();
+    case SoftKeyRoute::ToggleRequireAdminPassword:
+        return toggle_require_admin_password();
+    case SoftKeyRoute::ToggleHomeAssistantEnabled:
+        return toggle_home_assistant_enabled();
+    case SoftKeyRoute::ToggleMqttEnabled:
+        return toggle_mqtt_enabled();
     case SoftKeyRoute::SelectScreenSaverLife:
         return select_screen_saver(ScreenSaverSelection::Life);
     case SoftKeyRoute::SelectScreenSaverClock:
@@ -1292,6 +1515,7 @@ bool apply_softkey_route(SoftKeyRoute route)
 void init()
 {
     g_console_state = make_default_console_state();
+    g_redraw_requested = false;
     g_softkey_label_override_active.fill(false);
 
     for (auto& label : g_dynamic_softkey_labels)
@@ -1312,6 +1536,21 @@ void init()
 const ConsoleState& state()
 {
     return g_console_state;
+}
+
+/// @brief Marks the menu as needing a redraw on the next main-loop pass.
+void request_redraw()
+{
+    update_softkeys_from_state();
+    g_redraw_requested = true;
+}
+
+/// @brief Returns and clears the pending redraw flag.
+bool consume_redraw_request()
+{
+    const bool requested = g_redraw_requested;
+    g_redraw_requested = false;
+    return requested;
 }
 
 /// @brief Applies persisted runtime preferences to the visible console state.
