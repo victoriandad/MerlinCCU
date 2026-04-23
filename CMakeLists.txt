@@ -36,6 +36,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 add_executable(MerlinCCU
     MerlinCCU.cpp
+    config_manager.cpp
     console_controller.cpp
     console_model.cpp
     display.cpp
@@ -49,6 +50,7 @@ add_executable(MerlinCCU
     screensaver_life.cpp
     screensaver_starfield.cpp
     time_manager.cpp
+    web_config_server.cpp
     wifi_manager.cpp
 )
 
@@ -81,6 +83,7 @@ pico_stdlib
     pico_lwip_sntp
     hardware_pio
     hardware_dma
+    hardware_flash
 )
 
 pico_add_extra_outputs(MerlinCCU)

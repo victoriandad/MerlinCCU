@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config_manager.h"
 #include "console_model.h"
 #include "input.h"
 
@@ -11,6 +12,9 @@ void init();
 
 /// @brief Returns the current logical front-panel state.
 const ConsoleState& state();
+
+/// @brief Applies persisted runtime preferences to the visible console state.
+bool apply_runtime_config(const RuntimeConfig& settings);
 
 /// @brief Copies the latest Wi-Fi status into the logical front-panel state.
 bool set_wifi_status(const WifiStatus& wifi_status);

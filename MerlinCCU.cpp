@@ -4,6 +4,7 @@
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
 
+#include "config_manager.h"
 #include "console_controller.h"
 #include "debug_logging.h"
 #include "display.h"
@@ -18,6 +19,7 @@
 #include "screensaver_life.h"
 #include "screensaver_starfield.h"
 #include "time_manager.h"
+#include "web_config_server.h"
 #include "wifi_manager.h"
 
 namespace
@@ -183,11 +185,14 @@ int main()
 
     // Initialize the state-producing subsystems before the first frame is drawn
     // so the initial UI reflects real status rather than placeholder defaults.
+    config_manager::init();
     console_controller::init();
+    console_controller::apply_runtime_config(config_manager::settings());
     time_manager::init();
     wifi_manager::init();
     home_assistant_manager::init();
     mqtt_manager::init();
+    web_config_server::init();
     console_controller::set_wifi_status(wifi_manager::status());
     console_controller::set_time_status(time_manager::status());
     console_controller::set_home_assistant_status(home_assistant_manager::status());
@@ -286,6 +291,7 @@ int main()
             mqtt_manager::update(wifi_manager::status(), home_assistant_manager::status(),
                                  time_manager::status()) ||
             console_changed;
+        console_changed = web_config_server::update(wifi_manager::status()) || console_changed;
 
         // Mirror subsystem status back into the console model only after the
         // managers have had a chance to update this iteration.

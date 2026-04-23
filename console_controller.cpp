@@ -1314,6 +1314,43 @@ const ConsoleState& state()
     return g_console_state;
 }
 
+/// @brief Applies persisted runtime preferences to the visible console state.
+bool apply_runtime_config(const RuntimeConfig& settings)
+{
+    bool changed = false;
+
+    if (g_console_state.weather_source != settings.weather_source)
+    {
+        g_console_state.weather_source = settings.weather_source;
+        changed = true;
+    }
+    if (g_console_state.time_zone != settings.time_zone)
+    {
+        g_console_state.time_zone = settings.time_zone;
+        changed = true;
+    }
+    if (g_console_state.screen_saver_selection != settings.screen_saver)
+    {
+        g_console_state.screen_saver_selection = settings.screen_saver;
+        changed = true;
+    }
+    if (g_console_state.screen_saver_timeout_minutes != settings.screen_saver_timeout_minutes)
+    {
+        g_console_state.screen_saver_timeout_minutes = settings.screen_saver_timeout_minutes;
+        g_console_state.screen_saver_timeout_edit_minutes = settings.screen_saver_timeout_minutes;
+        changed = true;
+    }
+
+    if (!changed)
+    {
+        return false;
+    }
+
+    update_softkeys_from_state();
+    update_lamps_from_state();
+    return true;
+}
+
 /// @brief Updates the cached Wi-Fi snapshot in the console model.
 bool set_wifi_status(const WifiStatus& wifi_status)
 {

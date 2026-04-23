@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 
+#include "config_manager.h"
 #include "debug_logging.h"
 #include "lwip/apps/netbiosns.h"
 #include "lwip/apps/sntp.h"
@@ -107,6 +108,7 @@ absolute_time_t g_probe_deadline = nil_time;
 bool g_probe_in_flight = false;
 bool g_netbios_started = false;
 bool g_sntp_started = false;
+char g_runtime_host_name[32] = {};
 
 /// @brief Returns whether one configured Wi-Fi credential has a usable SSID.
 bool credential_valid(const WifiCredential& credential)
@@ -116,6 +118,14 @@ bool credential_valid(const WifiCredential& credential)
 
 const WifiCredential* active_credential()
 {
+    const RuntimeConfig& config = config_manager::settings();
+    static WifiCredential runtime_credential = {};
+    if (config.wifi_ssid[0] != '\0')
+    {
+        runtime_credential = {config.wifi_ssid.data(), config.wifi_password.data()};
+        return &runtime_credential;
+    }
+
     // The first valid entry wins so a local credentials header can carry a
     // small ordered list of preferred networks without changing the state machine.
     for (size_t i = 0; i < kWifiCredentialCount; ++i)
@@ -127,6 +137,37 @@ const WifiCredential* active_credential()
     }
 
     return nullptr;
+}
+
+/// @brief Builds a DNS/NetBIOS-safe hostname from the configured device name.
+const char* advertised_host_name()
+{
+    const char* source = config_manager::device_name();
+    size_t out = 0;
+
+    for (size_t i = 0; source[i] != '\0' && out + 1 < sizeof(g_runtime_host_name); ++i)
+    {
+        const char c = source[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+        {
+            g_runtime_host_name[out++] = c;
+        }
+        else if (c == '-' || c == '_')
+        {
+            g_runtime_host_name[out++] = '-';
+        }
+    }
+
+    if (out == 0)
+    {
+        std::snprintf(g_runtime_host_name, sizeof(g_runtime_host_name), "%s", kAdvertisedHostName);
+    }
+    else
+    {
+        g_runtime_host_name[out] = '\0';
+    }
+
+    return g_runtime_host_name;
 }
 
 /// @brief Returns the credential password or `nullptr` for open networks.
@@ -406,14 +447,15 @@ void schedule_wait_for_ip_deadline()
 /// desktop and mobile clients during local-network bring-up.
 void advertise_hostname()
 {
+    const char* host_name = advertised_host_name();
     cyw43_arch_lwip_begin();
     if (netif_default)
     {
-        netif_set_hostname(netif_default, kAdvertisedHostName);
+        netif_set_hostname(netif_default, host_name);
         if (!g_netbios_started)
         {
             netbiosns_init();
-            netbiosns_set_name(kAdvertisedHostName);
+            netbiosns_set_name(host_name);
             g_netbios_started = true;
         }
     }
@@ -667,7 +709,8 @@ void init()
     advertise_hostname();
     std::printf("WiFi country code set to 0x%08lx\n", static_cast<unsigned long>(kWifiCountry));
     std::printf("WiFi MAC %s host=%s\n",
-                g_status.mac_address[0] ? g_status.mac_address.data() : "-", kAdvertisedHostName);
+                g_status.mac_address[0] ? g_status.mac_address.data() : "-",
+                advertised_host_name());
 
     attempt_connect();
 }

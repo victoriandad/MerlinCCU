@@ -4,6 +4,7 @@
 #include <cstring>
 #include <limits>
 
+#include "config_manager.h"
 #include "debug_logging.h"
 #include "lwip/apps/mqtt.h"
 #include "lwip/dns.h"
@@ -365,16 +366,19 @@ void reset_runtime(bool reset_publish_state)
 bool parse_mqtt_endpoint()
 {
     g_broker_host[0] = '\0';
-    g_broker_port = kMqttPort;
+    const RuntimeConfig& config = config_manager::settings();
+    const bool use_runtime = config.mqtt_enabled && config.mqtt_host[0] != '\0';
+    const char* mqtt_host = use_runtime ? config.mqtt_host.data() : kMqttHost;
+    g_broker_port = use_runtime ? config.mqtt_port : kMqttPort;
 
     // Parse the broker endpoint once at startup so the runtime state machine
     // only has to deal with connect/publish behavior, not string cleanup.
-    if (kMqttHost[0] == '\0')
+    if (mqtt_host[0] == '\0')
     {
         return false;
     }
 
-    const char* host_start = kMqttHost;
+    const char* host_start = mqtt_host;
     if (std::strncmp(host_start, kMqttSchemePrefix, kMqttSchemePrefixLength) == 0)
     {
         host_start += kMqttSchemePrefixLength;
@@ -454,15 +458,28 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         std::snprintf(mac_hex, sizeof(mac_hex), "%s", kUnknownMacText);
     }
 
-    const char* base_topic = kMqttBaseTopic[0] ? kMqttBaseTopic : "merlinccu";
-    const char* discovery_prefix = kMqttDiscoveryPrefix[0] ? kMqttDiscoveryPrefix : "homeassistant";
+    const RuntimeConfig& config = config_manager::settings();
+    const char* base_topic = config.mqtt_base_topic[0] ? config.mqtt_base_topic.data()
+                                                       : (kMqttBaseTopic[0] ? kMqttBaseTopic
+                                                                            : "merlinccu");
+    const char* discovery_prefix =
+        config.mqtt_discovery_prefix[0]
+            ? config.mqtt_discovery_prefix.data()
+            : (kMqttDiscoveryPrefix[0] ? kMqttDiscoveryPrefix : "homeassistant");
     const char* name_suffix = (std::strlen(mac_hex) >= kDeviceNameSuffixLength)
                                   ? (mac_hex + std::strlen(mac_hex) - kDeviceNameSuffixLength)
                                   : mac_hex;
 
     std::snprintf(g_device_id, sizeof(g_device_id), "merlinccu_%s", mac_hex);
     std::snprintf(g_client_id, sizeof(g_client_id), "merlinccu-%s", mac_hex);
-    std::snprintf(g_device_name, sizeof(g_device_name), "MerlinCCU %s", name_suffix);
+    if (config.device_name[0] != '\0')
+    {
+        std::snprintf(g_device_name, sizeof(g_device_name), "%s", config.device_name.data());
+    }
+    else
+    {
+        std::snprintf(g_device_name, sizeof(g_device_name), "MerlinCCU %s", name_suffix);
+    }
     std::snprintf(g_availability_topic, sizeof(g_availability_topic), "%s/%s/availability",
                   base_topic, mac_hex);
 
@@ -507,9 +524,14 @@ bool ensure_client()
     }
 
     std::memset(&g_client_info, 0, sizeof(g_client_info));
+    const RuntimeConfig& config = config_manager::settings();
     g_client_info.client_id = g_client_id;
-    g_client_info.client_user = kMqttUsername[0] ? kMqttUsername : nullptr;
-    g_client_info.client_pass = kMqttPassword[0] ? kMqttPassword : nullptr;
+    g_client_info.client_user = config.mqtt_username[0]
+                                    ? config.mqtt_username.data()
+                                    : (kMqttUsername[0] ? kMqttUsername : nullptr);
+    g_client_info.client_pass = config.mqtt_password[0]
+                                    ? config.mqtt_password.data()
+                                    : (kMqttPassword[0] ? kMqttPassword : nullptr);
     g_client_info.keep_alive = kMqttKeepAliveSeconds;
     g_client_info.will_topic = g_availability_topic;
     g_client_info.will_msg = kOfflineState;
@@ -948,7 +970,9 @@ void init()
     // simple "configured or not" flag instead of repeatedly reparsing strings.
     g_config_valid = parse_mqtt_endpoint();
     g_status = {};
-    g_status.configured = kMqttConfigured && g_config_valid;
+    const RuntimeConfig& config = config_manager::settings();
+    const bool runtime_configured = config.mqtt_enabled && config.mqtt_host[0] != '\0';
+    g_status.configured = (runtime_configured || kMqttConfigured) && g_config_valid;
     copy_text(g_status.broker, g_broker_host);
     g_status.state = !g_status.configured
                          ? MqttConnectionState::Unconfigured

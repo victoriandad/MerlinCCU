@@ -131,6 +131,48 @@ const char* wifi_state_text(WifiConnectionState state)
     return "?";
 }
 
+/// @brief Returns the Home-page network footer text.
+/// @details A connected CCU advertises the address a browser should use for
+/// remote configuration; intermediate or failed states use plain operator-facing
+/// text rather than technical DHCP or lwIP details.
+const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t buffer_size)
+{
+    if (buffer == nullptr || buffer_size == 0)
+    {
+        return "";
+    }
+
+    buffer[0] = '\0';
+    if (status.ip_address[0] != '\0')
+    {
+        std::snprintf(buffer, buffer_size, "http://%s", status.ip_address.data());
+        return buffer;
+    }
+
+    switch (status.state)
+    {
+    case WifiConnectionState::Disabled:
+        return "WIFI DISABLED";
+    case WifiConnectionState::Unconfigured:
+        return "WIFI NOT SET";
+    case WifiConnectionState::Initializing:
+    case WifiConnectionState::Scanning:
+    case WifiConnectionState::Connecting:
+    case WifiConnectionState::WaitingForIp:
+    case WifiConnectionState::Connected:
+        return "WAITING FOR IP";
+    case WifiConnectionState::AuthFailed:
+        return "WIFI AUTH FAILED";
+    case WifiConnectionState::NoNetwork:
+        return "NO WIFI NETWORK";
+    case WifiConnectionState::ConnectFailed:
+    case WifiConnectionState::Error:
+        return "NO IP ADDRESS";
+    }
+
+    return "NO IP ADDRESS";
+}
+
 /// @brief Returns the Home Assistant state label used on diagnostics screens.
 const char* home_assistant_state_text(HomeAssistantConnectionState state)
 {
@@ -1071,7 +1113,17 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
 /// are the surrounding labels for the next level of navigation.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    constexpr int kHomeIpX = 12;
+    constexpr int kHomeIpY = kUiHeight - 18;
+    constexpr fonts::FontFace kHomeIpFont = fonts::FontFace::Font5x7;
+
     draw_blank_menu_page(fb, console_state);
+
+    char ip_text[32] = {};
+    framebuffer::draw_text(fb, kHomeIpX, kHomeIpY,
+                           home_ip_status_text(console_state.wifi_status, ip_text,
+                                               sizeof(ip_text)),
+                           true, kHomeIpFont, 1);
 }
 
 /// @brief Draws the live weather page reached directly from Home.

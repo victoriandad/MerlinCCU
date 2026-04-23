@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 
+#include "config_manager.h"
 #include "debug_logging.h"
 #include "lwip/dns.h"
 #include "lwip/inet.h"
@@ -61,6 +62,70 @@ constexpr size_t kHttpSchemePrefixLength = sizeof(kHttpSchemePrefix) - 1;
 constexpr char kHttpsSchemePrefix[] = "https://";
 constexpr size_t kHttpsSchemePrefixLength = sizeof(kHttpsSchemePrefix) - 1;
 constexpr bool kHomeAssistantRuntimeEnabled = true;
+
+/// @brief Returns true when the flash configuration owns Home Assistant fields.
+bool runtime_home_assistant_config_present()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return config.home_assistant_enabled || config.home_assistant_host[0] != '\0' ||
+           config.home_assistant_token[0] != '\0' || config.home_assistant_entity_id[0] != '\0' ||
+           config.weather_entity_id[0] != '\0';
+}
+
+bool active_home_assistant_enabled()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_enabled
+                                                  : kHomeAssistantConfigured;
+}
+
+const char* active_home_assistant_host()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_host.data()
+                                                  : kHomeAssistantHost;
+}
+
+uint16_t active_home_assistant_port()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_port
+                                                  : kHomeAssistantPort;
+}
+
+const char* active_home_assistant_token()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_token.data()
+                                                  : kHomeAssistantToken;
+}
+
+const char* active_tracked_entity_id()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_entity_id.data()
+                                                  : kTrackedEntityId;
+}
+
+const char* active_self_entity_id()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.home_assistant_self_entity_id.data()
+                                                  : kSelfEntityId;
+}
+
+const char* active_weather_entity_id()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.weather_entity_id.data()
+                                                  : kWeatherEntityId;
+}
+
+const char* active_sun_entity_id()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    return runtime_home_assistant_config_present() ? config.sun_entity_id.data() : kSunEntityId;
+}
 
 enum class RequestKind : uint8_t
 {
@@ -1296,7 +1361,7 @@ void advance_request_kind()
         g_next_attempt = get_absolute_time();
         return;
     case RequestKind::FetchWeatherForecast:
-        if (kSunEntityId[0] != '\0')
+        if (active_sun_entity_id()[0] != '\0')
         {
             g_request_kind = RequestKind::FetchSunEntity;
             g_sequence_complete = false;
@@ -1333,16 +1398,16 @@ void advance_request_kind()
 bool parse_home_assistant_endpoint()
 {
     g_configured_host[0] = '\0';
-    g_configured_port = kHomeAssistantPort;
+    g_configured_port = active_home_assistant_port();
 
     // Endpoint normalization happens once at init because this client only
     // supports plain HTTP host[:port] targets, not arbitrary base paths.
-    if (kHomeAssistantHost[0] == '\0')
+    if (!active_home_assistant_enabled() || active_home_assistant_host()[0] == '\0')
     {
         return false;
     }
 
-    const char* host_start = kHomeAssistantHost;
+    const char* host_start = active_home_assistant_host();
     if (std::strncmp(host_start, kHttpSchemePrefix, kHttpSchemePrefixLength) == 0)
     {
         host_start += kHttpSchemePrefixLength;
@@ -1581,7 +1646,8 @@ bool build_request()
     else if (g_request_kind == RequestKind::FetchSunEntity)
     {
         const int target_len =
-            std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s", kSunEntityId);
+            std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
+                          active_sun_entity_id());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
             set_status(HomeAssistantConnectionState::Error, -1, 0);
@@ -1631,7 +1697,8 @@ bool build_request()
         "\r\n"
         "%s",
         method, target, g_configured_host, static_cast<unsigned>(g_configured_port),
-        kHomeAssistantToken, static_cast<unsigned>(std::strlen(g_request_body)), g_request_body);
+        active_home_assistant_token(), static_cast<unsigned>(std::strlen(g_request_body)),
+        g_request_body);
     if (len <= 0 || static_cast<size_t>(len) >= sizeof(g_request))
     {
         set_status(HomeAssistantConnectionState::Error, -1, 0);
@@ -1798,7 +1865,7 @@ void handle_http_status(int http_status)
         else if (g_request_kind == RequestKind::FetchSunEntity)
         {
             update_sun_times_from_json(response_body());
-            PERIODIC_LOG("HA sun %s rise=%s set=%s\n", kSunEntityId,
+            PERIODIC_LOG("HA sun %s rise=%s set=%s\n", active_sun_entity_id(),
                          g_status.sunrise_text[0] ? g_status.sunrise_text.data() : "-",
                          g_status.sunset_text[0] ? g_status.sunset_text.data() : "-");
         }
@@ -1878,7 +1945,8 @@ void handle_http_status(int http_status)
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
-        PERIODIC_LOG("HA sun entity unavailable %s status=%d\n", kSunEntityId, http_status);
+        PERIODIC_LOG("HA sun entity unavailable %s status=%d\n", active_sun_entity_id(),
+                     http_status);
         return;
     }
 
@@ -2220,11 +2288,11 @@ void init()
     g_config_valid = parse_home_assistant_endpoint();
     g_status = {};
     g_status.configured =
-        kHomeAssistantConfigured && g_config_valid && kHomeAssistantToken[0] != '\0';
+        active_home_assistant_enabled() && g_config_valid && active_home_assistant_token()[0] != '\0';
     copy_text(g_status.host, g_configured_host);
-    copy_text(g_status.tracked_entity_id, kTrackedEntityId);
-    copy_text(g_status.weather_entity_id, kWeatherEntityId);
-    copy_text(g_status.self_entity_id, kSelfEntityId);
+    copy_text(g_status.tracked_entity_id, active_tracked_entity_id());
+    copy_text(g_status.weather_entity_id, active_weather_entity_id());
+    copy_text(g_status.self_entity_id, active_self_entity_id());
     clear_runtime_data();
     g_status.last_error = 0;
     g_status.last_http_status = 0;
