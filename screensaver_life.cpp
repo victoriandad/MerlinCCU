@@ -61,6 +61,44 @@ void life_seed_random(uint8_t* grid)
     }
 }
 
+/// @brief Seeds a Life grid from the currently visible UI framebuffer.
+/// @details The panel image is sampled into the coarser Life lattice so the
+/// outgoing screen content dissolves into the automaton rather than switching
+/// to an unrelated random pattern immediately.
+int life_seed_from_frame(uint8_t* grid, const uint8_t* seed_fb)
+{
+    if (seed_fb == nullptr)
+    {
+        return 0;
+    }
+
+    int live_count = 0;
+
+    for (int y = 0; y < kLifeHeight; ++y)
+    {
+        for (int x = 0; x < kLifeWidth; ++x)
+        {
+            int lit_pixels = 0;
+            for (int yy = 0; yy < kLifeScale; ++yy)
+            {
+                for (int xx = 0; xx < kLifeScale; ++xx)
+                {
+                    lit_pixels += framebuffer::get_pixel(seed_fb, (x * kLifeScale) + xx,
+                                                         (y * kLifeScale) + yy)
+                                      ? 1
+                                      : 0;
+                }
+            }
+
+            const uint8_t cell_alive = (lit_pixels >= 2) ? 1U : 0U;
+            grid[life_index(x, y)] = cell_alive;
+            live_count += cell_alive != 0 ? 1 : 0;
+        }
+    }
+
+    return live_count;
+}
+
 /// @brief Hashes the current Life grid so repeats can be detected cheaply.
 uint32_t life_hash_grid(const uint8_t* grid)
 {
@@ -190,13 +228,17 @@ void draw_life_screen(uint8_t* fb, const uint8_t* grid)
 } // namespace
 
 /// @brief Initializes the Life screensaver with a fresh random seed.
-void init()
+void init(const uint8_t* seed_fb)
 {
     // Seed from uptime so repeated power cycles do not always land on the same
     // opening pattern during bench demos.
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
     life_clear(life_front);
-    life_seed_random(life_front);
+    const int seeded_live_cells = life_seed_from_frame(life_front, seed_fb);
+    if (seeded_live_cells == 0)
+    {
+        life_seed_random(life_front);
+    }
     life_reset_hash_history();
     (void)life_record_hash_and_check_repeat(life_hash_grid(life_front));
     life_stable_frames = 0;

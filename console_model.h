@@ -262,6 +262,19 @@ enum class WeatherSource : uint8_t
     BbcWeather,
 };
 
+/// @brief Selectable screen-saver modes exposed by the current UI.
+enum class ScreenSaverSelection : uint8_t
+{
+    Life = 0,
+    Clock,
+    Starfield,
+    Matrix,
+    Radar,
+    Rain,
+    Worms,
+    Random,
+};
+
 /// @brief Selectable time-zone presets exposed by the current menu flow.
 enum class TimeZoneSelection : uint8_t
 {
@@ -286,9 +299,19 @@ enum class SoftKeyRoute : uint8_t
     GoSettings,
     GoWifiSettings,
     GoScreenSaverSettings,
+    EditScreenSaverTimeout,
+    ConfirmScreenSaverTimeout,
     GoWeatherSources,
     GoTimeZoneSettings,
     GoKeypadDebug,
+    SelectScreenSaverLife,
+    SelectScreenSaverClock,
+    SelectScreenSaverStarfield,
+    SelectScreenSaverMatrix,
+    SelectScreenSaverRadar,
+    SelectScreenSaverRain,
+    SelectScreenSaverWorms,
+    SelectScreenSaverRandom,
     SelectWeatherHomeAssistant,
     SelectWeatherMetOffice,
     SelectWeatherBbcWeather,
@@ -349,7 +372,12 @@ struct ConsoleState
 {
     MenuPage active_page;
     WeatherSource weather_source;
+    ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
+    uint16_t screen_saver_timeout_minutes;
+    bool screen_saver_timeout_editing;
+    uint16_t screen_saver_timeout_edit_minutes;
+    bool screen_saver_timeout_replace_on_next_digit;
     LetterMode letter_mode;
     AlertSeverity alert_severity;
     SystemTestState test_state;

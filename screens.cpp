@@ -339,10 +339,11 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::Weather:
     case MenuPage::Status:
     case MenuPage::WifiSettings:
-    case MenuPage::ScreenSaverSettings:
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
         return fonts::FontFace::Font8x12;
+    case MenuPage::ScreenSaverSettings:
+        return fonts::FontFace::Font5x7;
     }
 
     return fonts::FontFace::Font5x7;
@@ -579,6 +580,46 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
     constexpr int kInfoPageStartY = 42;
     constexpr int kInfoPageRowPitch = 18;
     draw_detail_rows(fb, rows, count, kInfoPageStartY, kInfoPageRowPitch, false);
+}
+
+void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
+                                     int total_width, fonts::FontFace font, bool on);
+
+/// @brief Formats the current screen-saver timeout for labels and scratchpad text.
+void build_screen_saver_timeout_text(uint16_t minutes, char* buffer, size_t buffer_size)
+{
+    if (buffer == nullptr || buffer_size == 0)
+    {
+        return;
+    }
+
+    const char* unit = (minutes == 1U) ? "min" : "mins";
+    std::snprintf(buffer, buffer_size, "%u %s", static_cast<unsigned>(minutes), unit);
+}
+
+/// @brief Draws the bottom scratchpad used for screen-saver timeout entry.
+/// @details The original CCU scratchpad was a low, wide editing region, so this
+/// version keeps the same bottom-of-screen placement and bracketed treatment.
+void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kScratchpadWidth = 160;
+    constexpr int kScratchpadHeight = 15;
+    constexpr int kScratchpadLeftX = (kUiWidth - kScratchpadWidth) / 2;
+    constexpr int kScratchpadTopY = kUiHeight - kScratchpadHeight - 3;
+    constexpr int kTextInsetY = 4;
+    constexpr int kRightPadX = 10;
+    char timeout_text[16] = {};
+    build_screen_saver_timeout_text(console_state.screen_saver_timeout_edit_minutes, timeout_text,
+                                    sizeof(timeout_text));
+    const int kTextWidth = text_width(timeout_text, fonts::FontFace::Font5x7, 1);
+    const int kTextX = kScratchpadLeftX + kScratchpadWidth - kRightPadX - kTextWidth;
+
+    framebuffer::fill_rect(fb, kScratchpadLeftX + 1, kScratchpadTopY + 1, kScratchpadWidth - 2,
+                           kScratchpadHeight - 2, false);
+    draw_softkey_selection_brackets(fb, kScratchpadLeftX, kScratchpadTopY, kScratchpadHeight,
+                                    kScratchpadWidth, fonts::FontFace::Font5x7, true);
+    framebuffer::draw_text(fb, kTextX, kScratchpadTopY + kTextInsetY,
+                           timeout_text, true, fonts::FontFace::Font5x7, 1);
 }
 
 /// @brief Extracts the inner text from a bracketed softkey value line.
@@ -1246,15 +1287,12 @@ void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
 /// rest of the information views.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    (void)console_state;
+    draw_blank_menu_page(fb, console_state);
 
-    const DetailRow rows[] = {
-        {"CURRENT", "Life"},
-        {"STATUS", "Fixed in firmware"},
-        {"DETAIL", "Selection UI pending"},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+    if (console_state.screen_saver_timeout_editing)
+    {
+        draw_screen_saver_scratchpad(fb, console_state);
+    }
 }
 
 /// @brief Draws the time-zone selection summary page.

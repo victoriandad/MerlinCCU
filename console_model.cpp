@@ -59,7 +59,12 @@ ConsoleState make_default_console_state()
     // clean navigation shell instead of a diagnostics surface.
     state.active_page = MenuPage::Home;
     state.weather_source = WeatherSource::HomeAssistant;
+    state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;
+    state.screen_saver_timeout_minutes = 5;
+    state.screen_saver_timeout_editing = false;
+    state.screen_saver_timeout_edit_minutes = 5;
+    state.screen_saver_timeout_replace_on_next_digit = true;
     state.letter_mode = LetterMode::Off;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;

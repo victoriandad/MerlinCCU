@@ -17,12 +17,13 @@ namespace
 // annunciator model from one central place.
 ConsoleState g_console_state = make_default_console_state();
 constexpr size_t kSoftkeyLabelCapacity = 48;
-constexpr char kSelectedScreensaverText[] = "Life";
+constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
     g_dynamic_softkey_labels = {};
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)>
     g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
+std::array<char, 16> g_screen_saver_timeout_selection_text = {};
 
 struct WeatherSourceDefinition
 {
@@ -34,6 +35,13 @@ struct WeatherSourceDefinition
 struct TimeZoneDefinition
 {
     TimeZoneSelection zone;
+    const char* selection_label;
+    const char* option_label;
+};
+
+struct ScreenSaverDefinition
+{
+    ScreenSaverSelection selection;
     const char* selection_label;
     const char* option_label;
 };
@@ -54,6 +62,17 @@ constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
     {TimeZoneSelection::EasternEuropean, "Eastern European Time", "EASTERN EUROPEAN"},
     {TimeZoneSelection::ArabiaStandard, "Arabia Standard Time", "ARABIA"},
     {TimeZoneSelection::GulfStandard, "Gulf Standard Time", "GULF"},
+}};
+
+constexpr std::array<ScreenSaverDefinition, 8> kScreenSavers = {{
+    {ScreenSaverSelection::Life, "Life", "LIFE"},
+    {ScreenSaverSelection::Clock, "Clock", "CLOCK"},
+    {ScreenSaverSelection::Starfield, "Starfield", "STARFIELD"},
+    {ScreenSaverSelection::Matrix, "Matrix", "MATRIX"},
+    {ScreenSaverSelection::Radar, "Radar", "RADAR"},
+    {ScreenSaverSelection::Rain, "Rain", "RAIN"},
+    {ScreenSaverSelection::Worms, "Worms", "WORMS"},
+    {ScreenSaverSelection::Random, "Random", "RANDOM"},
 }};
 
 /// @brief Returns true when the panel pin is one of the confirmed matrix row pins.
@@ -333,6 +352,20 @@ const TimeZoneDefinition& time_zone_definition(TimeZoneSelection zone)
     return kTimeZones[time_zone_index(zone)];
 }
 
+/// @brief Returns the static metadata for one selectable screen saver.
+const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection selection)
+{
+    for (const ScreenSaverDefinition& definition : kScreenSavers)
+    {
+        if (definition.selection == selection)
+        {
+            return definition;
+        }
+    }
+
+    return kScreenSavers[0];
+}
+
 /// @brief Returns the selectable time zone at a relative offset from the current one.
 const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state, int offset)
 {
@@ -444,10 +477,29 @@ const char* weather_source_selection_text(const ConsoleState& console_state)
     return weather_source_definition(console_state.weather_source).selection_label;
 }
 
+/// @brief Returns the currently selected screen-saver label for menu softkeys.
+const char* screen_saver_selection_text(const ConsoleState& console_state)
+{
+    return screen_saver_definition(console_state.screen_saver_selection).selection_label;
+}
+
 /// @brief Returns the currently selected time-zone label for menu softkeys.
 const char* time_zone_selection_text(const ConsoleState& console_state)
 {
     return time_zone_definition(console_state.time_zone).selection_label;
+}
+
+/// @brief Returns the currently configured screen-saver timeout label.
+/// @details `0 minutes` means the idle-triggered screen saver is disabled, and
+/// the label uses singular/plural wording that reads naturally on the menu.
+const char* screen_saver_timeout_selection_text(const ConsoleState& console_state)
+{
+    const char* unit =
+        (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
+    std::snprintf(g_screen_saver_timeout_selection_text.data(),
+                  g_screen_saver_timeout_selection_text.size(), "%u %s",
+                  static_cast<unsigned>(console_state.screen_saver_timeout_minutes), unit);
+    return g_screen_saver_timeout_selection_text.data();
 }
 
 /// @brief Formats one two-line softkey label with a square-bracket selection.
@@ -497,6 +549,184 @@ bool navigate_up_one_level()
     return true;
 }
 
+/// @brief Leaves the timeout scratchpad and restores normal page navigation.
+bool stop_screen_saver_timeout_editing()
+{
+    if (!g_console_state.screen_saver_timeout_editing)
+    {
+        return false;
+    }
+
+    g_console_state.screen_saver_timeout_editing = false;
+    g_console_state.screen_saver_timeout_edit_minutes = g_console_state.screen_saver_timeout_minutes;
+    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
+    return true;
+}
+
+/// @brief Enters the timeout scratchpad using the currently saved timeout.
+bool start_screen_saver_timeout_editing()
+{
+    if (g_console_state.screen_saver_timeout_editing)
+    {
+        return false;
+    }
+
+    g_console_state.screen_saver_timeout_editing = true;
+    g_console_state.screen_saver_timeout_edit_minutes = g_console_state.screen_saver_timeout_minutes;
+    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
+    return true;
+}
+
+/// @brief Stores a new screen-saver timeout, clamped to the supported range.
+bool set_screen_saver_timeout_minutes(uint16_t minutes)
+{
+    if (minutes > kMaxScreenSaverTimeoutMinutes)
+    {
+        return false;
+    }
+
+    if (g_console_state.screen_saver_timeout_minutes == minutes)
+    {
+        return false;
+    }
+
+    g_console_state.screen_saver_timeout_minutes = minutes;
+    return true;
+}
+
+/// @brief Returns true when the button is one of the numeric timeout-editor keys.
+bool button_digit_value(ButtonId id, uint8_t* out_digit)
+{
+    if (out_digit == nullptr)
+    {
+        return false;
+    }
+
+    switch (id)
+    {
+    case ButtonId::Digit1:
+        *out_digit = 1;
+        return true;
+    case ButtonId::Digit2:
+        *out_digit = 2;
+        return true;
+    case ButtonId::Digit3:
+        *out_digit = 3;
+        return true;
+    case ButtonId::Digit4:
+        *out_digit = 4;
+        return true;
+    case ButtonId::Digit5:
+        *out_digit = 5;
+        return true;
+    case ButtonId::Digit6:
+        *out_digit = 6;
+        return true;
+    case ButtonId::Digit7:
+        *out_digit = 7;
+        return true;
+    case ButtonId::Digit8:
+        *out_digit = 8;
+        return true;
+    case ButtonId::Digit9:
+        *out_digit = 9;
+        return true;
+    case ButtonId::Digit0:
+        *out_digit = 0;
+        return true;
+    case ButtonId::LeftTop:
+    case ButtonId::LeftUpper:
+    case ButtonId::LeftMiddle:
+    case ButtonId::LeftLower:
+    case ButtonId::LeftBottom:
+    case ButtonId::RightTop:
+    case ButtonId::RightUpper:
+    case ButtonId::RightMiddle:
+    case ButtonId::RightLower:
+    case ButtonId::RightBottom:
+    case ButtonId::BackStep:
+    case ButtonId::Clr:
+        break;
+    }
+
+    return false;
+}
+
+/// @brief Appends or replaces the timeout scratchpad value with one digit.
+bool apply_screen_saver_timeout_digit(uint8_t digit)
+{
+    if (!g_console_state.screen_saver_timeout_editing)
+    {
+        return false;
+    }
+
+    const uint16_t kCurrentMinutes =
+        g_console_state.screen_saver_timeout_replace_on_next_digit
+            ? 0
+            : g_console_state.screen_saver_timeout_edit_minutes;
+    const uint16_t kCandidateMinutes =
+        g_console_state.screen_saver_timeout_replace_on_next_digit
+            ? digit
+            : static_cast<uint16_t>((kCurrentMinutes * 10U) + digit);
+    if (kCandidateMinutes > kMaxScreenSaverTimeoutMinutes)
+    {
+        return false;
+    }
+
+    const bool kChanged =
+        g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
+        g_console_state.screen_saver_timeout_replace_on_next_digit ||
+        g_console_state.screen_saver_timeout_minutes != kCandidateMinutes;
+    g_console_state.screen_saver_timeout_edit_minutes = kCandidateMinutes;
+    g_console_state.screen_saver_timeout_replace_on_next_digit = false;
+    set_screen_saver_timeout_minutes(kCandidateMinutes);
+    return kChanged;
+}
+
+/// @brief Clears the timeout scratchpad back to the disabled `0 mins` state.
+bool clear_screen_saver_timeout_edit()
+{
+    if (!g_console_state.screen_saver_timeout_editing)
+    {
+        return false;
+    }
+
+    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != 0 ||
+                          g_console_state.screen_saver_timeout_minutes != 0 ||
+                          !g_console_state.screen_saver_timeout_replace_on_next_digit;
+    g_console_state.screen_saver_timeout_edit_minutes = 0;
+    set_screen_saver_timeout_minutes(0);
+    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
+    return kChanged;
+}
+
+/// @brief Handles digit-only timeout entry while the scratchpad is visible.
+bool handle_screen_saver_timeout_edit_event(const ButtonEvent& event)
+{
+    if (!g_console_state.screen_saver_timeout_editing || event.type != ButtonEventType::Pressed)
+    {
+        return false;
+    }
+
+    if (event.id == ButtonId::BackStep)
+    {
+        return stop_screen_saver_timeout_editing();
+    }
+
+    if (event.id == ButtonId::Clr)
+    {
+        return clear_screen_saver_timeout_edit();
+    }
+
+    uint8_t digit = 0;
+    if (!button_digit_value(event.id, &digit))
+    {
+        return false;
+    }
+
+    return apply_screen_saver_timeout_digit(digit);
+}
+
 /// @brief Updates the selected weather source when a new provider is chosen.
 bool select_weather_source(WeatherSource source)
 {
@@ -519,6 +749,18 @@ bool select_relative_time_zone(int offset)
     }
 
     g_console_state.time_zone = target->zone;
+    return true;
+}
+
+/// @brief Updates the selected screen saver when the user chooses a new stub.
+bool select_screen_saver(ScreenSaverSelection selection)
+{
+    if (g_console_state.screen_saver_selection == selection)
+    {
+        return false;
+    }
+
+    g_console_state.screen_saver_selection = selection;
     return true;
 }
 
@@ -622,7 +864,7 @@ void update_softkeys_from_state()
                                                      true};
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(SoftKeyId::Left3, "SCREEN SAVER",
-                                          kSelectedScreensaverText),
+                                          screen_saver_selection_text(g_console_state)),
             SoftKeyRoute::GoScreenSaverSettings,
             true,
         };
@@ -640,7 +882,71 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::WifiSettings:
+        break;
     case MenuPage::ScreenSaverSettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(SoftKeyId::Left1, "TIMEOUT PERIOD",
+                                          screen_saver_timeout_selection_text(g_console_state)),
+            SoftKeyRoute::EditScreenSaverTimeout,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_timeout_editing,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            screen_saver_definition(ScreenSaverSelection::Life).option_label,
+            SoftKeyRoute::SelectScreenSaverLife,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Life,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            screen_saver_definition(ScreenSaverSelection::Clock).option_label,
+            SoftKeyRoute::SelectScreenSaverClock,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Clock,
+        };
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            screen_saver_definition(ScreenSaverSelection::Starfield).option_label,
+            SoftKeyRoute::SelectScreenSaverStarfield,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Starfield,
+        };
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            screen_saver_definition(ScreenSaverSelection::Random).option_label,
+            SoftKeyRoute::SelectScreenSaverRandom,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Random,
+        };
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            screen_saver_definition(ScreenSaverSelection::Matrix).option_label,
+            SoftKeyRoute::SelectScreenSaverMatrix,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Matrix,
+        };
+        softkeys[softkey_index(SoftKeyId::Right2)] = {
+            screen_saver_definition(ScreenSaverSelection::Radar).option_label,
+            SoftKeyRoute::SelectScreenSaverRadar,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Radar,
+        };
+        softkeys[softkey_index(SoftKeyId::Right3)] = {
+            screen_saver_definition(ScreenSaverSelection::Rain).option_label,
+            SoftKeyRoute::SelectScreenSaverRain,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Rain,
+        };
+        softkeys[softkey_index(SoftKeyId::Right4)] = {
+            screen_saver_definition(ScreenSaverSelection::Worms).option_label,
+            SoftKeyRoute::SelectScreenSaverWorms,
+            !g_console_state.screen_saver_timeout_editing,
+            g_console_state.screen_saver_selection == ScreenSaverSelection::Worms,
+        };
+        if (g_console_state.screen_saver_timeout_editing)
+        {
+            softkeys[softkey_index(SoftKeyId::Right5)] = {
+                "ENTER",
+                SoftKeyRoute::ConfirmScreenSaverTimeout,
+                true,
+            };
+        }
         break;
     case MenuPage::WeatherSources:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
@@ -723,7 +1029,9 @@ void update_softkeys_from_state()
         break;
     }
 
-    if (g_console_state.active_page != MenuPage::Home)
+    if (g_console_state.active_page != MenuPage::Home &&
+        !(g_console_state.active_page == MenuPage::ScreenSaverSettings &&
+          g_console_state.screen_saver_timeout_editing))
     {
         softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
     }
@@ -847,32 +1155,61 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::None:
         return false;
     case SoftKeyRoute::GoHome:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Home;
         return true;
     case SoftKeyRoute::GoWeather:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Weather;
         return true;
     case SoftKeyRoute::GoStatus:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Status;
         return true;
     case SoftKeyRoute::GoSettings:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Settings;
         return true;
     case SoftKeyRoute::GoWifiSettings:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WifiSettings;
         return true;
     case SoftKeyRoute::GoScreenSaverSettings:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
         return true;
+    case SoftKeyRoute::EditScreenSaverTimeout:
+        return start_screen_saver_timeout_editing();
+    case SoftKeyRoute::ConfirmScreenSaverTimeout:
+        return stop_screen_saver_timeout_editing();
     case SoftKeyRoute::GoWeatherSources:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WeatherSources;
         return true;
     case SoftKeyRoute::GoTimeZoneSettings:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::TimeZoneSettings;
         return true;
     case SoftKeyRoute::GoKeypadDebug:
+        stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
+    case SoftKeyRoute::SelectScreenSaverLife:
+        return select_screen_saver(ScreenSaverSelection::Life);
+    case SoftKeyRoute::SelectScreenSaverClock:
+        return select_screen_saver(ScreenSaverSelection::Clock);
+    case SoftKeyRoute::SelectScreenSaverStarfield:
+        return select_screen_saver(ScreenSaverSelection::Starfield);
+    case SoftKeyRoute::SelectScreenSaverMatrix:
+        return select_screen_saver(ScreenSaverSelection::Matrix);
+    case SoftKeyRoute::SelectScreenSaverRadar:
+        return select_screen_saver(ScreenSaverSelection::Radar);
+    case SoftKeyRoute::SelectScreenSaverRain:
+        return select_screen_saver(ScreenSaverSelection::Rain);
+    case SoftKeyRoute::SelectScreenSaverWorms:
+        return select_screen_saver(ScreenSaverSelection::Worms);
+    case SoftKeyRoute::SelectScreenSaverRandom:
+        return select_screen_saver(ScreenSaverSelection::Random);
     case SoftKeyRoute::SelectWeatherHomeAssistant:
         return select_weather_source(WeatherSource::HomeAssistant);
     case SoftKeyRoute::SelectWeatherMetOffice:
@@ -1183,6 +1520,26 @@ bool handle_button_event(const ButtonEvent& event)
     if (event.type != ButtonEventType::Pressed)
     {
         return false;
+    }
+
+    if (g_console_state.screen_saver_timeout_editing)
+    {
+        const bool kEditChanged = handle_screen_saver_timeout_edit_event(event);
+        if (kEditChanged)
+        {
+            update_softkeys_from_state();
+            update_lamps_from_state();
+            PERIODIC_LOG("Console state updated: page=%u timeout=%u edit=%s\n",
+                         static_cast<unsigned>(g_console_state.active_page),
+                         static_cast<unsigned>(g_console_state.screen_saver_timeout_minutes),
+                         g_console_state.screen_saver_timeout_editing ? "on" : "off");
+            return true;
+        }
+
+        if (!button_maps_to_softkey(event.id))
+        {
+            return false;
+        }
     }
 
     if (event.id == ButtonId::BackStep)
