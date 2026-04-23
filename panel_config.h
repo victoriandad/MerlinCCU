@@ -49,7 +49,7 @@ inline constexpr PanelConfig kPanel = {
     .v_sync_pulse = 2,
     .v_pre_blank = 2,
     .v_post_blank = 2,
-    .clkdiv = 2.51f,
+    .clkdiv = 2.51F,
 };
 
 /// @brief Frequently used geometry aliases derived from `kPanel`.

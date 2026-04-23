@@ -48,7 +48,11 @@ add_executable(MerlinCCU
     screens.cpp
     screensaver_clock.cpp
     screensaver_life.cpp
+    screensaver_matrix.cpp
+    screensaver_radar.cpp
+    screensaver_rain.cpp
     screensaver_starfield.cpp
+    screensaver_worms.cpp
     time_manager.cpp
     web_config_server.cpp
     wifi_manager.cpp

@@ -27,24 +27,24 @@ using RasterBuffer = std::array<uint32_t, kRasterWords>;
 // The raster buffers stay in static storage because DMA needs a stable source
 // address for the lifetime of the scanout loop. Swapping pointers is cheaper
 // and safer than rebuilding in place while the panel is being refreshed.
-RasterBuffer raster_a = {};
-RasterBuffer raster_b = {};
+RasterBuffer g_raster_a = {};
+RasterBuffer g_raster_b = {};
 
-RasterBuffer* raster_front = &raster_a;
-RasterBuffer* raster_back = &raster_b;
-RasterBuffer* raster_pending = nullptr;
+RasterBuffer* g_raster_front = &g_raster_a;
+RasterBuffer* g_raster_back = &g_raster_b;
+RasterBuffer* g_raster_pending = nullptr;
 
 // The control DMA channel rewrites the data channel's read pointer from this
 // indirection slot once per frame. That lets the ISR switch buffers by updating
 // one pointer instead of touching DMA registers directly mid-transfer.
-const void* dma_read_addr = raster_a.data();
+const void* g_dma_read_addr = g_raster_a.data();
 
-int dma_chan_data = -1;
-int dma_chan_ctrl = -1;
-bool dma_running = false;
-PIO active_pio = pio0;
-uint active_sm = 0;
-float configured_clkdiv = kPanel.clkdiv;
+int g_dma_chan_data = -1;
+int g_dma_chan_ctrl = -1;
+bool g_dma_running = false;
+PIO g_active_pio = pio0;
+uint g_active_sm = 0;
+float g_configured_clkdiv = kPanel.clkdiv;
 
 /// @brief DMA interrupt handler used to switch scanout buffers safely.
 /// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
@@ -54,23 +54,31 @@ float configured_clkdiv = kPanel.clkdiv;
 /// risking a torn frame half way down the panel.
 void dma_ctrl_irq_handler()
 {
-    const uint32_t mask = 1U << dma_chan_ctrl;
-    dma_hw->ints0 = mask;
+    const uint32_t kMask = 1U << g_dma_chan_ctrl;
+    dma_hw->ints0 = kMask;
 
-    if (raster_pending != nullptr)
+    if (g_raster_pending != nullptr)
     {
-        RasterBuffer* previous_front = raster_front;
-        raster_front = raster_pending;
-        raster_back = previous_front;
-        raster_pending = nullptr;
-        dma_read_addr = raster_front->data();
+        RasterBuffer* previous_front = g_raster_front;
+        g_raster_front = g_raster_pending;
+        g_raster_back = previous_front;
+        g_raster_pending = nullptr;
+        g_dma_read_addr = g_raster_front->data();
     }
 }
 
 /// @brief Clamps one integer into an inclusive range.
 inline int clamp_int(int v, int lo, int hi)
 {
-    return (v < lo) ? lo : (v > hi ? hi : v);
+    if (v < lo)
+    {
+        return lo;
+    }
+    if (v > hi)
+    {
+        return hi;
+    }
+    return v;
 }
 
 /// @brief Appends one 4-bit output state to a packed raster buffer.
@@ -78,9 +86,9 @@ inline int clamp_int(int v, int lo, int hi)
 /// VS. Eight nibbles are packed into one 32-bit word.
 void emit_step(uint32_t* buf, int& step_index, uint8_t nibble)
 {
-    const int word_index = step_index / 8;
-    const int nibble_index = step_index % 8;
-    buf[word_index] |= static_cast<uint32_t>(nibble & 0x0F) << (nibble_index * 4);
+    const int kWordIndex = step_index / 8;
+    const int kNibbleIndex = step_index % 8;
+    buf[kWordIndex] |= static_cast<uint32_t>(nibble & 0x0F) << (kNibbleIndex * 4);
     ++step_index;
 }
 
@@ -138,8 +146,8 @@ void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
 {
     std::memset(line_buf, 0, kWordsPerLine * sizeof(uint32_t));
     int step = 0;
-    const int max_ui_source_y = kFbHeight - 1 + kPanel.native_row_offset;
-    const int ui_x = clamp_int(max_ui_source_y - y, 0, kUiWidth - 1);
+    const int kMaxUiSourceY = kFbHeight - 1 + kPanel.native_row_offset;
+    const int kUiX = clamp_int(kMaxUiSourceY - y, 0, kUiWidth - 1);
 
     for (int i = 0; i < kPanel.h_pre_blank; ++i)
     {
@@ -148,9 +156,9 @@ void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
 
     for (int x = 0; x < kFbWidth; ++x)
     {
-        const bool vid_on =
-            (x < kUiHeight) && (y <= max_ui_source_y) ? framebuffer::get_pixel(fb, ui_x, x) : false;
-        emit_pixel(line_buf, step, vid_on, true, vs_high);
+        const bool kVidOn =
+            (x < kUiHeight) && (y <= kMaxUiSourceY) ? framebuffer::get_pixel(fb, kUiX, x) : false;
+        emit_pixel(line_buf, step, kVidOn, true, vs_high);
     }
 
     for (int i = 0; i < kPanel.h_post_blank; ++i)
@@ -187,15 +195,16 @@ void rebuild_raster_from_fb(const uint8_t* fb, uint32_t* raster)
 /// @brief Swaps the front and back raster pointers.
 void raster_swap()
 {
-    RasterBuffer* tmp = raster_front;
-    raster_front = raster_back;
-    raster_back = tmp;
+    RasterBuffer* tmp = g_raster_front;
+    g_raster_front = g_raster_back;
+    g_raster_back = tmp;
 }
 
 /// @brief Configures the PIO state machine that outputs the prepared raster.
 /// @details The PIO program itself is intentionally minimal; almost all timing
 /// complexity is precomputed into the raster buffer so scanout stays predictable
 /// and easy to reason about during panel bring-up.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_base)
 {
     for (uint pin = pin_base; pin < pin_base + 4; ++pin)
@@ -210,7 +219,7 @@ void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_base)
     sm_config_set_out_shift(&c, true, true, 32);
 
     pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_clkdiv(pio, sm, configured_clkdiv);
+    pio_sm_set_clkdiv(pio, sm, g_configured_clkdiv);
     pio_sm_set_enabled(pio, sm, true);
 }
 
@@ -220,53 +229,57 @@ void el320_raster_program_init(PIO pio, uint sm, uint offset, uint pin_base)
 /// the steady-state scanout path and keeps display timing stable.
 void start_dma(PIO pio, uint sm)
 {
-    active_pio = pio;
-    active_sm = sm;
+    g_active_pio = pio;
+    g_active_sm = sm;
 
     // The scanout loop uses two DMA channels: one streams the frame data into
     // the PIO TX FIFO, and the second re-arms that data channel once the frame
     // completes. Claiming them together keeps the relationship explicit.
-    dma_chan_data = dma_claim_unused_channel(true);
-    dma_chan_ctrl = dma_claim_unused_channel(true);
+    g_dma_chan_data = dma_claim_unused_channel(true);
+    g_dma_chan_ctrl = dma_claim_unused_channel(true);
 
     // The data channel is the steady-state worker. It walks the packed raster
     // buffer word by word and writes each word into the PIO FIFO whenever the
     // state machine asserts its transmit DREQ.
-    dma_channel_config c_data = dma_channel_get_default_config(dma_chan_data);
+    dma_channel_config c_data = dma_channel_get_default_config(g_dma_chan_data);
     channel_config_set_transfer_data_size(&c_data, DMA_SIZE_32);
     channel_config_set_read_increment(&c_data, true);
     channel_config_set_write_increment(&c_data, false);
     channel_config_set_dreq(&c_data, pio_get_dreq(pio, sm, true));
-    channel_config_set_chain_to(&c_data, dma_chan_ctrl);
+    channel_config_set_chain_to(&c_data, g_dma_chan_ctrl);
 
-    dma_channel_configure(dma_chan_data, &c_data, &pio->txf[sm], raster_front->data(), kRasterWords,
-                          false);
+    dma_channel_configure(g_dma_chan_data, &c_data, &pio->txf[sm], g_raster_front->data(),
+                          kRasterWords, false);
 
     // The control channel performs a one-word transfer into the data channel's
     // read-address register. That is what turns the one-shot frame transfer
     // above into a repeating loop without the CPU having to restart DMA every
     // frame.
-    dma_channel_config c_ctrl = dma_channel_get_default_config(dma_chan_ctrl);
+    dma_channel_config c_ctrl = dma_channel_get_default_config(g_dma_chan_ctrl);
     channel_config_set_transfer_data_size(&c_ctrl, DMA_SIZE_32);
     channel_config_set_read_increment(&c_ctrl, false);
     channel_config_set_write_increment(&c_ctrl, false);
-    channel_config_set_chain_to(&c_ctrl, dma_chan_data);
+    channel_config_set_chain_to(&c_ctrl, g_dma_chan_data);
 
-    dma_channel_configure(dma_chan_ctrl, &c_ctrl, &dma_hw->ch[dma_chan_data].read_addr,
-                          &dma_read_addr, 1, false);
+    // DMA expects a pointer to the read-address source slot itself so the
+    // control channel can copy that stored pointer value into the data channel.
+    const void* const* dma_read_addr_slot = &g_dma_read_addr;
+    dma_channel_configure(g_dma_chan_ctrl, &c_ctrl, &dma_hw->ch[g_dma_chan_data].read_addr,
+                          reinterpret_cast<const volatile void*>(dma_read_addr_slot), 1, false);
 
     // The control channel fires an interrupt at the frame boundary. That is the
     // safe point to adopt any newly prepared raster because the next frame has
     // not started streaming yet.
-    dma_channel_set_irq0_enabled(dma_chan_ctrl, true);
+    dma_channel_set_irq0_enabled(g_dma_chan_ctrl, true);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_ctrl_irq_handler);
     irq_set_enabled(DMA_IRQ_0, true);
 
     // Starting only the data channel is enough: once it completes, the chain
     // relationship hands control to the reload channel, which in turn hands
     // back to the data channel for the next frame.
-    dma_start_channel_mask(1U << dma_chan_data);
-    dma_running = true;
+    const uint32_t kDataChannelMask = 1UL << static_cast<uint32_t>(g_dma_chan_data);
+    dma_start_channel_mask(kDataChannelMask);
+    g_dma_running = true;
 }
 
 } // namespace
@@ -281,8 +294,8 @@ void init(PIO pio, uint sm, uint offset, uint pin_base)
 /// @brief Applies a new PIO clock divider to the active display state machine.
 void set_clkdiv(float clkdiv)
 {
-    configured_clkdiv = clkdiv;
-    pio_sm_set_clkdiv(active_pio, active_sm, configured_clkdiv);
+    g_configured_clkdiv = clkdiv;
+    pio_sm_set_clkdiv(g_active_pio, g_active_sm, g_configured_clkdiv);
 }
 
 /// @brief Converts the supplied UI framebuffer into the inactive raster buffer.
@@ -292,15 +305,15 @@ void set_clkdiv(float clkdiv)
 /// is what keeps scanout atomic from the panel's point of view.
 void present(const uint8_t* ui_fb)
 {
-    rebuild_raster_from_fb(ui_fb, raster_back->data());
+    rebuild_raster_from_fb(ui_fb, g_raster_back->data());
 
-    if (!dma_running)
+    if (!g_dma_running)
     {
         raster_swap();
         return;
     }
 
-    raster_pending = raster_back;
+    g_raster_pending = g_raster_back;
 }
 
 } // namespace display

@@ -17,7 +17,11 @@
 #include "screens.h"
 #include "screensaver_clock.h"
 #include "screensaver_life.h"
+#include "screensaver_matrix.h"
+#include "screensaver_radar.h"
+#include "screensaver_rain.h"
 #include "screensaver_starfield.h"
+#include "screensaver_worms.h"
 #include "time_manager.h"
 #include "web_config_server.h"
 #include "wifi_manager.h"
@@ -91,11 +95,18 @@ void init_selected_screensaver(ScreenSaverSelection selection, const uint8_t* se
         screensaver_starfield::init();
         break;
     case ScreenSaverSelection::Matrix:
+        screensaver_matrix::init();
+        break;
     case ScreenSaverSelection::Radar:
+        screensaver_radar::init();
+        break;
     case ScreenSaverSelection::Rain:
+        screensaver_rain::init();
+        break;
     case ScreenSaverSelection::Worms:
+        screensaver_worms::init();
+        break;
     case ScreenSaverSelection::Random:
-        screensaver_life::init(seed_fb);
         break;
     }
 }
@@ -118,11 +129,22 @@ void render_selected_screensaver(ScreenSaverSelection selection, uint8_t* fb,
         screensaver_starfield::step_and_render(fb);
         break;
     case ScreenSaverSelection::Matrix:
+        life_stats = {};
+        screensaver_matrix::step_and_render(fb);
+        break;
     case ScreenSaverSelection::Radar:
+        life_stats = {};
+        screensaver_radar::step_and_render(fb);
+        break;
     case ScreenSaverSelection::Rain:
+        life_stats = {};
+        screensaver_rain::step_and_render(fb);
+        break;
     case ScreenSaverSelection::Worms:
+        life_stats = {};
+        screensaver_worms::step_and_render(fb);
+        break;
     case ScreenSaverSelection::Random:
-        screensaver_life::step_and_render(fb, life_stats);
         break;
     }
 }

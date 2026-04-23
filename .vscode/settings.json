@@ -30,7 +30,12 @@
     "C_Cpp.codeAnalysis.clangTidy.path": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-tidy.exe",
     "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
     "C_Cpp.codeAnalysis.clangTidy.args": [
-        "--system-headers=0"
+        "--system-headers=0",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/lib/gcc/arm-none-eabi/14.2.1/include",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp"
     ],
     "files.associations": {
         "**/.pico-sdk/toolchain/**/include/c++/**": "cpp",
