@@ -21,6 +21,8 @@ namespace screens
 namespace
 {
 
+constexpr uint8_t kSettingsPageCount = 2U;
+
 /// @brief Returns the compact label used for the letter annunciator mode.
 const char* letter_mode_text(LetterMode mode)
 {
@@ -79,6 +81,12 @@ const char* brightness_text(BrightnessLevel level)
     }
 
     return "?";
+}
+
+/// @brief Returns a consistent yes/no style label for config booleans.
+const char* enabled_text(bool enabled)
+{
+    return enabled ? "Enabled" : "Disabled";
 }
 
 /// @brief Returns the abbreviated lamp-mode label used in compact layouts.
@@ -258,40 +266,6 @@ bool weather_source_is_stub(WeatherSource source)
     return true;
 }
 
-/// @brief Returns the user-facing label for the currently selected time zone.
-const char* time_zone_text(TimeZoneSelection zone)
-{
-    switch (zone)
-    {
-    case TimeZoneSelection::AtlanticStandard:
-        return "Atlantic Standard Time";
-    case TimeZoneSelection::ArgentinaStandard:
-        return "Argentina Time";
-    case TimeZoneSelection::SouthGeorgia:
-        return "South Georgia Time";
-    case TimeZoneSelection::Azores:
-        return "Azores Time";
-    case TimeZoneSelection::EuropeLondon:
-        return "Europe/London";
-    case TimeZoneSelection::CentralEuropean:
-        return "Central European Time";
-    case TimeZoneSelection::EasternEuropean:
-        return "Eastern European Time";
-    case TimeZoneSelection::ArabiaStandard:
-        return "Arabia Standard Time";
-    case TimeZoneSelection::GulfStandard:
-        return "Gulf Standard Time";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the clock zone the firmware is actually applying today.
-const char* applied_time_zone_text()
-{
-    return "Europe/London";
-}
-
 /// @brief Returns the page title that matches the active menu route.
 const char* menu_page_title(MenuPage page)
 {
@@ -305,8 +279,16 @@ const char* menu_page_title(MenuPage page)
         return "HOME ASSISTANT";
     case MenuPage::Settings:
         return "SETTINGS";
+    case MenuPage::DeviceSettings:
+        return "DEVICE IDENTITY";
+    case MenuPage::SecuritySettings:
+        return "SECURITY";
     case MenuPage::WifiSettings:
-        return "WIFI";
+        return "NETWORK";
+    case MenuPage::HomeAssistantSettings:
+        return "HOME ASSISTANT";
+    case MenuPage::MqttSettings:
+        return "MQTT DISCOVERY";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
     case MenuPage::WeatherSources:
@@ -320,6 +302,25 @@ const char* menu_page_title(MenuPage page)
     }
 
     return "MENU";
+}
+
+/// @brief Builds the header title for pages that carry a visible page index.
+const char* menu_page_title(const ConsoleState& console_state, char* buffer, size_t buffer_size)
+{
+    if (buffer == nullptr || buffer_size == 0)
+    {
+        return "";
+    }
+
+    if (console_state.active_page == MenuPage::Settings)
+    {
+        std::snprintf(buffer, buffer_size, "SETTINGS %u/%u",
+                      static_cast<unsigned>(console_state.settings_page_index + 1U),
+                      static_cast<unsigned>(kSettingsPageCount));
+        return buffer;
+    }
+
+    return menu_page_title(console_state.active_page);
 }
 
 /// @brief Measures text through one shared helper so layout math stays consistent.
@@ -375,12 +376,16 @@ fonts::FontFace softkey_label_font(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Settings:
+    case MenuPage::DeviceSettings:
+    case MenuPage::SecuritySettings:
+    case MenuPage::WifiSettings:
+    case MenuPage::HomeAssistantSettings:
+    case MenuPage::MqttSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
         return fonts::FontFace::Font5x7;
     case MenuPage::Weather:
     case MenuPage::Status:
-    case MenuPage::WifiSettings:
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
         return fonts::FontFace::Font8x12;
@@ -1255,11 +1260,12 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Draws the weather-source selection page under Settings.
-/// @details The selection is expressed entirely through the softkey labels, so
-/// the center area stays empty unless a future request needs more detail.
+/// @details Settings subpages keep values on the surrounding softkeys so the
+/// centre of the display stays free of duplicate status text.
 void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_blank_menu_page(fb, console_state);
+    (void)fb;
+    (void)console_state;
 }
 
 /// @brief Draws the Home Assistant status page.
@@ -1303,56 +1309,91 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the clean settings routing page.
-/// @details Like the home page, the center area stays empty so the menu feels
-/// like a simple directory of subpages rather than a mixed menu/status screen.
+/// @brief Draws the top-level settings routing page.
+/// @details The root page intentionally leaves the centre clear. Section state
+/// belongs in the bracketed softkey labels; detailed values are shown only
+/// after the operator opens a focused settings subpage.
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_blank_menu_page(fb, console_state);
+    constexpr int kArrowY = kUiHeight - 34;
+    constexpr int kArrowHalfWidth = 5;
+    constexpr int kArrowHalfHeight = 6;
+    constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
+    constexpr int kRightArrowX = (kUiWidth / 2) + 26;
+
+    if (console_state.settings_page_index > 0U)
+    {
+        framebuffer::draw_line(fb, kLeftArrowX + kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kLeftArrowX - kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kLeftArrowX - kArrowHalfWidth, kArrowY,
+                               kLeftArrowX + kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
+
+    if ((console_state.settings_page_index + 1U) < kSettingsPageCount)
+    {
+        framebuffer::draw_line(fb, kRightArrowX - kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kRightArrowX + kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kRightArrowX + kArrowHalfWidth, kArrowY,
+                               kRightArrowX - kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
 }
 
-/// @brief Draws the Wi-Fi information page.
-/// @details The Wi-Fi view now matches the same row layout used by the other
-/// information pages instead of carrying its own boxed presentation.
+/// @brief Leaves the device identity settings body blank.
+/// @details The surrounding softkeys carry each visible identity value.
+void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Leaves the security settings body blank.
+/// @details Security state is shown on the bracketed softkey labels.
+void draw_security_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Leaves the network settings body blank.
+/// @details Configured Wi-Fi values are shown as softkey attributes only.
 void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    const DetailRow rows[] = {
-        {"SSID", console_state.wifi_status.ssid[0] ? console_state.wifi_status.ssid.data()
-                                                   : "Not Set"},
-        {"STATUS", wifi_state_text(console_state.wifi_status.state)},
-        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
-                           ? console_state.wifi_status.ip_address.data()
-                           : "-"},
-        {"AUTH", console_state.wifi_status.auth_mode[0]
-                     ? console_state.wifi_status.auth_mode.data()
-                     : "-"},
-        {"MAC", console_state.wifi_status.mac_address[0]
-                    ? console_state.wifi_status.mac_address.data()
-                    : "-"},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+    (void)fb;
+    (void)console_state;
 }
 
-/// @brief Draws the screen-saver information page.
-/// @details This page now follows the same stripped-back presentation as the
-/// rest of the information views.
+/// @brief Leaves the Home Assistant settings body blank.
+/// @details Integration settings are exposed as bracketed softkey attributes.
+void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Leaves the MQTT discovery settings body blank.
+/// @details Broker and discovery values are shown around the bezel.
+void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Draws only active screen-saver editing UI.
+/// @details When not editing, the selected saver and timeout live on softkeys.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_blank_menu_page(fb, console_state);
-
     if (console_state.screen_saver_timeout_editing)
     {
         draw_screen_saver_scratchpad(fb, console_state);
     }
 }
 
-/// @brief Draws the time-zone selection summary page.
-/// @details Like the weather-source page, this stays visually empty in the
-/// center and lets the surrounding labels do all of the work.
+/// @brief Leaves the time-zone settings body blank.
+/// @details Available zones are presented as softkey choices.
 void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    draw_blank_menu_page(fb, console_state);
+    (void)fb;
+    (void)console_state;
 }
 
 /// @brief Draws the keypad-debug diagnostics page.
@@ -1440,8 +1481,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
+    char title[24] = {};
     screen_banners::draw_standard_banners(fb, console_state,
-                                          menu_page_title(console_state.active_page));
+                                          menu_page_title(console_state, title, sizeof(title)));
     draw_softkeys(fb, console_state);
 
     switch (console_state.active_page)
@@ -1458,8 +1500,20 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::Settings:
         draw_settings_page(fb, console_state);
         break;
+    case MenuPage::DeviceSettings:
+        draw_device_settings_page(fb, console_state);
+        break;
+    case MenuPage::SecuritySettings:
+        draw_security_settings_page(fb, console_state);
+        break;
     case MenuPage::WifiSettings:
         draw_wifi_settings_page(fb, console_state);
+        break;
+    case MenuPage::HomeAssistantSettings:
+        draw_home_assistant_settings_page(fb, console_state);
+        break;
+    case MenuPage::MqttSettings:
+        draw_mqtt_settings_page(fb, console_state);
         break;
     case MenuPage::ScreenSaverSettings:
         draw_screen_saver_page(fb, console_state);

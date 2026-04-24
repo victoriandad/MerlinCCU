@@ -143,6 +143,8 @@ bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
     const ConfigSlot* slot1 = flash_slot(kSlot1Offset);
     const bool slot0_valid = validate_slot(*slot0);
     const bool slot1_valid = validate_slot(*slot1);
+    std::printf("Config flash scan: slot0=%s slot1=%s\n", slot0_valid ? "valid" : "invalid",
+                slot1_valid ? "valid" : "invalid");
 
     if (!slot0_valid && !slot1_valid)
     {
@@ -161,6 +163,8 @@ bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
 
     *out_settings = chosen->settings;
     *out_sequence = chosen->sequence;
+    std::printf("Config loaded from flash sequence %lu\n",
+                static_cast<unsigned long>(chosen->sequence));
     return true;
 }
 
@@ -179,13 +183,19 @@ bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequenc
     slot.crc32 = crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(RuntimeConfig));
     std::memcpy(flash_buffer, &slot, sizeof(slot));
 
+    std::printf("Config save: writing sequence %lu to flash offset 0x%08lX\n",
+                static_cast<unsigned long>(sequence), static_cast<unsigned long>(offset));
+
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_range_erase(offset, FLASH_SECTOR_SIZE);
     flash_range_program(offset, flash_buffer, sizeof(flash_buffer));
     restore_interrupts(interrupts);
 
     const ConfigSlot* stored = flash_slot(offset);
-    return validate_slot(*stored) && stored->sequence == sequence;
+    const bool valid = validate_slot(*stored) && stored->sequence == sequence;
+    std::printf("Config save: verify %s for sequence %lu\n", valid ? "ok" : "failed",
+                static_cast<unsigned long>(sequence));
+    return valid;
 }
 
 /// @brief Returns the next flash slot offset for a save operation.
@@ -208,6 +218,7 @@ void init()
         return;
     }
 
+    std::printf("Config flash empty or invalid; writing defaults\n");
     g_settings = make_default_settings();
     g_sequence = 0;
     (void)save(g_settings);
@@ -245,11 +256,15 @@ bool save(const RuntimeConfig& settings)
     const uint32_t next_sequence = g_sequence + 1U;
     if (!write_slot(next_save_slot_offset(), sanitized, next_sequence))
     {
+        std::printf("Config save failed before active settings were updated\n");
         return false;
     }
 
     g_settings = sanitized;
     g_sequence = next_sequence;
+    std::printf("Config save complete: sequence %lu device='%s' label='%s'\n",
+                static_cast<unsigned long>(g_sequence), g_settings.device_name.data(),
+                g_settings.device_label.data());
     return true;
 }
 

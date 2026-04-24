@@ -22,7 +22,7 @@ namespace
 
 constexpr uint16_t kHttpPort = 80;
 constexpr size_t kRequestCapacity = 4096;
-constexpr size_t kResponseCapacity = 12000;
+constexpr size_t kResponseCapacity = 16000;
 constexpr u16_t kTcpWriteChunkMax = 512;
 constexpr char kHttpOkHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
@@ -406,6 +406,9 @@ void build_config_page(const char* message)
                  "input,select{width:100%%;border:1px solid #315348;background:#0a1411;color:"
                  "var(--text);border-radius:10px;padding:10px 11px;font:inherit}input:focus,"
                  "select:focus{outline:2px solid #8fdc4b66;border-color:var(--accent)}"
+                 "fieldset{border:0;margin:0;padding:0}fieldset.disabled{opacity:.38}"
+                 "fieldset.disabled input,fieldset.disabled select{cursor:not-allowed;background:#101916;"
+                 "color:#6f8a80;border-color:#20362f}"
                  ".row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.check{display:flex;"
                  "gap:9px;align-items:center;margin-top:12px;color:var(--muted)}.check input{"
                  "width:auto}.actions{position:sticky;bottom:0;margin-top:18px;background:"
@@ -432,18 +435,29 @@ void build_config_page(const char* message)
     (void)append(cursor, remaining,
                  "<form method=\"post\" action=\"/config\"><div class=\"grid\"><section class=\"card\">"
                  "<h2>Device Identity</h2><label>Device name</label><input name=\"device_name\" "
-                 "maxlength=\"31\" value=\"%s\"><label>Display label</label><input name=\"device_label\" "
+                 "maxlength=\"31\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
+                 "Display label</label><input name=\"device_label\" "
                  "maxlength=\"31\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
                  "name=\"location\" maxlength=\"31\" value=\"%s\"></div><div><label>Room</label><input "
                  "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Use names like "
-                 "CCU1, CCU2, GroundFloorCCU, KitchenCCU.</p><label>Current admin password</label><input "
-                 "name=\"admin_password_current\" type=\"password\" autocomplete=\"current-password\">"
-                 "<p class=\"hint\">Factory default is merlin; change it before using the page routinely.</p>"
-                 "<label>New admin password</label><input name=\"admin_password_new\" type=\"password\" "
-                 "autocomplete=\"new-password\"><label class=\"check\"><input type=\"checkbox\" "
-                 "name=\"require_admin\" %s>Require admin password for saves</label></section>",
-                 device_name, device_label, location, room,
-                 cfg.require_admin_password ? "checked" : "");
+                 "CCU1, CCU2, GroundFloorCCU, KitchenCCU.</p></section>",
+                 device_name, device_label, location, room);
+
+    (void)append(cursor, remaining,
+                 "<section class=\"card\"><h2>Security</h2><label>Current admin password</label>"
+                 "<input name=\"admin_password_current\" type=\"password\" "
+                 "autocomplete=\"current-password\"><p class=\"hint\">Factory default is merlin; "
+                 "change it before using the page routinely.</p><label>New admin password</label>"
+                 "<input name=\"admin_password_new\" type=\"password\" autocomplete=\"new-password\">"
+                 "<label>Repeat new admin password</label><input name=\"admin_password_repeat\" "
+                 "type=\"password\" autocomplete=\"new-password\">"
+                 "<label class=\"check\"><input type=\"checkbox\" name=\"require_admin\" %s>"
+                 "Require admin password for saves</label><label class=\"check\"><input "
+                 "type=\"checkbox\" name=\"remote_config\" %s>Enable local web configuration "
+                 "server</label><p class=\"hint\">Disable this if you only want setup changes to "
+                 "come from the front panel.</p></section>",
+                 cfg.require_admin_password ? "checked" : "",
+                 cfg.remote_config_enabled ? "checked" : "");
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Network</h2><label>Wi-Fi SSID</label><input "
@@ -454,40 +468,52 @@ void build_config_page(const char* message)
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Home Assistant</h2><label class=\"check\"><input "
-                 "type=\"checkbox\" name=\"ha_enabled\" %s>Enable REST integration</label><label>Host</label>"
-                 "<input name=\"ha_host\" maxlength=\"63\" value=\"%s\"><div class=\"row\"><div><label>Port</label>"
-                 "<input name=\"ha_port\" inputmode=\"numeric\" value=\"%u\"></div><div><label>Weather source</label>"
-                 "<select name=\"weather_source\">",
-                 cfg.home_assistant_enabled ? "checked" : "", ha_host,
-                 static_cast<unsigned>(cfg.home_assistant_port));
+                 "type=\"checkbox\" name=\"ha_enabled\" data-controls=\"ha_fields\" %s>Enable "
+                 "REST integration</label><fieldset id=\"ha_fields\" class=\"%s\"><label>Host</label>"
+                 "<input name=\"ha_host\" maxlength=\"63\" value=\"%s\"><label>Port</label>"
+                 "<input name=\"ha_port\" type=\"number\" min=\"1\" max=\"65535\" "
+                 "inputmode=\"numeric\" value=\"%u\"><label>Access token</label><input "
+                 "name=\"ha_token\" type=\"password\" placeholder=\"Leave blank to keep current\">"
+                 "<label>Tracked entity</label><input name=\"ha_entity\" maxlength=\"63\" "
+                 "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"63\" "
+                 "value=\"%s\"></fieldset></section>",
+                 cfg.home_assistant_enabled ? "checked" : "",
+                 cfg.home_assistant_enabled ? "" : "disabled", ha_host,
+                 static_cast<unsigned>(cfg.home_assistant_port), ha_entity, ha_self);
+
+    (void)append(cursor, remaining,
+                 "<section class=\"card\"><h2>MQTT Discovery</h2><label class=\"check\"><input "
+                 "type=\"checkbox\" name=\"mqtt_enabled\" data-controls=\"mqtt_fields\" %s>Enable "
+                 "MQTT</label><fieldset id=\"mqtt_fields\" class=\"%s\"><label>Broker host</label>"
+                 "<input name=\"mqtt_host\" maxlength=\"63\" value=\"%s\"><div class=\"row\"><div><label>Port</label>"
+                 "<input name=\"mqtt_port\" type=\"number\" min=\"1\" max=\"65535\" "
+                 "inputmode=\"numeric\" value=\"%u\"></div><div><label>Username</label>"
+                 "<input name=\"mqtt_username\" maxlength=\"63\" value=\"%s\"></div></div><label>Password</label>"
+                 "<input name=\"mqtt_password\" type=\"password\" placeholder=\"Leave blank to keep current\">"
+                 "<div class=\"row\"><div><label>Discovery prefix</label><input name=\"mqtt_prefix\" maxlength=\"31\" "
+                 "value=\"%s\"></div><div><label>Base topic</label><input name=\"mqtt_topic\" maxlength=\"63\" "
+                 "value=\"%s\"></div></div></fieldset></section>",
+                 cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled", mqtt_host,
+                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic);
+
+    (void)append(cursor, remaining,
+                 "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
+                 "<select name=\"weather_source\" id=\"weather_source_select\">");
     const char* selected_weather = weather_token(cfg.weather_source);
     (void)append_option(cursor, remaining, "home_assistant", "Home Assistant", selected_weather);
     (void)append_option(cursor, remaining, "met_office", "Met Office", selected_weather);
     (void)append_option(cursor, remaining, "bbc_weather", "BBC Weather", selected_weather);
     (void)append(cursor, remaining,
-                 "</select></div></div><label>Access token</label><input name=\"ha_token\" "
-                 "type=\"password\" placeholder=\"Leave blank to keep current\"><label>Tracked entity</label>"
-                 "<input name=\"ha_entity\" maxlength=\"63\" value=\"%s\"><label>Self entity</label><input "
-                 "name=\"ha_self\" maxlength=\"63\" value=\"%s\"><div class=\"row\"><div><label>Weather entity</label>"
-                 "<input name=\"weather_entity\" maxlength=\"63\" value=\"%s\"></div><div><label>Sun entity</label>"
-                 "<input name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div></section>",
-                 ha_entity, ha_self, weather_entity, sun_entity);
+                 "</select><fieldset id=\"weather_entity_fields\" class=\"%s\"><div class=\"row\"><div><label>Weather entity</label><input "
+                 "name=\"weather_entity\" maxlength=\"63\" value=\"%s\"></div><div><label>Sun "
+                 "entity</label><input name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div>"
+                 "</div></fieldset></section>",
+                 cfg.weather_source == WeatherSource::HomeAssistant ? "" : "disabled",
+                 weather_entity, sun_entity);
 
     (void)append(cursor, remaining,
-                 "<section class=\"card\"><h2>MQTT Discovery</h2><label class=\"check\"><input "
-                 "type=\"checkbox\" name=\"mqtt_enabled\" %s>Enable MQTT</label><label>Broker host</label>"
-                 "<input name=\"mqtt_host\" maxlength=\"63\" value=\"%s\"><div class=\"row\"><div><label>Port</label>"
-                 "<input name=\"mqtt_port\" inputmode=\"numeric\" value=\"%u\"></div><div><label>Username</label>"
-                 "<input name=\"mqtt_username\" maxlength=\"63\" value=\"%s\"></div></div><label>Password</label>"
-                 "<input name=\"mqtt_password\" type=\"password\" placeholder=\"Leave blank to keep current\">"
-                 "<div class=\"row\"><div><label>Discovery prefix</label><input name=\"mqtt_prefix\" maxlength=\"31\" "
-                 "value=\"%s\"></div><div><label>Base topic</label><input name=\"mqtt_topic\" maxlength=\"63\" "
-                 "value=\"%s\"></div></div></section>",
-                 cfg.mqtt_enabled ? "checked" : "", mqtt_host,
-                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic);
-
-    (void)append(cursor, remaining,
-                 "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select name=\"time_zone\">");
+                 "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
+                 "name=\"time_zone\">");
     const char* selected_zone = time_zone_token(cfg.time_zone);
     (void)append_option(cursor, remaining, "atlantic", "Atlantic Standard Time", selected_zone);
     (void)append_option(cursor, remaining, "argentina", "Argentina Time", selected_zone);
@@ -499,7 +525,8 @@ void build_config_page(const char* message)
     (void)append_option(cursor, remaining, "arabia", "Arabia Standard Time", selected_zone);
     (void)append_option(cursor, remaining, "gulf", "Gulf Standard Time", selected_zone);
     (void)append(cursor, remaining,
-                 "</select><label>Screen saver</label><select name=\"screen_saver\">");
+                 "</select></section><section class=\"card\"><h2>Screen Saver</h2><label>Screen "
+                 "saver</label><select name=\"screen_saver\">");
     const char* selected_saver = saver_token(cfg.screen_saver);
     (void)append_option(cursor, remaining, "life", "Life", selected_saver);
     (void)append_option(cursor, remaining, "clock", "Clock", selected_saver);
@@ -511,9 +538,27 @@ void build_config_page(const char* message)
     (void)append_option(cursor, remaining, "random", "Random", selected_saver);
     (void)append(cursor, remaining,
                  "</select><label>Screen-saver timeout minutes</label><input name=\"screen_timeout\" "
-                 "inputmode=\"numeric\" value=\"%u\"><p class=\"hint\">0 disables timeout. Valid range: 0-120."
+                 "type=\"number\" min=\"0\" max=\"120\" inputmode=\"numeric\" value=\"%u\">"
+                 "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
                  "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved locally "
-                 "on this CCU.</span><button type=\"submit\">Save Configuration</button></div></form></main></body></html>",
+                 "on this CCU.</span><button type=\"submit\">Save Configuration</button></div></form>"
+                 "<script>"
+                 "function byId(id){return document.getElementById(id)}"
+                 "function setDisabled(fs,off){if(!fs)return;var els=fs.querySelectorAll('input,select');"
+                 "fs.className=off?'disabled':'';for(var i=0;i<els.length;i++){els[i].disabled=off}}"
+                 "function syncCheck(box){setDisabled(byId(box.getAttribute('data-controls')),!box.checked)}"
+                 "var toggles=document.querySelectorAll('input[data-controls]');"
+                 "for(var i=0;i<toggles.length;i++){(function(box){box.onchange=function(){syncCheck(box)};"
+                 "syncCheck(box)})(toggles[i])}"
+                 "var weather=byId('weather_source_select'),weatherFields=byId('weather_entity_fields');"
+                 "function syncWeather(){setDisabled(weatherFields,weather.value!=='home_assistant')}"
+                 "if(weather){weather.onchange=syncWeather;syncWeather()}"
+                 "var form=document.querySelector('form'),pw=document.querySelector('[name=admin_password_new]'),"
+                 "rp=document.querySelector('[name=admin_password_repeat]');"
+                 "function syncPw(){rp.setCustomValidity(pw.value!==rp.value?'New admin passwords do not match':'')}"
+                 "if(form&&pw&&rp){pw.addEventListener('input',syncPw);rp.addEventListener('input',syncPw);"
+                 "form.addEventListener('submit',syncPw)}"
+                 "</script></main></body></html>",
                  static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
 }
 
@@ -569,20 +614,119 @@ bool form_has_key(const char* body, const char* key)
     return get_form_value(body, key, value, sizeof(value));
 }
 
-uint16_t parse_u16_or_default(const char* text, uint16_t fallback, uint16_t max_value)
+/// @brief Parses a required TCP/HTTP port and rejects malformed form input.
+/// @details Configuration should fail loudly when a browser submits invalid
+/// numeric text; silently keeping the old port makes it look as though a save
+/// succeeded when part of the form was ignored.
+bool parse_port_field(const char* text, uint16_t* out_port)
 {
-    if (text == nullptr || text[0] == '\0')
+    if (text == nullptr || text[0] == '\0' || out_port == nullptr)
     {
-        return fallback;
+        return false;
     }
 
     char* end = nullptr;
     const unsigned long value = std::strtoul(text, &end, 10);
-    if (end == text || *end != '\0' || value > max_value)
+    if (end == text || *end != '\0' || value == 0 || value > 65535UL)
     {
-        return fallback;
+        return false;
     }
-    return static_cast<uint16_t>(value);
+
+    *out_port = static_cast<uint16_t>(value);
+    return true;
+}
+
+/// @brief Parses a bounded unsigned integer and rejects malformed text.
+bool parse_u16_field(const char* text, uint16_t min_value, uint16_t max_value,
+                     uint16_t* out_value)
+{
+    if (text == nullptr || text[0] == '\0' || out_value == nullptr)
+    {
+        return false;
+    }
+
+    char* end = nullptr;
+    const unsigned long value = std::strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || value < min_value || value > max_value)
+    {
+        return false;
+    }
+
+    *out_value = static_cast<uint16_t>(value);
+    return true;
+}
+
+/// @brief Returns whether text can be stored as a short human-facing label.
+bool is_printable_config_text(const char* text)
+{
+    if (text == nullptr)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; text[i] != '\0'; ++i)
+    {
+        const unsigned char ch = static_cast<unsigned char>(text[i]);
+        if (ch < 0x20U || ch > 0x7EU)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// @brief Returns whether a device name is safe for hostnames and entity IDs.
+bool is_valid_device_name(const char* text)
+{
+    if (text == nullptr || text[0] == '\0')
+    {
+        return false;
+    }
+
+    for (size_t i = 0; text[i] != '\0'; ++i)
+    {
+        const unsigned char ch = static_cast<unsigned char>(text[i]);
+        if (!std::isalnum(ch) && ch != '-' && ch != '_')
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// @brief Validates one bounded text field before it is copied into flash config.
+bool validate_text_field(const char* label, const char* value, size_t max_length, bool required,
+                         bool (*validator)(const char*), char* error, size_t error_size)
+{
+    if (value == nullptr)
+    {
+        value = "";
+    }
+
+    if (required && value[0] == '\0')
+    {
+        std::snprintf(error, error_size, "Configuration not saved: %s is required.", label);
+        return false;
+    }
+
+    if (std::strlen(value) > max_length)
+    {
+        std::snprintf(error, error_size,
+                      "Configuration not saved: %s is too long; maximum is %u characters.",
+                      label, static_cast<unsigned>(max_length));
+        return false;
+    }
+
+    if (value[0] != '\0' && validator != nullptr && !validator(value))
+    {
+        std::snprintf(error, error_size,
+                      "Configuration not saved: %s contains unsupported characters.", label);
+        return false;
+    }
+
+    return true;
 }
 
 WeatherSource parse_weather_source(const char* text, WeatherSource fallback)
@@ -683,74 +827,190 @@ ScreenSaverSelection parse_screen_saver(const char* text, ScreenSaverSelection f
 /// @brief Updates settings from a POST body and returns a user-facing message.
 const char* handle_config_post(const char* body)
 {
+    std::printf("Web config POST received: %u bytes\n",
+                static_cast<unsigned>(body != nullptr ? std::strlen(body) : 0U));
+
     char current_password[40] = {};
     (void)get_form_value(body, "admin_password_current", current_password, sizeof(current_password));
     if (!config_manager::admin_password_matches(current_password))
     {
+        std::printf("Web config save rejected: admin password mismatch\n");
         return "Configuration not saved: admin password did not match.";
     }
 
     RuntimeConfig cfg = config_manager::settings();
     char value[160] = {};
+    char repeated_value[160] = {};
+    static char validation_error[160] = {};
+    validation_error[0] = '\0';
 
     if (get_form_value(body, "device_name", value, sizeof(value)))
     {
+        if (!validate_text_field("Device name", value, cfg.device_name.size() - 1, true,
+                                 is_valid_device_name, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.device_name, value);
     }
     if (get_form_value(body, "device_label", value, sizeof(value)))
     {
+        if (!validate_text_field("Display label", value, cfg.device_label.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.device_label, value);
     }
     if (get_form_value(body, "location", value, sizeof(value)))
     {
+        if (!validate_text_field("Location", value, cfg.location.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.location, value);
     }
     if (get_form_value(body, "room", value, sizeof(value)))
     {
+        if (!validate_text_field("Room", value, cfg.room.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.room, value);
     }
     if (get_form_value(body, "admin_password_new", value, sizeof(value)) && value[0] != '\0')
     {
+        (void)get_form_value(body, "admin_password_repeat", repeated_value,
+                             sizeof(repeated_value));
+        if (std::strcmp(value, repeated_value) != 0)
+        {
+            std::printf("Web config save rejected: new admin passwords did not match\n");
+            return "Configuration not saved: new admin passwords did not match.";
+        }
+        if (!validate_text_field("New admin password", value, cfg.admin_password.size() - 1, true,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.admin_password, value);
     }
     cfg.require_admin_password = form_has_key(body, "require_admin");
+    cfg.remote_config_enabled = form_has_key(body, "remote_config");
 
     if (get_form_value(body, "wifi_ssid", value, sizeof(value)))
     {
+        if (!validate_text_field("Wi-Fi SSID", value, cfg.wifi_ssid.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.wifi_ssid, value);
     }
     if (get_form_value(body, "wifi_password", value, sizeof(value)) && value[0] != '\0')
     {
+        if (!validate_text_field("Wi-Fi password", value, cfg.wifi_password.size() - 1, true,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.wifi_password, value);
     }
 
     cfg.home_assistant_enabled = form_has_key(body, "ha_enabled");
     if (get_form_value(body, "ha_host", value, sizeof(value)))
     {
+        if (!validate_text_field("Home Assistant host", value,
+                                 cfg.home_assistant_host.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.home_assistant_host, value);
     }
     if (get_form_value(body, "ha_port", value, sizeof(value)))
     {
-        cfg.home_assistant_port = parse_u16_or_default(value, cfg.home_assistant_port, 65535);
+        uint16_t port = 0;
+        if (!parse_port_field(value, &port))
+        {
+            std::printf("Web config save rejected: invalid Home Assistant port '%s'\n", value);
+            return "Configuration not saved: Home Assistant port must be 1-65535.";
+        }
+        cfg.home_assistant_port = port;
     }
     if (get_form_value(body, "ha_token", value, sizeof(value)) && value[0] != '\0')
     {
+        if (!validate_text_field("Home Assistant token", value,
+                                 cfg.home_assistant_token.size() - 1, true,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.home_assistant_token, value);
     }
     if (get_form_value(body, "ha_entity", value, sizeof(value)))
     {
+        if (!validate_text_field("Tracked entity", value,
+                                 cfg.home_assistant_entity_id.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.home_assistant_entity_id, value);
     }
     if (get_form_value(body, "ha_self", value, sizeof(value)))
     {
+        if (!validate_text_field("Self entity", value,
+                                 cfg.home_assistant_self_entity_id.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.home_assistant_self_entity_id, value);
     }
     if (get_form_value(body, "weather_entity", value, sizeof(value)))
     {
+        if (!validate_text_field("Weather entity", value, cfg.weather_entity_id.size() - 1,
+                                 false, is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.weather_entity_id, value);
     }
     if (get_form_value(body, "sun_entity", value, sizeof(value)))
     {
+        if (!validate_text_field("Sun entity", value, cfg.sun_entity_id.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.sun_entity_id, value);
     }
     if (get_form_value(body, "weather_source", value, sizeof(value)))
@@ -761,26 +1021,68 @@ const char* handle_config_post(const char* body)
     cfg.mqtt_enabled = form_has_key(body, "mqtt_enabled");
     if (get_form_value(body, "mqtt_host", value, sizeof(value)))
     {
+        if (!validate_text_field("MQTT broker host", value, cfg.mqtt_host.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.mqtt_host, value);
     }
     if (get_form_value(body, "mqtt_port", value, sizeof(value)))
     {
-        cfg.mqtt_port = parse_u16_or_default(value, cfg.mqtt_port, 65535);
+        uint16_t port = 0;
+        if (!parse_port_field(value, &port))
+        {
+            std::printf("Web config save rejected: invalid MQTT port '%s'\n", value);
+            return "Configuration not saved: MQTT port must be 1-65535.";
+        }
+        cfg.mqtt_port = port;
     }
     if (get_form_value(body, "mqtt_username", value, sizeof(value)))
     {
+        if (!validate_text_field("MQTT username", value, cfg.mqtt_username.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.mqtt_username, value);
     }
     if (get_form_value(body, "mqtt_password", value, sizeof(value)) && value[0] != '\0')
     {
+        if (!validate_text_field("MQTT password", value, cfg.mqtt_password.size() - 1, true,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.mqtt_password, value);
     }
     if (get_form_value(body, "mqtt_prefix", value, sizeof(value)))
     {
+        if (!validate_text_field("MQTT discovery prefix", value,
+                                 cfg.mqtt_discovery_prefix.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.mqtt_discovery_prefix, value);
     }
     if (get_form_value(body, "mqtt_topic", value, sizeof(value)))
     {
+        if (!validate_text_field("MQTT base topic", value, cfg.mqtt_base_topic.size() - 1,
+                                 false, is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
         copy_text(cfg.mqtt_base_topic, value);
     }
     if (get_form_value(body, "time_zone", value, sizeof(value)))
@@ -793,17 +1095,27 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "screen_timeout", value, sizeof(value)))
     {
-        cfg.screen_saver_timeout_minutes = parse_u16_or_default(
-            value, cfg.screen_saver_timeout_minutes, 120);
+        uint16_t timeout_minutes = 0;
+        if (!parse_u16_field(value, 0, 120, &timeout_minutes))
+        {
+            std::printf("Web config save rejected: invalid screen timeout '%s'\n", value);
+            return "Configuration not saved: screen-saver timeout must be 0-120 minutes.";
+        }
+        cfg.screen_saver_timeout_minutes = timeout_minutes;
     }
 
     if (!config_manager::save(cfg))
     {
+        std::printf("Web config save failed: flash write failed\n");
         return "Configuration not saved: flash write failed.";
     }
 
     console_controller::apply_runtime_config(config_manager::settings());
-    return "Configuration saved. Display settings applied now; network and integration changes take effect after reboot.";
+    console_controller::request_redraw();
+    std::printf("Web config save complete: device='%s' label='%s'\n",
+                config_manager::settings().device_name.data(),
+                config_manager::settings().device_label.data());
+    return "Configuration saved. Display settings and local web-access policy apply now; Wi-Fi and integration transport changes take effect after reboot.";
 }
 
 /// @brief Sends one response and closes the TCP session.
@@ -1040,6 +1352,13 @@ bool update(const WifiStatus& wifi_status)
 
     if (!should_run && g_listener != nullptr)
     {
+        // Let the current browser request finish cleanly before the listener
+        // and session are torn down by a newly disabled local-web policy.
+        if (g_session.pcb != nullptr)
+        {
+            return false;
+        }
+
         stop_server();
         return true;
     }

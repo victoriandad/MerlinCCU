@@ -126,7 +126,11 @@ enum class MenuPage : uint8_t
     Weather,
     Status,
     Settings,
+    DeviceSettings,
+    SecuritySettings,
     WifiSettings,
+    HomeAssistantSettings,
+    MqttSettings,
     ScreenSaverSettings,
     WeatherSources,
     TimeZoneSettings,
@@ -297,13 +301,21 @@ enum class SoftKeyRoute : uint8_t
     GoWeather,
     GoStatus,
     GoSettings,
+    GoDeviceSettings,
+    GoSecuritySettings,
     GoWifiSettings,
+    GoHomeAssistantSettings,
+    GoMqttSettings,
     GoScreenSaverSettings,
     EditScreenSaverTimeout,
     ConfirmScreenSaverTimeout,
     GoWeatherSources,
     GoTimeZoneSettings,
     GoKeypadDebug,
+    ToggleRemoteConfig,
+    ToggleRequireAdminPassword,
+    ToggleHomeAssistantEnabled,
+    ToggleMqttEnabled,
     SelectScreenSaverLife,
     SelectScreenSaverClock,
     SelectScreenSaverStarfield,
@@ -371,6 +383,7 @@ struct KeypadDebugStatus
 struct ConsoleState
 {
     MenuPage active_page;
+    uint8_t settings_page_index;
     WeatherSource weather_source;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;

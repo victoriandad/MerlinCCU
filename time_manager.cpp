@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "config_manager.h"
 #include "pico/stdlib.h"
 
 namespace
@@ -89,8 +90,10 @@ int last_sunday_of_month(int year, int month)
     return last_day - weekday_from_ymd(year, month, last_day);
 }
 
-/// @brief Returns whether UK daylight saving time is active for the given UTC epoch.
-bool uk_daylight_saving_active_utc(uint32_t epoch_seconds)
+/// @brief Returns whether European daylight saving time is active at a UTC epoch.
+/// @details The affected presets all follow the common EU transition instants:
+/// 01:00 UTC on the last Sunday in March and October.
+bool european_daylight_saving_active_utc(uint32_t epoch_seconds)
 {
     const DateTimeParts utc = unix_time_to_utc(epoch_seconds);
     if (utc.month < 3 || utc.month > 10)
@@ -112,6 +115,57 @@ bool uk_daylight_saving_active_utc(uint32_t epoch_seconds)
     return utc.day < change_day || (utc.day == change_day && utc.hour < 1);
 }
 
+/// @brief Returns the base UTC offset, in seconds, for one configured time zone.
+int32_t base_utc_offset_seconds(TimeZoneSelection zone)
+{
+    constexpr int32_t kSecondsPerHour = 60 * 60;
+
+    switch (zone)
+    {
+    case TimeZoneSelection::AtlanticStandard:
+        return -4 * kSecondsPerHour;
+    case TimeZoneSelection::ArgentinaStandard:
+        return -3 * kSecondsPerHour;
+    case TimeZoneSelection::SouthGeorgia:
+        return -2 * kSecondsPerHour;
+    case TimeZoneSelection::Azores:
+        return -1 * kSecondsPerHour;
+    case TimeZoneSelection::EuropeLondon:
+        return 0;
+    case TimeZoneSelection::CentralEuropean:
+        return 1 * kSecondsPerHour;
+    case TimeZoneSelection::EasternEuropean:
+        return 2 * kSecondsPerHour;
+    case TimeZoneSelection::ArabiaStandard:
+        return 3 * kSecondsPerHour;
+    case TimeZoneSelection::GulfStandard:
+        return 4 * kSecondsPerHour;
+    }
+
+    return 0;
+}
+
+/// @brief Returns whether the selected zone uses the shared European DST rules.
+bool uses_european_daylight_saving(TimeZoneSelection zone)
+{
+    switch (zone)
+    {
+    case TimeZoneSelection::Azores:
+    case TimeZoneSelection::EuropeLondon:
+    case TimeZoneSelection::CentralEuropean:
+    case TimeZoneSelection::EasternEuropean:
+        return true;
+    case TimeZoneSelection::AtlanticStandard:
+    case TimeZoneSelection::ArgentinaStandard:
+    case TimeZoneSelection::SouthGeorgia:
+    case TimeZoneSelection::ArabiaStandard:
+    case TimeZoneSelection::GulfStandard:
+        return false;
+    }
+
+    return false;
+}
+
 /// @brief Returns the current local epoch derived from the last SNTP sync point.
 uint32_t current_local_epoch_seconds()
 {
@@ -124,7 +178,15 @@ uint32_t current_local_epoch_seconds()
     const uint32_t elapsed_seconds =
         elapsed_us > 0 ? static_cast<uint32_t>(elapsed_us / 1000000) : 0;
     const uint32_t utc_epoch = g_last_ntp_epoch_utc + elapsed_seconds;
-    return utc_epoch + (uk_daylight_saving_active_utc(utc_epoch) ? 3600U : 0U);
+    const TimeZoneSelection zone = config_manager::settings().time_zone;
+    int32_t utc_offset_seconds = base_utc_offset_seconds(zone);
+    if (uses_european_daylight_saving(zone) && european_daylight_saving_active_utc(utc_epoch))
+    {
+        utc_offset_seconds += 3600;
+    }
+
+    const int64_t local_epoch = static_cast<int64_t>(utc_epoch) + utc_offset_seconds;
+    return local_epoch > 0 ? static_cast<uint32_t>(local_epoch) : 0U;
 }
 
 /// @brief Refreshes the user-facing `HH:MM` time text.
