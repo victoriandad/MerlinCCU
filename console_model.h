@@ -383,6 +383,7 @@ struct KeypadDebugStatus
 struct ConsoleState
 {
     MenuPage active_page;
+    uint8_t settings_page_index;
     WeatherSource weather_source;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;

@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
@@ -21,6 +20,8 @@ namespace screens
 
 namespace
 {
+
+constexpr uint8_t kSettingsPageCount = 2U;
 
 /// @brief Returns the compact label used for the letter annunciator mode.
 const char* letter_mode_text(LetterMode mode)
@@ -86,18 +87,6 @@ const char* brightness_text(BrightnessLevel level)
 const char* enabled_text(bool enabled)
 {
     return enabled ? "Enabled" : "Disabled";
-}
-
-/// @brief Returns whether a secret value is currently stored.
-const char* stored_secret_text(bool present)
-{
-    return present ? "Stored" : "Not set";
-}
-
-/// @brief Returns a human-friendly fallback when a config string is blank.
-const char* value_or_dash(const char* text)
-{
-    return (text != nullptr && text[0] != '\0') ? text : "-";
 }
 
 /// @brief Returns the abbreviated lamp-mode label used in compact layouts.
@@ -262,32 +251,6 @@ const char* weather_source_text(WeatherSource source)
     return "?";
 }
 
-/// @brief Returns the user-facing label for the currently selected screen saver.
-const char* screen_saver_text(ScreenSaverSelection saver)
-{
-    switch (saver)
-    {
-    case ScreenSaverSelection::Life:
-        return "Life";
-    case ScreenSaverSelection::Clock:
-        return "Clock";
-    case ScreenSaverSelection::Starfield:
-        return "Starfield";
-    case ScreenSaverSelection::Matrix:
-        return "Matrix";
-    case ScreenSaverSelection::Radar:
-        return "Radar";
-    case ScreenSaverSelection::Rain:
-        return "Rain";
-    case ScreenSaverSelection::Worms:
-        return "Worms";
-    case ScreenSaverSelection::Random:
-        return "Random";
-    }
-
-    return "?";
-}
-
 /// @brief Returns whether the selected weather source is still only a stub.
 bool weather_source_is_stub(WeatherSource source)
 {
@@ -301,40 +264,6 @@ bool weather_source_is_stub(WeatherSource source)
     }
 
     return true;
-}
-
-/// @brief Returns the user-facing label for the currently selected time zone.
-const char* time_zone_text(TimeZoneSelection zone)
-{
-    switch (zone)
-    {
-    case TimeZoneSelection::AtlanticStandard:
-        return "Atlantic Standard Time";
-    case TimeZoneSelection::ArgentinaStandard:
-        return "Argentina Time";
-    case TimeZoneSelection::SouthGeorgia:
-        return "South Georgia Time";
-    case TimeZoneSelection::Azores:
-        return "Azores Time";
-    case TimeZoneSelection::EuropeLondon:
-        return "Europe/London";
-    case TimeZoneSelection::CentralEuropean:
-        return "Central European Time";
-    case TimeZoneSelection::EasternEuropean:
-        return "Eastern European Time";
-    case TimeZoneSelection::ArabiaStandard:
-        return "Arabia Standard Time";
-    case TimeZoneSelection::GulfStandard:
-        return "Gulf Standard Time";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the clock zone the firmware is actually applying today.
-const char* applied_time_zone_text()
-{
-    return time_zone_text(config_manager::settings().time_zone);
 }
 
 /// @brief Returns the page title that matches the active menu route.
@@ -351,15 +280,15 @@ const char* menu_page_title(MenuPage page)
     case MenuPage::Settings:
         return "SETTINGS";
     case MenuPage::DeviceSettings:
-        return "DEVICE";
+        return "DEVICE IDENTITY";
     case MenuPage::SecuritySettings:
         return "SECURITY";
     case MenuPage::WifiSettings:
-        return "WIFI";
+        return "NETWORK";
     case MenuPage::HomeAssistantSettings:
         return "HOME ASSISTANT";
     case MenuPage::MqttSettings:
-        return "MQTT";
+        return "MQTT DISCOVERY";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
     case MenuPage::WeatherSources:
@@ -373,6 +302,25 @@ const char* menu_page_title(MenuPage page)
     }
 
     return "MENU";
+}
+
+/// @brief Builds the header title for pages that carry a visible page index.
+const char* menu_page_title(const ConsoleState& console_state, char* buffer, size_t buffer_size)
+{
+    if (buffer == nullptr || buffer_size == 0)
+    {
+        return "";
+    }
+
+    if (console_state.active_page == MenuPage::Settings)
+    {
+        std::snprintf(buffer, buffer_size, "SETTINGS %u/%u",
+                      static_cast<unsigned>(console_state.settings_page_index + 1U),
+                      static_cast<unsigned>(kSettingsPageCount));
+        return buffer;
+    }
+
+    return menu_page_title(console_state.active_page);
 }
 
 /// @brief Measures text through one shared helper so layout math stays consistent.
@@ -428,7 +376,9 @@ fonts::FontFace softkey_label_font(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Settings:
+    case MenuPage::DeviceSettings:
     case MenuPage::SecuritySettings:
+    case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
     case MenuPage::WeatherSources:
@@ -436,8 +386,6 @@ fonts::FontFace softkey_label_font(MenuPage page)
         return fonts::FontFace::Font5x7;
     case MenuPage::Weather:
     case MenuPage::Status:
-    case MenuPage::DeviceSettings:
-    case MenuPage::WifiSettings:
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
         return fonts::FontFace::Font8x12;
@@ -1312,20 +1260,12 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Draws the weather-source selection page under Settings.
-/// @details The body mirrors the persisted configuration so operators can see
-/// which backend and entities the CCU will use before they change providers.
+/// @details Settings subpages keep values on the surrounding softkeys so the
+/// centre of the display stays free of duplicate status text.
 void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    const DetailRow rows[] = {
-        {"SELECTED", weather_source_text(config.weather_source)},
-        {"BACKEND", weather_source_is_stub(config.weather_source) ? "Stub only" : "Live"},
-        {"WEATHER", value_or_dash(config.weather_entity_id.data())},
-        {"SUN", value_or_dash(config.sun_entity_id.data())},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
 /// @brief Draws the Home Assistant status page.
@@ -1369,161 +1309,91 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the clean settings routing page.
-/// @details This acts as the top-level config summary so the operator can see
-/// the persisted state behind the subpages before diving into a section.
+/// @brief Draws the top-level settings routing page.
+/// @details The root page intentionally leaves the centre clear. Section state
+/// belongs in the bracketed softkey labels; detailed values are shown only
+/// after the operator opens a focused settings subpage.
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    const char* device_name = config.device_label[0] != '\0' ? config.device_label.data()
-                                                              : value_or_dash(config.device_name.data());
-    const DetailRow rows[] = {
-        {"DEVICE", device_name},
-        {"REMOTE", enabled_text(config.remote_config_enabled)},
-        {"WIFI SSID", value_or_dash(config.wifi_ssid.data())},
-        {"HA", enabled_text(config.home_assistant_enabled)},
-        {"MQTT", enabled_text(config.mqtt_enabled)},
-        {"SAVER", screen_saver_text(config.screen_saver)},
-        {"TIME ZONE", time_zone_text(config.time_zone)},
-    };
+    constexpr int kArrowY = kUiHeight - 34;
+    constexpr int kArrowHalfWidth = 5;
+    constexpr int kArrowHalfHeight = 6;
+    constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
+    constexpr int kRightArrowX = (kUiWidth / 2) + 26;
 
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+    if (console_state.settings_page_index > 0U)
+    {
+        framebuffer::draw_line(fb, kLeftArrowX + kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kLeftArrowX - kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kLeftArrowX - kArrowHalfWidth, kArrowY,
+                               kLeftArrowX + kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
+
+    if ((console_state.settings_page_index + 1U) < kSettingsPageCount)
+    {
+        framebuffer::draw_line(fb, kRightArrowX - kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kRightArrowX + kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kRightArrowX + kArrowHalfWidth, kArrowY,
+                               kRightArrowX - kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
 }
 
-/// @brief Draws the persisted device identity fields from runtime config.
+/// @brief Leaves the device identity settings body blank.
+/// @details The surrounding softkeys carry each visible identity value.
 void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    const DetailRow rows[] = {
-        {"NAME", value_or_dash(config.device_name.data())},
-        {"LABEL", value_or_dash(config.device_label.data())},
-        {"LOCATION", value_or_dash(config.location.data())},
-        {"ROOM", value_or_dash(config.room.data())},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the security and local-access policy currently in flash.
+/// @brief Leaves the security settings body blank.
+/// @details Security state is shown on the bracketed softkey labels.
 void draw_security_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    const DetailRow rows[] = {
-        {"REMOTE", enabled_text(config.remote_config_enabled)},
-        {"SAVE AUTH", config.require_admin_password ? "Password required" : "Open"},
-        {"ADMIN PW", stored_secret_text(config.admin_password[0] != '\0')},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the Wi-Fi information page.
-/// @details The Wi-Fi view now matches the same row layout used by the other
-/// information pages instead of carrying its own boxed presentation.
+/// @brief Leaves the network settings body blank.
+/// @details Configured Wi-Fi values are shown as softkey attributes only.
 void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    const RuntimeConfig& config = config_manager::settings();
-    const DetailRow rows[] = {
-        {"SSID", config.wifi_ssid[0] ? config.wifi_ssid.data() : "Not Set"},
-        {"WIFI PW", stored_secret_text(config.wifi_password[0] != '\0')},
-        {"STATUS", wifi_state_text(console_state.wifi_status.state)},
-        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
-                           ? console_state.wifi_status.ip_address.data()
-                           : "-"},
-        {"AUTH", console_state.wifi_status.auth_mode[0]
-                     ? console_state.wifi_status.auth_mode.data()
-                     : "-"},
-        {"MAC", console_state.wifi_status.mac_address[0]
-                    ? console_state.wifi_status.mac_address.data()
-                    : "-"},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+    (void)fb;
+    (void)console_state;
 }
 
-/// @brief Draws the persisted Home Assistant configuration alongside live status.
+/// @brief Leaves the Home Assistant settings body blank.
+/// @details Integration settings are exposed as bracketed softkey attributes.
 void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    char port_text[12] = {};
-    std::snprintf(port_text, sizeof(port_text), "%u",
-                  static_cast<unsigned>(config.home_assistant_port));
-
-    const DetailRow rows[] = {
-        {"REST", enabled_text(config.home_assistant_enabled)},
-        {"HOST", value_or_dash(config.home_assistant_host.data())},
-        {"PORT", port_text},
-        {"TOKEN", stored_secret_text(config.home_assistant_token[0] != '\0')},
-        {"TRACKED", value_or_dash(config.home_assistant_entity_id.data())},
-        {"SELF", value_or_dash(config.home_assistant_self_entity_id.data())},
-        {"WEATHER", value_or_dash(config.weather_entity_id.data())},
-        {"SUN", value_or_dash(config.sun_entity_id.data())},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the persisted MQTT discovery configuration.
+/// @brief Leaves the MQTT discovery settings body blank.
+/// @details Broker and discovery values are shown around the bezel.
 void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    char port_text[12] = {};
-    std::snprintf(port_text, sizeof(port_text), "%u", static_cast<unsigned>(config.mqtt_port));
-
-    const DetailRow rows[] = {
-        {"MQTT", enabled_text(config.mqtt_enabled)},
-        {"BROKER", value_or_dash(config.mqtt_host.data())},
-        {"PORT", port_text},
-        {"USERNAME", value_or_dash(config.mqtt_username.data())},
-        {"PASSWORD", stored_secret_text(config.mqtt_password[0] != '\0')},
-        {"PREFIX", value_or_dash(config.mqtt_discovery_prefix.data())},
-        {"TOPIC", value_or_dash(config.mqtt_base_topic.data())},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the screen-saver information page.
-/// @details This page now follows the same stripped-back presentation as the
-/// rest of the information views.
+/// @brief Draws only active screen-saver editing UI.
+/// @details When not editing, the selected saver and timeout live on softkeys.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    const RuntimeConfig& config = config_manager::settings();
-    char timeout_text[16] = {};
-    build_screen_saver_timeout_text(config.screen_saver_timeout_minutes, timeout_text,
-                                    sizeof(timeout_text));
-
-    const DetailRow rows[] = {
-        {"CURRENT", screen_saver_text(config.screen_saver)},
-        {"TIMEOUT", timeout_text},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
-
     if (console_state.screen_saver_timeout_editing)
     {
         draw_screen_saver_scratchpad(fb, console_state);
     }
 }
 
-/// @brief Draws the time-zone selection summary page.
-/// @details The two rows intentionally mirror both the persisted choice and the
-/// zone the clock logic is currently applying from that shared config.
+/// @brief Leaves the time-zone settings body blank.
+/// @details Available zones are presented as softkey choices.
 void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    (void)fb;
     (void)console_state;
-    const RuntimeConfig& config = config_manager::settings();
-    const DetailRow rows[] = {
-        {"SELECTED", time_zone_text(config.time_zone)},
-        {"APPLIED", applied_time_zone_text()},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
 /// @brief Draws the keypad-debug diagnostics page.
@@ -1611,8 +1481,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
+    char title[24] = {};
     screen_banners::draw_standard_banners(fb, console_state,
-                                          menu_page_title(console_state.active_page));
+                                          menu_page_title(console_state, title, sizeof(title)));
     draw_softkeys(fb, console_state);
 
     switch (console_state.active_page)

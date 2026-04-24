@@ -58,6 +58,7 @@ ConsoleState make_default_console_state()
     // Boot into the top-level home menu so the front panel always opens on the
     // clean navigation shell instead of a diagnostics surface.
     state.active_page = MenuPage::Home;
+    state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
     state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;

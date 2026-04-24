@@ -106,6 +106,8 @@ constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
     // The controller already understands Back Step even though the physical
     // matrix decode still needs to be wired into this scan table later.
     {ButtonId::BackStep, -1, true, "BACK STEP"},
+    {ButtonId::CursorLeft, -1, true, "LEFT"},
+    {ButtonId::CursorRight, -1, true, "RIGHT"},
     {ButtonId::Clr, -1, true, "CLR"},
     {ButtonId::Digit1, -1, true, "1"},
     {ButtonId::Digit2, -1, true, "2"},
@@ -134,6 +136,8 @@ constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
     {ButtonId::RightLower, 10, 15},
     {ButtonId::RightBottom, 11, 15},
     {ButtonId::BackStep, 6, 20},
+    {ButtonId::CursorLeft, 6, 19},
+    {ButtonId::CursorRight, 6, 18},
     {ButtonId::Clr, 6, 16},
     {ButtonId::Digit1, 8, 18},
     {ButtonId::Digit2, 8, 17},

@@ -5,8 +5,8 @@
 #include <cstdint>
 
 /// @brief Logical button identifiers surfaced by the unfinished CCU keypad scan.
-/// @details The list currently covers the ten bezel softkeys plus `BackStep`
-/// so the menu controller can own the navigation rules before every hardware
+/// @details The list currently covers the ten bezel softkeys, core navigation
+/// keys, and numeric keys needed by the menu controller before every hardware
 /// key has been fully mapped.
 enum class ButtonId : uint8_t
 {
@@ -21,6 +21,8 @@ enum class ButtonId : uint8_t
     RightLower,
     RightBottom,
     BackStep,
+    CursorLeft,
+    CursorRight,
     Clr,
     Digit1,
     Digit2,
