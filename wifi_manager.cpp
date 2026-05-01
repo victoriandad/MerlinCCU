@@ -96,7 +96,7 @@ constexpr size_t kWifiCredentialCount =
 
 // The Wi-Fi manager keeps a small amount of explicit timing state rather than
 // relying on blocking waits everywhere. That lets the main loop stay responsive
-// while DHCP, DNS, and retry behavior are still visible on the status page.
+// while DHCP, DNS, and retry behaviour are still visible on the status page.
 WifiStatus g_status = {};
 bool g_cyw43_initialized = false;
 int g_last_observed_link_status = CYW43_LINK_DOWN;

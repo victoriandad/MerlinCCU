@@ -525,7 +525,7 @@ bool extract_json_string_value(const char* json, const char* key, char* out, siz
 
     // Why this is strict:
     // If the closing quote is missing, the string in the receive buffer is
-    // incomplete. Older behavior would accept whatever characters had arrived
+    // incomplete. Older behaviour would accept whatever characters had arrived
     // so far, which can turn a truncated network read into a fake but
     // believable value on screen. Returning false here forces the caller to
     // treat that field as missing instead.

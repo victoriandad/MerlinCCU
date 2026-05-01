@@ -160,7 +160,7 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
                            fonts::FontFace::FontTitle8x12, 1);
 
     // Connectivity icons are clustered next to the clock so they read as one
-    // compact status area rather than competing with the centered page title.
+    // compact status area rather than competing with the centred page title.
     if (home_assistant_icon_width > 0)
     {
         draw_home_assistant_icon(fb, home_assistant_icon_x, kHeaderStatusIconY,

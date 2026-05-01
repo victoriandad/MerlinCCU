@@ -361,7 +361,7 @@ constexpr int softkey_y_for_index(int index)
     return kSoftkeyLayout.top_y + (index * kSoftkeyLayout.pitch);
 }
 
-/// @brief Returns the vertical center line of the indexed softkey position.
+/// @brief Returns the vertical centre line of the indexed softkey position.
 constexpr int softkey_center_y_for_index(int index)
 {
     return softkey_y_for_index(index) + (kSoftkeyLayout.height / 2);
@@ -841,7 +841,7 @@ ForecastDisplayWindow active_forecast_window(const ConsoleState& console_state)
     return window;
 }
 
-/// @brief Draws text centered around a given x-coordinate.
+/// @brief Draws text centred around a given x-coordinate.
 /// @details Centralizing the centering math keeps titles and status callouts
 /// aligned consistently across the different page renderers.
 void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool on,
@@ -852,7 +852,7 @@ void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool
 }
 
 /// @brief Draws one mirrored softkey label block.
-/// @details The label is vertically centered within the physical key slot so
+/// @details The label is vertically centred within the physical key slot so
 /// wrapped text still reads like it belongs to one button location.
 void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
                         fonts::FontFace font)
@@ -957,7 +957,7 @@ bool weather_sun_times_available(const ConsoleState& console_state)
 }
 
 /// @brief Draws sunrise and sunset information for the dedicated weather page.
-/// @details The block collapses to one centered line when only one value is
+/// @details The block collapses to one centred line when only one value is
 /// available so the footer still looks intentional instead of half-empty.
 void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -1039,9 +1039,9 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
     }
 }
 
-/// @brief Leaves a top-level menu page intentionally blank in the center area.
+/// @brief Leaves a top-level menu page intentionally blank in the centre area.
 /// @details Label-only shells rely on the surrounding softkeys rather than any
-/// center content, which keeps those pages deliberately sparse.
+/// centre content, which keeps those pages deliberately sparse.
 void draw_blank_menu_page(uint8_t* fb, const ConsoleState& console_state)
 {
     (void)fb;
@@ -1559,7 +1559,7 @@ void draw_calibration_screen(uint8_t* fb)
     framebuffer::fill_rect(fb, 0, kUiHeight - 8, 8, 8, true);
     framebuffer::fill_rect(fb, kUiWidth - 8, kUiHeight - 8, 8, 8, true);
 
-    // Center cross.
+    // Centre cross.
     framebuffer::draw_vline(fb, kMidX, 0, kUiHeight - 1, true);
     framebuffer::draw_hline(fb, 0, kUiWidth - 1, kMidY, true);
 

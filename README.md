@@ -43,7 +43,7 @@ The Life screensaver is currently the default runtime mode because it is useful
 for testing:
 
 - continuous screen updates
-- full display refresh behavior
+- full display refresh behaviour
 - timing/performance visibility over USB serial
 - visual masking of existing panel burn-in
 
@@ -411,6 +411,26 @@ For the photoresistor pair:
 - common ground between panel/front-panel supplies and Pico is required for
   reliable logic sensing
 
+## Pico Pin Budget (Current)
+
+This is the current practical pin budget based on firmware usage and the bench
+layout shown in current bring-up photos.
+
+| Group | Pins | Current use / policy |
+| --- | --- | --- |
+| Display scanout (fixed) | `GPIO2`, `GPIO3`, `GPIO4`, `GPIO5` | Reserved for `VID`, `VCLK`, `HS`, `VS` (`panel_config.h` `kPinBase=2`) |
+| Keypad matrix (active bench set) | `GPIO6..GPIO20` | Used by current matrix monitoring/decoding wiring (`keypad_matrix_config.h` local mapping) |
+| Free digital GPIO (observed) | `GPIO21`, `GPIO22` | Available for additional digital lines (for example LED control or spare logic inputs) |
+| Free ADC-capable GPIO (observed) | `GPIO26`, `GPIO27`, `GPIO28` | Prefer for photoresistor channels or other analog sensing |
+| Network/power infrastructure pins | `VBUS`, `VSYS`, `3V3`, `ADC_VREF`, `RUN`, `GND` | Not general-purpose front-panel GPIO; keep for power, reference, reset, and grounding roles only |
+
+Notes:
+
+- `GPIO26..GPIO28` can be used as digital GPIO if ADC is not needed, but they
+  are the best fit for LDR/photoresistor inputs.
+- Any reassignment should be mirrored in local `keypad_matrix_config.h` and
+  documented here to keep wiring notes aligned with runtime behaviour.
+
 ## Deferred Security TODOs
 
 These items are intentionally parked for a later hardening phase so the current
@@ -451,7 +471,7 @@ These are non-security items that are worth keeping visible for future passes.
 ## Deferred UI And Interaction TODOs
 
 - replace placeholder screens and routes with a coherent navigation model
-- define the softkey behavior consistently across all screens
+- define the softkey behaviour consistently across all screens
 - decide which controls belong on the Home page versus secondary pages
 - add any missing iconography needed for status and fault conditions
 - review whether the current text layout still works once more live data is added
@@ -473,7 +493,7 @@ These are non-security items that are worth keeping visible for future passes.
 - add more explicit diagnostics for malformed HA responses and unsupported payloads
 - review whether any optional requests should be rate-limited or skipped after repeated failures
 - check whether forecast payload size limits are still appropriate as more providers are tested
-- add a documented test checklist for network loss, HA restarts, broker loss, and recovery behavior
+- add a documented test checklist for network loss, HA restarts, broker loss, and recovery behaviour
 
 ## Likely Next Steps
 

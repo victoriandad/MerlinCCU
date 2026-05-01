@@ -94,7 +94,7 @@ const KeypadMonitorStatus& keypad_monitor_status();
 
 /// @brief Emits debug logging for a logical button event.
 /// @details The input layer currently only reports edges over USB serial.
-/// Higher-level behavior is handled later by `console_controller`.
+/// Higher-level behaviour is handled later by `console_controller`.
 void handle_button_event(const ButtonEvent& event);
 
 } // namespace input

@@ -19,12 +19,14 @@ better than broad refactors.
 - Branch from `main` for each feature or cleanup.
 - Keep network secrets, tokens, broker passwords and local IP choices in the
   ignored local headers, never in tracked files.
-- Prefer updating public headers and example files when behavior changes.
+- Prefer updating public headers and example files when behaviour changes.
+- Use British English spelling in documentation, comments, and user-facing strings (for example: `behaviour`, `centre`, `colour`).
+  - Do not change code identifiers, protocol/API field names, CSS keywords (for example `color`, `align-items:center`), or third-party interfaces purely for spelling consistency.
 - Write meaningful comments to help a new contributor understand intent, data
   flow, hardware assumptions, and why a block exists.
 - Do not treat "the code comments itself" as sufficient justification for
   omitting comments in non-trivial code.
-- Keep comments focused on purpose and behavior rather than narrating syntax
+- Keep comments focused on purpose and behaviour rather than narrating syntax
   line by line.
 - Prefer comments that explain why a piece of code exists, why an implementation
   choice was made, and what constraints or assumptions shaped it.

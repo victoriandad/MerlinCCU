@@ -28,13 +28,13 @@ constexpr int kCenterY = kUiHeight / 2;
 
 std::array<Star, kStarCount> g_stars = {};
 
-/// @brief Returns a random signed offset around the screen center.
+/// @brief Returns a random signed offset around the screen centre.
 int random_offset(int radius)
 {
     return (std::rand() % (radius * 2 + 1)) - radius;
 }
 
-/// @brief Respawns one star back near the center with a fresh depth.
+/// @brief Respawns one star back near the centre with a fresh depth.
 void respawn_star(Star& star)
 {
     star.x = random_offset(kCenterX);

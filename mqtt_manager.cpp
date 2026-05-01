@@ -372,7 +372,7 @@ bool parse_mqtt_endpoint()
     g_broker_port = use_runtime ? config.mqtt_port : kMqttPort;
 
     // Parse the broker endpoint once at startup so the runtime state machine
-    // only has to deal with connect/publish behavior, not string cleanup.
+    // only has to deal with connect/publish behaviour, not string cleanup.
     if (mqtt_host[0] == '\0')
     {
         return false;
@@ -484,7 +484,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
                   base_topic, mac_hex);
 
     // Topic strings are precomputed once per session so the publish path can
-    // focus on ordering and retry behavior instead of repeated formatting.
+    // focus on ordering and retry behaviour instead of repeated formatting.
     for (size_t i = 0; i < static_cast<size_t>(SensorId::Count); ++i)
     {
         const SensorDescriptor& sensor = kSensorDescriptors[i];
@@ -966,7 +966,7 @@ namespace mqtt_manager
 /// @brief Initializes MQTT configuration and clears runtime state.
 void init()
 {
-    // Snapshot the config once up front so runtime behavior is driven by a
+    // Snapshot the config once up front so runtime behaviour is driven by a
     // simple "configured or not" flag instead of repeatedly reparsing strings.
     g_config_valid = parse_mqtt_endpoint();
     g_status = {};
