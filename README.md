@@ -2,6 +2,31 @@
 
 Merlin Mk1/Mk3 Common Control Unit recreation work using a Raspberry Pi Pico 2 W.
 
+## Merlin Mk1 Background (ASW)
+
+The Royal Navy's Merlin Mk1 (service designation **Merlin HM1**) is the UK ASW
+variant of the AgustaWestland **AW101 Merlin**, which traces its origins to the
+Anglo-Italian EH101 programme started in the 1980s as a Sea King successor. The
+type first flew in 1987 and entered Royal Navy service in the late 1990s, going
+on to become a core shipborne helicopter for anti-submarine warfare, surface
+surveillance, and general maritime support.
+
+The Royal Navy later pursued the **Merlin HM2** upgrade (often described under
+the Merlin capability sustainment programmes), with major mission system and
+avionics updates to keep the fleet current for ASW and maritime operations.
+This work started well before the first HM2 aircraft were delivered back to the
+Fleet Air Arm in the early 2010s, and most HM1 airframes were ultimately
+converted to HM2 standard.
+
+This project focuses on a CCU from the **Merlin Mk1/HM1** era. Later **Mk2/HM2**
+fits used touchscreen-style control units instead of the older CCU arrangement.
+
+References (for quick orientation):
+- Federation of American Scientists (EH101/AW101 overview): https://man.fas.org/dod-101/sys/ac/row/eh101.htm
+- Airforce Technology (Merlin HM Mk1 description): https://www.airforce-technology.com/projects/merlin-asw-helicopter/
+- AirVectors (HM2 upgrade overview and timeline pointers): https://www.airvectors.net/avaw101.html
+- UK MOD (Mk2 delivery announcement): https://www.gov.uk/government/news/royal-navy-receives-upgraded-merlin-helicopters
+
 ## What This Repo Is
 
 This project is currently a display and UI bring-up platform for a vintage
