@@ -105,18 +105,18 @@ Important details:
 
 ## Input Layer Status
 
-The code now contains a small input skeleton for future keypad support.
+The code now contains keypad/input support that has moved beyond the original
+skeleton stage.
 
 At the moment:
 
 - logical button IDs are defined
-- placeholder GPIO mappings are present
+- keypad GPIO mappings are assigned
 - debounce logic exists
 - button polling is wired into the main loop
 
-The actual GPIO assignments are still left as `-1` until the keypad wiring is
-ready. That means the input layer is safe to leave in place even before the
-hardware is connected.
+Key signal GPIOs are now assigned for the keypad matrix work. Remaining
+power-line integration is still handled separately from those signal mappings.
 
 ## Files In Active Use
 
@@ -285,42 +285,50 @@ panel pin you want to observe, and the keypad diagnostics page will show:
 
 Current measured pin accounting from front-panel switch tests:
 
-| Pin | Status | Notes |
-| --- | --- | --- |
-| 1 | Unused | Not referenced by any measured key |
-| 2 | Unused | Not referenced by any measured key |
-| 3 | Unused | Not referenced by any measured key |
-| 4 | Unused | Not referenced by any measured key |
-| 5 | Used | `TEST`, `BRT`, `DIM` |
-| 6 | Used | `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR` |
-| 7 | Used | `R1`, `A`, `B`, `C`, `D`, `E`, `F` |
-| 8 | Used | `R2`, `G`, `H`, `I`, `J`, `K`, `L` |
-| 9 | Used | `R3`, `M`, `N`, `O`, `P`, `Q`, `R` |
-| 10 | Used | `R4`, `S`, `T`, `U`, `V`, `W`, `X` |
-| 11 | Used | `R5`, `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC` |
-| 12 | Unused | Not referenced by any measured key |
-| 13 | Unused | Not referenced by any measured key |
-| 14 | Unused | Not referenced by any measured key |
-| 15 | Used | `DIM`, `R1`, `R2`, `R3`, `R4`, `R5` |
-| 16 | Used | `BRT`, `CLR`, `F`, `L`, `R`, `X`, `SPC` |
-| 17 | Used | `TEST`, `/`, `E`, `K`, `Q`, `W`, `0` |
-| 18 | Used | `Right Arrow`, `D`, `J`, `P`, `V`, `.` |
-| 19 | Used | `Left Arrow`, `C`, `I`, `O`, `U`, `T FUNC` |
-| 20 | Used | `BACK STEP`, `B`, `H`, `N`, `T`, `Z` |
-| 21 | Used | `LTRS`, `A`, `G`, `M`, `S`, `Y` |
-| 22 | Used | `L1`, `L2`, `L3`, `L4`, `L5` |
-| 23 | Unused | Not referenced by any measured key |
-| 24 | Unused | Not referenced by any measured key |
-| 25 | Unused | Not referenced by any measured key |
-| 26 | Unused | Not referenced by any measured key |
-| 27 | Unused | Not referenced by any measured key |
-| 28 | Unused | Not referenced by any measured key |
-| 29 | Unused | Not referenced by any measured key |
-| 30 | Unused | Not referenced by any measured key |
+| Pin | Status | Role | Notes |
+| --- | --- | --- | --- |
+| 1 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 2 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 3 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 4 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 5 | Used | Matrix drive line | `TEST`, `BRT`, `DIM` when paired with `17`, `16`, `15` |
+| 6 | Used | Matrix drive line | Main block row for `LTRS`, `BACK STEP`, arrows, `/`, `CLR` |
+| 7 | Used | Matrix drive line | Main block row `A..F`; also `R1` via pin `15` |
+| 8 | Used | Matrix drive line | Main block row `G..L`; also `R2` via pin `15` |
+| 9 | Used | Matrix drive line | Main block row `M..R`; also `R3` via pin `15` |
+| 10 | Used | Matrix drive line | Main block row `S..X`; also `R4` via pin `15` |
+| 11 | Used | Matrix drive line | Main block row `Y,Z,T FUNC,.,0,SPC`; also `R5` via pin `15` |
+| 12 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 13 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 14 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 15 | Used | Matrix sense line | Right softkey return (`R1..R5`) and `DIM` |
+| 16 | Used | Matrix sense line | Key column for `BRT`, `CLR`, `F`, `L`, `R`, `X`, `SPC` |
+| 17 | Used | Matrix sense line | Key column for `TEST`, `/`, `E`, `K`, `Q`, `W`, `0` |
+| 18 | Used | Matrix sense line | Key column for `Right Arrow`, `D`, `J`, `P`, `V`, `.` |
+| 19 | Used | Matrix sense line | Key column for `Left Arrow`, `C`, `I`, `O`, `U`, `T FUNC` |
+| 20 | Used | Matrix sense line | Key column for `ALERT`, `BACK STEP`, `B`, `H`, `N`, `T`, `Z` |
+| 21 | Used | Matrix sense line | Key column for `LTRS`, `A`, `G`, `M`, `S`, `Y` |
+| 22 | Used | Matrix sense line | Left softkey return (`L1..L5`) |
+| 23 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 24 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 25 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 26 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 27 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 28 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 29 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+| 30 | Non-matrix | Unknown non-key line | Not referenced by measured key matrix; candidate for power/LED/photoresistor net pending verification |
+
+Power/ground note:
+
+- The matrix mapping above only proves key-switch connectivity.
+- Any non-matrix pin (`1..4`, `12..14`, `23..30`) should be treated as
+  unknown until continuity/voltage testing confirms whether it is power,
+  ground, LED drive, or photoresistor-related.
 
 Confirmed matrix pattern from current bench tests:
 
 - `5 x 20` = `ALERT`
+- `5 x 17,16,15` = `TEST`, `BRT`, `DIM`
 - `6 x 21..16` = `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR`
 - `7 x 21..16` = `A..F`
 - `8 x 21..16` = `G..L`
@@ -329,31 +337,79 @@ Confirmed matrix pattern from current bench tests:
 - `11 x 21..16` = `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC`
 - `7..11 x 22` = `L1..L5`
 - `7..11 x 15` = `R1..R5`
-- `5 x 17,16,15` = `TEST`, `BRT`, `DIM`
-
-Confirmed front-panel layout from current bench tests:
-
-- top function row:
-  - `ALERT = 5 20`
-  - `TEST = 5 17`
-  - `BRT = 5 16`
-  - `DIM = 5 15`
-- side softkeys:
-  - `L1..L5 = 7..11 x 22`
-  - `R1..R5 = 7..11 x 15`
-- main key block:
-  - `6 x 21..16` = `LTRS`, `BACK STEP`, `Left Arrow`, `Right Arrow`, `/`, `CLR`
-  - `7 x 21..16` = `A`, `B`, `C`, `D`, `E`, `F`
-  - `8 x 21..16` = `G`, `H`, `I`, `J`, `K`, `L`
-  - `9 x 21..16` = `M`, `N`, `O`, `P`, `Q`, `R`
-  - `10 x 21..16` = `S`, `T`, `U`, `V`, `W`, `X`
-  - `11 x 21..16` = `Y`, `Z`, `T FUNC`, `.`, `0`, `SPC`
 
 Implementation note:
 
 - the observed panel-pin numbering is now confirmed for bring-up and decoding work
 - the current GPIO/panel-pin ordering in code is intentionally still a bench-work layout rather than a cleaned-up PCB-oriented netlist
 - if a fixed PCB is designed later, it would be reasonable to reorder or rename the pin definitions for clarity, but that cleanup is deferred for now so the confirmed working mapping is preserved
+
+## Wiring Integration Plan
+
+This section separates front-panel lines into two classes:
+
+- direct power rails (do not connect to Pico GPIO)
+- logic/sense lines (connect to Pico GPIO, directly or through a driver stage)
+
+### 4-pin display-side connector plan
+
+Use the 4-pin connector for panel power rails only unless bench evidence proves
+that one of these lines is a logic-level control input.
+
+- likely direct rails:
+  - panel supply rail(s) (for example +V panel power)
+  - panel ground return
+  - optional backlight/inverter supply rails, if present in your panel variant
+- not Pico GPIO:
+  - any rail that is continuous to power domains, decoupling capacitors, or
+    obvious power conditioning parts on the display assembly
+
+Current confirmed display GPIO signals remain on the scanout connector:
+
+- `GPIO2` -> `VID`
+- `GPIO3` -> `VCLK`
+- `GPIO4` -> `HS`
+- `GPIO5` -> `VS`
+
+### 30-pin keypad/front-panel connector plan
+
+Matrix key lines should be treated as GPIO/sense lines. Dedicated LED power
+and other rails should be treated as non-GPIO rails.
+
+- matrix/sense candidates (GPIO domain):
+  - confirmed active matrix pins: `5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21, 22`
+- likely non-GPIO rails:
+  - key backlight power
+  - key backlight ground
+  - alert/test LED supply return paths if they are current-driving lines
+  - photoresistor bias/supply rail(s)
+
+For the photoresistor pair:
+
+- if used as analog sensors, route to ADC-capable pins (`GPIO26..GPIO28`)
+- if used as threshold/digital detect only, route through comparator/threshold
+  logic or use ADC with firmware thresholding
+
+### Execution order (recommended)
+
+1. Freeze and label the already-confirmed matrix GPIO wiring in your harness.
+2. Identify 4-pin connector rails with continuity and voltage checks before
+   any Pico connection.
+3. Bring up display rail power first, then verify existing scanout signals
+   (`VID/VCLK/HS/VS`) still produce stable output.
+4. Connect keypad power/backlight rails as power-only nets (not GPIO).
+5. Add photoresistor wiring to ADC pins if needed, and log raw ADC values over
+   serial for bright/dim transitions.
+6. Update `Keyboard.xlsx` and this README with final net names once measured.
+
+### Safety rules for bring-up
+
+- do not attach unknown front-panel lines directly to Pico GPIO until the line
+  is verified to be within 0V..3.3V in all panel states
+- use series resistors and current limits for first-power tests of unknown LED
+  and backlight paths
+- common ground between panel/front-panel supplies and Pico is required for
+  reliable logic sensing
 
 ## Deferred Security TODOs
 
@@ -378,14 +434,13 @@ properly.
 
 These are non-security items that are worth keeping visible for future passes.
 
-- connect the real keypad wiring and assign GPIOs
 - replace the timed/demo screen mode selection with a real UI state model
 - replace the provisional keypad diagnostics page with a real matrix decoder and key map
 - confirm the spreadsheet matrix against real continuity and switch-press tests
 - decide how the hard keys and side softkeys should be represented in the input model
 - add a future system menu with screen saver settings
-- turn the placeholder weather source page into a real source-selection workflow
-- support more than one weather provider or feed behind the weather UI
+- keep the current Home Assistant weather feed as the baseline source for now
+- later: add direct weather-provider support (for example BBC Weather, Met Office, and others)
 - improve the weather page layout as more data columns and status lines are added
 - decide which Home page values should degrade gracefully when HA data is missing
 - add a clearer user-facing distinction between Wi-Fi loss, HA loss, and missing weather data
@@ -406,7 +461,7 @@ These are non-security items that are worth keeping visible for future passes.
 ## Deferred Hardware And Platform TODOs
 
 - document the hardware wiring and panel timing in more detail
-- validate the keypad electrical design before final GPIO assignments are locked in
+- validate keypad power-line integration alongside the already-assigned signal GPIOs
 - decide whether any display timing values should move from compile-time constants to documented tuning parameters
 - review memory headroom as more UI and network features are added
 - review CPU time spent in raster composition, weather rendering, and network parsing as the firmware grows
@@ -424,7 +479,6 @@ These are non-security items that are worth keeping visible for future passes.
 
 If work resumes soon, the most obvious next items are:
 
-- connect the real keypad wiring and assign GPIOs
 - replace the timed/demo screen mode selection with a real UI state model
-- turn the placeholder weather source page into a real source-selection workflow
+- keep the current Home Assistant weather feed for now, then extend to direct providers later
 - document the hardware and panel timing in more detail
