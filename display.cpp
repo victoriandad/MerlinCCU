@@ -1,5 +1,6 @@
 #include "display.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -65,20 +66,6 @@ void dma_ctrl_irq_handler()
         g_raster_pending = nullptr;
         g_dma_read_addr = g_raster_front->data();
     }
-}
-
-/// @brief Clamps one integer into an inclusive range.
-inline int clamp_int(int v, int lo, int hi)
-{
-    if (v < lo)
-    {
-        return lo;
-    }
-    if (v > hi)
-    {
-        return hi;
-    }
-    return v;
 }
 
 /// @brief Appends one 4-bit output state to a packed raster buffer.
@@ -147,7 +134,7 @@ void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
     std::memset(line_buf, 0, kWordsPerLine * sizeof(uint32_t));
     int step = 0;
     const int kMaxUiSourceY = kFbHeight - 1 + kPanel.native_row_offset;
-    const int kUiX = clamp_int(kMaxUiSourceY - y, 0, kUiWidth - 1);
+    const int kUiX = std::clamp(kMaxUiSourceY - y, 0, kUiWidth - 1);
 
     for (int i = 0; i < kPanel.h_pre_blank; ++i)
     {

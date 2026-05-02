@@ -11,6 +11,9 @@
 - Follow C++17 as the minimum language standard for code changes.
 - Use British English spelling in documentation, comments, and user-facing strings (for example: `behaviour`, `centre`, `colour`).
   - Do not change code identifiers, protocol/API field names, CSS keywords (for example `color`, `align-items:center`), or third-party interfaces purely for spelling consistency.
+- Prefer standard library facilities over bespoke helpers when they meet the need (for example `std::clamp`, `std::min`, `std::max`, `std::optional`).
+  - If a custom helper is needed for non-standard behaviour, document the behaviour difference and why the standard facility is unsuitable.
+- "Less code is good code": remove unused code, avoid duplication, and prefer deleting dead paths over keeping them "just in case".
 - Prefer `constexpr`, `enum class`, `std::array`, `std::string_view`, and other typed standard-library constructs over legacy C-style patterns where appropriate.
 - Prefer automatic storage, `std::array`, and static lifetime where ownership is fixed. If dynamic ownership is genuinely needed, prefer `std::unique_ptr` over raw owning pointers, and avoid `std::shared_ptr` unless shared lifetime is truly required.
 - Use `PascalCase` for types and enum values, `snake_case` for functions and ordinary variables, `g_snake_case` for namespace-scope mutable state, and `kCamelCase` for named constants and `constexpr` data.

@@ -24,14 +24,6 @@ std::array<uint8_t, kUiFbSize> g_fb_b = {};
 uint8_t* g_fb_front = g_fb_a.data();
 uint8_t* g_fb_back = g_fb_b.data();
 
-/// @brief Clamps a framebuffer coordinate into an inclusive range.
-/// @details Local clipping code stays in integer space because these helpers run in the
-/// hot path for primitive drawing and should not depend on heavier abstractions.
-inline int clamp_int(int v, int lo, int hi)
-{
-    return (v < lo) ? lo : (v > hi ? hi : v);
-}
-
 } // namespace
 
 /// @brief Returns the framebuffer currently being presented to the display path.

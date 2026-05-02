@@ -31,11 +31,11 @@
     "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
     "C_Cpp.codeAnalysis.clangTidy.args": [
         "--system-headers=0",
-        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/lib/gcc/arm-none-eabi/14.2.1/include",
-        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include",
         "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1",
         "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi",
-        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp"
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v8-m.main+fp/softfp",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/lib/gcc/arm-none-eabi/14.2.1/include",
+        "--extra-arg=-isystemC:/Users/sean/.pico-sdk/toolchain/14_2_Rel1/arm-none-eabi/include"
     ],
     "files.associations": {
         "**/.pico-sdk/toolchain/**/include/c++/**": "cpp",
