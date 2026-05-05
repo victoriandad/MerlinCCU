@@ -30,6 +30,7 @@ struct RuntimeConfig
     std::array<char, 64> home_assistant_self_entity_id;
     std::array<char, 64> weather_entity_id;
     std::array<char, 64> sun_entity_id;
+    std::array<char, 64> weather_coordinates;
 
     bool mqtt_enabled;
     std::array<char, 64> mqtt_host;

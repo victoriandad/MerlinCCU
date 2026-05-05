@@ -258,12 +258,13 @@ struct MqttStatus
     std::array<char, 32> device_id;
 };
 
-/// @brief Selectable weather backends exposed to the CCU UI.
+/// @brief Weather backends stored in flash and exposed to the CCU UI.
 enum class WeatherSource : uint8_t
 {
     HomeAssistant = 0,
-    MetOffice,
-    BbcWeather,
+    OpenMeteo,
+    /// Legacy value kept so older flash settings can be migrated safely.
+    MetNorway,
 };
 
 /// @brief Selectable screen-saver modes exposed by the current UI.
@@ -325,8 +326,7 @@ enum class SoftKeyRoute : uint8_t
     SelectScreenSaverWorms,
     SelectScreenSaverRandom,
     SelectWeatherHomeAssistant,
-    SelectWeatherMetOffice,
-    SelectWeatherBbcWeather,
+    SelectWeatherOpenMeteo,
     SelectTimeZoneWest1,
     SelectTimeZoneWest2,
     SelectTimeZoneWest3,

@@ -78,13 +78,21 @@ target_include_directories(MerlinCCU PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
 )
 
+set_source_files_properties(
+    ${PICO_SDK_PATH}/src/rp2_common/pico_lwip/altcp_tls_mbedtls.c
+    PROPERTIES
+        COMPILE_DEFINITIONS MBEDTLS_ALLOW_PRIVATE_ACCESS
+)
+
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
 pico_stdlib
     pico_cyw43_arch_lwip_threadsafe_background
     pico_lwip_mqtt
+    pico_lwip_mbedtls
     pico_lwip_netbios
     pico_lwip_sntp
+    pico_mbedtls
     hardware_pio
     hardware_dma
     hardware_flash

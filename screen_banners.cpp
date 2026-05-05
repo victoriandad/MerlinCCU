@@ -146,7 +146,10 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     const int title_width = framebuffer::measure_text(title, fonts::FontFace::FontTitle8x12, 1);
     const int time_width = framebuffer::measure_text(time_text, fonts::FontFace::Font8x12, 1);
     const int home_assistant_icon_width =
-        console_state.home_assistant_status.configured ? kHeaderHomeAssistantIconWidth : 0;
+        (console_state.weather_source == WeatherSource::HomeAssistant &&
+         console_state.home_assistant_status.configured)
+            ? kHeaderHomeAssistantIconWidth
+            : 0;
     const int time_x = kUiWidth - kHeaderStatusRightInset - time_width;
     const int icon_x = time_x - kHeaderStatusGap - kHeaderStatusIconWidth;
     const int home_assistant_icon_x =
