@@ -209,6 +209,34 @@ const char* home_assistant_state_text(HomeAssistantConnectionState state)
     return "?";
 }
 
+/// @brief Returns a provider-neutral weather fetch state label.
+const char* weather_fetch_state_text(HomeAssistantConnectionState state)
+{
+    switch (state)
+    {
+    case HomeAssistantConnectionState::Disabled:
+        return "DISABLED";
+    case HomeAssistantConnectionState::Unconfigured:
+        return "UNCONFIG";
+    case HomeAssistantConnectionState::WaitingForWifi:
+        return "WAIT WIFI";
+    case HomeAssistantConnectionState::Resolving:
+        return "RESOLVE";
+    case HomeAssistantConnectionState::Connecting:
+        return "CONNECT";
+    case HomeAssistantConnectionState::Authorizing:
+        return "FETCH";
+    case HomeAssistantConnectionState::Connected:
+        return "UP";
+    case HomeAssistantConnectionState::Unauthorized:
+        return "AUTH";
+    case HomeAssistantConnectionState::Error:
+        return "ERROR";
+    }
+
+    return "?";
+}
+
 /// @brief Returns the MQTT state label used on the condensed status page.
 const char* mqtt_state_text(MqttConnectionState state)
 {
@@ -242,10 +270,10 @@ const char* weather_source_text(WeatherSource source)
     {
     case WeatherSource::HomeAssistant:
         return "Home Assistant";
-    case WeatherSource::MetOffice:
-        return "Met Office";
-    case WeatherSource::BbcWeather:
-        return "BBC Weather";
+    case WeatherSource::OpenMeteo:
+        return "Open-Meteo";
+    case WeatherSource::MetNorway:
+        return "Open-Meteo";
     }
 
     return "?";
@@ -254,16 +282,8 @@ const char* weather_source_text(WeatherSource source)
 /// @brief Returns whether the selected weather source is still only a stub.
 bool weather_source_is_stub(WeatherSource source)
 {
-    switch (source)
-    {
-    case WeatherSource::HomeAssistant:
-        return false;
-    case WeatherSource::MetOffice:
-    case WeatherSource::BbcWeather:
-        return true;
-    }
-
-    return true;
+    (void)source;
+    return false;
 }
 
 /// @brief Returns the page title that matches the active menu route.
@@ -930,14 +950,9 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
 /// source rather than only the build-time default.
 const char* weather_source_label_text(const ConsoleState& console_state)
 {
-    if (console_state.weather_source == WeatherSource::MetOffice)
+    if (console_state.weather_source == WeatherSource::OpenMeteo)
     {
-        return "Met Office";
-    }
-
-    if (console_state.weather_source == WeatherSource::BbcWeather)
-    {
-        return "BBC Weather";
+        return "Open-Meteo";
     }
 
     if (console_state.home_assistant_status.weather_source_hint[0] != '\0')
@@ -1049,10 +1064,10 @@ void draw_blank_menu_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Produces a short user-facing weather-status fallback string.
-/// @details The weather page is meant for end users rather than diagnostics, so
-/// transport-layer details such as HTTP and socket codes are intentionally
-/// collapsed into plain-language availability messages.
-const char* weather_status_detail(const HomeAssistantStatus& status, char* buffer,
+/// @details Home Assistant keeps the old end-user wording, while direct
+/// providers expose compact transport details because they are the only way to
+/// tell an HTTPS/API failure from an unsupported response payload in the field.
+const char* weather_status_detail(const ConsoleState& console_state, char* buffer,
                                   size_t buffer_size)
 {
     if (buffer == nullptr || buffer_size == 0)
@@ -1061,14 +1076,32 @@ const char* weather_status_detail(const HomeAssistantStatus& status, char* buffe
     }
 
     buffer[0] = '\0';
+    const HomeAssistantStatus& status = console_state.home_assistant_status;
 
     if (status.last_http_status > 0 || status.last_error != 0)
     {
-        std::snprintf(buffer, buffer_size, "NO DATA AVAILABLE");
+        if (console_state.weather_source == WeatherSource::HomeAssistant)
+        {
+            std::snprintf(buffer, buffer_size, "NO DATA AVAILABLE");
+        }
+        else if (status.last_http_status > 0 && status.last_http_status != 200)
+        {
+            std::snprintf(buffer, buffer_size, "HTTP %d", status.last_http_status);
+        }
+        else if (status.last_error != 0)
+        {
+            std::snprintf(buffer, buffer_size, "ERR %d", status.last_error);
+        }
+        else
+        {
+            std::snprintf(buffer, buffer_size, "BAD DATA");
+        }
         return buffer;
     }
 
-    return home_assistant_state_text(status.state);
+    return console_state.weather_source == WeatherSource::HomeAssistant
+               ? home_assistant_state_text(status.state)
+               : weather_fetch_state_text(status.state);
 }
 
 /// @brief Converts a weather phrase to simple title case for display.
@@ -1138,11 +1171,9 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (weather_source_is_stub(console_state.weather_source))
     {
-        const DetailRow rows[] = {
-            {"SOURCE", weather_source_text(console_state.weather_source)},
-            {"STATUS", "Stub only"},
-            {"DETAIL", "Provider integration pending"},
-        };
+        const DetailRow rows[] = {{"SOURCE", weather_source_text(console_state.weather_source)},
+                                  {"STATUS", "Stub only"},
+                                  {"DETAIL", "Provider integration pending"}};
         draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
         return;
     }
@@ -1150,8 +1181,11 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
     char status_detail[24] = {};
     char formatted_condition[32] = {};
     char formatted_forecast_condition[24] = {};
+    char direct_config_detail[48] = {};
     const bool kWeatherConfigured =
-        console_state.home_assistant_status.weather_entity_id[0] != '\0';
+        (console_state.weather_source == WeatherSource::HomeAssistant)
+            ? (console_state.home_assistant_status.weather_entity_id[0] != '\0')
+            : true;
     const ForecastDisplayWindow kForecastWindow = active_forecast_window(console_state);
     const char* weather_condition = "WEATHER OFF";
     const char* weather_temperature = "";
@@ -1159,42 +1193,60 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
 
     if (kWeatherConfigured)
     {
-        weather_condition =
-            console_state.home_assistant_status.weather_condition[0]
-                ? console_state.home_assistant_status.weather_condition.data()
-                : (console_state.home_assistant_status.state ==
-                           HomeAssistantConnectionState::Connected
-                       ? "NO DATA AVAILABLE"
-                       : weather_status_detail(console_state.home_assistant_status, status_detail,
-                                               sizeof(status_detail)));
-        weather_temperature = console_state.home_assistant_status.weather_temperature.data();
-
-        if (console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected)
+        if (console_state.weather_source != WeatherSource::HomeAssistant &&
+            console_state.home_assistant_status.state == HomeAssistantConnectionState::Unconfigured)
         {
-            weather_footer = "NO DATA AVAILABLE";
-        }
-        else if (console_state.home_assistant_status.state ==
-                     HomeAssistantConnectionState::Resolving ||
-                 console_state.home_assistant_status.state ==
-                     HomeAssistantConnectionState::Connecting ||
-                 console_state.home_assistant_status.state ==
-                     HomeAssistantConnectionState::Authorizing ||
-                 console_state.home_assistant_status.state ==
-                     HomeAssistantConnectionState::WaitingForWifi)
-        {
-            weather_footer = "WAITING FOR WEATHER";
+            weather_condition = "SET COORDS";
+            if (console_state.home_assistant_status.weather_entity_id[0] != '\0')
+            {
+                std::snprintf(direct_config_detail, sizeof(direct_config_detail), "GOT %.32s",
+                              console_state.home_assistant_status.weather_entity_id.data());
+                weather_footer = direct_config_detail;
+            }
+            else
+            {
+                weather_footer = "NO COORDS SAVED";
+            }
         }
         else
         {
-            weather_footer = weather_status_detail(console_state.home_assistant_status,
-                                                   status_detail, sizeof(status_detail));
-        }
+            weather_condition =
+                console_state.home_assistant_status.weather_condition[0]
+                    ? console_state.home_assistant_status.weather_condition.data()
+                    : (console_state.home_assistant_status.state ==
+                               HomeAssistantConnectionState::Connected
+                           ? "NO DATA AVAILABLE"
+                           : weather_status_detail(console_state, status_detail,
+                                                   sizeof(status_detail)));
+            weather_temperature = console_state.home_assistant_status.weather_temperature.data();
 
-        if (console_state.home_assistant_status.weather_condition[0] != '\0')
-        {
-            format_weather_phrase(console_state.home_assistant_status.weather_condition.data(),
-                                  formatted_condition, sizeof(formatted_condition));
-            weather_condition = formatted_condition;
+            if (console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected)
+            {
+                weather_footer = "NO DATA AVAILABLE";
+            }
+            else if (console_state.home_assistant_status.state ==
+                         HomeAssistantConnectionState::Resolving ||
+                     console_state.home_assistant_status.state ==
+                         HomeAssistantConnectionState::Connecting ||
+                     console_state.home_assistant_status.state ==
+                         HomeAssistantConnectionState::Authorizing ||
+                     console_state.home_assistant_status.state ==
+                         HomeAssistantConnectionState::WaitingForWifi)
+            {
+                weather_footer = "WAITING FOR WEATHER";
+            }
+            else
+            {
+                weather_footer =
+                    weather_status_detail(console_state, status_detail, sizeof(status_detail));
+            }
+
+            if (console_state.home_assistant_status.weather_condition[0] != '\0')
+            {
+                format_weather_phrase(console_state.home_assistant_status.weather_condition.data(),
+                                      formatted_condition, sizeof(formatted_condition));
+                weather_condition = formatted_condition;
+            }
         }
     }
 
@@ -1294,10 +1346,13 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         {"IP ADDRESS", console_state.wifi_status.ip_address[0]
                            ? console_state.wifi_status.ip_address.data()
                            : "-"},
-        {"HA STATE", home_assistant_state_text(console_state.home_assistant_status.state)},
-        {"HA HOST", console_state.home_assistant_status.host[0]
-                        ? console_state.home_assistant_status.host.data()
-                        : "-"},
+        {console_state.weather_source == WeatherSource::HomeAssistant ? "HA STATE" : "WX STATE",
+         console_state.weather_source == WeatherSource::HomeAssistant
+             ? home_assistant_state_text(console_state.home_assistant_status.state)
+             : weather_fetch_state_text(console_state.home_assistant_status.state)},
+        {console_state.weather_source == WeatherSource::HomeAssistant ? "HA HOST" : "WX HOST",
+         console_state.home_assistant_status.host[0] ? console_state.home_assistant_status.host.data()
+                                                     : "-"},
         {"HTTP", http_text},
         {"ENTITY", console_state.home_assistant_status.tracked_entity_state[0]
                        ? console_state.home_assistant_status.tracked_entity_state.data()

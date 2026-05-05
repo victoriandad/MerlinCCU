@@ -278,10 +278,10 @@ const char* weather_token(WeatherSource source)
     {
     case WeatherSource::HomeAssistant:
         return "home_assistant";
-    case WeatherSource::MetOffice:
-        return "met_office";
-    case WeatherSource::BbcWeather:
-        return "bbc_weather";
+    case WeatherSource::OpenMeteo:
+        return "open_meteo";
+    case WeatherSource::MetNorway:
+        return "open_meteo";
     }
     return "home_assistant";
 }
@@ -360,6 +360,7 @@ void build_config_page(const char* message)
     char ha_self[96] = {};
     char weather_entity[96] = {};
     char sun_entity[96] = {};
+    char weather_coordinates[96] = {};
     char mqtt_host[96] = {};
     char mqtt_user[96] = {};
     char mqtt_prefix[64] = {};
@@ -376,6 +377,7 @@ void build_config_page(const char* message)
     html_escape(cfg.home_assistant_self_entity_id.data(), ha_self, sizeof(ha_self));
     html_escape(cfg.weather_entity_id.data(), weather_entity, sizeof(weather_entity));
     html_escape(cfg.sun_entity_id.data(), sun_entity, sizeof(sun_entity));
+    html_escape(cfg.weather_coordinates.data(), weather_coordinates, sizeof(weather_coordinates));
     html_escape(cfg.mqtt_host.data(), mqtt_host, sizeof(mqtt_host));
     html_escape(cfg.mqtt_username.data(), mqtt_user, sizeof(mqtt_user));
     html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix, sizeof(mqtt_prefix));
@@ -501,15 +503,16 @@ void build_config_page(const char* message)
                  "<select name=\"weather_source\" id=\"weather_source_select\">");
     const char* selected_weather = weather_token(cfg.weather_source);
     (void)append_option(cursor, remaining, "home_assistant", "Home Assistant", selected_weather);
-    (void)append_option(cursor, remaining, "met_office", "Met Office", selected_weather);
-    (void)append_option(cursor, remaining, "bbc_weather", "BBC Weather", selected_weather);
+    (void)append_option(cursor, remaining, "open_meteo", "Open-Meteo", selected_weather);
     (void)append(cursor, remaining,
-                 "</select><fieldset id=\"weather_entity_fields\" class=\"%s\"><div class=\"row\"><div><label>Weather entity</label><input "
-                 "name=\"weather_entity\" maxlength=\"63\" value=\"%s\"></div><div><label>Sun "
-                 "entity</label><input name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div>"
-                 "</div></fieldset></section>",
-                 cfg.weather_source == WeatherSource::HomeAssistant ? "" : "disabled",
-                 weather_entity, sun_entity);
+                 "</select><fieldset id=\"weather_entity_fields\"><div class=\"row\"><div><label>"
+                 "Home Assistant weather entity</label><input name=\"weather_entity\" maxlength=\"63\" "
+                 "value=\"%s\"></div><div><label>Home Assistant sun entity</label><input "
+                 "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div><label>Direct "
+                 "weather coordinates</label><input name=\"weather_coordinates\" maxlength=\"63\" "
+                 "value=\"%s\"><p class=\"hint\">Direct weather sources use this "
+                 "latitude,longitude value independently of Home Assistant.</p></fieldset></section>",
+                 weather_entity, sun_entity, weather_coordinates);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
@@ -551,7 +554,7 @@ void build_config_page(const char* message)
                  "for(var i=0;i<toggles.length;i++){(function(box){box.onchange=function(){syncCheck(box)};"
                  "syncCheck(box)})(toggles[i])}"
                  "var weather=byId('weather_source_select'),weatherFields=byId('weather_entity_fields');"
-                 "function syncWeather(){setDisabled(weatherFields,weather.value!=='home_assistant')}"
+                 "function syncWeather(){setDisabled(weatherFields,false)}"
                  "if(weather){weather.onchange=syncWeather;syncWeather()}"
                  "var form=document.querySelector('form'),pw=document.querySelector('[name=admin_password_new]'),"
                  "rp=document.querySelector('[name=admin_password_repeat]');"
@@ -731,13 +734,9 @@ bool validate_text_field(const char* label, const char* value, size_t max_length
 
 WeatherSource parse_weather_source(const char* text, WeatherSource fallback)
 {
-    if (std::strcmp(text, "met_office") == 0)
+    if (std::strcmp(text, "open_meteo") == 0)
     {
-        return WeatherSource::MetOffice;
-    }
-    if (std::strcmp(text, "bbc_weather") == 0)
-    {
-        return WeatherSource::BbcWeather;
+        return WeatherSource::OpenMeteo;
     }
     if (std::strcmp(text, "home_assistant") == 0)
     {
@@ -1012,6 +1011,18 @@ const char* handle_config_post(const char* body)
             return validation_error;
         }
         copy_text(cfg.sun_entity_id, value);
+    }
+    if (get_form_value(body, "weather_coordinates", value, sizeof(value)))
+    {
+        if (!validate_text_field("Direct weather coordinates", value,
+                                 cfg.weather_coordinates.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        copy_text(cfg.weather_coordinates, value);
     }
     if (get_form_value(body, "weather_source", value, sizeof(value)))
     {

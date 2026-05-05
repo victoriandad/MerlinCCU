@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "console_model.h"
@@ -18,6 +19,11 @@ bool update();
 
 /// @brief Returns the latest time status snapshot for the UI/controller.
 const TimeStatus& status();
+
+/// @brief Formats an ISO-8601 time in the configured display time zone.
+/// @details Inputs without an explicit `Z` or numeric offset are treated as
+/// already-local provider timestamps and are copied as `HH:MM`.
+bool format_local_time_from_iso8601(const char* iso_datetime, char* out, size_t out_size);
 
 } // namespace time_manager
 

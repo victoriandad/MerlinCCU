@@ -14,7 +14,8 @@ namespace
 {
 
 constexpr uint32_t kConfigMagic = 0x4D434355U; // "MCCU"
-constexpr uint16_t kConfigVersion = 1;
+constexpr uint16_t kConfigVersion = 2;
+constexpr uint16_t kLegacyConfigVersion = 1;
 constexpr uint32_t kFlashSlotCount = 2;
 constexpr uint32_t kConfigStorageBytes = FLASH_SECTOR_SIZE * kFlashSlotCount;
 constexpr uint32_t kConfigStorageOffset = PICO_FLASH_SIZE_BYTES - kConfigStorageBytes;
@@ -41,6 +42,56 @@ static_assert(sizeof(ConfigSlot) <= FLASH_SECTOR_SIZE, "Config slot must fit in 
 
 RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;
+
+/// @brief Runtime configuration layout used by config version 1.
+/// @details This mirrors the previous flash payload exactly so existing saved
+/// settings can be migrated when new fields are added.
+struct LegacyRuntimeConfigV1
+{
+    std::array<char, 32> device_name;
+    std::array<char, 32> device_label;
+    std::array<char, 32> location;
+    std::array<char, 32> room;
+    std::array<char, 32> admin_password;
+    bool remote_config_enabled;
+    bool require_admin_password;
+
+    std::array<char, 33> wifi_ssid;
+    std::array<char, 64> wifi_password;
+
+    bool home_assistant_enabled;
+    std::array<char, 64> home_assistant_host;
+    uint16_t home_assistant_port;
+    std::array<char, 128> home_assistant_token;
+    std::array<char, 64> home_assistant_entity_id;
+    std::array<char, 64> home_assistant_self_entity_id;
+    std::array<char, 64> weather_entity_id;
+    std::array<char, 64> sun_entity_id;
+
+    bool mqtt_enabled;
+    std::array<char, 64> mqtt_host;
+    uint16_t mqtt_port;
+    std::array<char, 64> mqtt_username;
+    std::array<char, 64> mqtt_password;
+    std::array<char, 32> mqtt_discovery_prefix;
+    std::array<char, 64> mqtt_base_topic;
+
+    WeatherSource weather_source;
+    TimeZoneSelection time_zone;
+    ScreenSaverSelection screen_saver;
+    uint16_t screen_saver_timeout_minutes;
+};
+
+struct LegacyConfigSlotV1
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint32_t sequence;
+    uint32_t payload_size;
+    uint32_t crc32;
+    LegacyRuntimeConfigV1 settings;
+};
 
 /// @brief Copies a C string into one fixed-size config field.
 template <size_t N>
@@ -95,6 +146,7 @@ RuntimeConfig make_default_settings()
     copy_text(settings.home_assistant_self_entity_id, "");
     copy_text(settings.weather_entity_id, "");
     copy_text(settings.sun_entity_id, "");
+    copy_text(settings.weather_coordinates, "");
 
     settings.mqtt_enabled = false;
     copy_text(settings.mqtt_host, "");
@@ -131,6 +183,78 @@ bool validate_slot(const ConfigSlot& slot)
     return slot.crc32 == expected;
 }
 
+bool validate_legacy_slot_v1(const LegacyConfigSlotV1& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersion ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV1))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV1));
+    return slot.crc32 == expected;
+}
+
+RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
+{
+    RuntimeConfig migrated = {};
+    migrated.device_name = legacy.device_name;
+    migrated.device_label = legacy.device_label;
+    migrated.location = legacy.location;
+    migrated.room = legacy.room;
+    migrated.admin_password = legacy.admin_password;
+    migrated.remote_config_enabled = legacy.remote_config_enabled;
+    migrated.require_admin_password = legacy.require_admin_password;
+    migrated.wifi_ssid = legacy.wifi_ssid;
+    migrated.wifi_password = legacy.wifi_password;
+    migrated.home_assistant_enabled = legacy.home_assistant_enabled;
+    migrated.home_assistant_host = legacy.home_assistant_host;
+    migrated.home_assistant_port = legacy.home_assistant_port;
+    migrated.home_assistant_token = legacy.home_assistant_token;
+    migrated.home_assistant_entity_id = legacy.home_assistant_entity_id;
+    migrated.home_assistant_self_entity_id = legacy.home_assistant_self_entity_id;
+    migrated.weather_entity_id = legacy.weather_entity_id;
+    migrated.sun_entity_id = legacy.sun_entity_id;
+    copy_text(migrated.weather_coordinates, "");
+    migrated.mqtt_enabled = legacy.mqtt_enabled;
+    migrated.mqtt_host = legacy.mqtt_host;
+    migrated.mqtt_port = legacy.mqtt_port;
+    migrated.mqtt_username = legacy.mqtt_username;
+    migrated.mqtt_password = legacy.mqtt_password;
+    migrated.mqtt_discovery_prefix = legacy.mqtt_discovery_prefix;
+    migrated.mqtt_base_topic = legacy.mqtt_base_topic;
+    migrated.weather_source = legacy.weather_source;
+    migrated.time_zone = legacy.time_zone;
+    migrated.screen_saver = legacy.screen_saver;
+    migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
+    return migrated;
+}
+
+struct ConfigCandidate
+{
+    bool valid;
+    uint32_t sequence;
+    RuntimeConfig settings;
+};
+
+ConfigCandidate read_candidate(uint32_t offset)
+{
+    const ConfigSlot* slot = flash_slot(offset);
+    if (validate_slot(*slot))
+    {
+        return {true, slot->sequence, slot->settings};
+    }
+
+    const auto* legacy_slot = reinterpret_cast<const LegacyConfigSlotV1*>(slot);
+    if (validate_legacy_slot_v1(*legacy_slot))
+    {
+        return {true, legacy_slot->sequence, migrate_legacy_settings(legacy_slot->settings)};
+    }
+
+    return {false, 0, {}};
+}
+
 /// @brief Chooses the newest valid config slot from flash.
 bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
 {
@@ -139,26 +263,24 @@ bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
         return false;
     }
 
-    const ConfigSlot* slot0 = flash_slot(kSlot0Offset);
-    const ConfigSlot* slot1 = flash_slot(kSlot1Offset);
-    const bool slot0_valid = validate_slot(*slot0);
-    const bool slot1_valid = validate_slot(*slot1);
-    std::printf("Config flash scan: slot0=%s slot1=%s\n", slot0_valid ? "valid" : "invalid",
-                slot1_valid ? "valid" : "invalid");
+    const ConfigCandidate slot0 = read_candidate(kSlot0Offset);
+    const ConfigCandidate slot1 = read_candidate(kSlot1Offset);
+    std::printf("Config flash scan: slot0=%s slot1=%s\n", slot0.valid ? "valid" : "invalid",
+                slot1.valid ? "valid" : "invalid");
 
-    if (!slot0_valid && !slot1_valid)
+    if (!slot0.valid && !slot1.valid)
     {
         return false;
     }
 
-    const ConfigSlot* chosen = nullptr;
-    if (slot0_valid && slot1_valid)
+    const ConfigCandidate* chosen = nullptr;
+    if (slot0.valid && slot1.valid)
     {
-        chosen = (slot1->sequence > slot0->sequence) ? slot1 : slot0;
+        chosen = (slot1.sequence > slot0.sequence) ? &slot1 : &slot0;
     }
     else
     {
-        chosen = slot0_valid ? slot0 : slot1;
+        chosen = slot0.valid ? &slot0 : &slot1;
     }
 
     *out_settings = chosen->settings;
@@ -213,6 +335,10 @@ void init()
 
     if (load_from_flash(&loaded, &sequence))
     {
+        if (loaded.weather_source == WeatherSource::MetNorway)
+        {
+            loaded.weather_source = WeatherSource::OpenMeteo;
+        }
         g_settings = loaded;
         g_sequence = sequence;
         return;
@@ -251,6 +377,10 @@ bool save(const RuntimeConfig& settings)
     if (sanitized.screen_saver_timeout_minutes > 120)
     {
         sanitized.screen_saver_timeout_minutes = 120;
+    }
+    if (sanitized.weather_source == WeatherSource::MetNorway)
+    {
+        sanitized.weather_source = WeatherSource::OpenMeteo;
     }
 
     const uint32_t next_sequence = g_sequence + 1U;

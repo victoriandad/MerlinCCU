@@ -21,7 +21,7 @@ extern "C"
 
 #define MEM_LIBC_MALLOC 0
 #define MEM_ALIGNMENT 4
-#define MEM_SIZE 4000
+#define MEM_SIZE (64 * 1024)
 
 #define LWIP_ARP 1
 #define LWIP_ETHERNET 1
@@ -34,6 +34,9 @@ extern "C"
 #define LWIP_UDP 1
 #define LWIP_DNS 1
 #define LWIP_TCP_KEEPALIVE 1
+#define LWIP_ALTCP 1
+#define LWIP_ALTCP_TLS 1
+#define LWIP_ALTCP_TLS_MBEDTLS 1
 #define LWIP_SNTP 1
 
 #define TCP_MSS 1460

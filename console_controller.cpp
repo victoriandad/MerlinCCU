@@ -52,10 +52,9 @@ struct ScreenSaverDefinition
     const char* option_label;
 };
 
-constexpr std::array<WeatherSourceDefinition, 3> kWeatherSources = {{
+constexpr std::array<WeatherSourceDefinition, 2> kWeatherSources = {{
     {WeatherSource::HomeAssistant, "Home Assistant", "HOME ASSISTANT"},
-    {WeatherSource::MetOffice, "Met Office", "MET OFFICE"},
-    {WeatherSource::BbcWeather, "BBC Weather", "BBC WEATHER"},
+    {WeatherSource::OpenMeteo, "Open-Meteo", "OPEN-METEO"},
 }};
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
@@ -1331,20 +1330,19 @@ void update_softkeys_from_state()
             g_console_state.weather_source == WeatherSource::HomeAssistant,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
-            weather_source_definition(WeatherSource::MetOffice).option_label,
-            SoftKeyRoute::SelectWeatherMetOffice,
+            weather_source_definition(WeatherSource::OpenMeteo).option_label,
+            SoftKeyRoute::SelectWeatherOpenMeteo,
             true,
-            g_console_state.weather_source == WeatherSource::MetOffice,
-        };
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            weather_source_definition(WeatherSource::BbcWeather).option_label,
-            SoftKeyRoute::SelectWeatherBbcWeather,
-            true,
-            g_console_state.weather_source == WeatherSource::BbcWeather,
+            g_console_state.weather_source == WeatherSource::OpenMeteo,
         };
         softkeys[softkey_index(SoftKeyId::Right1)] = {
-            build_selection_softkey_label(SoftKeyId::Right1, "WEATHER",
-                                          config_manager::settings().weather_entity_id.data()),
+            build_selection_softkey_label(
+                SoftKeyId::Right1,
+                g_console_state.weather_source == WeatherSource::HomeAssistant ? "WEATHER"
+                                                                               : "COORDS",
+                g_console_state.weather_source == WeatherSource::HomeAssistant
+                    ? config_manager::settings().weather_entity_id.data()
+                    : config_manager::settings().weather_coordinates.data()),
             SoftKeyRoute::None,
             true,
         };
@@ -1624,10 +1622,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_screen_saver(ScreenSaverSelection::Random);
     case SoftKeyRoute::SelectWeatherHomeAssistant:
         return select_weather_source(WeatherSource::HomeAssistant);
-    case SoftKeyRoute::SelectWeatherMetOffice:
-        return select_weather_source(WeatherSource::MetOffice);
-    case SoftKeyRoute::SelectWeatherBbcWeather:
-        return select_weather_source(WeatherSource::BbcWeather);
+    case SoftKeyRoute::SelectWeatherOpenMeteo:
+        return select_weather_source(WeatherSource::OpenMeteo);
     case SoftKeyRoute::SelectTimeZoneWest1:
         return select_relative_time_zone(-1);
     case SoftKeyRoute::SelectTimeZoneWest2:
@@ -1747,9 +1743,12 @@ bool apply_runtime_config(const RuntimeConfig& settings)
 {
     bool changed = false;
 
-    if (g_console_state.weather_source != settings.weather_source)
+    const WeatherSource weather_source =
+        settings.weather_source == WeatherSource::MetNorway ? WeatherSource::OpenMeteo
+                                                            : settings.weather_source;
+    if (g_console_state.weather_source != weather_source)
     {
-        g_console_state.weather_source = settings.weather_source;
+        g_console_state.weather_source = weather_source;
         changed = true;
     }
     if (g_console_state.time_zone != settings.time_zone)

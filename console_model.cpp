@@ -98,6 +98,9 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.weather_source_hint.fill('\0');
     state.home_assistant_status.weather_condition.fill('\0');
     state.home_assistant_status.weather_temperature.fill('\0');
+    state.home_assistant_status.weather_wind_unit.fill('\0');
+    state.home_assistant_status.sunrise_text.fill('\0');
+    state.home_assistant_status.sunset_text.fill('\0');
     state.home_assistant_status.weather_forecast_count = 0;
 
     // Forecast rows are fully cleared so pages can safely treat an empty string
@@ -106,6 +109,7 @@ ConsoleState make_default_console_state()
     {
         entry.time_text.fill('\0');
         entry.temperature_text.fill('\0');
+        entry.wind_text.fill('\0');
         entry.condition_text.fill('\0');
     }
     state.home_assistant_status.self_entity_id.fill('\0');

@@ -27,6 +27,14 @@ struct DateTimeParts
     int second;
 };
 
+/// @brief Parsed ISO-8601 timestamp fields used for timezone-aware display.
+struct ParsedIsoDateTime
+{
+    DateTimeParts parts;
+    bool has_explicit_offset;
+    int32_t offset_seconds;
+};
+
 /// @brief Converts a Unix UTC epoch into broken-down UTC calendar fields.
 DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
 {
@@ -55,6 +63,20 @@ DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
     return parts;
 }
 
+/// @brief Converts Gregorian date fields to days since Unix epoch.
+/// @details This is the inverse of `unix_time_to_utc()` and lets offset-bearing
+/// provider timestamps be converted without pulling in libc time-zone support.
+int32_t days_from_civil(int year, unsigned month, unsigned day)
+{
+    year -= month <= 2U ? 1 : 0;
+    const int era = (year >= 0 ? year : year - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(year - (era * 400));
+    const unsigned adjusted_month = month + (month > 2U ? -3U : 9U);
+    const unsigned doy = ((153U * adjusted_month) + 2U) / 5U + day - 1U;
+    const unsigned doe = (yoe * 365U) + (yoe / 4U) - (yoe / 100U) + doy;
+    return (era * 146097) + static_cast<int32_t>(doe) - 719468;
+}
+
 /// @brief Returns whether the given Gregorian year is a leap year.
 bool is_leap_year(int year)
 {
@@ -70,6 +92,152 @@ int days_in_month(int year, int month)
         return 29;
     }
     return kDaysPerMonth[month - 1];
+}
+
+/// @brief Builds a UTC epoch from broken-down UTC calendar fields.
+bool utc_parts_to_epoch(const DateTimeParts& parts, uint32_t* out_epoch_seconds)
+{
+    if (out_epoch_seconds == nullptr || parts.year < 1970 || parts.month < 1 ||
+        parts.month > 12 || parts.day < 1 || parts.day > days_in_month(parts.year, parts.month) ||
+        parts.hour < 0 || parts.hour > 23 || parts.minute < 0 || parts.minute > 59 ||
+        parts.second < 0 || parts.second > 59)
+    {
+        return false;
+    }
+
+    constexpr int64_t kSecondsPerDay = 24 * 60 * 60;
+    const int64_t days =
+        static_cast<int64_t>(days_from_civil(parts.year, static_cast<unsigned>(parts.month),
+                                             static_cast<unsigned>(parts.day)));
+    const int64_t epoch = (days * kSecondsPerDay) + (parts.hour * 60 * 60) +
+                          (parts.minute * 60) + parts.second;
+    if (epoch < 0 || epoch > UINT32_MAX)
+    {
+        return false;
+    }
+
+    *out_epoch_seconds = static_cast<uint32_t>(epoch);
+    return true;
+}
+
+/// @brief Parses exactly `digits` decimal digits and advances `cursor`.
+bool parse_fixed_digits(const char** cursor, int digits, int* out_value)
+{
+    if (cursor == nullptr || *cursor == nullptr || out_value == nullptr || digits <= 0)
+    {
+        return false;
+    }
+
+    int value = 0;
+    const char* scan = *cursor;
+    for (int i = 0; i < digits; ++i)
+    {
+        if (scan[i] < '0' || scan[i] > '9')
+        {
+            return false;
+        }
+        value = (value * 10) + (scan[i] - '0');
+    }
+
+    *cursor = scan + digits;
+    *out_value = value;
+    return true;
+}
+
+/// @brief Parses ISO-8601 timestamps used by Home Assistant and weather APIs.
+bool parse_iso8601_datetime(const char* iso_datetime, ParsedIsoDateTime* out_datetime)
+{
+    if (iso_datetime == nullptr || out_datetime == nullptr)
+    {
+        return false;
+    }
+
+    const char* cursor = iso_datetime;
+    ParsedIsoDateTime parsed = {};
+    if (!parse_fixed_digits(&cursor, 4, &parsed.parts.year) || *cursor++ != '-' ||
+        !parse_fixed_digits(&cursor, 2, &parsed.parts.month) || *cursor++ != '-' ||
+        !parse_fixed_digits(&cursor, 2, &parsed.parts.day) ||
+        (*cursor != 'T' && *cursor != 't' && *cursor != ' '))
+    {
+        return false;
+    }
+    ++cursor;
+
+    if (!parse_fixed_digits(&cursor, 2, &parsed.parts.hour) || *cursor++ != ':' ||
+        !parse_fixed_digits(&cursor, 2, &parsed.parts.minute))
+    {
+        return false;
+    }
+
+    parsed.parts.second = 0;
+    if (*cursor == ':')
+    {
+        ++cursor;
+        if (!parse_fixed_digits(&cursor, 2, &parsed.parts.second))
+        {
+            return false;
+        }
+    }
+
+    if (parsed.parts.month < 1 || parsed.parts.month > 12 || parsed.parts.day < 1 ||
+        parsed.parts.day > days_in_month(parsed.parts.year, parsed.parts.month) ||
+        parsed.parts.hour < 0 || parsed.parts.hour > 23 || parsed.parts.minute < 0 ||
+        parsed.parts.minute > 59 || parsed.parts.second < 0 || parsed.parts.second > 59)
+    {
+        return false;
+    }
+
+    while (*cursor >= '0' && *cursor <= '9')
+    {
+        ++cursor;
+    }
+    if (*cursor == '.')
+    {
+        ++cursor;
+        while (*cursor >= '0' && *cursor <= '9')
+        {
+            ++cursor;
+        }
+    }
+
+    if (*cursor == 'Z' || *cursor == 'z')
+    {
+        parsed.has_explicit_offset = true;
+        parsed.offset_seconds = 0;
+        *out_datetime = parsed;
+        return true;
+    }
+
+    if (*cursor == '+' || *cursor == '-')
+    {
+        const int sign = *cursor == '+' ? 1 : -1;
+        ++cursor;
+
+        int offset_hours = 0;
+        int offset_minutes = 0;
+        if (!parse_fixed_digits(&cursor, 2, &offset_hours))
+        {
+            return false;
+        }
+        if (*cursor == ':')
+        {
+            ++cursor;
+        }
+        if (!parse_fixed_digits(&cursor, 2, &offset_minutes))
+        {
+            return false;
+        }
+        if (offset_hours > 23 || offset_minutes > 59)
+        {
+            return false;
+        }
+
+        parsed.has_explicit_offset = true;
+        parsed.offset_seconds = sign * ((offset_hours * 60 * 60) + (offset_minutes * 60));
+    }
+
+    *out_datetime = parsed;
+    return true;
 }
 
 /// @brief Returns the weekday for the supplied Gregorian date.
@@ -166,6 +334,18 @@ bool uses_european_daylight_saving(TimeZoneSelection zone)
     return false;
 }
 
+/// @brief Returns the configured display-zone offset for a UTC instant.
+int32_t display_utc_offset_seconds(uint32_t utc_epoch)
+{
+    const TimeZoneSelection zone = config_manager::settings().time_zone;
+    int32_t utc_offset_seconds = base_utc_offset_seconds(zone);
+    if (uses_european_daylight_saving(zone) && european_daylight_saving_active_utc(utc_epoch))
+    {
+        utc_offset_seconds += 3600;
+    }
+    return utc_offset_seconds;
+}
+
 /// @brief Returns the current local epoch derived from the last SNTP sync point.
 uint32_t current_local_epoch_seconds()
 {
@@ -178,12 +358,7 @@ uint32_t current_local_epoch_seconds()
     const uint32_t elapsed_seconds =
         elapsed_us > 0 ? static_cast<uint32_t>(elapsed_us / 1000000) : 0;
     const uint32_t utc_epoch = g_last_ntp_epoch_utc + elapsed_seconds;
-    const TimeZoneSelection zone = config_manager::settings().time_zone;
-    int32_t utc_offset_seconds = base_utc_offset_seconds(zone);
-    if (uses_european_daylight_saving(zone) && european_daylight_saving_active_utc(utc_epoch))
-    {
-        utc_offset_seconds += 3600;
-    }
+    const int32_t utc_offset_seconds = display_utc_offset_seconds(utc_epoch);
 
     const int64_t local_epoch = static_cast<int64_t>(utc_epoch) + utc_offset_seconds;
     return local_epoch > 0 ? static_cast<uint32_t>(local_epoch) : 0U;
@@ -265,6 +440,49 @@ bool update()
 const TimeStatus& status()
 {
     return g_status;
+}
+
+bool format_local_time_from_iso8601(const char* iso_datetime, char* out, size_t out_size)
+{
+    if (iso_datetime == nullptr || out == nullptr || out_size < 6)
+    {
+        return false;
+    }
+
+    ParsedIsoDateTime parsed = {};
+    if (!parse_iso8601_datetime(iso_datetime, &parsed))
+    {
+        return false;
+    }
+
+    if (!parsed.has_explicit_offset)
+    {
+        std::snprintf(out, out_size, "%02d:%02d", parsed.parts.hour, parsed.parts.minute);
+        return true;
+    }
+
+    uint32_t source_epoch = 0;
+    if (!utc_parts_to_epoch(parsed.parts, &source_epoch))
+    {
+        return false;
+    }
+
+    const int64_t utc_epoch = static_cast<int64_t>(source_epoch) - parsed.offset_seconds;
+    if (utc_epoch < 0 || utc_epoch > UINT32_MAX)
+    {
+        return false;
+    }
+
+    const int64_t local_epoch =
+        utc_epoch + display_utc_offset_seconds(static_cast<uint32_t>(utc_epoch));
+    if (local_epoch < 0 || local_epoch > UINT32_MAX)
+    {
+        return false;
+    }
+
+    const DateTimeParts local = unix_time_to_utc(static_cast<uint32_t>(local_epoch));
+    std::snprintf(out, out_size, "%02d:%02d", local.hour, local.minute);
+    return true;
 }
 
 } // namespace time_manager
