@@ -1,5 +1,6 @@
 #include "screen_banners.h"
 
+#include "config_manager.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 
@@ -97,6 +98,29 @@ bool home_assistant_connected(const HomeAssistantStatus& status)
     return status.configured && status.state == HomeAssistantConnectionState::Connected;
 }
 
+/// @brief Maps MQTT connectivity into the header Home Assistant icon state.
+HomeAssistantConnectionState home_assistant_state_from_mqtt(const MqttStatus& mqtt_status)
+{
+    switch (mqtt_status.state)
+    {
+    case MqttConnectionState::Connected:
+        return HomeAssistantConnectionState::Connected;
+    case MqttConnectionState::Resolving:
+    case MqttConnectionState::Connecting:
+    case MqttConnectionState::WaitingForWifi:
+        return HomeAssistantConnectionState::Connecting;
+    case MqttConnectionState::AuthFailed:
+        return HomeAssistantConnectionState::Unauthorized;
+    case MqttConnectionState::Error:
+        return HomeAssistantConnectionState::Error;
+    case MqttConnectionState::Disabled:
+    case MqttConnectionState::Unconfigured:
+        return HomeAssistantConnectionState::Unconfigured;
+    }
+
+    return HomeAssistantConnectionState::Unconfigured;
+}
+
 /// @brief Draws a small house glyph used for the Home Assistant header icon.
 void draw_home_assistant_symbol(uint8_t* fb, int x, int y, bool on)
 {
@@ -139,17 +163,25 @@ void draw_home_assistant_icon(uint8_t* fb, int x, int y, const HomeAssistantStat
 /// @brief Draws the shared top-of-screen banner for menu pages.
 void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const char* title)
 {
+    const RuntimeConfig& config = config_manager::settings();
+    const bool ha_rest_enabled = config.home_assistant_enabled;
+    const bool ha_rest_config_present =
+        ha_rest_enabled && config.home_assistant_host[0] != '\0' &&
+        config.home_assistant_token[0] != '\0';
+    const bool ha_mqtt_enabled = config.mqtt_enabled;
+    const bool ha_mqtt_present =
+        ha_mqtt_enabled || console_state.mqtt_status.configured ||
+        console_state.mqtt_status.discovery_published ||
+        console_state.mqtt_status.state == MqttConnectionState::Connected;
+    const bool ha_config_present = ha_rest_enabled || ha_mqtt_present;
+
     // The header packs title, connectivity, and time into one shared strip so
     // every page can spend the rest of the screen on its own content.
     const char* time_text =
         console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--";
     const int title_width = framebuffer::measure_text(title, fonts::FontFace::FontTitle8x12, 1);
     const int time_width = framebuffer::measure_text(time_text, fonts::FontFace::Font8x12, 1);
-    const int home_assistant_icon_width =
-        (console_state.weather_source == WeatherSource::HomeAssistant &&
-         console_state.home_assistant_status.configured)
-            ? kHeaderHomeAssistantIconWidth
-            : 0;
+    const int home_assistant_icon_width = ha_config_present ? kHeaderHomeAssistantIconWidth : 0;
     const int time_x = kUiWidth - kHeaderStatusRightInset - time_width;
     const int icon_x = time_x - kHeaderStatusGap - kHeaderStatusIconWidth;
     const int home_assistant_icon_x =
@@ -166,8 +198,24 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     // compact status area rather than competing with the centred page title.
     if (home_assistant_icon_width > 0)
     {
-        draw_home_assistant_icon(fb, home_assistant_icon_x, kHeaderStatusIconY,
-                                 console_state.home_assistant_status);
+        HomeAssistantStatus icon_status = console_state.home_assistant_status;
+        icon_status.configured = true;
+        if (ha_rest_config_present)
+        {
+            // REST mode provides the canonical Home Assistant transport state.
+            icon_status.state = console_state.home_assistant_status.state;
+        }
+        else
+        {
+            // MQTT-only integration still counts as Home Assistant presence.
+            icon_status.state = home_assistant_state_from_mqtt(console_state.mqtt_status);
+            if (console_state.mqtt_status.discovery_published &&
+                icon_status.state != HomeAssistantConnectionState::Connected)
+            {
+                icon_status.state = HomeAssistantConnectionState::Connected;
+            }
+        }
+        draw_home_assistant_icon(fb, home_assistant_icon_x, kHeaderStatusIconY, icon_status);
     }
     draw_internet_icon(fb, icon_x, kHeaderStatusIconY, console_state.wifi_status.internet_reachable,
                        console_state.wifi_status.internet_probe_pending);

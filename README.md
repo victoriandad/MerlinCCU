@@ -72,6 +72,24 @@ for testing:
 - timing/performance visibility over USB serial
 - visual masking of existing panel burn-in
 
+## Display Validation Workflow
+
+Use this quick workflow for every UI/layout change:
+
+1. Flash from the VS Code Pico extension.
+2. Open `http://merlinccu/preview`.
+3. Check each page with this pass/fail list:
+   - labels, softkey captions, and headings are uppercase
+   - data values are mixed case and readable
+   - right-edge values are not clipped
+   - footer text is visible and not overlapping softkeys
+   - status page columns stay aligned across all rows
+4. Repeat checks on physical panel and browser preview.
+5. Capture one screenshot (preview or panel) for any failed check before fixing.
+
+For a fuller checklist (including weather and integration states), use
+`docs/display-test-checklist.md`.
+
 ## High-Level Architecture
 
 There are three main graphics layers in the current design:

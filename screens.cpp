@@ -1,10 +1,12 @@
 #include "screens.h"
 
 #include <cstddef>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
 #include "console_model.h"
+#include "config_manager.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screen_banners.h"
@@ -22,6 +24,33 @@ namespace
 {
 
 constexpr uint8_t kSettingsPageCount = 2U;
+
+/// @brief Copies a label while forcing uppercase presentation for UI field names.
+/// @details This normalises label casing on rendered info/status pages without
+/// mutating the underlying model value strings.
+void build_uppercase_label(const char* input, char* output, size_t output_size)
+{
+    if (output == nullptr || output_size == 0U)
+    {
+        return;
+    }
+
+    output[0] = '\0';
+    if (input == nullptr || input[0] == '\0')
+    {
+        return;
+    }
+
+    size_t write_index = 0U;
+    while (input[write_index] != '\0' && write_index + 1U < output_size)
+    {
+        output[write_index] = static_cast<char>(std::toupper(static_cast<unsigned char>(
+            input[write_index])));
+        ++write_index;
+    }
+
+    output[write_index] = '\0';
+}
 
 /// @brief Returns the compact label used for the letter annunciator mode.
 const char* letter_mode_text(LetterMode mode)
@@ -113,27 +142,27 @@ const char* wifi_state_text(WifiConnectionState state)
     switch (state)
     {
     case WifiConnectionState::Disabled:
-        return "DISABLED";
+        return "Disabled";
     case WifiConnectionState::Unconfigured:
-        return "UNCONFIG";
+        return "Unconfig";
     case WifiConnectionState::Initializing:
-        return "INIT";
+        return "Init";
     case WifiConnectionState::Scanning:
-        return "SCAN";
+        return "Scan";
     case WifiConnectionState::Connecting:
-        return "CONNECT";
+        return "Connect";
     case WifiConnectionState::WaitingForIp:
         return "DHCP";
     case WifiConnectionState::Connected:
-        return "UP";
+        return "Up";
     case WifiConnectionState::AuthFailed:
-        return "BADAUTH";
+        return "Bad auth";
     case WifiConnectionState::NoNetwork:
-        return "NO NET";
+        return "No net";
     case WifiConnectionState::ConnectFailed:
-        return "FAIL";
+        return "Fail";
     case WifiConnectionState::Error:
-        return "ERROR";
+        return "Error";
     }
 
     return "?";
@@ -187,23 +216,23 @@ const char* home_assistant_state_text(HomeAssistantConnectionState state)
     switch (state)
     {
     case HomeAssistantConnectionState::Disabled:
-        return "DISABLED";
+        return "Disabled";
     case HomeAssistantConnectionState::Unconfigured:
-        return "UNCONFIG";
+        return "Unconfig";
     case HomeAssistantConnectionState::WaitingForWifi:
-        return "WAIT WIFI";
+        return "Wait wifi";
     case HomeAssistantConnectionState::Resolving:
-        return "RESOLVE";
+        return "Resolve";
     case HomeAssistantConnectionState::Connecting:
-        return "CONNECT";
+        return "Connect";
     case HomeAssistantConnectionState::Authorizing:
-        return "AUTH";
+        return "Auth";
     case HomeAssistantConnectionState::Connected:
-        return "UP";
+        return "Up";
     case HomeAssistantConnectionState::Unauthorized:
-        return "TOKEN";
+        return "Token";
     case HomeAssistantConnectionState::Error:
-        return "ERROR";
+        return "Error";
     }
 
     return "?";
@@ -215,23 +244,23 @@ const char* weather_fetch_state_text(HomeAssistantConnectionState state)
     switch (state)
     {
     case HomeAssistantConnectionState::Disabled:
-        return "DISABLED";
+        return "Disabled";
     case HomeAssistantConnectionState::Unconfigured:
-        return "UNCONFIG";
+        return "Unconfig";
     case HomeAssistantConnectionState::WaitingForWifi:
-        return "WAIT WIFI";
+        return "Wait wifi";
     case HomeAssistantConnectionState::Resolving:
-        return "RESOLVE";
+        return "Resolve";
     case HomeAssistantConnectionState::Connecting:
-        return "CONNECT";
+        return "Connect";
     case HomeAssistantConnectionState::Authorizing:
-        return "FETCH";
+        return "Fetch";
     case HomeAssistantConnectionState::Connected:
-        return "UP";
+        return "Up";
     case HomeAssistantConnectionState::Unauthorized:
-        return "AUTH";
+        return "Auth";
     case HomeAssistantConnectionState::Error:
-        return "ERROR";
+        return "Error";
     }
 
     return "?";
@@ -243,21 +272,21 @@ const char* mqtt_state_text(MqttConnectionState state)
     switch (state)
     {
     case MqttConnectionState::Disabled:
-        return "DISABLED";
+        return "Disabled";
     case MqttConnectionState::Unconfigured:
-        return "UNCONFIG";
+        return "Unconfig";
     case MqttConnectionState::WaitingForWifi:
-        return "WAIT WIFI";
+        return "Wait wifi";
     case MqttConnectionState::Resolving:
-        return "RESOLVE";
+        return "Resolve";
     case MqttConnectionState::Connecting:
-        return "CONNECT";
+        return "Connect";
     case MqttConnectionState::Connected:
-        return "UP";
+        return "Up";
     case MqttConnectionState::AuthFailed:
-        return "AUTH";
+        return "Auth";
     case MqttConnectionState::Error:
-        return "ERROR";
+        return "Error";
     }
 
     return "?";
@@ -614,9 +643,12 @@ void draw_detail_row(uint8_t* fb, int y, const DetailRow& row, bool draw_divider
     constexpr int kDividerRightX = kUiWidth - 46;
     constexpr int kDividerOffsetY = 15;
     constexpr int kValueBaselineOffsetY = 1;
+    constexpr size_t kLabelBufferSize = 32U;
 
     const char* value = (row.value != nullptr && row.value[0] != '\0') ? row.value : "-";
-    framebuffer::draw_text(fb, kLabelX, y, row.label, true, fonts::FontFace::FontTitle8x12, 1);
+    char label_text[kLabelBufferSize] = {};
+    build_uppercase_label(row.label, label_text, sizeof(label_text));
+    framebuffer::draw_text(fb, kLabelX, y, label_text, true, fonts::FontFace::FontTitle8x12, 1);
     framebuffer::draw_text(fb, kValueX, y + kValueBaselineOffsetY, value, true,
                            fonts::FontFace::Font5x7, 1);
 
@@ -1325,6 +1357,21 @@ void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 /// blocks and row dividers now that the top banner already carries the heading.
 void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
 {
+    const RuntimeConfig& config = config_manager::settings();
+    const char* ha_rest_state = "Unconfig";
+    if (!config.home_assistant_enabled)
+    {
+        ha_rest_state = "Disabled";
+    }
+    else if (console_state.weather_source == WeatherSource::HomeAssistant)
+    {
+        ha_rest_state = home_assistant_state_text(console_state.home_assistant_status.state);
+    }
+    else if (config.home_assistant_host[0] != '\0' && config.home_assistant_token[0] != '\0')
+    {
+        ha_rest_state = "Enabled";
+    }
+
     char http_text[12] = {};
     if (console_state.home_assistant_status.last_http_status > 0)
     {
@@ -1346,19 +1393,16 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         {"IP ADDRESS", console_state.wifi_status.ip_address[0]
                            ? console_state.wifi_status.ip_address.data()
                            : "-"},
-        {console_state.weather_source == WeatherSource::HomeAssistant ? "HA STATE" : "WX STATE",
-         console_state.weather_source == WeatherSource::HomeAssistant
-             ? home_assistant_state_text(console_state.home_assistant_status.state)
-             : weather_fetch_state_text(console_state.home_assistant_status.state)},
-        {console_state.weather_source == WeatherSource::HomeAssistant ? "HA HOST" : "WX HOST",
-         console_state.home_assistant_status.host[0] ? console_state.home_assistant_status.host.data()
-                                                     : "-"},
+        {"HA REST", enabled_text(config.home_assistant_enabled)},
+        {"HA REST ST", ha_rest_state},
+        {"HA REST HOST",
+         config.home_assistant_host[0] != '\0' ? config.home_assistant_host.data() : "-"},
+        {"WX FETCH", weather_fetch_state_text(console_state.home_assistant_status.state)},
+        {"WX HOST", console_state.home_assistant_status.host[0]
+                        ? console_state.home_assistant_status.host.data()
+                        : "-"},
         {"HTTP", http_text},
-        {"ENTITY", console_state.home_assistant_status.tracked_entity_state[0]
-                       ? console_state.home_assistant_status.tracked_entity_state.data()
-                       : "-"},
-        {"MQTT", mqtt_state_text(console_state.mqtt_status.state)},
-        {"DISCOVERY", console_state.mqtt_status.discovery_published ? "READY" : "-"},
+        {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
     };
 
     draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));

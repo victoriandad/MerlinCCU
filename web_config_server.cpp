@@ -10,8 +10,10 @@
 #include "config_manager.h"
 #include "console_controller.h"
 #include "debug_logging.h"
+#include "framebuffer.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#include "panel_config.h"
 #include "pico/cyw43_arch.h"
 
 namespace web_config_server
@@ -22,12 +24,21 @@ namespace
 
 constexpr uint16_t kHttpPort = 80;
 constexpr size_t kRequestCapacity = 4096;
-constexpr size_t kResponseCapacity = 16000;
+constexpr size_t kResponseCapacity = 24576;
 constexpr u16_t kTcpWriteChunkMax = 512;
 constexpr char kHttpOkHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
 constexpr char kHttpBadRequestHeader[] =
     "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n";
+constexpr char kHttpBinaryHeader[] =
+    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-store\r\n"
+    "Connection: close\r\n\r\n";
+constexpr char kHttpPbmHeader[] =
+    "HTTP/1.1 200 OK\r\nContent-Type: image/x-portable-bitmap\r\nCache-Control: no-store\r\n"
+    "Connection: close\r\n\r\n";
+constexpr char kHttpBusyResponse[] =
+    "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n"
+    "Connection: close\r\nRetry-After: 1\r\n\r\nMerlinCCU web server is busy, retry shortly.\n";
 
 struct WebSession
 {
@@ -416,10 +427,15 @@ void build_config_page(const char* message)
                  "width:auto}.actions{position:sticky;bottom:0;margin-top:18px;background:"
                  "linear-gradient(180deg,#08110f00,#08110fee 26%%,#08110f);padding-top:18px;"
                  "display:flex;justify-content:space-between;gap:12px;align-items:center}"
+                 ".tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}"
+                 ".ghost{border:1px solid var(--line);border-radius:999px;padding:11px 16px;"
+                 "color:var(--text);text-decoration:none;background:#0d1815;font-weight:700;"
+                 "letter-spacing:.04em;font-size:12px;text-transform:uppercase}"
                  "button{border:0;border-radius:999px;background:var(--accent);color:#09110d;"
                  "font-weight:800;padding:12px 20px;letter-spacing:.05em}.msg{color:var(--warn);"
                  "font-weight:700}.hint{font-size:12px;color:var(--muted);margin-top:6px}"
                  "@media(max-width:760px){.grid,.row{grid-template-columns:1fr}.hero{display:block}"
+                 ".actions{align-items:flex-start;flex-direction:column}"
                  "h1{font-size:28px}}</style></head><body><main class=\"wrap\"><div class=\"hero\">"
                  "<div><div class=\"tag\">Merlin CCU Control Surface</div><h1>%s</h1><p class=\"sub\">"
                  "Configure this CCU from your local network. Settings are saved in reserved onboard "
@@ -435,7 +451,8 @@ void build_config_page(const char* message)
     }
 
     (void)append(cursor, remaining,
-                 "<form method=\"post\" action=\"/config\"><div class=\"grid\"><section class=\"card\">"
+                 "<form method=\"post\" action=\"/config\"><input type=\"hidden\" "
+                 "name=\"config_form_marker\" value=\"1\"><div class=\"grid\"><section class=\"card\">"
                  "<h2>Device Identity</h2><label>Device name</label><input name=\"device_name\" "
                  "maxlength=\"31\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
                  "Display label</label><input name=\"device_label\" "
@@ -453,8 +470,10 @@ void build_config_page(const char* message)
                  "<input name=\"admin_password_new\" type=\"password\" autocomplete=\"new-password\">"
                  "<label>Repeat new admin password</label><input name=\"admin_password_repeat\" "
                  "type=\"password\" autocomplete=\"new-password\">"
+                 "<input type=\"hidden\" name=\"require_admin_present\" value=\"1\">"
                  "<label class=\"check\"><input type=\"checkbox\" name=\"require_admin\" %s>"
-                 "Require admin password for saves</label><label class=\"check\"><input "
+                 "Require admin password for saves</label><input type=\"hidden\" "
+                 "name=\"remote_config_present\" value=\"1\"><label class=\"check\"><input "
                  "type=\"checkbox\" name=\"remote_config\" %s>Enable local web configuration "
                  "server</label><p class=\"hint\">Disable this if you only want setup changes to "
                  "come from the front panel.</p></section>",
@@ -469,7 +488,8 @@ void build_config_page(const char* message)
                  "a reboot.</p></section>", wifi_ssid);
 
     (void)append(cursor, remaining,
-                 "<section class=\"card\"><h2>Home Assistant</h2><label class=\"check\"><input "
+                 "<section class=\"card\"><h2>Home Assistant</h2><input type=\"hidden\" "
+                 "name=\"ha_enabled_present\" value=\"1\"><label class=\"check\"><input "
                  "type=\"checkbox\" name=\"ha_enabled\" data-controls=\"ha_fields\" %s>Enable "
                  "REST integration</label><fieldset id=\"ha_fields\" class=\"%s\"><label>Host</label>"
                  "<input name=\"ha_host\" maxlength=\"63\" value=\"%s\"><label>Port</label>"
@@ -484,7 +504,8 @@ void build_config_page(const char* message)
                  static_cast<unsigned>(cfg.home_assistant_port), ha_entity, ha_self);
 
     (void)append(cursor, remaining,
-                 "<section class=\"card\"><h2>MQTT Discovery</h2><label class=\"check\"><input "
+                 "<section class=\"card\"><h2>MQTT Discovery</h2><input type=\"hidden\" "
+                 "name=\"mqtt_enabled_present\" value=\"1\"><label class=\"check\"><input "
                  "type=\"checkbox\" name=\"mqtt_enabled\" data-controls=\"mqtt_fields\" %s>Enable "
                  "MQTT</label><fieldset id=\"mqtt_fields\" class=\"%s\"><label>Broker host</label>"
                  "<input name=\"mqtt_host\" maxlength=\"63\" value=\"%s\"><div class=\"row\"><div><label>Port</label>"
@@ -544,7 +565,8 @@ void build_config_page(const char* message)
                  "type=\"number\" min=\"0\" max=\"120\" inputmode=\"numeric\" value=\"%u\">"
                  "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
                  "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved locally "
-                 "on this CCU.</span><button type=\"submit\">Save Configuration</button></div></form>"
+                 "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/preview\">Display preview</a>"
+                 "<button type=\"submit\">Save Configuration</button></div></div></form>"
                  "<script>"
                  "function byId(id){return document.getElementById(id)}"
                  "function setDisabled(fs,off){if(!fs)return;var els=fs.querySelectorAll('input,select');"
@@ -563,6 +585,231 @@ void build_config_page(const char* message)
                  "form.addEventListener('submit',syncPw)}"
                  "</script></main></body></html>",
                  static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
+}
+
+/// @brief Builds the live display preview page rendered in-browser from raw framebuffer data.
+/// @returns True when the page fits in the response buffer.
+bool build_preview_page()
+{
+    char* cursor = g_response;
+    size_t remaining = sizeof(g_response);
+
+    const bool ok =
+        append(cursor, remaining,
+               "%s"
+               "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
+               "initial-scale=1\"><title>Merlin CCU Display Preview</title><style>"
+               ":root{color-scheme:dark;--bg:#070d0b;--panel:#12211d;--line:#315348;"
+               "--text:#eaf8ef;--muted:#8eb5a7;--accent:#b7ff57}*{box-sizing:border-box}"
+               "body{margin:0;background:radial-gradient(circle at 15%% 0,#1a3d32 0,#070d0b 45%%,#040706 100%%);"
+               "font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
+               ".wrap{max-width:980px;margin:0 auto;padding:22px 16px 28px}"
+               "h1{margin:0 0 6px;font-size:28px;letter-spacing:.03em}"
+               "p{margin:0 0 14px;color:var(--muted)}"
+               ".card{background:linear-gradient(180deg,var(--panel),#0b1613);border:1px solid var(--line);"
+               "border-radius:14px;padding:14px;box-shadow:0 18px 42px #0007}"
+               ".meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}"
+               ".badge{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--accent);"
+               "font-size:12px;letter-spacing:.06em;text-transform:uppercase}"
+               "button,a{border:1px solid var(--line);background:#0a1411;color:var(--text);border-radius:10px;"
+               "padding:8px 11px;text-decoration:none;cursor:pointer}"
+               ".state{font-size:12px;color:var(--muted)}"
+               ".grid{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:12px;align-items:start}"
+               ".qa{border:1px solid var(--line);border-radius:12px;padding:10px;background:#091410}"
+               ".qa h2{margin:0 0 8px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}"
+               ".qa label{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:13px;color:var(--text)}"
+               ".qa small{display:block;color:var(--muted);font-size:12px;margin-top:8px}"
+               ".qa button{width:100%%;margin-top:8px}"
+               "@media (max-width:900px){.grid{grid-template-columns:1fr}.qa{order:-1}}"
+               "canvas{display:block;width:100%%;max-width:756px;aspect-ratio:%d/%d;border:1px solid var(--line);"
+               "background:#08100d;image-rendering:pixelated;image-rendering:crisp-edges;margin-top:8px}"
+               "</style></head><body><main class=\"wrap\"><h1>Display Preview</h1>"
+               "<p>Live framebuffer mirror for layout checks without photographing the panel.</p>"
+               "<section class=\"card\"><div class=\"meta\"><span class=\"badge\">%d x %d</span>"
+               "<button id=\"toggle\">Pause</button><a href=\"/config\">Back to config</a>"
+               "<span id=\"state\" class=\"state\">Starting...</span></div>"
+               "<div class=\"grid\"><div><canvas id=\"fb\" width=\"%d\" height=\"%d\"></canvas></div>"
+               "<aside class=\"qa\"><h2>Quick checks</h2>"
+               "<label><input type=\"checkbox\" data-qa=\"labels\">Labels/captions uppercase</label>"
+               "<label><input type=\"checkbox\" data-qa=\"values\">Values mixed case</label>"
+               "<label><input type=\"checkbox\" data-qa=\"clip\">No right-edge clipping</label>"
+               "<label><input type=\"checkbox\" data-qa=\"align\">Status rows aligned</label>"
+               "<button id=\"qa_clear\" type=\"button\">Clear checks</button>"
+               "<small>Checks are saved in this browser.</small></aside></div></section>"
+               "<script>"
+               "(function(){"
+               "const w=%d,h=%d,s=%d;"
+               "const canvas=document.getElementById('fb');"
+               "const ctx=canvas.getContext('2d');"
+               "const image=ctx.createImageData(w,h);"
+               "const pixels=image.data;"
+               "const state=document.getElementById('state');"
+               "const toggle=document.getElementById('toggle');"
+               "const qaBoxes=document.querySelectorAll('input[data-qa]');"
+               "const qaClear=document.getElementById('qa_clear');"
+               "let running=true;"
+               "let timer=null;"
+               "const qaStoreKey='merlin_preview_quick_checks';"
+               "function readChecks(){"
+               "try{return JSON.parse(localStorage.getItem(qaStoreKey)||'{}')||{};}catch(_){return {};}"
+               "}"
+               "function writeChecks(map){"
+               "try{localStorage.setItem(qaStoreKey,JSON.stringify(map));}catch(_){}}"
+               "function syncChecksFromStore(){"
+               "const map=readChecks();"
+               "for(let i=0;i<qaBoxes.length;i++){const key=qaBoxes[i].getAttribute('data-qa');qaBoxes[i].checked=!!map[key];}"
+               "}"
+               "function bindChecks(){"
+               "for(let i=0;i<qaBoxes.length;i++){qaBoxes[i].addEventListener('change',function(){"
+               "const map=readChecks();map[this.getAttribute('data-qa')]=this.checked;writeChecks(map);});}"
+               "if(qaClear){qaClear.addEventListener('click',function(){writeChecks({});syncChecksFromStore();});}"
+               "}"
+               "function draw(bytes){"
+               "let src=0;"
+               "for(let y=0;y<h;y++){"
+               "for(let xb=0;xb<s;xb++){"
+               "const value=bytes[src++];"
+               "for(let bit=0;bit<8;bit++){"
+               "const x=(xb<<3)+bit;"
+               "if(x>=w){continue;}"
+               "const on=(value&(0x80>>bit))!==0;"
+               "const p=((y*w)+x)*4;"
+               "if(on){pixels[p]=255;pixels[p+1]=214;pixels[p+2]=64;pixels[p+3]=255;}"
+               "else{pixels[p]=8;pixels[p+1]=16;pixels[p+2]=14;pixels[p+3]=255;}"
+               "}"
+               "}"
+               "}"
+               "ctx.putImageData(image,0,0);"
+               "}"
+               "async function refresh(){"
+               "if(!running){return;}"
+               "try{"
+               "const response=await fetch('/api/framebuffer?t='+Date.now(),{cache:'no-store'});"
+               "if(!response.ok){throw new Error('HTTP '+response.status);}"
+               "const bytes=new Uint8Array(await response.arrayBuffer());"
+               "if(bytes.length!==(h*s)){throw new Error('Frame size '+bytes.length);}"
+               "draw(bytes);"
+               "state.textContent='Live';"
+               "}catch(error){"
+               "state.textContent='Fetch failed: '+error.message;"
+               "}"
+               "}"
+               "function schedule(){"
+               "if(timer!==null){clearInterval(timer);timer=null;}"
+               "if(running){timer=setInterval(refresh,1000);}"
+               "}"
+               "toggle.addEventListener('click',function(){"
+               "running=!running;"
+               "toggle.textContent=running?'Pause':'Resume';"
+               "state.textContent=running?'Live':'Paused';"
+               "schedule();"
+               "if(running){refresh();}"
+               "});"
+               "bindChecks();"
+               "syncChecksFromStore();"
+               "schedule();"
+               "refresh();"
+               "})();"
+               "</script></main></body></html>",
+               kHttpOkHeader, kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiWidth, kUiHeight,
+               kUiWidth, kUiHeight, kUiStride);
+    if (!ok)
+    {
+        std::snprintf(g_response, sizeof(g_response),
+                      "HTTP/1.1 500 Internal Server Error\r\n"
+                      "Content-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n"
+                      "Display preview page exceeded response buffer.\n");
+        return false;
+    }
+
+    return true;
+}
+
+/// @brief Builds one raw framebuffer response for browser-side preview rendering.
+size_t build_framebuffer_response()
+{
+    const int header_len = std::snprintf(g_response, sizeof(g_response), "%s", kHttpBinaryHeader);
+    if (header_len <= 0 || static_cast<size_t>(header_len) >= sizeof(g_response))
+    {
+        return 0;
+    }
+
+    if (static_cast<size_t>(header_len) + kUiFbSize > sizeof(g_response))
+    {
+        return 0;
+    }
+
+    const uint8_t* source = framebuffer::front();
+    if (source == nullptr)
+    {
+        return 0;
+    }
+
+    std::memcpy(g_response + header_len, source, kUiFbSize);
+    return static_cast<size_t>(header_len) + kUiFbSize;
+}
+
+/// @brief Builds a PBM (P4) snapshot response for regression capture and diffing.
+/// @details The payload is a valid binary PBM image using the current UI
+/// framebuffer bit packing, so host tooling can save and compare snapshots.
+size_t build_framebuffer_pbm_response()
+{
+    const int http_header_len = std::snprintf(g_response, sizeof(g_response), "%s", kHttpPbmHeader);
+    if (http_header_len <= 0 || static_cast<size_t>(http_header_len) >= sizeof(g_response))
+    {
+        return 0;
+    }
+
+    const int pbm_header_len =
+        std::snprintf(g_response + http_header_len, sizeof(g_response) - static_cast<size_t>(http_header_len),
+                      "P4\n%d %d\n", kUiWidth, kUiHeight);
+    if (pbm_header_len <= 0)
+    {
+        return 0;
+    }
+
+    const size_t header_total =
+        static_cast<size_t>(http_header_len) + static_cast<size_t>(pbm_header_len);
+    if (header_total >= sizeof(g_response) || header_total + kUiFbSize > sizeof(g_response))
+    {
+        return 0;
+    }
+
+    const uint8_t* source = framebuffer::front();
+    if (source == nullptr)
+    {
+        return 0;
+    }
+
+    std::memcpy(g_response + header_total, source, kUiFbSize);
+    return header_total + kUiFbSize;
+}
+
+/// @brief Returns true when the first request line matches the provided path.
+/// @details Accepts plain path, optional trailing slash, and optional query.
+bool matches_get_path(const char* request, const char* path)
+{
+    if (request == nullptr || path == nullptr)
+    {
+        return false;
+    }
+
+    const char* prefix = "GET ";
+    const size_t prefix_len = std::strlen(prefix);
+    const size_t path_len = std::strlen(path);
+    if (std::strncmp(request, prefix, prefix_len) != 0)
+    {
+        return false;
+    }
+
+    const char* uri = request + prefix_len;
+    if (std::strncmp(uri, path, path_len) != 0)
+    {
+        return false;
+    }
+
+    const char terminator = uri[path_len];
+    return terminator == ' ' || terminator == '/' || terminator == '?';
 }
 
 /// @brief Finds one form field value in a mutable URL-encoded body.
@@ -738,6 +985,10 @@ WeatherSource parse_weather_source(const char* text, WeatherSource fallback)
     {
         return WeatherSource::OpenMeteo;
     }
+    if (std::strcmp(text, "met_norway") == 0)
+    {
+        return WeatherSource::OpenMeteo;
+    }
     if (std::strcmp(text, "home_assistant") == 0)
     {
         return WeatherSource::HomeAssistant;
@@ -828,6 +1079,15 @@ const char* handle_config_post(const char* body)
 {
     std::printf("Web config POST received: %u bytes\n",
                 static_cast<unsigned>(body != nullptr ? std::strlen(body) : 0U));
+
+    if (!form_has_key(body, "config_form_marker") ||
+        !form_has_key(body, "require_admin_present") ||
+        !form_has_key(body, "remote_config_present") ||
+        !form_has_key(body, "ha_enabled_present") || !form_has_key(body, "mqtt_enabled_present"))
+    {
+        std::printf("Web config save rejected: incomplete form payload; reload required\n");
+        return "Configuration not saved: configuration page was incomplete. Reload and try again.";
+    }
 
     char current_password[40] = {};
     (void)get_form_value(body, "admin_password_current", current_password, sizeof(current_password));
@@ -1129,20 +1389,26 @@ const char* handle_config_post(const char* body)
     return "Configuration saved. Display settings and local web-access policy apply now; Wi-Fi and integration transport changes take effect after reboot.";
 }
 
-/// @brief Sends one response and closes the TCP session.
-/// @brief Starts sending the prepared HTTP response for this session.
-void send_response(WebSession* session, tcp_pcb* pcb, const char* response)
+/// @brief Starts sending prepared response bytes for this session.
+void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* response,
+                               size_t response_len)
 {
     if (session == nullptr || pcb == nullptr || response == nullptr)
     {
         return;
     }
 
-    session->response_len = std::strlen(response);
+    session->response_len = response_len;
     session->response_sent = 0;
     session->close_pending = false;
     tcp_sent(pcb, on_sent);
     (void)send_pending_response(session, pcb);
+}
+
+/// @brief Starts sending a null-terminated text response.
+void send_response(WebSession* session, tcp_pcb* pcb, const char* response)
+{
+    send_response_with_length(session, pcb, response, std::strlen(response));
 }
 
 /// @brief Handles a complete HTTP request from the local config page.
@@ -1160,6 +1426,41 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
                       "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
                       "Connection: close\r\n\r\nMerlinCCU OK\n");
         send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/preview"))
+    {
+        (void)build_preview_page();
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/api/framebuffer.pbm"))
+    {
+        const size_t response_len = build_framebuffer_pbm_response();
+        if (response_len == 0)
+        {
+            std::snprintf(g_response, sizeof(g_response),
+                          "%sFramebuffer PBM response buffer exhausted\n", kHttpBadRequestHeader);
+            send_response(session, pcb, g_response);
+            return;
+        }
+
+        send_response_with_length(session, pcb, g_response, response_len);
+        return;
+    }
+    else if (matches_get_path(request, "/api/framebuffer"))
+    {
+        const size_t response_len = build_framebuffer_response();
+        if (response_len == 0)
+        {
+            std::snprintf(g_response, sizeof(g_response),
+                          "%sFramebuffer preview response buffer exhausted\n",
+                          kHttpBadRequestHeader);
+            send_response(session, pcb, g_response);
+            return;
+        }
+
+        send_response_with_length(session, pcb, g_response, response_len);
         return;
     }
     else if (std::strncmp(request, "GET / ", 6) != 0 &&
@@ -1246,6 +1547,28 @@ void on_error(void* arg, err_t err)
     g_session = {};
 }
 
+/// @brief Replies with a temporary busy response then closes the connection.
+void reject_busy_connection(tcp_pcb* pcb)
+{
+    if (pcb == nullptr)
+    {
+        return;
+    }
+
+    const size_t response_len = std::strlen(kHttpBusyResponse);
+    err_t rc = tcp_write(pcb, kHttpBusyResponse, static_cast<u16_t>(response_len), TCP_WRITE_FLAG_COPY);
+    if (rc == ERR_OK)
+    {
+        (void)tcp_output(pcb);
+    }
+
+    rc = tcp_close(pcb);
+    if (rc != ERR_OK)
+    {
+        (void)tcp_abort(pcb);
+    }
+}
+
 err_t on_accept(void* arg, tcp_pcb* new_pcb, err_t err)
 {
     (void)arg;
@@ -1256,7 +1579,7 @@ err_t on_accept(void* arg, tcp_pcb* new_pcb, err_t err)
 
     if (g_session.pcb != nullptr)
     {
-        (void)tcp_close(new_pcb);
+        reject_busy_connection(new_pcb);
         return ERR_OK;
     }
 

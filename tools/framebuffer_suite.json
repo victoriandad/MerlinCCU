@@ -1,0 +1,42 @@
+{
+  "host": "merlinccu",
+  "checks": [
+    {
+      "name": "status-page",
+      "baseline": "baselines/status_page.pbm",
+      "capture_prompt": "Open HOME ASSISTANT status page and wait for values to settle.",
+      "settle_seconds": 1.0,
+      "masks": [
+        [190, 0, 62, 20],
+        [192, 20, 24, 2]
+      ]
+    },
+    {
+      "name": "settings-root-page",
+      "baseline": "baselines/settings_root_page.pbm",
+      "capture_prompt": "Open SETTINGS root page (with page indicators/arrows visible).",
+      "settle_seconds": 1.0,
+      "masks": [
+        [190, 0, 62, 20]
+      ]
+    },
+    {
+      "name": "weather-sources-page",
+      "baseline": "baselines/weather_sources_page.pbm",
+      "capture_prompt": "Open SETTINGS -> WEATHER SOURCE page.",
+      "settle_seconds": 1.0,
+      "masks": [
+        [190, 0, 62, 20]
+      ]
+    },
+    {
+      "name": "network-settings-page",
+      "baseline": "baselines/network_settings_page.pbm",
+      "capture_prompt": "Open SETTINGS -> NETWORK page.",
+      "settle_seconds": 1.0,
+      "masks": [
+        [190, 0, 62, 20]
+      ]
+    }
+  ]
+}

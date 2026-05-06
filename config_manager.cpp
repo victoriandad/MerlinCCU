@@ -231,6 +231,17 @@ RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
     return migrated;
 }
 
+/// @brief Returns whether HA should be auto-enabled from configured credentials.
+/// @details A previous web-form truncation bug could clear only the HA enable
+/// checkbox while leaving host, token, and entity fields intact in flash. This
+/// guard repairs that partial-save state so integration resumes automatically.
+bool should_auto_enable_home_assistant(const RuntimeConfig& settings)
+{
+    return !settings.home_assistant_enabled && settings.home_assistant_host[0] != '\0' &&
+           settings.home_assistant_token[0] != '\0' &&
+           settings.home_assistant_entity_id[0] != '\0';
+}
+
 struct ConfigCandidate
 {
     bool valid;
@@ -339,6 +350,11 @@ void init()
         {
             loaded.weather_source = WeatherSource::OpenMeteo;
         }
+        if (should_auto_enable_home_assistant(loaded))
+        {
+            loaded.home_assistant_enabled = true;
+            std::printf("Config load: repaired HA enable flag from saved credentials\n");
+        }
         g_settings = loaded;
         g_sequence = sequence;
         return;
@@ -381,6 +397,10 @@ bool save(const RuntimeConfig& settings)
     if (sanitized.weather_source == WeatherSource::MetNorway)
     {
         sanitized.weather_source = WeatherSource::OpenMeteo;
+    }
+    if (should_auto_enable_home_assistant(sanitized))
+    {
+        sanitized.home_assistant_enabled = true;
     }
 
     const uint32_t next_sequence = g_sequence + 1U;

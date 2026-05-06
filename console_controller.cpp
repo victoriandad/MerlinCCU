@@ -1,6 +1,7 @@
 #include "console_controller.h"
 
 #include <cstddef>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
@@ -30,6 +31,33 @@ std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override
 std::array<char, 16> g_screen_saver_timeout_selection_text = {};
 
 void update_softkeys_from_state();
+
+/// @brief Copies a short label title and forces uppercase for consistent softkey headings.
+/// @details Values remain untouched elsewhere, so only the heading/caption text
+/// is normalised by this helper.
+void build_uppercase_title(const char* input, char* output, size_t output_size)
+{
+    if (output == nullptr || output_size == 0U)
+    {
+        return;
+    }
+
+    output[0] = '\0';
+    if (input == nullptr || input[0] == '\0')
+    {
+        return;
+    }
+
+    size_t write_index = 0U;
+    while (input[write_index] != '\0' && write_index + 1U < output_size)
+    {
+        output[write_index] = static_cast<char>(std::toupper(static_cast<unsigned char>(
+            input[write_index])));
+        ++write_index;
+    }
+
+    output[write_index] = '\0';
+}
 
 struct WeatherSourceDefinition
 {
@@ -599,7 +627,10 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
 {
     auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
     const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
-    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title, value);
+    constexpr size_t kSoftkeyTitleBufferSize = 24U;
+    char title_upper[kSoftkeyTitleBufferSize] = {};
+    build_uppercase_title(title, title_upper, sizeof(title_upper));
+    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper, value);
     return buffer.data();
 }
 
