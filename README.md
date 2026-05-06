@@ -493,55 +493,97 @@ properly.
 - consider putting MerlinCCU on a trusted SSID or VLAN during and after the migration
 - update setup documentation once HTTPS/TLS is actually supported end-to-end
 
-## Deferred Functional TODOs
+## Roadmap Backlog
 
-These are non-security items that are worth keeping visible for future passes.
+This backlog is ordered by delivery dependency so platform work lands before
+feature-heavy screens.
+Tracking rule: keep each deliverable as a task checkbox. Mark completed items
+as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
 
-- replace the timed/demo screen mode selection with a real UI state model
-- replace the provisional keypad diagnostics page with a real matrix decoder and key map
-- confirm the spreadsheet matrix against real continuity and switch-press tests
-- decide how the hard keys and side softkeys should be represented in the input model
-- add a future system menu with screen saver settings
-- keep the current Home Assistant weather feed as the baseline source for now
-- later: add direct weather-provider support (for example BBC Weather, Met Office, and others)
-- improve the weather page layout as more data columns and status lines are added
-- decide which Home page values should degrade gracefully when HA data is missing
-- add a clearer user-facing distinction between Wi-Fi loss, HA loss, and missing weather data
-- review whether the 5-minute HA refresh cadence is the right tradeoff for responsiveness and network load
-- add more useful HA-backed entities if they fit the CCU concept cleanly
-- keep refining the module boundaries as more real CCU features are added
+## Phase 1: Platform And Data Foundations
 
-## Deferred UI And Interaction TODOs
+- [ ] replace timed/demo routing with a stable UI state model across all pages
+- [ ] finalise keypad matrix decoding and hard/soft key mapping
+- [ ] add I2C bus support on spare GPIOs (including any GPIO reallocation needed)
+- [ ] add an I2C sensor abstraction for temperature, humidity, air quality, CO2,
+  and particulates
+- [ ] improve Home Assistant integration so local sensor data is published back to HA
+- [ ] define CCU device identity from MAC address with user-facing aliases
+  (`CCU#1`, `CCU#2`, etc.)
+- [ ] add presence/discovery model for other CCU devices on the network
+- [ ] keep module boundaries under review as feature scope grows
 
-- replace placeholder screens and routes with a coherent navigation model
-- define the softkey behaviour consistently across all screens
-- decide which controls belong on the Home page versus secondary pages
-- add any missing iconography needed for status and fault conditions
-- review whether the current text layout still works once more live data is added
-- document font choices, spacing rules, and banner conventions so future UI changes stay consistent
-- decide whether the screensaver should be configurable from the UI
+## Phase 2: Alerting And Event Workflow
 
-## Deferred Hardware And Platform TODOs
+- [ ] implement alert state machine and escalation timing
+- [ ] detect prolonged failures across Wi-Fi, weather fetch, HA REST, and MQTT
+- [ ] add weather-based threshold alerts:
+  - high/low temperature triggers (configurable)
+  - wind-speed triggers (configurable)
+  - evaluate provider-native warnings vs local threshold judgement
+- [ ] add sensor-generated alerts (pressure trend, air quality, CO2, particulates)
+- [ ] implement ALRT-key workflow:
+  - flashing indicator until viewed
+  - brief event labels on softkeys
+  - softkey drill-down to details page
+  - right-side actions: `ACCEPT`, `CLEAR`, `NEXT`
 
-- document the hardware wiring and panel timing in more detail
-- validate keypad power-line integration alongside the already-assigned signal GPIOs
-- decide whether any display timing values should move from compile-time constants to documented tuning parameters
-- review memory headroom as more UI and network features are added
-- review CPU time spent in raster composition, weather rendering, and network parsing as the firmware grows
+## Phase 3: Weather UX Expansion
 
-## Deferred Reliability TODOs
+- [ ] keep HA weather feed as baseline while direct providers remain available
+- [ ] add weather horizon softkey cycling:
+  - next 9-10 hours
+  - day
+  - week
+- [ ] keep local-time alignment consistent across provider outputs
+- [ ] add weather iconography:
+  - evaluate 10x10, 12x12, and 16x16 options
+  - review practical icon conventions from small-display ecosystems
 
-- add a clearer strategy for backoff and retry across Wi-Fi, HA REST, and MQTT
-- decide whether stale HA data should be cached and shown for longer during outages
-- add more explicit diagnostics for malformed HA responses and unsupported payloads
-- review whether any optional requests should be rate-limited or skipped after repeated failures
-- check whether forecast payload size limits are still appropriate as more providers are tested
-- add a documented test checklist for network loss, HA restarts, broker loss, and recovery behaviour
+## Phase 4: New Screen Features
 
-## Likely Next Steps
+- [ ] add an info screen saver showing:
+  - time and date
+  - temperature and humidity
+  - sunrise/sunset context (show sunset after sunrise, sunrise after sunset)
+  - air quality metrics (CO2, particulates, and related sensor values)
+- [ ] add share-monitoring feature:
+  - choose symbols in config
+  - show current price with up/down/flat indicator beside each softkey label
+  - softkey opens detail page with chart windows:
+    `day`, `week`, `month`, `year`, `all-time`
+  - single softkey cycles period
 
-If work resumes soon, the most obvious next items are:
+## Phase 5: Observability, Reliability, And Ops
 
-- replace the timed/demo screen mode selection with a real UI state model
-- keep the current Home Assistant weather feed for now, then extend to direct providers later
-- document the hardware and panel timing in more detail
+- [ ] add access monitoring for CCU activity (presence, timestamps, features used)
+- [ ] publish access/presence telemetry to HA for processing
+- [ ] add explicit diagnostics for malformed responses and unsupported payloads
+- [ ] tune backoff/retry policy and optional request rate limiting
+- [ ] define stale-data display policy during outages
+- [ ] monitor Synology backup/sync health to Proxmox-hosted Synology VM and surface
+  sync anomalies
+
+## Phase 6: Display Quality R&D (Greyscale And AA)
+
+- [ ] investigate deterministic temporal modulation for perceived greyscale
+  (target 2-4 effective levels)
+- [ ] keep panel timing fixed (no HSYNC/VSYNC/pixel-clock changes) and vary pixel
+  duty across frame cycles
+- [ ] test coverage-aware glyph/icon assets (edge coverage levels rather than pure
+  1-bit glyphs)
+- [ ] evaluate mixed spatial + temporal anti-aliasing for diagonals and curves
+- [ ] expose user mode selection:
+  - `Blocky` (current crisp 1-bit rendering)
+  - `Smoothed` (temporal/coverage-based rendering)
+- [ ] validate flicker/shimmer thresholds and CPU/raster budget impact before
+  promoting beyond experimental mode
+
+## Next Implementation Candidates
+
+The most practical next slice is:
+
+- [ ] land Phase 2 alert state model skeleton with ALRT navigation and action flow
+- [ ] extend Phase 3 weather horizon controls (`hour`, `day`, `week`) and layout
+      handling
+- [ ] add weather icon pipeline and placeholder icon set (10x10 and 16x16 trial)

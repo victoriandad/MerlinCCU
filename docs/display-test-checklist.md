@@ -1,3 +1,4 @@
+
 # Display Test Checklist
 
 This branch uses a repeatable display test flow so UI changes can be checked
@@ -31,8 +32,6 @@ quickly without relying only on photographs of the physical panel.
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.
 - Source footer is visible and readable.
-- Weather values naturally change over time; use visual checks here and only use
-  strict PBM regression where dynamic regions are masked.
 
 ## Settings Pages
 
@@ -88,6 +87,3 @@ Recommended first-run sequence:
 2. Save the baseline set.
 3. Re-run `compare-all` without changing pages to confirm a clean pass.
 4. Use `compare-all` after UI changes to detect regressions.
-
-If the CCU returns temporary `HTTP 503` during capture/compare, rerun the task.
-The tooling retries transient busy responses automatically.

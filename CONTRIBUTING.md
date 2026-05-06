@@ -20,6 +20,9 @@ better than broad refactors.
 - Keep network secrets, tokens, broker passwords and local IP choices in the
   ignored local headers, never in tracked files.
 - Prefer updating public headers and example files when behaviour changes.
+- Keep the roadmap in `README.md` current:
+  - use `[ ]` for open roadmap tasks and `[x]` for completed tasks
+  - when marking complete, append a short note with date and PR/commit reference
 - Prefer standard library facilities over bespoke helpers when they meet the need (for example `std::clamp`, `std::min`, `std::max`, `std::optional`).
   - If a custom helper is needed for non-standard behaviour, document the behaviour difference and why the standard facility is unsuitable.
 - "Less code is good code": remove unused code, avoid duplication, and prefer deleting dead paths over keeping them "just in case".
