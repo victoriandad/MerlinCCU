@@ -97,6 +97,43 @@
             "windows": {
                 "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
             }
+        },
+        {
+            "label": "Display: Capture Baselines",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "tools/framebuffer_suite.py",
+                "capture-all"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Display: Compare Baselines",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "tools/framebuffer_suite.py",
+                "compare-all"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Display: Refresh + Compare",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Display: Capture Baselines",
+                "Display: Compare Baselines"
+            ],
+            "problemMatcher": []
         }
     ]
 }

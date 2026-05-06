@@ -70,6 +70,9 @@ better than broad refactors.
   need to reverse-engineer intent from implementation details.
 - Keep naming, comments, and structure consistent with the existing file once
   you are editing inside it.
+- UI text consistency: render labels/captions/headings in uppercase (including
+  softkey label titles and on-screen field names), while keeping data values in
+  their natural mixed case.
 - Prefer small behavioral commits. If a cleanup pass is separate from a
   functional change, keep them in separate commits where practical.
 
@@ -89,6 +92,11 @@ better than broad refactors.
   Assistant, and MQTT issues.
 - Status-page changes should be checked both on the physical display and in
   Home Assistant when relevant.
+- If a change affects rendered output, page layout, status text, or preview
+  behaviour, update display tests in the same change:
+  - update `tools/framebuffer_suite.json` checks/masks as needed
+  - capture or refresh affected baseline PBMs in `baselines/`
+  - update `docs/display-test-checklist.md` when workflow expectations change
 
 ## Useful Files
 
