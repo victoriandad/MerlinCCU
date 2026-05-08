@@ -36,6 +36,8 @@ constexpr char kHttpBinaryHeader[] =
 constexpr char kHttpPbmHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: image/x-portable-bitmap\r\nCache-Control: no-store\r\n"
     "Connection: close\r\n\r\n";
+constexpr char kHttpTextHeader[] =
+    "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n";
 constexpr char kHttpBusyResponse[] =
     "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n"
     "Connection: close\r\nRetry-After: 1\r\n\r\nMerlinCCU web server is busy, retry shortly.\n";
@@ -53,6 +55,40 @@ struct WebSession
 tcp_pcb* g_listener = nullptr;
 WebSession g_session = {};
 char g_response[kResponseCapacity] = {};
+
+/// @brief Maps web button identifiers to logical firmware button ids.
+struct WebButtonBinding
+{
+    const char* web_id;
+    ButtonId button_id;
+};
+
+constexpr std::array<WebButtonBinding, static_cast<size_t>(ButtonId::Count)> kWebButtonBindings = {{
+    {"LeftTop", ButtonId::LeftTop},
+    {"LeftUpper", ButtonId::LeftUpper},
+    {"LeftMiddle", ButtonId::LeftMiddle},
+    {"LeftLower", ButtonId::LeftLower},
+    {"LeftBottom", ButtonId::LeftBottom},
+    {"RightTop", ButtonId::RightTop},
+    {"RightUpper", ButtonId::RightUpper},
+    {"RightMiddle", ButtonId::RightMiddle},
+    {"RightLower", ButtonId::RightLower},
+    {"RightBottom", ButtonId::RightBottom},
+    {"BackStep", ButtonId::BackStep},
+    {"CursorLeft", ButtonId::CursorLeft},
+    {"CursorRight", ButtonId::CursorRight},
+    {"Clr", ButtonId::Clr},
+    {"Digit1", ButtonId::Digit1},
+    {"Digit2", ButtonId::Digit2},
+    {"Digit3", ButtonId::Digit3},
+    {"Digit4", ButtonId::Digit4},
+    {"Digit5", ButtonId::Digit5},
+    {"Digit6", ButtonId::Digit6},
+    {"Digit7", ButtonId::Digit7},
+    {"Digit8", ButtonId::Digit8},
+    {"Digit9", ButtonId::Digit9},
+    {"Digit0", ButtonId::Digit0},
+}};
 
 /// @brief Clears callbacks and closes a completed HTTP session.
 /// @details lwIP raw TCP can reject `tcp_close` while buffers are still tight.
@@ -565,7 +601,7 @@ void build_config_page(const char* message)
                  "type=\"number\" min=\"0\" max=\"120\" inputmode=\"numeric\" value=\"%u\">"
                  "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
                  "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved locally "
-                 "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/preview\">Display preview</a>"
+                 "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/preview\" id=\"open_preview\">Display preview</a>"
                  "<button type=\"submit\">Save Configuration</button></div></div></form>"
                  "<script>"
                  "function byId(id){return document.getElementById(id)}"
@@ -578,6 +614,14 @@ void build_config_page(const char* message)
                  "var weather=byId('weather_source_select'),weatherFields=byId('weather_entity_fields');"
                  "function syncWeather(){setDisabled(weatherFields,false)}"
                  "if(weather){weather.onchange=syncWeather;syncWeather()}"
+                 "var preview=byId('open_preview');"
+                 "if(preview){preview.addEventListener('click',function(event){"
+                 "if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){return;}"
+                 "event.preventDefault();"
+                 "var popup=window.open('/preview?popup=1','merlin_preview_window',"
+                 "'popup=yes,width=900,height=1550,resizable=yes,scrollbars=yes');"
+                 "if(!popup){window.location.href='/preview';}"
+                 "});}"
                  "var form=document.querySelector('form'),pw=document.querySelector('[name=admin_password_new]'),"
                  "rp=document.querySelector('[name=admin_password_repeat]');"
                  "function syncPw(){rp.setCustomValidity(pw.value!==rp.value?'New admin passwords do not match':'')}"
@@ -599,43 +643,141 @@ bool build_preview_page()
                "%s"
                "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
                "initial-scale=1\"><title>Merlin CCU Display Preview</title><style>"
-               ":root{color-scheme:dark;--bg:#070d0b;--panel:#12211d;--line:#315348;"
-               "--text:#eaf8ef;--muted:#8eb5a7;--accent:#b7ff57}*{box-sizing:border-box}"
-               "body{margin:0;background:radial-gradient(circle at 15%% 0,#1a3d32 0,#070d0b 45%%,#040706 100%%);"
-               "font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
-               ".wrap{max-width:980px;margin:0 auto;padding:22px 16px 28px}"
-               "h1{margin:0 0 6px;font-size:28px;letter-spacing:.03em}"
-               "p{margin:0 0 14px;color:var(--muted)}"
+               ":root{color-scheme:dark;--bg:#070b0a;--panel:#11211c;--line:#315348;--text:#eaf8ef;"
+               "--muted:#8eb5a7;--accent:#b7ff57;--key-line:#5d6972;--key-face:#12181d;--key-top:#202831;"
+               "--live:#ffe184;--rect-key-w:78px;--rect-key-h:56px;--font-small:12px;--font-large:18px}*{box-sizing:border-box}"
+               "body{margin:0;background:radial-gradient(circle at 20%% -10%%,#27342f 0%%,#090e0d 48%%,#050707 100%%);"
+               "font:15px/1.45 'Trebuchet MS','Gill Sans MT','Segoe UI',sans-serif;color:var(--text)}"
+               ".wrap{max-width:920px;margin:0 auto;padding:18px 14px 24px}"
+               "h1{margin:0 0 6px;font-size:28px;letter-spacing:.03em;text-transform:uppercase}"
+               "p{margin:0 0 12px;color:var(--muted)}"
                ".card{background:linear-gradient(180deg,var(--panel),#0b1613);border:1px solid var(--line);"
-               "border-radius:14px;padding:14px;box-shadow:0 18px 42px #0007}"
-               ".meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}"
+               "border-radius:14px;padding:12px;box-shadow:0 18px 42px #0007;overflow-x:auto}"
+               ".meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}"
                ".badge{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--accent);"
                "font-size:12px;letter-spacing:.06em;text-transform:uppercase}"
                "button,a{border:1px solid var(--line);background:#0a1411;color:var(--text);border-radius:10px;"
                "padding:8px 11px;text-decoration:none;cursor:pointer}"
-               ".state{font-size:12px;color:var(--muted)}"
-               ".grid{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:12px;align-items:start}"
-               ".qa{border:1px solid var(--line);border-radius:12px;padding:10px;background:#091410}"
-               ".qa h2{margin:0 0 8px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}"
-               ".qa label{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:13px;color:var(--text)}"
-               ".qa small{display:block;color:var(--muted);font-size:12px;margin-top:8px}"
-               ".qa button{width:100%%;margin-top:8px}"
-               "@media (max-width:900px){.grid{grid-template-columns:1fr}.qa{order:-1}}"
-               "canvas{display:block;width:100%%;max-width:756px;aspect-ratio:%d/%d;border:1px solid var(--line);"
-               "background:#08100d;image-rendering:pixelated;image-rendering:crisp-edges;margin-top:8px}"
-               "</style></head><body><main class=\"wrap\"><h1>Display Preview</h1>"
-               "<p>Live framebuffer mirror for layout checks without photographing the panel.</p>"
+               ".state{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;min-width:88px;white-space:nowrap}"
+               ".ccu-fixed{width:560px;min-width:560px;max-width:560px;margin:0 auto}"
+               ".ccu{position:relative;width:560px;padding:14px;border:1px solid #2f3336;border-radius:26px;"
+               "background:linear-gradient(160deg,#2d3134 0%%,#121417 44%%,#0b0d0e 100%%);"
+               "box-shadow:inset 0 1px 0 #59606766,0 14px 36px #0009}"
+               ".ccu:before{content:'';position:absolute;inset:8px;border-radius:20px;border:1px solid #454d55;pointer-events:none;opacity:.75}"
+               ".ccu:after{content:'';position:absolute;inset:0;border-radius:26px;pointer-events:none;"
+               "box-shadow:inset 0 18px 26px #ffffff08,inset 0 -14px 22px #000a}"
+               ".row{display:grid}"
+               ".top-row{grid-template-columns:repeat(6,var(--rect-key-w));gap:8px;justify-content:center}"
+               ".top-gap{border:1px solid #2e3438;border-radius:12px;background:#151b1f;opacity:.85}"
+               ".display-bay{margin-top:10px;padding:8px 7px 6px;border-radius:22px;background:linear-gradient(170deg,#1e2429,#0c1013);"
+               "box-shadow:inset 0 1px 0 #6c758042,inset 0 -1px 0 #050709}"
+               ".display-shell{display:grid;grid-template-columns:68px 358px 68px;gap:10px;align-items:start}"
+               ".screen-wrap{width:358px;height:450px;border:2px solid #5a6268;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,#1a2126,#0a0e11);"
+               "padding:7px;position:relative;box-shadow:inset 0 2px 3px #ffffff1f,inset 0 -2px 4px #000a,0 1px 0 #000}"
+               ".screen-wrap canvas{display:block;width:340px;height:432px;image-rendering:pixelated;image-rendering:crisp-edges;background:#070d0a}"
+               ".soft-column{position:relative;height:450px}"
+               ".soft-cell{position:absolute;left:0;right:0;display:grid;align-items:center}"
+               ".soft-cell.r0{top:44px}.soft-cell.r1{top:122px}.soft-cell.r2{top:200px}.soft-cell.r3{top:278px}.soft-cell.r4{top:356px}"
+               ".left-soft .soft-cell{grid-template-columns:auto 14px;column-gap:4px}"
+               ".right-soft .soft-cell{grid-template-columns:14px auto;column-gap:4px}"
+               ".soft-cell .tick{height:2px;background:#d9ddd7;border-radius:2px;opacity:.9;box-shadow:0 0 3px #ffffff80}"
+               ".soft-cell .key{width:52px;height:52px;padding:6px 2px;border-radius:13px}"
+               ".keybed{margin-top:10px;padding:8px;border-radius:18px;background:linear-gradient(170deg,#1d2328,#0c1013);"
+               "box-shadow:inset 0 1px 0 #6d778244,inset 0 -1px 0 #06090b}"
+               ".nav-row{grid-template-columns:repeat(6,var(--rect-key-w));gap:8px;justify-content:center;margin-top:0}"
+               ".keypad{display:grid;grid-template-columns:repeat(6,var(--rect-key-w));gap:8px;justify-content:center;margin-top:8px}"
+               ".key{border:1px solid var(--key-line);border-radius:12px;padding:8px 6px;"
+               "background:linear-gradient(180deg,var(--key-top),var(--key-face));color:#edf1dc;width:var(--rect-key-w);height:var(--rect-key-h);"
+               "font-weight:700;letter-spacing:.03em;text-transform:uppercase;display:flex;flex-direction:column;"
+               "align-items:center;justify-content:center;text-align:center;gap:1px;box-shadow:inset 0 1px 0 #ffffff22,0 2px 0 #020304;"
+               "transition:transform .08s ease,box-shadow .08s ease,border-color .08s ease}"
+               ".key>span:first-child{font-size:var(--font-small);line-height:1.05;letter-spacing:.04em}"
+               ".key .sub{font-size:var(--font-small);opacity:1;letter-spacing:.04em;line-height:1.05}"
+               ".key .sub.small{font-size:var(--font-small);letter-spacing:.04em}"
+               ".key-alpha{align-items:flex-start;justify-content:flex-start;text-align:left;padding:5px 7px 6px}"
+               ".key-bottom-centre{align-items:center;justify-content:flex-end;text-align:center;padding:6px 6px 7px}"
+               ".key-alpha>span:first-child,.key-emphasis>span:first-child{font-size:var(--font-large);line-height:1;letter-spacing:.02em}"
+               ".key-alpha .sub{margin-top:auto;align-self:center}"
+               ".key[data-button-id]{cursor:pointer;color:var(--live)}"
+               ".key[data-button-id] .sub{color:var(--live)}"
+               ".key[data-button-id]:hover{border-color:#8db29f}"
+               ".key.down{transform:translateY(1px);box-shadow:inset 0 1px 0 #0008,0 1px 0 #020304;border-color:#97c7af}"
+               ".key.ghost{color:#a8aeb4;border-style:dashed;opacity:.78}"
+               ".hint-line{margin:9px 2px 0;font-size:12px;color:var(--muted)}"
+               ".keystate{margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;color:var(--accent);background:#07110d;min-height:38px}"
+               "body.popup-mode .wrap{max-width:790px;padding:10px 8px 12px}"
+               "body.popup-mode .intro{display:none}"
+               "body.popup-mode .card{padding:10px}"
+               "@media (max-width:760px){"
+               ".wrap{padding:12px 8px 18px}.ccu:before{inset:8px}.top-row,.nav-row,.keypad{gap:8px}}"
+               "</style></head><body><main class=\"wrap\"><header class=\"intro\"><h1>Display Preview</h1>"
+               "<p>Live framebuffer mirror plus a browser keypad so the CCU can be driven from your laptop.</p></header>"
                "<section class=\"card\"><div class=\"meta\"><span class=\"badge\">%d x %d</span>"
-               "<button id=\"toggle\">Pause</button><a href=\"/config\">Back to config</a>"
+               "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"open_popup\" type=\"button\">Pop-out</button><a href=\"/config\">Back to config</a>"
                "<span id=\"state\" class=\"state\">Starting...</span></div>"
-               "<div class=\"grid\"><div><canvas id=\"fb\" width=\"%d\" height=\"%d\"></canvas></div>"
-               "<aside class=\"qa\"><h2>Quick checks</h2>"
-               "<label><input type=\"checkbox\" data-qa=\"labels\">Labels/captions uppercase</label>"
-               "<label><input type=\"checkbox\" data-qa=\"values\">Values mixed case</label>"
-               "<label><input type=\"checkbox\" data-qa=\"clip\">No right-edge clipping</label>"
-               "<label><input type=\"checkbox\" data-qa=\"align\">Status rows aligned</label>"
-               "<button id=\"qa_clear\" type=\"button\">Clear checks</button>"
-               "<small>Checks are saved in this browser.</small></aside></div></section>"
+               "<div class=\"ccu-fixed\"><div class=\"ccu\" aria-label=\"Virtual CCU keypad\">"
+               "<div class=\"row top-row\">"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Alert</span></button>"
+               "<div class=\"top-gap\" aria-hidden=\"true\"></div><div class=\"top-gap\" aria-hidden=\"true\"></div>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Test</span></button>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Brt</span></button>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Dim</span></button></div>"
+               "<div class=\"display-bay\"><div class=\"display-shell\">"
+               "<div class=\"soft-column left-soft\">"
+               "<div class=\"soft-cell r0\"><button class=\"key\" type=\"button\" data-button-id=\"LeftTop\"><span>&#8594;</span></button><span class=\"tick\" aria-hidden=\"true\"></span></div>"
+               "<div class=\"soft-cell r1\"><button class=\"key\" type=\"button\" data-button-id=\"LeftUpper\"><span>&#8594;</span></button><span class=\"tick\" aria-hidden=\"true\"></span></div>"
+               "<div class=\"soft-cell r2\"><button class=\"key\" type=\"button\" data-button-id=\"LeftMiddle\"><span>&#8594;</span></button><span class=\"tick\" aria-hidden=\"true\"></span></div>"
+               "<div class=\"soft-cell r3\"><button class=\"key\" type=\"button\" data-button-id=\"LeftLower\"><span>&#8594;</span></button><span class=\"tick\" aria-hidden=\"true\"></span></div>"
+               "<div class=\"soft-cell r4\"><button class=\"key\" type=\"button\" data-button-id=\"LeftBottom\"><span>&#8594;</span></button><span class=\"tick\" aria-hidden=\"true\"></span></div>"
+               "</div>"
+               "<div class=\"screen-wrap\"><canvas id=\"fb\" width=\"%d\" height=\"%d\"></canvas></div>"
+               "<div class=\"soft-column right-soft\">"
+               "<div class=\"soft-cell r0\"><span class=\"tick\" aria-hidden=\"true\"></span><button class=\"key\" type=\"button\" data-button-id=\"RightTop\"><span>&#8592;</span></button></div>"
+               "<div class=\"soft-cell r1\"><span class=\"tick\" aria-hidden=\"true\"></span><button class=\"key\" type=\"button\" data-button-id=\"RightUpper\"><span>&#8592;</span></button></div>"
+               "<div class=\"soft-cell r2\"><span class=\"tick\" aria-hidden=\"true\"></span><button class=\"key\" type=\"button\" data-button-id=\"RightMiddle\"><span>&#8592;</span></button></div>"
+               "<div class=\"soft-cell r3\"><span class=\"tick\" aria-hidden=\"true\"></span><button class=\"key\" type=\"button\" data-button-id=\"RightLower\"><span>&#8592;</span></button></div>"
+               "<div class=\"soft-cell r4\"><span class=\"tick\" aria-hidden=\"true\"></span><button class=\"key\" type=\"button\" data-button-id=\"RightBottom\"><span>&#8592;</span></button></div>"
+               "</div></div></div>"
+               "<div class=\"keybed\"><div class=\"row nav-row\">"
+               "<button class=\"key key-emphasis ghost\" type=\"button\" title=\"Not yet wired\"><span>Ltrs</span></button>"
+               "<button class=\"key\" type=\"button\" data-button-id=\"BackStep\"><span>Back</span><span class=\"sub\">Step</span></button>"
+               "<button class=\"key\" type=\"button\" data-button-id=\"CursorLeft\"><span>&#8592;</span></button>"
+               "<button class=\"key\" type=\"button\" data-button-id=\"CursorRight\"><span>&#8594;</span></button>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>/</span></button>"
+               "<button class=\"key key-emphasis\" type=\"button\" data-button-id=\"Clr\"><span>Clr</span></button></div>"
+               "<div class=\"keypad\">"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>A</span><span class=\"sub\">Comm</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>B</span><span class=\"sub\">R Nav</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>C</span><span class=\"sub\">Perf</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>D</span><span class=\"sub\">Ams</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>E</span><span class=\"sub\">Maint</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>F</span><span class=\"sub\">Iff</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>G</span><span class=\"sub\">Totes</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>H</span><span class=\"sub\">Dsply</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>I</span><span class=\"sub\">D Link</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit1\"><span>J</span><span class=\"sub\">1</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit2\"><span>K</span><span class=\"sub\">2</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit3\"><span>L</span><span class=\"sub\">3</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>M</span><span class=\"sub\">Sonics</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>N</span><span class=\"sub\">Radar</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>O</span><span class=\"sub\">Esm</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit4\"><span>P</span><span class=\"sub\">4</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit5\"><span>Q</span><span class=\"sub\">5</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit6\"><span>R</span><span class=\"sub\">6</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>S</span><span class=\"sub\">Stores</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>T</span><span class=\"sub\">Ads</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>U</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit7\"><span>V</span><span class=\"sub\">7</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit8\"><span>W</span><span class=\"sub\">8</span></button>"
+               "<button class=\"key key-alpha\" type=\"button\" data-button-id=\"Digit9\"><span>X</span><span class=\"sub\">9</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>Y</span><span class=\"sub\">T Nav</span></button>"
+               "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet wired\"><span>Z</span><span class=\"sub\">T Data</span></button>"
+               "<button class=\"key key-bottom-centre ghost\" type=\"button\" title=\"Not yet wired\"><span>T Func</span></button>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>.</span></button>"
+               "<button class=\"key\" type=\"button\" data-button-id=\"Digit0\"><span>&oslash;</span></button>"
+               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Spc</span><span class=\"sub small\">:</span></button>"
+               "</div><p class=\"hint-line\">Only keys with amber labels are wired into the current firmware model.</p></div></div></div>"
+               "<div class=\"keystate\" id=\"keys_state\">Ready. Press a mapped key to send an event.</div></section>"
                "<script>"
                "(function(){"
                "const w=%d,h=%d,s=%d;"
@@ -645,24 +787,77 @@ bool build_preview_page()
                "const pixels=image.data;"
                "const state=document.getElementById('state');"
                "const toggle=document.getElementById('toggle');"
-               "const qaBoxes=document.querySelectorAll('input[data-qa]');"
-               "const qaClear=document.getElementById('qa_clear');"
+               "const popupButton=document.getElementById('open_popup');"
+               "const keysState=document.getElementById('keys_state');"
+               "const mappedKeys=document.querySelectorAll('.key[data-button-id]');"
+               "const ghostKeys=document.querySelectorAll('.key.ghost');"
+               "const isPopupMode=window.location.search.indexOf('popup=1')>=0;"
+               "if(isPopupMode){document.body.classList.add('popup-mode');}"
                "let running=true;"
                "let timer=null;"
-               "const qaStoreKey='merlin_preview_quick_checks';"
-               "function readChecks(){"
-               "try{return JSON.parse(localStorage.getItem(qaStoreKey)||'{}')||{};}catch(_){return {};}"
+               "let frameFetchInFlight=false;"
+               "let keyPostInFlight=false;"
+               "let consecutiveFrameFailures=0;"
+               "function setKeyState(text){if(keysState){keysState.textContent=text;}}"
+               "function openPopup(){"
+               "if(isPopupMode){return;}"
+               "const popup=window.open('/preview?popup=1','merlin_preview_window',"
+               "'popup=yes,width=900,height=1550,resizable=yes,scrollbars=yes');"
+               "if(popup){popup.focus();}"
                "}"
-               "function writeChecks(map){"
-               "try{localStorage.setItem(qaStoreKey,JSON.stringify(map));}catch(_){}}"
-               "function syncChecksFromStore(){"
-               "const map=readChecks();"
-               "for(let i=0;i<qaBoxes.length;i++){const key=qaBoxes[i].getAttribute('data-qa');qaBoxes[i].checked=!!map[key];}"
+               "function flashKey(key){key.classList.add('down');setTimeout(function(){key.classList.remove('down');},120);}"
+               "function delay(ms){return new Promise(function(resolve){setTimeout(resolve,ms);});}"
+               "async function sendVirtualKey(id,type){"
+               "if(keyPostInFlight){return;}"
+               "keyPostInFlight=true;"
+               "for(let attempt=1;attempt<=4;attempt++){"
+               "try{"
+               "const response=await fetch('/api/button',{method:'POST',cache:'no-store',"
+               "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+               "body:'id='+encodeURIComponent(id)+'&type='+encodeURIComponent(type)});"
+               "const message=(await response.text()).trim();"
+               "if(!response.ok){throw new Error(message||('HTTP '+response.status));}"
+               "setKeyState(message);"
+               "keyPostInFlight=false;"
+               "return;"
+               "}catch(error){"
+               "const text=String(error&&error.message?error.message:error);"
+               "const busy=/busy|503|retry/i.test(text);"
+               "if(attempt<4&&busy){await delay(45*attempt);continue;}"
+               "setKeyState('Key send failed: '+text);"
+               "keyPostInFlight=false;"
+               "return;"
                "}"
-               "function bindChecks(){"
-               "for(let i=0;i<qaBoxes.length;i++){qaBoxes[i].addEventListener('change',function(){"
-               "const map=readChecks();map[this.getAttribute('data-qa')]=this.checked;writeChecks(map);});}"
-               "if(qaClear){qaClear.addEventListener('click',function(){writeChecks({});syncChecksFromStore();});}"
+               "}"
+               "keyPostInFlight=false;"
+               "}"
+               "function triggerMappedKey(key){"
+               "const id=key.getAttribute('data-button-id');"
+               "if(!id){return;}"
+               "flashKey(key);"
+               "sendVirtualKey(id,'pressed');"
+               "}"
+               "function bindVirtualKeys(){"
+               "for(let i=0;i<mappedKeys.length;i++){mappedKeys[i].addEventListener('click',function(){triggerMappedKey(this);});}"
+               "for(let i=0;i<ghostKeys.length;i++){ghostKeys[i].addEventListener('click',function(){"
+               "const text=(this.textContent||'Key').replace(/\\s+/g,' ').trim();"
+               "setKeyState(text+' is shown for panel fidelity, but is not wired in firmware yet.');"
+               "});}"
+               "const keyboardMap={"
+               "'1':'Digit1','2':'Digit2','3':'Digit3','4':'Digit4','5':'Digit5','6':'Digit6',"
+               "'7':'Digit7','8':'Digit8','9':'Digit9','0':'Digit0',"
+               "'ArrowLeft':'CursorLeft','ArrowRight':'CursorRight','Backspace':'BackStep','Delete':'Clr','Escape':'Clr',"
+               "'F1':'LeftTop','F2':'LeftUpper','F3':'LeftMiddle','F4':'LeftLower','F5':'LeftBottom',"
+               "'F6':'RightTop','F7':'RightUpper','F8':'RightMiddle','F9':'RightLower','F10':'RightBottom'"
+               "};"
+               "document.addEventListener('keydown',function(event){"
+               "if(event.repeat){return;}"
+               "const mapped=keyboardMap[event.key];"
+               "if(!mapped){return;}"
+               "event.preventDefault();"
+               "const key=document.querySelector('[data-button-id=\"'+mapped+'\"]');"
+               "if(key){triggerMappedKey(key);}"
+               "});"
                "}"
                "function draw(bytes){"
                "let src=0;"
@@ -682,16 +877,21 @@ bool build_preview_page()
                "ctx.putImageData(image,0,0);"
                "}"
                "async function refresh(){"
-               "if(!running){return;}"
+               "if(!running||frameFetchInFlight||keyPostInFlight){return;}"
+               "frameFetchInFlight=true;"
                "try{"
                "const response=await fetch('/api/framebuffer?t='+Date.now(),{cache:'no-store'});"
                "if(!response.ok){throw new Error('HTTP '+response.status);}"
                "const bytes=new Uint8Array(await response.arrayBuffer());"
                "if(bytes.length!==(h*s)){throw new Error('Frame size '+bytes.length);}"
                "draw(bytes);"
+               "consecutiveFrameFailures=0;"
                "state.textContent='Live';"
                "}catch(error){"
-               "state.textContent='Fetch failed: '+error.message;"
+               "consecutiveFrameFailures++;"
+               "if(consecutiveFrameFailures>=3){state.textContent='Signal lost';}"
+               "}finally{"
+               "frameFetchInFlight=false;"
                "}"
                "}"
                "function schedule(){"
@@ -705,14 +905,15 @@ bool build_preview_page()
                "schedule();"
                "if(running){refresh();}"
                "});"
-               "bindChecks();"
-               "syncChecksFromStore();"
+               "if(popupButton){popupButton.addEventListener('click',function(){openPopup();});}"
+               "if(isPopupMode&&popupButton){popupButton.style.display='none';}"
+               "bindVirtualKeys();"
                "schedule();"
                "refresh();"
                "})();"
                "</script></main></body></html>",
                kHttpOkHeader, kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiWidth, kUiHeight,
-               kUiWidth, kUiHeight, kUiStride);
+               kUiStride);
     if (!ok)
     {
         std::snprintf(g_response, sizeof(g_response),
@@ -810,6 +1011,76 @@ bool matches_get_path(const char* request, const char* path)
 
     const char terminator = uri[path_len];
     return terminator == ' ' || terminator == '/' || terminator == '?';
+}
+
+/// @brief Returns true when the first request line matches the provided POST path.
+/// @details Accepts plain path, optional trailing slash, and optional query.
+bool matches_post_path(const char* request, const char* path)
+{
+    if (request == nullptr || path == nullptr)
+    {
+        return false;
+    }
+
+    const char* prefix = "POST ";
+    const size_t prefix_len = std::strlen(prefix);
+    const size_t path_len = std::strlen(path);
+    if (std::strncmp(request, prefix, prefix_len) != 0)
+    {
+        return false;
+    }
+
+    const char* uri = request + prefix_len;
+    if (std::strncmp(uri, path, path_len) != 0)
+    {
+        return false;
+    }
+
+    const char terminator = uri[path_len];
+    return terminator == ' ' || terminator == '/' || terminator == '?';
+}
+
+/// @brief Resolves one posted web button id into the firmware button enum.
+bool parse_web_button_id(const char* web_id, ButtonId* out_button_id)
+{
+    if (web_id == nullptr || out_button_id == nullptr)
+    {
+        return false;
+    }
+
+    for (const WebButtonBinding& binding : kWebButtonBindings)
+    {
+        if (std::strcmp(binding.web_id, web_id) == 0)
+        {
+            *out_button_id = binding.button_id;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// @brief Parses one posted button edge string into the firmware event enum.
+bool parse_button_event_type(const char* text, ButtonEventType* out_type)
+{
+    if (text == nullptr || out_type == nullptr)
+    {
+        return false;
+    }
+
+    if (std::strcmp(text, "pressed") == 0)
+    {
+        *out_type = ButtonEventType::Pressed;
+        return true;
+    }
+
+    if (std::strcmp(text, "released") == 0)
+    {
+        *out_type = ButtonEventType::Released;
+        return true;
+    }
+
+    return false;
 }
 
 /// @brief Finds one form field value in a mutable URL-encoded body.
@@ -1389,6 +1660,51 @@ const char* handle_config_post(const char* body)
     return "Configuration saved. Display settings and local web-access policy apply now; Wi-Fi and integration transport changes take effect after reboot.";
 }
 
+/// @brief Handles one posted virtual keypad event from the preview harness.
+bool handle_button_post(const char* body, char* message, size_t message_size)
+{
+    if (message == nullptr || message_size == 0)
+    {
+        return false;
+    }
+
+    message[0] = '\0';
+    char id_text[24] = {};
+    if (!get_form_value(body, "id", id_text, sizeof(id_text)))
+    {
+        std::snprintf(message, message_size, "Missing button id.");
+        return false;
+    }
+
+    ButtonId id = ButtonId::LeftTop;
+    if (!parse_web_button_id(id_text, &id))
+    {
+        std::snprintf(message, message_size, "Unknown button id '%s'.", id_text);
+        return false;
+    }
+
+    ButtonEventType type = ButtonEventType::Pressed;
+    char type_text[24] = {};
+    if (get_form_value(body, "type", type_text, sizeof(type_text)) &&
+        !parse_button_event_type(type_text, &type))
+    {
+        std::snprintf(message, message_size, "Unknown button type '%s'.", type_text);
+        return false;
+    }
+
+    const ButtonEvent event = {id, type};
+    const bool changed = console_controller::handle_button_event(event);
+    if (changed)
+    {
+        console_controller::request_redraw();
+    }
+
+    std::snprintf(message, message_size, "%s %s (%s).", changed ? "Accepted" : "Ignored",
+                  input::button_name(id),
+                  type == ButtonEventType::Pressed ? "pressed" : "released");
+    return true;
+}
+
 /// @brief Starts sending prepared response bytes for this session.
 void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* response,
                                size_t response_len)
@@ -1415,7 +1731,18 @@ void send_response(WebSession* session, tcp_pcb* pcb, const char* response)
 void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
 {
     const char* message = "";
-    if (std::strncmp(request, "POST /config ", 13) == 0)
+    if (matches_post_path(request, "/api/button"))
+    {
+        const char* body = std::strstr(request, "\r\n\r\n");
+        char button_message[96] = {};
+        const bool ok = handle_button_post(body != nullptr ? body + 4 : "", button_message,
+                                           sizeof(button_message));
+        std::snprintf(g_response, sizeof(g_response), "%s%s\n",
+                      ok ? kHttpTextHeader : kHttpBadRequestHeader, button_message);
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (std::strncmp(request, "POST /config ", 13) == 0)
     {
         const char* body = std::strstr(request, "\r\n\r\n");
         message = handle_config_post(body != nullptr ? body + 4 : "");
