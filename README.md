@@ -531,7 +531,7 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
 ## Phase 3: Weather UX Expansion
 
 - [ ] keep HA weather feed as baseline while direct providers remain available
-- [ ] add weather horizon softkey cycling:
+- [ ] add weather period softkey cycling:
   - next 9-10 hours
   - day
   - week
@@ -584,6 +584,7 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
 The most practical next slice is:
 
 - [ ] land Phase 2 alert state model skeleton with ALRT navigation and action flow
-- [ ] extend Phase 3 weather horizon controls (`hour`, `day`, `week`) and layout
+- [ ] extend Phase 3 weather period controls (`hour`, `day`, `week`) and layout
       handling
 - [ ] add weather icon pipeline and placeholder icon set (10x10 and 16x16 trial)
+

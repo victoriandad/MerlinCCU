@@ -66,6 +66,7 @@ constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
 constexpr uint32_t kRefreshIntervalMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr unsigned long kMaxTcpPortValue = std::numeric_limits<uint16_t>::max();
+constexpr size_t kHttpTargetBufferSize = 640;
 constexpr char kHttpSchemePrefix[] = "http://";
 constexpr size_t kHttpSchemePrefixLength = sizeof(kHttpSchemePrefix) - 1;
 constexpr char kHttpsSchemePrefix[] = "https://";
@@ -227,6 +228,7 @@ enum class RequestKind : uint8_t
     FetchTrackedEntity,
     FetchWeatherEntity,
     FetchWeatherForecast,
+    FetchWeatherDailyForecast,
     FetchSunEntity,
     PublishSelfEntity,
 };
@@ -378,7 +380,9 @@ const char* request_kind_name(RequestKind kind)
     case RequestKind::FetchWeatherEntity:
         return "weather";
     case RequestKind::FetchWeatherForecast:
-        return "forecast";
+        return "hourly";
+    case RequestKind::FetchWeatherDailyForecast:
+        return "daily";
     case RequestKind::FetchSunEntity:
         return "sun";
     case RequestKind::PublishSelfEntity:
@@ -1353,6 +1357,92 @@ void clear_weather_forecast()
     }
 }
 
+/// @brief Clears the cached daily weather forecast rows used by week mode.
+void clear_weather_daily_forecast()
+{
+    g_status.weather_daily_forecast_count = 0;
+    for (auto& entry : g_status.weather_daily_forecast)
+    {
+        entry.date_text.fill('\0');
+        entry.temperature_text.fill('\0');
+        entry.wind_text.fill('\0');
+        entry.condition_text.fill('\0');
+    }
+}
+
+/// @brief Extracts `YYYY-MM-DD` text from an ISO date or datetime string.
+bool format_forecast_date_text(const char* iso_datetime, char* out, size_t out_size)
+{
+    if (iso_datetime == nullptr || out == nullptr || out_size < 11)
+    {
+        return false;
+    }
+
+    if (!(std::isdigit(static_cast<unsigned char>(iso_datetime[0])) &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[1])) &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[2])) &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[3])) &&
+          iso_datetime[4] == '-' &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[5])) &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[6])) &&
+          iso_datetime[7] == '-' &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[8])) &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[9]))))
+    {
+        return false;
+    }
+
+    std::snprintf(out, out_size, "%.10s", iso_datetime);
+    return true;
+}
+
+/// @brief Formats a compact daily high/low temperature string.
+bool format_temperature_range_text(const char* high_text, const char* low_text, char unit,
+                                   char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0)
+    {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    char compact_high[8] = {};
+    char compact_low[8] = {};
+    const bool have_high = high_text != nullptr &&
+                           format_compact_scalar_value(high_text, compact_high, sizeof(compact_high));
+    const bool have_low = low_text != nullptr &&
+                          format_compact_scalar_value(low_text, compact_low, sizeof(compact_low));
+
+    if (have_low && have_high)
+    {
+        if (unit != '\0')
+        {
+            std::snprintf(out, out_size, "%s-%s%c", compact_low, compact_high, unit);
+        }
+        else
+        {
+            std::snprintf(out, out_size, "%s-%s", compact_low, compact_high);
+        }
+        return true;
+    }
+
+    if (have_high)
+    {
+        if (unit != '\0')
+        {
+            std::snprintf(out, out_size, "%s%c", compact_high, unit);
+        }
+        else
+        {
+            std::snprintf(out, out_size, "%s", compact_high);
+        }
+        return true;
+    }
+
+    return false;
+}
+
 // Why this helper is needed:
 // The forecast parser does not use a full JSON library. It first isolates one
 // forecast object, then re-parses just that slice. A plain "find the next }"
@@ -1551,6 +1641,117 @@ bool parse_hourly_forecast_response(const char* json)
     return g_status.weather_forecast_count > 0;
 }
 
+/// @brief Parses a daily weather forecast response into week-mode rows.
+bool parse_daily_forecast_response(const char* json)
+{
+    if (json == nullptr)
+    {
+        return false;
+    }
+
+    const char* forecast_key = std::strstr(json, "\"forecast\":[");
+    if (forecast_key == nullptr)
+    {
+        return false;
+    }
+
+    const char* cursor = std::strchr(forecast_key, '[');
+    if (cursor == nullptr)
+    {
+        return false;
+    }
+    ++cursor;
+
+    clear_weather_daily_forecast();
+
+    while (*cursor != '\0' && *cursor != ']' &&
+           g_status.weather_daily_forecast_count < kWeatherDailyForecastEntryCount)
+    {
+        const char* object_start = std::strchr(cursor, '{');
+        if (object_start == nullptr)
+        {
+            break;
+        }
+
+        const char* object_end = find_matching_json_object_end(object_start);
+        if (object_end == nullptr)
+        {
+            break;
+        }
+
+        char object_json[384] = {};
+        const size_t object_len = static_cast<size_t>(object_end - object_start + 1);
+        if (object_len >= sizeof(object_json))
+        {
+            cursor = object_end + 1;
+            continue;
+        }
+        std::memcpy(object_json, object_start, object_len);
+        object_json[object_len] = '\0';
+
+        WeatherDailyForecastEntry& entry =
+            g_status.weather_daily_forecast[g_status.weather_daily_forecast_count];
+
+        char datetime_text[32] = {};
+        char temperature_high_text[16] = {};
+        char temperature_low_text[16] = {};
+        char wind_speed_text[16] = {};
+        char wind_bearing_text[16] = {};
+        char condition_text[24] = {};
+
+        if (!extract_json_string_value(object_json, "\"datetime\":\"", datetime_text,
+                                       sizeof(datetime_text)) ||
+            !format_forecast_date_text(datetime_text, entry.date_text.data(), entry.date_text.size()))
+        {
+            cursor = object_end + 1;
+            continue;
+        }
+
+        const bool have_temperature_high = extract_json_scalar_value(
+            object_json, "\"temperature\":", temperature_high_text, sizeof(temperature_high_text));
+        const bool have_temperature_low =
+            extract_json_scalar_value(object_json, "\"templow\":", temperature_low_text,
+                                      sizeof(temperature_low_text));
+        if (!format_temperature_range_text(
+                have_temperature_high ? temperature_high_text : nullptr,
+                have_temperature_low ? temperature_low_text : nullptr, g_weather_temperature_unit,
+                entry.temperature_text.data(), entry.temperature_text.size()))
+        {
+            copy_text(entry.temperature_text, "-");
+        }
+
+        const bool have_wind_speed = extract_json_scalar_value(
+            object_json, "\"wind_speed\":", wind_speed_text, sizeof(wind_speed_text));
+        const bool have_wind_bearing =
+            extract_json_string_value(object_json, "\"wind_bearing\":\"", wind_bearing_text,
+                                      sizeof(wind_bearing_text)) ||
+            extract_json_scalar_value(object_json, "\"wind_bearing\":", wind_bearing_text,
+                                      sizeof(wind_bearing_text));
+        if (!format_compact_wind_text(
+                have_wind_speed ? wind_speed_text : nullptr,
+                have_wind_bearing ? wind_bearing_text : nullptr, entry.wind_text.data(),
+                entry.wind_text.size()))
+        {
+            copy_text(entry.wind_text, "-");
+        }
+
+        if (extract_json_string_value(object_json, "\"condition\":\"", condition_text,
+                                      sizeof(condition_text)))
+        {
+            copy_text(entry.condition_text, friendly_weather_condition(condition_text));
+        }
+        else
+        {
+            copy_text(entry.condition_text, "?");
+        }
+
+        ++g_status.weather_daily_forecast_count;
+        cursor = object_end + 1;
+    }
+
+    return g_status.weather_daily_forecast_count > 0;
+}
+
 const char* open_meteo_condition_from_code(int code)
 {
     switch (code)
@@ -1712,6 +1913,11 @@ bool json_array_number_at(const char* array, size_t index, char* out, size_t out
     return false;
 }
 
+/// @brief Copies one value from an Open-Meteo `daily` section array.
+bool open_meteo_daily_scalar(const char* daily_section, const char* primary_key,
+                             const char* legacy_key, size_t index, char* out, size_t out_size,
+                             bool string_value);
+
 bool parse_open_meteo_weather(const char* json)
 {
     if (json == nullptr)
@@ -1752,6 +1958,8 @@ bool parse_open_meteo_weather(const char* json)
         copy_text(g_status.weather_condition, "Weather");
     }
 
+    g_weather_temperature_unit = 'C';
+    std::snprintf(g_weather_wind_source_unit, sizeof(g_weather_wind_source_unit), "%s", "mph");
     copy_text(g_status.weather_wind_unit, "mph");
 
     const char* hourly_time_array = find_json_array_start(json, "\"hourly\":{\"time\":");
@@ -1780,6 +1988,7 @@ bool parse_open_meteo_weather(const char* json)
         hourly_direction_array == nullptr || hourly_code_array == nullptr)
     {
         clear_weather_forecast();
+        clear_weather_daily_forecast();
         return false;
     }
 
@@ -1835,6 +2044,63 @@ bool parse_open_meteo_weather(const char* json)
         format_hour_text(sunset_iso, g_status.sunset_text.data(), g_status.sunset_text.size());
     }
 
+    clear_weather_daily_forecast();
+    if (daily_section != nullptr)
+    {
+        for (size_t i = 0; i < kWeatherDailyForecastEntryCount; ++i)
+        {
+            char date_iso[32] = {};
+            char temperature_max_text[16] = {};
+            char temperature_min_text[16] = {};
+            char wind_max_text[16] = {};
+            char wind_direction_text[16] = {};
+            char code_text[12] = {};
+            if (!open_meteo_daily_scalar(daily_section, "\"time\":", nullptr, i, date_iso,
+                                         sizeof(date_iso), true) ||
+                !open_meteo_daily_scalar(daily_section, "\"temperature_2m_max\":", nullptr, i,
+                                         temperature_max_text, sizeof(temperature_max_text),
+                                         false) ||
+                !open_meteo_daily_scalar(daily_section, "\"temperature_2m_min\":", nullptr, i,
+                                         temperature_min_text, sizeof(temperature_min_text),
+                                         false) ||
+                !open_meteo_daily_scalar(daily_section, "\"wind_speed_10m_max\":",
+                                         "\"windspeed_10m_max\":", i, wind_max_text,
+                                         sizeof(wind_max_text), false) ||
+                !open_meteo_daily_scalar(daily_section, "\"wind_direction_10m_dominant\":",
+                                         "\"winddirection_10m_dominant\":", i,
+                                         wind_direction_text, sizeof(wind_direction_text),
+                                         false) ||
+                !open_meteo_daily_scalar(daily_section, "\"weather_code\":", "\"weathercode\":",
+                                         i, code_text, sizeof(code_text), false))
+            {
+                break;
+            }
+
+            WeatherDailyForecastEntry& entry =
+                g_status.weather_daily_forecast[g_status.weather_daily_forecast_count];
+            if (!format_forecast_date_text(date_iso, entry.date_text.data(), entry.date_text.size()))
+            {
+                continue;
+            }
+
+            if (!format_temperature_range_text(temperature_max_text, temperature_min_text, 'C',
+                                               entry.temperature_text.data(),
+                                               entry.temperature_text.size()))
+            {
+                copy_text(entry.temperature_text, "-");
+            }
+
+            if (!format_compact_wind_text(wind_max_text, wind_direction_text, entry.wind_text.data(),
+                                          entry.wind_text.size()))
+            {
+                copy_text(entry.wind_text, "-");
+            }
+
+            copy_text(entry.condition_text, open_meteo_condition_from_code(std::atoi(code_text)));
+            ++g_status.weather_daily_forecast_count;
+        }
+    }
+
     return g_status.weather_forecast_count > 0;
 }
 
@@ -1853,8 +2119,33 @@ void clear_runtime_data()
     g_status.sunrise_text.fill('\0');
     g_status.sunset_text.fill('\0');
     clear_weather_forecast();
+    clear_weather_daily_forecast();
     g_weather_temperature_unit = '\0';
     g_weather_wind_source_unit[0] = '\0';
+}
+
+/// @brief Copies one value from an Open-Meteo `daily` section array.
+bool open_meteo_daily_scalar(const char* daily_section, const char* primary_key,
+                             const char* legacy_key, size_t index, char* out, size_t out_size,
+                             bool string_value)
+{
+    if (daily_section == nullptr || primary_key == nullptr || out == nullptr || out_size == 0)
+    {
+        return false;
+    }
+
+    const char* array = find_json_array_start(daily_section, primary_key);
+    if (array == nullptr && legacy_key != nullptr)
+    {
+        array = find_json_array_start(daily_section, legacy_key);
+    }
+    if (array == nullptr)
+    {
+        return false;
+    }
+
+    return string_value ? json_array_string_at(array, index, out, out_size)
+                        : json_array_number_at(array, index, out, out_size);
 }
 
 /// @brief Returns whether the supplied HTTP status counts as success for a request kind.
@@ -1871,6 +2162,7 @@ bool request_kind_success(RequestKind kind, int http_status)
     case RequestKind::FetchTrackedEntity:
     case RequestKind::FetchWeatherEntity:
     case RequestKind::FetchWeatherForecast:
+    case RequestKind::FetchWeatherDailyForecast:
     case RequestKind::FetchSunEntity:
         return http_status == 200;
     case RequestKind::PublishSelfEntity:
@@ -1941,6 +2233,11 @@ void advance_request_kind()
         g_next_attempt = get_absolute_time();
         return;
     case RequestKind::FetchWeatherForecast:
+        g_request_kind = RequestKind::FetchWeatherDailyForecast;
+        g_sequence_complete = false;
+        g_next_attempt = get_absolute_time();
+        return;
+    case RequestKind::FetchWeatherDailyForecast:
         if (active_sun_entity_id()[0] != '\0')
         {
             g_request_kind = RequestKind::FetchSunEntity;
@@ -2185,6 +2482,12 @@ void finish_optional_request_soft_failure(err_t err)
             clear_weather_forecast();
         }
         break;
+    case RequestKind::FetchWeatherDailyForecast:
+        if (!parse_daily_forecast_response(response_body()))
+        {
+            clear_weather_daily_forecast();
+        }
+        break;
     case RequestKind::FetchSunEntity:
         g_status.sunrise_text.fill('\0');
         g_status.sunset_text.fill('\0');
@@ -2210,7 +2513,7 @@ bool build_request()
     g_request_body[0] = '\0';
     const char* method = "GET";
     const char* target = "/";
-    char target_buffer[320] = {};
+    char target_buffer[kHttpTargetBufferSize] = {};
 
     if (g_active_weather_source == WeatherSource::OpenMeteo)
     {
@@ -2222,11 +2525,13 @@ bool build_request()
         const int target_len = std::snprintf(
             target_buffer, sizeof(target_buffer),
             "/v1/forecast?latitude=%.4f&longitude=%.4f&hourly=temperature_2m,wind_speed_10m,"
-            "wind_direction_10m,weather_code&daily=sunrise,sunset&current=temperature_2m,"
-            "weather_code,wind_speed_10m,wind_direction_10m&timezone=auto&temperature_unit=celsius"
-            "&wind_speed_unit=mph&forecast_hours=%u",
+            "wind_direction_10m,weather_code&daily=sunrise,sunset,temperature_2m_max,"
+            "temperature_2m_min,wind_speed_10m_max,wind_direction_10m_dominant,weather_code"
+            "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto"
+            "&temperature_unit=celsius&wind_speed_unit=mph&forecast_hours=%u&forecast_days=%u",
             g_provider_latitude, g_provider_longitude,
-            static_cast<unsigned>(kWeatherForecastEntryCount));
+            static_cast<unsigned>(kWeatherForecastEntryCount),
+            static_cast<unsigned>(kWeatherDailyForecastEntryCount));
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
             set_status(HomeAssistantConnectionState::Error, -1, 0);
@@ -2275,6 +2580,23 @@ bool build_request()
 
         const int body_len = std::snprintf(g_request_body, sizeof(g_request_body),
                                            "{\"entity_id\":\"%s\",\"type\":\"hourly\"}",
+                                           g_status.weather_entity_id.data());
+        if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
+        {
+            set_status(HomeAssistantConnectionState::Error, -1, 0);
+            g_sequence_complete = true;
+            g_next_attempt = nil_time;
+            return false;
+        }
+    }
+    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
+             g_request_kind == RequestKind::FetchWeatherDailyForecast)
+    {
+        method = "POST";
+        target = "/api/services/weather/get_forecasts?return_response";
+
+        const int body_len = std::snprintf(g_request_body, sizeof(g_request_body),
+                                           "{\"entity_id\":\"%s\",\"type\":\"daily\"}",
                                            g_status.weather_entity_id.data());
         if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
         {
@@ -2450,6 +2772,7 @@ void handle_http_status(int http_status)
         }
 
         clear_weather_forecast();
+        clear_weather_daily_forecast();
         g_status.sunrise_text.fill('\0');
         g_status.sunset_text.fill('\0');
         copy_text(g_status.weather_condition, "No data");
@@ -2563,6 +2886,19 @@ void handle_http_status(int http_status)
                              g_status.weather_entity_id.data());
             }
         }
+        else if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
+        {
+            if (parse_daily_forecast_response(response_body()))
+            {
+                PERIODIC_LOG("HA daily forecast %s count=%u\n", g_status.weather_entity_id.data(),
+                             static_cast<unsigned>(g_status.weather_daily_forecast_count));
+            }
+            else
+            {
+                clear_weather_daily_forecast();
+                PERIODIC_LOG("HA daily forecast parse failed %s\n", g_status.weather_entity_id.data());
+            }
+        }
         else if (g_request_kind == RequestKind::FetchSunEntity)
         {
             update_sun_times_from_json(response_body());
@@ -2635,6 +2971,17 @@ void handle_http_status(int http_status)
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);
         advance_request_kind();
         PERIODIC_LOG("HA hourly forecast unavailable %s status=%d\n",
+                     g_status.weather_entity_id.data(), http_status);
+        return;
+    }
+
+    if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
+    {
+        clear_weather_daily_forecast();
+        reset_attempt_state();
+        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
+        advance_request_kind();
+        PERIODIC_LOG("HA daily forecast unavailable %s status=%d\n",
                      g_status.weather_entity_id.data(), http_status);
         return;
     }

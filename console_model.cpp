@@ -60,6 +60,7 @@ ConsoleState make_default_console_state()
     state.active_page = MenuPage::Home;
     state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
+    state.weather_period = WeatherPeriod::Hour;
     state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;
     state.screen_saver_timeout_minutes = 5;
@@ -102,12 +103,23 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.sunrise_text.fill('\0');
     state.home_assistant_status.sunset_text.fill('\0');
     state.home_assistant_status.weather_forecast_count = 0;
+    state.home_assistant_status.weather_daily_forecast_count = 0;
 
     // Forecast rows are fully cleared so pages can safely treat an empty string
     // as "no data yet" without tracking separate validity flags.
     for (auto& entry : state.home_assistant_status.weather_forecast)
     {
         entry.time_text.fill('\0');
+        entry.temperature_text.fill('\0');
+        entry.wind_text.fill('\0');
+        entry.condition_text.fill('\0');
+    }
+
+    // Weekly rows are cached separately from the hourly/day table so the
+    // week period can use true daily provider data.
+    for (auto& entry : state.home_assistant_status.weather_daily_forecast)
+    {
+        entry.date_text.fill('\0');
         entry.temperature_text.fill('\0');
         entry.wind_text.fill('\0');
         entry.condition_text.fill('\0');
@@ -140,3 +152,4 @@ ConsoleState make_default_console_state()
     state.softkeys = kDefaultSoftkeys;
     return state;
 }
+

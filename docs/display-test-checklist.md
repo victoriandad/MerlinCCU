@@ -28,7 +28,11 @@ quickly without relying only on photographs of the physical panel.
 
 ## Weather Page
 
+- `PERIOD` softkey cycles `Hour` -> `Day` -> `Week` and wraps back to `Hour`.
 - Forecast table columns align (`Time`, `Temp`, `Wind mph`, `Conditions`).
+- `Day` period uses spaced rows with condition sub-lines and no clipped text.
+- `Week` period shows provider daily rows (typically up to 7 entries) with
+  labels (`Today`, `Tmrw`, then date labels like `DD/MM`).
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.
 - Source footer is visible and readable.
@@ -87,3 +91,4 @@ Recommended first-run sequence:
 2. Save the baseline set.
 3. Re-run `compare-all` without changing pages to confirm a clean pass.
 4. Use `compare-all` after UI changes to detect regressions.
+

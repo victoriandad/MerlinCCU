@@ -205,6 +205,7 @@ struct TimeStatus
 };
 
 inline constexpr size_t kWeatherForecastEntryCount = 10;
+inline constexpr size_t kWeatherDailyForecastEntryCount = 7;
 
 /// @brief One compact hourly forecast entry for the dedicated weather page.
 struct WeatherForecastEntry
@@ -221,6 +222,22 @@ struct WeatherForecastEntry
 inline bool operator==(const WeatherForecastEntry& lhs, const WeatherForecastEntry& rhs)
 {
     return lhs.time_text == rhs.time_text && lhs.temperature_text == rhs.temperature_text &&
+           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
+}
+
+/// @brief One compact daily forecast entry used by the week weather period.
+struct WeatherDailyForecastEntry
+{
+    std::array<char, 11> date_text;
+    std::array<char, 16> temperature_text;
+    std::array<char, 8> wind_text;
+    std::array<char, 20> condition_text;
+};
+
+/// @brief Compares two daily forecast rows field-by-field.
+inline bool operator==(const WeatherDailyForecastEntry& lhs, const WeatherDailyForecastEntry& rhs)
+{
+    return lhs.date_text == rhs.date_text && lhs.temperature_text == rhs.temperature_text &&
            lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
 }
 
@@ -244,6 +261,8 @@ struct HomeAssistantStatus
     std::array<char, 6> sunset_text;
     uint8_t weather_forecast_count;
     std::array<WeatherForecastEntry, kWeatherForecastEntryCount> weather_forecast;
+    uint8_t weather_daily_forecast_count;
+    std::array<WeatherDailyForecastEntry, kWeatherDailyForecastEntryCount> weather_daily_forecast;
     std::array<char, 48> self_entity_id;
 };
 
@@ -265,6 +284,14 @@ enum class WeatherSource : uint8_t
     OpenMeteo,
     /// Legacy value kept so older flash settings can be migrated safely.
     MetNorway,
+};
+
+/// @brief Weather forecast period modes available on the Weather page.
+enum class WeatherPeriod : uint8_t
+{
+    Hour = 0,
+    Day,
+    Week,
 };
 
 /// @brief Selectable screen-saver modes exposed by the current UI.
@@ -327,6 +354,7 @@ enum class SoftKeyRoute : uint8_t
     SelectScreenSaverRandom,
     SelectWeatherHomeAssistant,
     SelectWeatherOpenMeteo,
+    CycleWeatherPeriod,
     SelectTimeZoneWest1,
     SelectTimeZoneWest2,
     SelectTimeZoneWest3,
@@ -385,6 +413,7 @@ struct ConsoleState
     MenuPage active_page;
     uint8_t settings_page_index;
     WeatherSource weather_source;
+    WeatherPeriod weather_period;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;
@@ -410,3 +439,4 @@ const KeyLegend& key_legend(HardKeyId key);
 
 /// @brief Builds a default console state for startup.
 ConsoleState make_default_console_state();
+

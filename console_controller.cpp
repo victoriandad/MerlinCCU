@@ -66,6 +66,12 @@ struct WeatherSourceDefinition
     const char* option_label;
 };
 
+struct WeatherPeriodDefinition
+{
+    WeatherPeriod period;
+    const char* selection_label;
+};
+
 struct TimeZoneDefinition
 {
     TimeZoneSelection zone;
@@ -83,6 +89,12 @@ struct ScreenSaverDefinition
 constexpr std::array<WeatherSourceDefinition, 2> kWeatherSources = {{
     {WeatherSource::HomeAssistant, "Home Assistant", "HOME ASSISTANT"},
     {WeatherSource::OpenMeteo, "Open-Meteo", "OPEN-METEO"},
+}};
+
+constexpr std::array<WeatherPeriodDefinition, 3> kWeatherPeriods = {{
+    {WeatherPeriod::Hour, "Hour"},
+    {WeatherPeriod::Day, "Day"},
+    {WeatherPeriod::Week, "Week"},
 }};
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
@@ -436,6 +448,20 @@ const WeatherSourceDefinition& weather_source_definition(WeatherSource source)
     return kWeatherSources[0];
 }
 
+/// @brief Returns the static metadata for one selectable weather period.
+const WeatherPeriodDefinition& weather_period_definition(WeatherPeriod period)
+{
+    for (const WeatherPeriodDefinition& definition : kWeatherPeriods)
+    {
+        if (definition.period == period)
+        {
+            return definition;
+        }
+    }
+
+    return kWeatherPeriods[0];
+}
+
 /// @brief Returns the ordered array index for the currently selected time zone.
 size_t time_zone_index(TimeZoneSelection zone)
 {
@@ -593,6 +619,12 @@ const char* wifi_selection_text(const ConsoleState& console_state)
 const char* weather_source_selection_text(const ConsoleState& console_state)
 {
     return weather_source_definition(console_state.weather_source).selection_label;
+}
+
+/// @brief Returns the currently selected weather-period label for menu softkeys.
+const char* weather_period_selection_text(const ConsoleState& console_state)
+{
+    return weather_period_definition(console_state.weather_period).selection_label;
 }
 
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
@@ -866,6 +898,35 @@ bool select_weather_source(WeatherSource source)
         });
 }
 
+/// @brief Returns the next weather period in the user-facing cycle order.
+WeatherPeriod next_weather_period(WeatherPeriod period)
+{
+    switch (period)
+    {
+    case WeatherPeriod::Hour:
+        return WeatherPeriod::Day;
+    case WeatherPeriod::Day:
+        return WeatherPeriod::Week;
+    case WeatherPeriod::Week:
+        return WeatherPeriod::Hour;
+    }
+
+    return WeatherPeriod::Hour;
+}
+
+/// @brief Advances the active weather page period without touching persisted config.
+bool cycle_weather_period()
+{
+    const WeatherPeriod next = next_weather_period(g_console_state.weather_period);
+    if (next == g_console_state.weather_period)
+    {
+        return false;
+    }
+
+    g_console_state.weather_period = next;
+    return true;
+}
+
 /// @brief Updates the selected time zone by moving relative to the current choice.
 bool select_relative_time_zone(int offset)
 {
@@ -1066,6 +1127,12 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::Weather:
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
+                                          weather_period_selection_text(g_console_state)),
+            SoftKeyRoute::CycleWeatherPeriod,
+            true,
+        };
         break;
     case MenuPage::Status:
         break;
@@ -1655,6 +1722,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_weather_source(WeatherSource::HomeAssistant);
     case SoftKeyRoute::SelectWeatherOpenMeteo:
         return select_weather_source(WeatherSource::OpenMeteo);
+    case SoftKeyRoute::CycleWeatherPeriod:
+        return cycle_weather_period();
     case SoftKeyRoute::SelectTimeZoneWest1:
         return select_relative_time_zone(-1);
     case SoftKeyRoute::SelectTimeZoneWest2:
@@ -1885,6 +1954,10 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
             home_assistant_status.weather_forecast_count ||
         g_console_state.home_assistant_status.weather_forecast !=
             home_assistant_status.weather_forecast ||
+        g_console_state.home_assistant_status.weather_daily_forecast_count !=
+            home_assistant_status.weather_daily_forecast_count ||
+        g_console_state.home_assistant_status.weather_daily_forecast !=
+            home_assistant_status.weather_daily_forecast ||
         g_console_state.home_assistant_status.self_entity_id !=
             home_assistant_status.self_entity_id;
 
@@ -2108,3 +2181,4 @@ bool handle_button_event(const ButtonEvent& event)
 }
 
 } // namespace console_controller
+
