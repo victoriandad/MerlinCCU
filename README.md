@@ -212,8 +212,17 @@ This repository uses the Raspberry Pi Pico SDK with CMake.
 
 The exact local build flow depends on your environment. In this project the
 Pico VS Code plugin workflow is being used successfully.
-Do not run `cmake` or `cmake --build` from the CLI on this setup; use the VS
-Code Pico extension for build/flash actions.
+CLI builds are supported as long as the Pico environment is exported first
+(`PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, plus PATH entries for toolchain, Ninja,
+and CMake). VS Code Pico extension builds remain the default day-to-day flow.
+
+Build reliability note:
+
+- a previous mismatch between generated PIO header symbol styles
+  (`kEl320RasterProgram` vs `el320_raster_program`) caused fresh CLI builds to
+  fail while cached build folders appeared healthy
+- `MerlinCCU.cpp` now resolves both symbol styles via one compatibility helper,
+  so clean builds and cached builds behave consistently
 
 ## Configuration Files
 
@@ -527,6 +536,11 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
   - brief event labels on softkeys
   - softkey drill-down to details page
   - right-side actions: `ACCEPT`, `CLEAR`, `NEXT`
+  - note: the web preview ALRT indicator can be implemented first, but the real
+    ALRT LED still needs dedicated hardware bring-up work:
+    - confirm power and return line routing for the ALRT LED channel
+    - complete front-panel hardware setup for ALRT LED drive
+    - wire firmware lamp output to the physical ALRT LED path once hardware is ready
 
 ## Phase 3: Weather UX Expansion
 
