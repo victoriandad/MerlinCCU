@@ -46,6 +46,19 @@ enum class ScreenMode : uint8_t
 inline constexpr uint32_t kMenuLoopSleepMs = 20U;
 inline constexpr int64_t kMicrosecondsPerMinute = 60LL * 1000LL * 1000LL;
 
+/// @brief Returns the generated PIO program symbol for the EL320 raster driver.
+/// @details Different Pico SDK/pioasm combinations generate either
+/// `kEl320RasterProgram` (newer style) or `el320_raster_program` (legacy style).
+/// This helper keeps firmware source stable across both environments.
+const pio_program* el320_raster_program_ptr()
+{
+#if defined(EL320_RASTER_WRAP_TARGET)
+    return &kEl320RasterProgram;
+#else
+    return &el320_raster_program;
+#endif
+}
+
 } // namespace
 
 /// @brief Chooses the concrete screen saver to run for this activation.
@@ -195,7 +208,7 @@ int main()
 
     PIO pio = pio0;
     const uint sm = 0;
-    const uint offset = pio_add_program(pio, &kEl320RasterProgram);
+    const uint offset = pio_add_program(pio, el320_raster_program_ptr());
     const ScreenMode startup_mode = ScreenMode::Menu;
     ScreenMode active_mode = startup_mode;
 
