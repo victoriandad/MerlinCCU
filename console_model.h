@@ -138,6 +138,8 @@ enum class MenuPage : uint8_t
     KeypadDebug,
     AlertList,
     AlertDetail,
+    Shares,
+    ShareDetail,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
@@ -296,6 +298,16 @@ enum class WeatherPeriod : uint8_t
     Week,
 };
 
+/// @brief Share price history periods shown on the share detail page.
+enum class SharePeriod : uint8_t
+{
+    Today = 0,
+    Week,
+    Month,
+    Year,
+    AllTime,
+};
+
 /// @brief Selectable screen-saver modes exposed by the current UI.
 enum class ScreenSaverSelection : uint8_t
 {
@@ -381,6 +393,9 @@ enum class SoftKeyRoute : uint8_t
     SelectAlertSlot9,
     AlertAccept,
     AlertIgnore,
+    GoShares,
+    SelectShareSlot1,
+    CycleSharePeriod,
     PanelBrighter,
     PanelDimmer,
     KeysBrighter,
@@ -396,6 +411,41 @@ struct ActiveAlert
     std::array<char, 6> occurred_time_text;
     std::array<char, 32> summary;
     std::array<char, 320> detail;
+};
+
+/// @brief One watched share shown by the CCU shares workflow.
+struct ShareWatchEntry
+{
+    std::array<char, 24> display_name;
+    std::array<char, 10> symbol;
+    std::array<char, 8> exchange;
+    std::array<char, 8> currency;
+    std::array<char, 12> price_text;
+    std::array<char, 12> change_text;
+    std::array<uint16_t, 24> history_points;
+};
+
+/// @brief Compares two watched-share rows field-by-field for redraw detection.
+inline bool operator==(const ShareWatchEntry& lhs, const ShareWatchEntry& rhs)
+{
+    return lhs.display_name == rhs.display_name && lhs.symbol == rhs.symbol &&
+           lhs.exchange == rhs.exchange && lhs.currency == rhs.currency &&
+           lhs.price_text == rhs.price_text && lhs.change_text == rhs.change_text &&
+           lhs.history_points == rhs.history_points;
+}
+
+/// @brief Latest market-data snapshot that can be copied into the UI model.
+/// @details The share fetcher owns provider/network state and the controller
+/// mirrors only this compact, display-ready representation.
+struct ShareMarketStatus
+{
+    bool configured;
+    bool data_valid;
+    int last_error;
+    int last_http_status;
+    SharePeriod period;
+    uint8_t share_count;
+    std::array<ShareWatchEntry, 6> watched_shares;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
@@ -438,6 +488,13 @@ struct ConsoleState
     uint8_t settings_page_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
+    SharePeriod share_period;
+    bool share_data_configured;
+    bool share_data_valid;
+    int share_data_last_error;
+    int share_data_last_http_status;
+    uint8_t share_count;
+    uint8_t selected_share_index;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;
@@ -460,6 +517,7 @@ struct ConsoleState
     uint8_t alert_detail_scroll_line;
     MenuPage alert_parent_page;
     std::array<ActiveAlert, 24> active_alerts;
+    std::array<ShareWatchEntry, 6> watched_shares;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

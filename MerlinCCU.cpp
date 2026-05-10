@@ -22,6 +22,7 @@
 #include "screensaver_rain.h"
 #include "screensaver_starfield.h"
 #include "screensaver_worms.h"
+#include "share_price_manager.h"
 #include "time_manager.h"
 #include "web_config_server.h"
 #include "wifi_manager.h"
@@ -227,11 +228,13 @@ int main()
     wifi_manager::init();
     home_assistant_manager::init();
     mqtt_manager::init();
+    share_price_manager::init();
     web_config_server::init();
     console_controller::set_wifi_status(wifi_manager::status());
     console_controller::set_time_status(time_manager::status());
     console_controller::set_home_assistant_status(home_assistant_manager::status());
     console_controller::set_mqtt_status(mqtt_manager::status());
+    console_controller::set_share_market_status(share_price_manager::status());
 
     // Render one complete back buffer before scanout starts so the panel never
     // shows an uninitialized frame during bring-up.
@@ -326,7 +329,22 @@ int main()
             mqtt_manager::update(wifi_manager::status(), home_assistant_manager::status(),
                                  time_manager::status()) ||
             console_changed;
+        const ConsoleState& console_state = console_controller::state();
+        const bool on_shares_landing = console_state.active_page == MenuPage::Shares;
+        const bool on_share_detail = console_state.active_page == MenuPage::ShareDetail;
+        // Key handling should always remain snappy, so share-network work backs
+        // off while keys are actively being pressed or held.
+        const bool share_fetch_enabled =
+            (on_shares_landing || on_share_detail) && !any_key_activity;
+        const SharePeriod share_fetch_period =
+            on_shares_landing ? SharePeriod::Today : console_state.share_period;
+        // Local web control should stay responsive even when share data refresh
+        // is active, so service the web server before optional market fetches.
         console_changed = web_config_server::update(wifi_manager::status()) || console_changed;
+        console_changed =
+            share_price_manager::update(wifi_manager::status(), share_fetch_period,
+                                        share_fetch_enabled) ||
+            console_changed;
 
         // Mirror subsystem status back into the console model only after the
         // managers have had a chance to update this iteration.
@@ -342,6 +360,9 @@ int main()
             console_changed;
         console_changed =
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
+        console_changed =
+            console_controller::set_share_market_status(share_price_manager::status()) ||
+            console_changed;
         console_changed = console_controller::consume_redraw_request() || console_changed;
 
         const uint16_t screen_saver_timeout_minutes =

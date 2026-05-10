@@ -46,6 +46,7 @@ add_executable(MerlinCCU
     mqtt_manager.cpp
     screen_banners.cpp
     screens.cpp
+    share_price_manager.cpp
     screensaver_clock.cpp
     screensaver_life.cpp
     screensaver_matrix.cpp

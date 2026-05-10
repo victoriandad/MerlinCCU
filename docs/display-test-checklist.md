@@ -37,6 +37,23 @@ quickly without relying only on photographs of the physical panel.
 - Sunrise and sunset are both present when provider data is available.
 - Source footer is visible and readable.
 
+## Shares Pages
+
+- Home `L2` opens the shares watchlist.
+- Shares list shows `BAE SYSTEMS` with a bracketed price value on `L1` and no
+  duplicated share data in the display body.
+- Pressing the BAE Systems softkey opens the share detail page.
+- Share detail page shows a full-width graph in the upper display region with
+  no graph bounding box and no overlap with softkey labels.
+- `MIN` (left) and `MAX` (right) graph values are shown directly beneath the
+  graph and remain readable across all periods.
+- `PERIOD` softkey at `L5` cycles `Today` -> `Week` -> `Month` -> `Year` ->
+  `All-time` and wraps back to `Today`.
+- `R5=HOME` remains available from the shares pages.
+- When Wi-Fi has internet access, BAE Systems current price and graph history
+  refresh from Yahoo Finance chart JSON roughly every five minutes while share
+  pages are active, without a user account or API key.
+
 ## Settings Pages
 
 - Softkey top-line captions are uppercase.

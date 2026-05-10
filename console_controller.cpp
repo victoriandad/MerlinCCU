@@ -50,6 +50,7 @@ enum class AlertCode : uint8_t
     MqttOffline,
     KeypadLineFault,
     DisplayPipelineLag,
+    ShareDataUnavailable,
     Count,
 };
 
@@ -100,6 +101,12 @@ struct WeatherPeriodDefinition
     const char* selection_label;
 };
 
+struct SharePeriodDefinition
+{
+    SharePeriod period;
+    const char* selection_label;
+};
+
 struct TimeZoneDefinition
 {
     TimeZoneSelection zone;
@@ -123,6 +130,14 @@ constexpr std::array<WeatherPeriodDefinition, 3> kWeatherPeriods = {{
     {WeatherPeriod::Hour, "Hour"},
     {WeatherPeriod::Day, "Day"},
     {WeatherPeriod::Week, "Week"},
+}};
+
+constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
+    {SharePeriod::Today, "Today"},
+    {SharePeriod::Week, "Week"},
+    {SharePeriod::Month, "Month"},
+    {SharePeriod::Year, "Year"},
+    {SharePeriod::AllTime, "All-time"},
 }};
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
@@ -495,6 +510,20 @@ const WeatherPeriodDefinition& weather_period_definition(WeatherPeriod period)
     return kWeatherPeriods[0];
 }
 
+/// @brief Returns the static metadata for one selectable share period.
+const SharePeriodDefinition& share_period_definition(SharePeriod period)
+{
+    for (const SharePeriodDefinition& definition : kSharePeriods)
+    {
+        if (definition.period == period)
+        {
+            return definition;
+        }
+    }
+
+    return kSharePeriods[0];
+}
+
 /// @brief Returns the ordered array index for the currently selected time zone.
 size_t time_zone_index(TimeZoneSelection zone)
 {
@@ -658,6 +687,12 @@ const char* weather_source_selection_text(const ConsoleState& console_state)
 const char* weather_period_selection_text(const ConsoleState& console_state)
 {
     return weather_period_definition(console_state.weather_period).selection_label;
+}
+
+/// @brief Returns the currently selected share history period label.
+const char* share_period_selection_text(const ConsoleState& console_state)
+{
+    return share_period_definition(console_state.share_period).selection_label;
 }
 
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
@@ -955,6 +990,14 @@ void sync_system_alerts()
         AlertCode::DisplayPipelineLag, display_pipeline_lag, AlertSeverity::Message, "DISPLAY LAG",
         "Display update pipeline is lagging.\nAdd frame timing telemetry to activate this alert.");
 
+    const bool share_data_unavailable =
+        g_console_state.share_data_configured && !g_console_state.share_data_valid &&
+        (g_console_state.share_data_last_error != 0 ||
+         g_console_state.share_data_last_http_status >= 400);
+    set_alert_condition(
+        AlertCode::ShareDataUnavailable, share_data_unavailable, AlertSeverity::Message,
+        "SHARES", "Share price data is unavailable.\nCheck the market data provider and watchlist configuration.");
+
     if (g_console_state.alert_detail_index >= g_console_state.alert_count)
     {
         g_console_state.alert_detail_index =
@@ -1003,6 +1046,7 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Status:
     case MenuPage::Settings:
     case MenuPage::Alignment:
+    case MenuPage::Shares:
         return MenuPage::Home;
     case MenuPage::DeviceSettings:
     case MenuPage::SecuritySettings:
@@ -1018,6 +1062,8 @@ MenuPage parent_page(MenuPage page)
         return g_console_state.alert_parent_page;
     case MenuPage::AlertDetail:
         return MenuPage::AlertList;
+    case MenuPage::ShareDetail:
+        return MenuPage::Shares;
     }
 
     return MenuPage::Home;
@@ -1257,6 +1303,52 @@ bool cycle_weather_period()
     return true;
 }
 
+/// @brief Returns the next share-history period in the user-facing cycle order.
+SharePeriod next_share_period(SharePeriod period)
+{
+    switch (period)
+    {
+    case SharePeriod::Today:
+        return SharePeriod::Week;
+    case SharePeriod::Week:
+        return SharePeriod::Month;
+    case SharePeriod::Month:
+        return SharePeriod::Year;
+    case SharePeriod::Year:
+        return SharePeriod::AllTime;
+    case SharePeriod::AllTime:
+        return SharePeriod::Today;
+    }
+
+    return SharePeriod::Today;
+}
+
+/// @brief Advances the active share detail period without touching persisted config.
+bool cycle_share_period()
+{
+    const SharePeriod next = next_share_period(g_console_state.share_period);
+    if (next == g_console_state.share_period)
+    {
+        return false;
+    }
+
+    g_console_state.share_period = next;
+    return true;
+}
+
+/// @brief Opens the requested share detail page from the current watchlist.
+bool select_share_slot(uint8_t slot)
+{
+    if (slot >= g_console_state.share_count || slot >= g_console_state.watched_shares.size())
+    {
+        return false;
+    }
+
+    g_console_state.selected_share_index = slot;
+    g_console_state.active_page = MenuPage::ShareDetail;
+    return true;
+}
+
 /// @brief Updates the selected time zone by moving relative to the current choice.
 bool select_relative_time_zone(int offset)
 {
@@ -1450,6 +1542,7 @@ void update_softkeys_from_state()
     case MenuPage::Home:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME ASSISTANT", SoftKeyRoute::GoStatus,
                                                      true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"SHARES", SoftKeyRoute::GoShares, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "WEATHER",
@@ -1463,6 +1556,28 @@ void update_softkeys_from_state()
             build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
                                           weather_period_selection_text(g_console_state)),
             SoftKeyRoute::CycleWeatherPeriod,
+            true,
+        };
+        break;
+    case MenuPage::Shares:
+        if (g_console_state.share_count > 0U)
+        {
+            const ShareWatchEntry& share = g_console_state.watched_shares[0];
+            softkeys[softkey_index(SoftKeyId::Left1)] = {
+                build_selection_softkey_label(SoftKeyId::Left1, share.display_name.data(),
+                                              share.price_text.data()),
+                SoftKeyRoute::SelectShareSlot1,
+                true,
+            };
+        }
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"ADD", SoftKeyRoute::None, false};
+        softkeys[softkey_index(SoftKeyId::Right2)] = {"REMOVE", SoftKeyRoute::None, false};
+        break;
+    case MenuPage::ShareDetail:
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
+                                          share_period_selection_text(g_console_state)),
+            SoftKeyRoute::CycleSharePeriod,
             true,
         };
         break;
@@ -2083,6 +2198,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Weather;
         return true;
+    case SoftKeyRoute::GoShares:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::Shares;
+        return true;
     case SoftKeyRoute::GoStatus:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Status;
@@ -2162,6 +2281,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_weather_source(WeatherSource::OpenMeteo);
     case SoftKeyRoute::CycleWeatherPeriod:
         return cycle_weather_period();
+    case SoftKeyRoute::SelectShareSlot1:
+        return select_share_slot(0U);
+    case SoftKeyRoute::CycleSharePeriod:
+        return cycle_share_period();
     case SoftKeyRoute::SelectTimeZoneWest1:
         return select_relative_time_zone(-1);
     case SoftKeyRoute::SelectTimeZoneWest2:
@@ -2479,6 +2602,36 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     }
 
     g_console_state.mqtt_status = mqtt_status;
+    update_softkeys_from_state();
+    return true;
+}
+
+/// @brief Updates the cached share market-data snapshot in the console model.
+bool set_share_market_status(const ShareMarketStatus& share_market_status)
+{
+    const bool kChanged =
+        g_console_state.share_data_configured != share_market_status.configured ||
+        g_console_state.share_data_valid != share_market_status.data_valid ||
+        g_console_state.share_data_last_error != share_market_status.last_error ||
+        g_console_state.share_data_last_http_status != share_market_status.last_http_status ||
+        g_console_state.share_count != share_market_status.share_count ||
+        g_console_state.watched_shares != share_market_status.watched_shares;
+
+    if (!kChanged)
+    {
+        return false;
+    }
+
+    g_console_state.share_data_configured = share_market_status.configured;
+    g_console_state.share_data_valid = share_market_status.data_valid;
+    g_console_state.share_data_last_error = share_market_status.last_error;
+    g_console_state.share_data_last_http_status = share_market_status.last_http_status;
+    g_console_state.share_count = share_market_status.share_count;
+    g_console_state.watched_shares = share_market_status.watched_shares;
+    if (g_console_state.selected_share_index >= g_console_state.share_count)
+    {
+        g_console_state.selected_share_index = 0U;
+    }
     update_softkeys_from_state();
     return true;
 }

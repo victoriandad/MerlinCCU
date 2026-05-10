@@ -1,6 +1,7 @@
 #include "console_model.h"
 
 #include <cstddef>
+#include <cstdio>
 
 namespace
 {
@@ -61,6 +62,13 @@ ConsoleState make_default_console_state()
     state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
     state.weather_period = WeatherPeriod::Hour;
+    state.share_period = SharePeriod::Today;
+    state.share_data_configured = false;
+    state.share_data_valid = false;
+    state.share_data_last_error = 0;
+    state.share_data_last_http_status = 0;
+    state.share_count = 1U;
+    state.selected_share_index = 0U;
     state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;
     state.screen_saver_timeout_minutes = 5;
@@ -160,6 +168,30 @@ ConsoleState make_default_console_state()
         alert.summary.fill('\0');
         alert.detail.fill('\0');
     }
+
+    for (auto& share : state.watched_shares)
+    {
+        share.display_name.fill('\0');
+        share.symbol.fill('\0');
+        share.exchange.fill('\0');
+        share.currency.fill('\0');
+        share.price_text.fill('\0');
+        share.change_text.fill('\0');
+        share.history_points.fill(0U);
+    }
+
+    ShareWatchEntry& bae = state.watched_shares[0];
+    std::snprintf(bae.display_name.data(), bae.display_name.size(), "BAE SYSTEMS");
+    std::snprintf(bae.symbol.data(), bae.symbol.size(), "BA.L");
+    std::snprintf(bae.exchange.data(), bae.exchange.size(), "LSE");
+    std::snprintf(bae.currency.data(), bae.currency.size(), "GBX");
+    // Seed values keep the page useful before the live Yahoo chart fetcher is
+    // wired in. Runtime refresh should overwrite these fields in-place.
+    std::snprintf(bae.price_text.data(), bae.price_text.size(), "1,348.5");
+    std::snprintf(bae.change_text.data(), bae.change_text.size(), "+0.8%%");
+    bae.history_points = {1320U, 1324U, 1318U, 1328U, 1336U, 1332U, 1340U, 1346U,
+                          1341U, 1348U, 1352U, 1349U, 1355U, 1351U, 1344U, 1348U,
+                          1356U, 1360U, 1354U, 1358U, 1364U, 1362U, 1368U, 1372U};
     // Lamps and softkeys are initialized explicitly so the controller can treat
     // the whole state object as immediately usable after construction.
     state.lamps.fill(LampMode::Off);

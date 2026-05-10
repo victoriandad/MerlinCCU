@@ -354,6 +354,10 @@ const char* menu_page_title(MenuPage page)
         return "ALERTS";
     case MenuPage::AlertDetail:
         return "ALERT";
+    case MenuPage::Shares:
+        return "SHARES";
+    case MenuPage::ShareDetail:
+        return "SHARE";
     }
 
     return "MENU";
@@ -450,6 +454,8 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::MqttSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
+    case MenuPage::Shares:
+    case MenuPage::ShareDetail:
         return fonts::FontFace::Font5x7;
     case MenuPage::Weather:
     case MenuPage::Status:
@@ -1638,6 +1644,142 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
     }
 }
 
+/// @brief Draws the share watchlist page.
+/// @details Shares are selected from the surrounding softkeys. The centre of the
+/// watchlist page intentionally stays clear so the selected share name and price
+/// are not duplicated beside the L1 label.
+void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (console_state.share_count == 0U)
+    {
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true, fonts::FontFace::Font8x12,
+                           1);
+        draw_centered_text(fb, kUiWidth / 2, 142, "ADD FLOW PENDING", true,
+                           fonts::FontFace::Font5x7, 1);
+        return;
+    }
+
+    (void)fb;
+}
+
+/// @brief Formats one graph-axis share value using compact thousands separators.
+void format_share_graph_value(uint16_t value, char* output, size_t output_size)
+{
+    if (output == nullptr || output_size == 0U)
+    {
+        return;
+    }
+
+    output[0] = '\0';
+    if (value >= 1000U && value < 10000U)
+    {
+        const unsigned thousands = value / 1000U;
+        const unsigned remainder = value % 1000U;
+        std::snprintf(output, output_size, "%u,%03u", thousands, remainder);
+        return;
+    }
+
+    std::snprintf(output, output_size, "%u", static_cast<unsigned>(value));
+}
+
+/// @brief Draws one full-width share history graph in the centre detail region.
+void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
+{
+    constexpr int kGraphX = 12;
+    constexpr int kGraphY = 44;
+    const int kGraphWidth = kUiWidth - (kGraphX * 2);
+    constexpr int kGraphHeight = 120;
+    constexpr int kPointCount = 24;
+    constexpr int kGraphMinLabelGapY = 8;
+    constexpr int kGraphPlotLeftInset = 1;
+    constexpr int kGraphPlotRightInset = 1;
+
+    uint16_t min_value = share.history_points[0];
+    uint16_t max_value = share.history_points[0];
+    for (uint16_t value : share.history_points)
+    {
+        min_value = std::min(min_value, value);
+        max_value = std::max(max_value, value);
+    }
+
+    const uint16_t range = (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
+    int previous_x = kGraphX + kGraphPlotLeftInset;
+    int previous_y = kGraphY + kGraphHeight - 1;
+    for (int i = 0; i < kPointCount; ++i)
+    {
+        const uint16_t value = share.history_points[static_cast<size_t>(i)];
+        const int x = kGraphX + kGraphPlotLeftInset +
+                      ((kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1) * i) /
+                          (kPointCount - 1);
+        const int normalised =
+            ((static_cast<int>(value - min_value)) * (kGraphHeight - 1)) / static_cast<int>(range);
+        const int y = kGraphY + kGraphHeight - 1 - normalised;
+        if (i > 0)
+        {
+            framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
+        }
+        previous_x = x;
+        previous_y = y;
+    }
+
+    const char* period_label = "TODAY";
+    switch (period)
+    {
+    case SharePeriod::Today:
+        period_label = "TODAY";
+        break;
+    case SharePeriod::Week:
+        period_label = "WEEK";
+        break;
+    case SharePeriod::Month:
+        period_label = "MONTH";
+        break;
+    case SharePeriod::Year:
+        period_label = "YEAR";
+        break;
+    case SharePeriod::AllTime:
+        period_label = "ALL-TIME";
+        break;
+    }
+    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7, 1);
+
+    char min_value_text[16] = {};
+    char max_value_text[16] = {};
+    char min_label[24] = {};
+    char max_label[24] = {};
+    format_share_graph_value(min_value, min_value_text, sizeof(min_value_text));
+    format_share_graph_value(max_value, max_value_text, sizeof(max_value_text));
+    std::snprintf(min_label, sizeof(min_label), "MIN %s", min_value_text);
+    std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
+
+    const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
+    framebuffer::draw_text(fb, kGraphX, label_y, min_label, true, fonts::FontFace::Font5x7, 1);
+    const int max_label_width = text_width(max_label, fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
+                           fonts::FontFace::Font5x7, 1);
+}
+
+/// @brief Draws one watched share's detail page.
+void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (console_state.selected_share_index >= console_state.share_count)
+    {
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true, fonts::FontFace::Font8x12,
+                           1);
+        return;
+    }
+
+    const ShareWatchEntry& share = console_state.watched_shares[console_state.selected_share_index];
+    draw_share_history_graph(fb, share, console_state.share_period);
+    framebuffer::draw_text(fb, 42, 184, share.display_name.data(), true, fonts::FontFace::Font8x12,
+                           1);
+    framebuffer::draw_text(fb, 42, 210, share.symbol.data(), true, fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, 86, 210, share.price_text.data(), true, fonts::FontFace::Font5x7,
+                           1);
+    framebuffer::draw_text(fb, 150, 210, share.change_text.data(), true, fonts::FontFace::Font5x7,
+                           1);
+}
+
 /// @brief Draws the weather-source selection page under Settings.
 /// @details Settings subpages keep values on the surrounding softkeys so the
 /// centre of the display stays free of duplicate status text.
@@ -1951,6 +2093,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::Weather:
         draw_weather_page(fb, console_state);
+        break;
+    case MenuPage::Shares:
+        draw_shares_page(fb, console_state);
+        break;
+    case MenuPage::ShareDetail:
+        draw_share_detail_page(fb, console_state);
         break;
     case MenuPage::Status:
         draw_status_page(fb, console_state);
