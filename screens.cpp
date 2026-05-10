@@ -350,6 +350,10 @@ const char* menu_page_title(MenuPage page)
         return "ALIGN";
     case MenuPage::KeypadDebug:
         return "KEYPAD DEBUG";
+    case MenuPage::AlertList:
+        return "ALERTS";
+    case MenuPage::AlertDetail:
+        return "ALERT";
     }
 
     return "MENU";
@@ -368,6 +372,18 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
         std::snprintf(buffer, buffer_size, "SETTINGS %u/%u",
                       static_cast<unsigned>(console_state.settings_page_index + 1U),
                       static_cast<unsigned>(kSettingsPageCount));
+        return buffer;
+    }
+    if (console_state.active_page == MenuPage::AlertList)
+    {
+        constexpr uint8_t kAlertsPerPage = 9U;
+        const uint8_t page_count = static_cast<uint8_t>(
+            (console_state.alert_count == 0U) ? 1U
+                                              : ((console_state.alert_count + (kAlertsPerPage - 1U)) /
+                                                 kAlertsPerPage));
+        std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
+                      static_cast<unsigned>(console_state.alert_list_page_index + 1U),
+                      static_cast<unsigned>(page_count));
         return buffer;
     }
 
@@ -439,6 +455,8 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::Status:
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
+    case MenuPage::AlertList:
+    case MenuPage::AlertDetail:
         return fonts::FontFace::Font8x12;
     case MenuPage::ScreenSaverSettings:
         return fonts::FontFace::Font5x7;
@@ -1685,19 +1703,18 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Draws the top-level settings routing page.
-/// @details The root page intentionally leaves the centre clear. Section state
-/// belongs in the bracketed softkey labels; detailed values are shown only
-/// after the operator opens a focused settings subpage.
-void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
+/// @brief Draws shared left/right page-navigation arrows used by paged menus.
+/// @details One shared helper keeps all paged screens visually consistent and allows
+/// global position tweaks from a single location.
+void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
 {
-    constexpr int kArrowY = kUiHeight - 34;
+    constexpr int kArrowY = kUiHeight - 18;
     constexpr int kArrowHalfWidth = 5;
     constexpr int kArrowHalfHeight = 6;
     constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
     constexpr int kRightArrowX = (kUiWidth / 2) + 26;
 
-    if (console_state.settings_page_index > 0U)
+    if (show_left)
     {
         framebuffer::draw_line(fb, kLeftArrowX + kArrowHalfWidth, kArrowY - kArrowHalfHeight,
                                kLeftArrowX - kArrowHalfWidth, kArrowY, true);
@@ -1705,13 +1722,23 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
                                kLeftArrowX + kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
     }
 
-    if ((console_state.settings_page_index + 1U) < kSettingsPageCount)
+    if (show_right)
     {
         framebuffer::draw_line(fb, kRightArrowX - kArrowHalfWidth, kArrowY - kArrowHalfHeight,
                                kRightArrowX + kArrowHalfWidth, kArrowY, true);
         framebuffer::draw_line(fb, kRightArrowX + kArrowHalfWidth, kArrowY,
                                kRightArrowX - kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
     }
+}
+
+/// @brief Draws the top-level settings routing page.
+/// @details The root page intentionally leaves the centre clear. Section state
+/// belongs in the bracketed softkey labels; detailed values are shown only
+/// after the operator opens a focused settings subpage.
+void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_page_navigation_arrows(fb, console_state.settings_page_index > 0U,
+                                (console_state.settings_page_index + 1U) < kSettingsPageCount);
 }
 
 /// @brief Leaves the device identity settings body blank.
@@ -1823,6 +1850,61 @@ void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
+/// @brief Draws compact status lines for the alert-list page.
+void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr uint8_t kAlertsPerPage = 9U;
+    const uint8_t page_count = static_cast<uint8_t>(
+        (console_state.alert_count == 0U) ? 1U
+                                          : ((console_state.alert_count + (kAlertsPerPage - 1U)) /
+                                             kAlertsPerPage));
+    draw_page_navigation_arrows(fb, console_state.alert_list_page_index > 0U,
+                                (console_state.alert_list_page_index + 1U) < page_count);
+}
+
+/// @brief Draws the selected alert detail text with line-based scrolling.
+void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (console_state.alert_detail_index >= console_state.alert_count)
+    {
+        framebuffer::draw_text(fb, 18, 44, "No alert selected", true, fonts::FontFace::Font8x12, 1);
+        return;
+    }
+
+    const ActiveAlert& alert = console_state.active_alerts[console_state.alert_detail_index];
+    constexpr int kTextX = 18;
+    constexpr int kStartY = 44;
+    constexpr int kPitch = 28;
+    constexpr int kVisibleLines = 8;
+    constexpr fonts::FontFace kFont = fonts::FontFace::Font8x12;
+    uint8_t logical_line = 0U;
+    const char* cursor = alert.detail.data();
+    int drawn = 0;
+    while (cursor != nullptr && cursor[0] != '\0' && drawn < kVisibleLines)
+    {
+        const char* eol = std::strchr(cursor, '\n');
+        char line[80] = {};
+        if (eol == nullptr)
+        {
+            std::snprintf(line, sizeof(line), "%s", cursor);
+        }
+        else
+        {
+            const size_t len = static_cast<size_t>(eol - cursor);
+            std::snprintf(line, sizeof(line), "%.*s", static_cast<int>(len), cursor);
+        }
+
+        if (logical_line >= console_state.alert_detail_scroll_line)
+        {
+            framebuffer::draw_text(fb, kTextX, kStartY + (drawn * kPitch), line, true, kFont, 1);
+            ++drawn;
+        }
+
+        ++logical_line;
+        cursor = (eol == nullptr) ? nullptr : (eol + 1);
+    }
+}
+
 } // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
@@ -1905,6 +1987,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::KeypadDebug:
         draw_keypad_debug_page(fb, console_state);
+        break;
+    case MenuPage::AlertList:
+        draw_alert_list_page(fb, console_state);
+        break;
+    case MenuPage::AlertDetail:
+        draw_alert_detail_page(fb, console_state);
         break;
     }
 }

@@ -32,3 +32,9 @@
 - Always use braces for `if`, `else`, `for`, and `while` bodies, even when the body is a single statement.
 - Respect the repo `.clang-format`, `.clang-tidy`, and `.editorconfig` files when making style or cleanup changes.
 - Avoid broad formatting-only churn unless the user explicitly asks for a formatting pass.
+
+## Alert Policy
+
+- When implementing a new user-visible feature, evaluate whether it introduces a failure mode that should surface as a CCU alert.
+- Where suitable signals already exist in `ConsoleState`, implement the alert logic in `console_controller::sync_system_alerts()` with a clear summary and operator-facing detail text.
+- If the signal does not yet exist, add an explicit placeholder alert hook with a comment describing the missing telemetry so the alert can be completed later.

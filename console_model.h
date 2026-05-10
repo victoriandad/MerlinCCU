@@ -136,6 +136,8 @@ enum class MenuPage : uint8_t
     TimeZoneSettings,
     Alignment,
     KeypadDebug,
+    AlertList,
+    AlertDetail,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
@@ -368,10 +370,32 @@ enum class SoftKeyRoute : uint8_t
     CycleTest,
     ResetConsoleState,
     ClearAlert,
+    SelectAlertSlot1,
+    SelectAlertSlot2,
+    SelectAlertSlot3,
+    SelectAlertSlot4,
+    SelectAlertSlot5,
+    SelectAlertSlot6,
+    SelectAlertSlot7,
+    SelectAlertSlot8,
+    SelectAlertSlot9,
+    AlertAccept,
+    AlertIgnore,
     PanelBrighter,
     PanelDimmer,
     KeysBrighter,
     KeysDimmer,
+};
+
+/// @brief One active alert surfaced by the CCU alert workflow.
+struct ActiveAlert
+{
+    AlertSeverity severity;
+    uint8_t code;
+    uint32_t sequence;
+    std::array<char, 6> occurred_time_text;
+    std::array<char, 32> summary;
+    std::array<char, 320> detail;
 };
 
 /// @brief Semantic action currently assigned to a contextual softkey.
@@ -430,6 +454,12 @@ struct ConsoleState
     MqttStatus mqtt_status;
     TimeStatus time_status;
     KeypadDebugStatus keypad_debug_status;
+    uint8_t alert_count;
+    uint8_t alert_list_page_index;
+    uint8_t alert_detail_index;
+    uint8_t alert_detail_scroll_line;
+    MenuPage alert_parent_page;
+    std::array<ActiveAlert, 24> active_alerts;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };
