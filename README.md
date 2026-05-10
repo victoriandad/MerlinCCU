@@ -564,11 +564,20 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
   - sunrise/sunset context (show sunset after sunrise, sunrise after sunset)
   - air quality metrics (CO2, particulates, and related sensor values)
 - [ ] add share-monitoring feature:
-  - choose symbols in config
-  - show current price with up/down/flat indicator beside each softkey label
-  - softkey opens detail page with chart windows:
-    `day`, `week`, `month`, `year`, `all-time`
-  - single softkey cycles period
+  - [x] add first CCU shares page from Home `L2` with BAE Systems as the initial watched share
+  - [x] add share detail page with graph region and period cycling:
+    `today`, `week`, `month`, `year`, `all-time`
+  - [x] render share detail graph as full-width trend lines with no bounding box
+    and show `MIN`/`MAX` values beneath the graph
+  - [x] choose no-account market data source:
+    Yahoo Finance chart JSON (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`)
+    is the current target because it returns both current price metadata and
+    history for the graph periods without an API key
+  - [ ] choose symbols in config
+  - [ ] add/remove watched shares from UI or web config
+  - [x] fetch live BAE Systems market price and history from the selected provider
+  - [x] refresh live share data on a five-minute cadence while shares pages are active
+  - [ ] show live current price with up/down/flat indicator beside each softkey label
 
 ## Phase 5: Observability, Reliability, And Ops
 
