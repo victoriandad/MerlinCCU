@@ -90,6 +90,9 @@ constexpr std::array<WebButtonBinding, static_cast<size_t>(ButtonId::Count)> kWe
     {"Digit0", ButtonId::Digit0},
 }};
 
+constexpr size_t kAlertLampIndex = static_cast<size_t>(LampId::AlertLamp);
+constexpr size_t kTestLampIndex = static_cast<size_t>(LampId::TestLamp);
+
 /// @brief Clears callbacks and closes a completed HTTP session.
 /// @details lwIP raw TCP can reject `tcp_close` while buffers are still tight.
 /// In that case the session is marked pending and the sent callback retries
@@ -669,6 +672,20 @@ bool build_preview_page()
                ".row{display:grid}"
                ".top-row{grid-template-columns:repeat(6,var(--rect-key-w));gap:8px;justify-content:center}"
                ".top-gap{border:1px solid #2e3438;border-radius:12px;background:#151b1f;opacity:.85}"
+               ".top-gap.led-mask{position:relative;overflow:hidden;border-color:#394047;background:linear-gradient(180deg,#1a2025,#0f1418)}"
+               ".top-gap.led-mask:before{content:'';position:absolute;inset:3px;border-radius:9px;background:#0a0f12;"
+               "box-shadow:inset 0 0 0 1px #2d3338,inset 0 8px 10px #0009}"
+               ".top-gap.led-mask:after{content:'';position:absolute;inset:6px;border-radius:7px;background:#161206;opacity:.28;"
+               "box-shadow:inset 0 0 12px #000c}"
+               ".led-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;"
+               "font-size:15px;font-weight:800;letter-spacing:.08em;color:#31342e;text-shadow:0 1px 0 #000}"
+               ".top-gap.led-mask.on .led-label{color:#f2cd41;text-shadow:0 0 7px #e5b416cc,0 0 2px #fff2a0cc}"
+               ".top-gap.led-mask.flash-slow .led-label{animation:labelBlinkSlow 1.4s steps(1,end) infinite}"
+               ".top-gap.led-mask.flash-fast .led-label{animation:labelBlinkFast .55s steps(1,end) infinite}"
+               "@keyframes labelBlinkSlow{0%%,45%%{color:#f2cd41;text-shadow:0 0 7px #e5b416cc,0 0 2px #fff2a0cc}"
+               "46%%,100%%{color:#31342e;text-shadow:0 1px 0 #000}}"
+               "@keyframes labelBlinkFast{0%%,40%%{color:#f2cd41;text-shadow:0 0 7px #e5b416cc,0 0 2px #fff2a0cc}"
+               "41%%,100%%{color:#31342e;text-shadow:0 1px 0 #000}}"
                ".display-bay{margin-top:10px;padding:8px 7px 6px;border-radius:22px;background:linear-gradient(170deg,#1e2429,#0c1013);"
                "box-shadow:inset 0 1px 0 #6c758042,inset 0 -1px 0 #050709}"
                ".display-shell{display:grid;grid-template-columns:68px 358px 68px;gap:10px;align-items:start}"
@@ -713,13 +730,13 @@ bool build_preview_page()
                "</style></head><body><main class=\"wrap\"><header class=\"intro\"><h1>Display Preview</h1>"
                "<p>Live framebuffer mirror plus a browser keypad so the CCU can be driven from your laptop.</p></header>"
                "<section class=\"card\"><div class=\"meta\"><span class=\"badge\">%d x %d</span>"
-               "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"open_popup\" type=\"button\">Pop-out</button><a href=\"/config\">Back to config</a>"
+               "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"seed_alerts\" type=\"button\">Seed alerts</button><button id=\"open_popup\" type=\"button\">Pop-out</button><a href=\"/config\">Back to config</a>"
                "<span id=\"state\" class=\"state\">Starting...</span></div>"
                "<div class=\"ccu-fixed\"><div class=\"ccu\" aria-label=\"Virtual CCU keypad\">"
                "<div class=\"row top-row\">"
-               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Alert</span></button>"
-               "<div class=\"top-gap\" aria-hidden=\"true\"></div><div class=\"top-gap\" aria-hidden=\"true\"></div>"
-               "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Test</span></button>"
+               "<button id=\"alert_key\" class=\"key ghost\" type=\"button\" title=\"Open alert list\"><span>Alert</span></button>"
+               "<div id=\"alert_led\" class=\"top-gap led-mask\" aria-hidden=\"true\"><span class=\"led-label\">ALRT</span></div><div id=\"test_led\" class=\"top-gap led-mask\" aria-hidden=\"true\"><span class=\"led-label\">TEST</span></div>"
+               "<button id=\"test_key\" class=\"key ghost\" type=\"button\" title=\"Preview: click to cycle TEST lamp\"><span>Test</span></button>"
                "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Brt</span></button>"
                "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Dim</span></button></div>"
                "<div class=\"display-bay\"><div class=\"display-shell\">"
@@ -788,6 +805,11 @@ bool build_preview_page()
                "const state=document.getElementById('state');"
                "const toggle=document.getElementById('toggle');"
                "const popupButton=document.getElementById('open_popup');"
+               "const seedAlertsButton=document.getElementById('seed_alerts');"
+               "const alertLed=document.getElementById('alert_led');"
+               "const testLed=document.getElementById('test_led');"
+               "const alertKey=document.getElementById('alert_key');"
+               "const testKey=document.getElementById('test_key');"
                "const keysState=document.getElementById('keys_state');"
                "const mappedKeys=document.querySelectorAll('.key[data-button-id]');"
                "const ghostKeys=document.querySelectorAll('.key.ghost');"
@@ -907,7 +929,44 @@ bool build_preview_page()
                "});"
                "if(popupButton){popupButton.addEventListener('click',function(){openPopup();});}"
                "if(isPopupMode&&popupButton){popupButton.style.display='none';}"
+               "if(seedAlertsButton){seedAlertsButton.addEventListener('click',function(){sendPanelAction('seed_fake_alerts');});}"
+               "function setLedMode(node,mode){"
+               "if(!node){return;}"
+               "node.classList.remove('on','flash-slow','flash-fast');"
+               "if(mode==='on'){node.classList.add('on');return;}"
+               "if(mode==='flash_slow'){node.classList.add('flash-slow');return;}"
+               "if(mode==='flash_fast'){node.classList.add('flash-fast');return;}"
+               "}"
+               "async function refreshPanelState(){"
+               "try{"
+               "const response=await fetch('/api/panel-state?t='+Date.now(),{cache:'no-store'});"
+               "if(!response.ok){return;}"
+               "const text=(await response.text()).trim();"
+               "const lines=text.split(/\\r?\\n/);"
+               "for(let i=0;i<lines.length;i++){"
+               "const parts=lines[i].split('=');"
+               "if(parts.length!==2){continue;}"
+               "if(parts[0]==='alert'){setLedMode(alertLed,parts[1]);continue;}"
+               "if(parts[0]==='test'){setLedMode(testLed,parts[1]);continue;}"
+               "}"
+               "}catch(_){ }"
+               "}"
+               "async function sendPanelAction(action){"
+               "try{"
+               "const response=await fetch('/api/panel-state',{method:'POST',cache:'no-store',"
+               "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+               "body:'action='+encodeURIComponent(action)});"
+               "if(!response.ok){return;}"
+               "const message=(await response.text()).trim();"
+               "if(message){setKeyState(message);}"
+               "refreshPanelState();"
+               "}catch(_){ }"
+               "}"
                "bindVirtualKeys();"
+               "if(alertKey){alertKey.addEventListener('click',function(){sendPanelAction('open_alerts');});}"
+               "if(testKey){testKey.addEventListener('click',function(){sendPanelAction('cycle_test');});}"
+               "setInterval(refreshPanelState,250);"
+               "refreshPanelState();"
                "schedule();"
                "refresh();"
                "})();"
@@ -1081,6 +1140,24 @@ bool parse_button_event_type(const char* text, ButtonEventType* out_type)
     }
 
     return false;
+}
+
+/// @brief Returns one stable text token for a logical lamp mode.
+const char* lamp_mode_text_token(LampMode mode)
+{
+    switch (mode)
+    {
+    case LampMode::Off:
+        return "off";
+    case LampMode::On:
+        return "on";
+    case LampMode::FlashSlow:
+        return "flash_slow";
+    case LampMode::FlashFast:
+        return "flash_fast";
+    }
+
+    return "off";
 }
 
 /// @brief Finds one form field value in a mutable URL-encoded body.
@@ -1705,6 +1782,81 @@ bool handle_button_post(const char* body, char* message, size_t message_size)
     return true;
 }
 
+/// @brief Handles one preview-only lamp control action posted from the web harness.
+bool handle_panel_action_post(const char* body, char* message, size_t message_size)
+{
+    if (message == nullptr || message_size == 0)
+    {
+        return false;
+    }
+
+    message[0] = '\0';
+    char action_text[32] = {};
+    if (!get_form_value(body, "action", action_text, sizeof(action_text)))
+    {
+        std::snprintf(message, message_size, "Missing panel action.");
+        return false;
+    }
+
+    if (std::strcmp(action_text, "cycle_alert") == 0)
+    {
+        (void)console_controller::cycle_alert_lamp_preview();
+        console_controller::request_redraw();
+        std::snprintf(message, message_size, "Preview ALRT lamp cycled.");
+        return true;
+    }
+
+    if (std::strcmp(action_text, "open_alerts") == 0)
+    {
+        bool changed = false;
+        if (console_controller::state().alert_count <= 1U)
+        {
+            changed = console_controller::seed_fake_alerts_preview(3U) || changed;
+        }
+        changed = console_controller::open_alert_page() || changed;
+        if (changed)
+        {
+            console_controller::request_redraw();
+        }
+        std::snprintf(message, message_size, "Opened alert page.");
+        return true;
+    }
+
+    if (std::strcmp(action_text, "seed_fake_alerts") == 0)
+    {
+        (void)console_controller::seed_fake_alerts_preview(3U);
+        console_controller::request_redraw();
+        std::snprintf(message, message_size, "Seeded 3 pages of synthetic alerts.");
+        return true;
+    }
+
+    if (std::strcmp(action_text, "cycle_test") == 0)
+    {
+        (void)console_controller::cycle_test_lamp_preview();
+        console_controller::request_redraw();
+        std::snprintf(message, message_size, "Preview TEST lamp cycled.");
+        return true;
+    }
+
+    std::snprintf(message, message_size, "Unknown panel action '%s'.", action_text);
+    return false;
+}
+
+/// @brief Writes one plain-text panel state snapshot for web preview polling.
+void build_panel_state_text(char* message, size_t message_size)
+{
+    if (message == nullptr || message_size == 0)
+    {
+        return;
+    }
+
+    const ConsoleState& state = console_controller::state();
+    const LampMode alert_mode = state.lamps[kAlertLampIndex];
+    const LampMode test_mode = state.lamps[kTestLampIndex];
+    std::snprintf(message, message_size, "alert=%s\ntest=%s\n", lamp_mode_text_token(alert_mode),
+                  lamp_mode_text_token(test_mode));
+}
+
 /// @brief Starts sending prepared response bytes for this session.
 void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* response,
                                size_t response_len)
@@ -1742,6 +1894,17 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         send_response(session, pcb, g_response);
         return;
     }
+    else if (matches_post_path(request, "/api/panel-state"))
+    {
+        const char* body = std::strstr(request, "\r\n\r\n");
+        char panel_message[96] = {};
+        const bool ok = handle_panel_action_post(body != nullptr ? body + 4 : "", panel_message,
+                                                 sizeof(panel_message));
+        std::snprintf(g_response, sizeof(g_response), "%s%s\n",
+                      ok ? kHttpTextHeader : kHttpBadRequestHeader, panel_message);
+        send_response(session, pcb, g_response);
+        return;
+    }
     else if (std::strncmp(request, "POST /config ", 13) == 0)
     {
         const char* body = std::strstr(request, "\r\n\r\n");
@@ -1752,6 +1915,14 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         std::snprintf(g_response, sizeof(g_response),
                       "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n"
                       "Connection: close\r\n\r\nMerlinCCU OK\n");
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/api/panel-state"))
+    {
+        char panel_state[64] = {};
+        build_panel_state_text(panel_state, sizeof(panel_state));
+        std::snprintf(g_response, sizeof(g_response), "%s%s", kHttpTextHeader, panel_state);
         send_response(session, pcb, g_response);
         return;
     }

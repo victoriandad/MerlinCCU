@@ -43,6 +43,29 @@ quickly without relying only on photographs of the physical panel.
 - Bracketed selected values remain mixed case.
 - Selection changes update visible values immediately.
 
+## Alert Workflow Pages
+
+- Pressing `ALERT` opens the alert list immediately.
+- ALRT lamp stops flashing when `ALERT` is pressed and re-flashes only when a
+  newer alert arrives.
+- Alert list ordering is newest-first and oldest-last.
+- Alert list labels show summary on line 1 and occurrence time as `[HH:MM]` on
+  line 2.
+- Cursor arrows show when additional alert pages exist and are positioned
+  consistently with settings-page arrows.
+- `R5=HOME` from alert list returns to home.
+- Alert detail page:
+  - `R5=ACCEPT` removes selected alert and returns to list.
+  - `L5=IGNORE` returns to list without removing selected alert.
+  - Cursor arrows scroll additional detail text.
+
+## Web Preview Alert Simulation
+
+- `Seed alerts` creates at least three pages of synthetic alerts for list/detail
+  navigation checks.
+- If the live alert list is sparse, pressing `ALERT` in web preview can reseed
+  synthetic alerts for layout regression testing.
+
 ## Failure Capture
 
 When a check fails, capture:

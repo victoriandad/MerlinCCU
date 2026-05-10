@@ -524,19 +524,21 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
 
 ## Phase 2: Alerting And Event Workflow
 
-- [ ] implement alert state machine and escalation timing
-- [ ] detect prolonged failures across Wi-Fi, weather fetch, HA REST, and MQTT
+- [x] implement alert state machine and escalation timing (done 2026-05-10, web-preview-first ALRT workflow)
+- [x] detect prolonged failures across Wi-Fi, weather fetch, HA REST, and MQTT (done 2026-05-10, retry-threshold driven)
 - [ ] add weather-based threshold alerts:
   - high/low temperature triggers (configurable)
   - wind-speed triggers (configurable)
   - evaluate provider-native warnings vs local threshold judgement
 - [ ] add sensor-generated alerts (pressure trend, air quality, CO2, particulates)
-- [ ] implement ALRT-key workflow:
-  - flashing indicator until viewed
-  - brief event labels on softkeys
-  - softkey drill-down to details page
-  - right-side actions: `ACCEPT`, `CLEAR`, `NEXT`
-  - note: the web preview ALRT indicator can be implemented first, but the real
+- [x] implement ALRT-key workflow (done 2026-05-10):
+  - ALRT lamp flashes on new alert arrival
+  - pressing `ALERT` acknowledges current alert set and opens alert list
+  - alert list maps newest alerts to `L1..L5` and `R1..R4` with timestamp labels (`[HH:MM]`)
+  - softkey drill-down opens detail page
+  - detail actions: `R5=ACCEPT` (clear selected alert), `L5=IGNORE` (return without clearing)
+  - cursor keys page the list and scroll detail text
+  - note: the web preview ALRT indicator is implemented first, but the real
     ALRT LED still needs dedicated hardware bring-up work:
     - confirm power and return line routing for the ALRT LED channel
     - complete front-panel hardware setup for ALRT LED drive
@@ -597,7 +599,7 @@ as `[x]` and append a short completion note such as `(done 2026-05-06, #123)`.
 
 The most practical next slice is:
 
-- [ ] land Phase 2 alert state model skeleton with ALRT navigation and action flow
+- [x] land Phase 2 alert state model skeleton with ALRT navigation and action flow (done 2026-05-10)
 - [ ] extend Phase 3 weather period controls (`hour`, `day`, `week`) and layout
       handling
 - [ ] add weather icon pipeline and placeholder icon set (10x10 and 16x16 trial)

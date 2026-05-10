@@ -146,6 +146,20 @@ ConsoleState make_default_console_state()
     state.keypad_debug_status.probe_hit_mask = 0;
     state.keypad_debug_status.probe_hit_count = 0;
     state.keypad_debug_status.probe_hit_panel_pins.fill('\0');
+    state.alert_count = 0U;
+    state.alert_list_page_index = 0U;
+    state.alert_detail_index = 0U;
+    state.alert_detail_scroll_line = 0U;
+    state.alert_parent_page = MenuPage::Home;
+    for (auto& alert : state.active_alerts)
+    {
+        alert.severity = AlertSeverity::None;
+        alert.code = 0U;
+        alert.sequence = 0U;
+        alert.occurred_time_text.fill('\0');
+        alert.summary.fill('\0');
+        alert.detail.fill('\0');
+    }
     // Lamps and softkeys are initialized explicitly so the controller can treat
     // the whole state object as immediately usable after construction.
     state.lamps.fill(LampMode::Off);
