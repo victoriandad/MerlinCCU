@@ -368,7 +368,9 @@ uint32_t current_local_epoch_seconds()
 bool update_time_text()
 {
     const char* previous_text = g_status.time_text.data();
+    const uint8_t previous_weekday = g_status.weekday_index;
     char next_text[sizeof(g_status.time_text)] = {};
+    uint8_t next_weekday = kInvalidWeekdayIndex;
 
     // The formatted string is rebuilt from the stored sync point each time so
     // the UI stays monotonic without needing a separate RTC subsystem.
@@ -376,15 +378,19 @@ bool update_time_text()
     {
         const DateTimeParts local = unix_time_to_utc(current_local_epoch_seconds());
         std::snprintf(next_text, sizeof(next_text), "%02d:%02d", local.hour, local.minute);
+        next_weekday =
+            static_cast<uint8_t>(weekday_from_ymd(local.year, local.month, local.day));
     }
 
-    if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0)
+    if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0 &&
+        previous_weekday == next_weekday)
     {
         return false;
     }
 
     g_status.time_text.fill('\0');
     std::snprintf(g_status.time_text.data(), g_status.time_text.size(), "%s", next_text);
+    g_status.weekday_index = next_weekday;
     return true;
 }
 
@@ -411,6 +417,7 @@ void init()
     g_status = {};
     g_status.synced = false;
     g_status.time_text.fill('\0');
+    g_status.weekday_index = kInvalidWeekdayIndex;
     g_last_ntp_epoch_utc = 0;
     g_last_ntp_sync_time = nil_time;
     g_next_time_text_update = nil_time;

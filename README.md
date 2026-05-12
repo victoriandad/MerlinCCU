@@ -23,7 +23,7 @@ Working now:
 - EL320-style monochrome display scanout through PIO and DMA.
 - Portrait 1-bit UI framebuffer with double buffering.
 - CPU-built scanout raster with frame-boundary buffer swaps.
-- Menu/state controller for Home, Weather, Status, Settings, diagnostics, alerts, and shares.
+- Menu/state controller for Home, Calendar, Weather, Status, Settings, diagnostics, alerts, and shares.
 - Runtime configuration persisted in flash with CRC/version handling.
 - Local web configuration page with admin-password option.
 - Browser display preview at `/preview`, including framebuffer mirror, lamp preview, and virtual key input.
@@ -33,6 +33,7 @@ Working now:
 - Hour, day, and week weather period views.
 - MQTT discovery/state publishing for Home Assistant diagnostic sensors.
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
+- Calendar UI scaffold with Combined/Sean/Luigina/Loris/Luca filtering, relative-day footer, and softkey event-detail pages.
 - Share page and share detail graph for BAE Systems using Yahoo Finance chart data.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
 - Provisional keypad matrix monitor/decoder for confirmed softkeys, navigation keys, and numeric keys.
@@ -41,6 +42,7 @@ Still incomplete or provisional:
 
 - Physical ALRT/TEST LED drive, key backlight, panel backlight, and photoresistor wiring are not final.
 - Some printed front-panel keys are shown in the web preview but are not wired into firmware behaviour yet.
+- Live Home Assistant calendar ingestion is not implemented yet.
 - Watched share symbols are not user-configurable from the UI or web config yet.
 - Weather iconography and warning/threshold alert rules are still planned.
 - I2C sensor support is planned but not implemented.
@@ -364,6 +366,8 @@ Weather and integrations:
 - [x] Open-Meteo direct weather source.
 - [x] Hour/day/week weather views.
 - [x] MQTT discovery for core diagnostic sensors.
+- [x] Calendar UI scaffold for the family combined/person views.
+- [ ] Add Home Assistant calendar ingestion behind the Calendar model.
 - [ ] Add weather icon pipeline and trial small icon sets.
 - [ ] Add weather threshold alerts for temperature, wind, and provider warnings.
 - [ ] Publish local sensor data back to Home Assistant once sensors exist.
@@ -398,8 +402,9 @@ Display quality R&D:
 
 Short-term useful slices:
 
-1. Finalise physical ALRT/TEST LED and backlight wiring assumptions.
-2. Make watched shares configurable from web config.
-3. Add weather icons after settling the small bitmap asset size.
-4. Define the multicore event/message boundary before moving any work to core 1.
-5. Add I2C sensor scaffolding once spare GPIO allocation is confirmed.
+1. Add Home Assistant calendar ingestion behind the Calendar model.
+2. Finalise physical ALRT/TEST LED and backlight wiring assumptions.
+3. Make watched shares configurable from web config.
+4. Add weather icons after settling the small bitmap asset size.
+5. Define the multicore event/message boundary before moving any work to core 1.
+6. Add I2C sensor scaffolding once spare GPIO allocation is confirmed.

@@ -1,5 +1,6 @@
 #include "console_controller.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cctype>
 #include <cstdio>
@@ -107,6 +108,12 @@ struct SharePeriodDefinition
     const char* selection_label;
 };
 
+struct CalendarOwnerDefinition
+{
+    CalendarOwner owner;
+    const char* selection_label;
+};
+
 struct TimeZoneDefinition
 {
     TimeZoneSelection zone;
@@ -138,6 +145,14 @@ constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
     {SharePeriod::Month, "Month"},
     {SharePeriod::Year, "Year"},
     {SharePeriod::AllTime, "All-time"},
+}};
+
+constexpr std::array<CalendarOwnerDefinition, 5> kCalendarOwners = {{
+    {CalendarOwner::Combined, "Combined"},
+    {CalendarOwner::Sean, "Sean"},
+    {CalendarOwner::Luigina, "Luigina"},
+    {CalendarOwner::Loris, "Loris"},
+    {CalendarOwner::Luca, "Luca"},
 }};
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
@@ -524,6 +539,20 @@ const SharePeriodDefinition& share_period_definition(SharePeriod period)
     return kSharePeriods[0];
 }
 
+/// @brief Returns the static metadata for one selectable calendar owner filter.
+const CalendarOwnerDefinition& calendar_owner_definition(CalendarOwner owner)
+{
+    for (const CalendarOwnerDefinition& definition : kCalendarOwners)
+    {
+        if (definition.owner == owner)
+        {
+            return definition;
+        }
+    }
+
+    return kCalendarOwners[0];
+}
+
 /// @brief Returns the ordered array index for the currently selected time zone.
 size_t time_zone_index(TimeZoneSelection zone)
 {
@@ -693,6 +722,12 @@ const char* weather_period_selection_text(const ConsoleState& console_state)
 const char* share_period_selection_text(const ConsoleState& console_state)
 {
     return share_period_definition(console_state.share_period).selection_label;
+}
+
+/// @brief Returns the currently selected family-calendar owner label.
+const char* calendar_owner_selection_text(const ConsoleState& console_state)
+{
+    return calendar_owner_definition(console_state.calendar_owner).selection_label;
 }
 
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
@@ -1035,6 +1070,31 @@ const char* build_alert_softkey_label(SoftKeyId key, const ActiveAlert& alert)
     return buffer.data();
 }
 
+/// @brief Returns whether one event belongs in the active Calendar page filter.
+bool calendar_event_matches_filter(const CalendarEvent& event)
+{
+    if (event.title[0] == '\0' || event.day_offset != g_console_state.calendar_day_offset)
+    {
+        return false;
+    }
+
+    return g_console_state.calendar_owner == CalendarOwner::Combined ||
+           event.owner == g_console_state.calendar_owner;
+}
+
+/// @brief Formats one calendar event for the surrounding softkey labels.
+/// @details The data portion deliberately carries both time and owner so the
+/// Combined view remains useful without needing a wider centre table.
+const char* build_calendar_event_softkey_label(SoftKeyId key, const CalendarEvent& event)
+{
+    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
+    const char* owner_text = calendar_owner_definition(event.owner).selection_label;
+    char value[24] = {};
+    std::snprintf(value, sizeof(value), "%s %s",
+                  event.start_time[0] != '\0' ? event.start_time.data() : "--:--", owner_text);
+    return build_selection_softkey_label(key, event.title.data(), value);
+}
+
 /// @brief Returns the parent page for one menu route in the current hierarchy.
 MenuPage parent_page(MenuPage page)
 {
@@ -1043,6 +1103,7 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Home:
         return MenuPage::Home;
     case MenuPage::Weather:
+    case MenuPage::Calendar:
     case MenuPage::Status:
     case MenuPage::Settings:
     case MenuPage::Alignment:
@@ -1062,6 +1123,8 @@ MenuPage parent_page(MenuPage page)
         return g_console_state.alert_parent_page;
     case MenuPage::AlertDetail:
         return MenuPage::AlertList;
+    case MenuPage::CalendarDetail:
+        return MenuPage::Calendar;
     case MenuPage::ShareDetail:
         return MenuPage::Shares;
     }
@@ -1300,6 +1363,98 @@ bool cycle_weather_period()
     }
 
     g_console_state.weather_period = next;
+    return true;
+}
+
+/// @brief Returns the next family member filter in the Calendar page cycle.
+CalendarOwner next_calendar_owner(CalendarOwner owner)
+{
+    switch (owner)
+    {
+    case CalendarOwner::Combined:
+        return CalendarOwner::Sean;
+    case CalendarOwner::Sean:
+        return CalendarOwner::Luigina;
+    case CalendarOwner::Luigina:
+        return CalendarOwner::Loris;
+    case CalendarOwner::Loris:
+        return CalendarOwner::Luca;
+    case CalendarOwner::Luca:
+        return CalendarOwner::Combined;
+    }
+
+    return CalendarOwner::Combined;
+}
+
+/// @brief Advances the Calendar owner filter without touching persisted config.
+bool cycle_calendar_owner()
+{
+    const CalendarOwner next = next_calendar_owner(g_console_state.calendar_owner);
+    if (next == g_console_state.calendar_owner)
+    {
+        return false;
+    }
+
+    g_console_state.calendar_owner = next;
+    return true;
+}
+
+/// @brief Moves the Calendar page day selection within a bounded preview window.
+/// @details The current UI slice stores days as offsets from today so the same
+/// model can be filled by Home Assistant calendar data later.
+bool change_calendar_day(int direction)
+{
+    if (g_console_state.active_page != MenuPage::Calendar || direction == 0)
+    {
+        return false;
+    }
+
+    const int target = static_cast<int>(g_console_state.calendar_day_offset) + direction;
+    if (target < kCalendarMinDayOffset || target > kCalendarMaxDayOffset)
+    {
+        return false;
+    }
+
+    g_console_state.calendar_day_offset = static_cast<int8_t>(target);
+    return true;
+}
+
+/// @brief Returns the backing event index for one visible Calendar softkey slot.
+/// @details Slots are rebuilt from the filtered event list on demand so Home
+/// Assistant data can replace the sample rows without duplicate indices.
+uint8_t calendar_event_index_for_visible_slot(uint8_t visible_slot)
+{
+    uint8_t visible_index = 0U;
+    const uint8_t event_count =
+        std::min(g_console_state.calendar_event_count,
+                 static_cast<uint8_t>(g_console_state.calendar_events.size()));
+    for (uint8_t i = 0U; i < event_count; ++i)
+    {
+        if (!calendar_event_matches_filter(g_console_state.calendar_events[i]))
+        {
+            continue;
+        }
+        if (visible_index == visible_slot)
+        {
+            return i;
+        }
+        ++visible_index;
+    }
+
+    return static_cast<uint8_t>(g_console_state.calendar_events.size());
+}
+
+/// @brief Opens the detail page for one visible calendar event slot.
+bool open_calendar_detail_from_slot(uint8_t visible_slot)
+{
+    const uint8_t event_index = calendar_event_index_for_visible_slot(visible_slot);
+    if (event_index >= g_console_state.calendar_events.size())
+    {
+        return false;
+    }
+
+    g_console_state.selected_calendar_event_index = event_index;
+    g_console_state.active_page = MenuPage::CalendarDetail;
     return true;
 }
 
@@ -1543,6 +1698,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME ASSISTANT", SoftKeyRoute::GoStatus,
                                                      true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"SHARES", SoftKeyRoute::GoShares, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"CALENDAR", SoftKeyRoute::GoCalendar, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "WEATHER",
@@ -1550,6 +1706,48 @@ void update_softkeys_from_state()
             SoftKeyRoute::GoWeather,
             true,
         };
+        break;
+    case MenuPage::Calendar:
+    {
+        constexpr std::array<SoftKeyId, kCalendarVisibleEventCount> slots = {
+            SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
+            SoftKeyId::Left4,  SoftKeyId::Right1, SoftKeyId::Right2,
+            SoftKeyId::Right3, SoftKeyId::Right4, SoftKeyId::Right5};
+        constexpr std::array<SoftKeyRoute, kCalendarVisibleEventCount> routes = {
+            SoftKeyRoute::SelectCalendarSlot1, SoftKeyRoute::SelectCalendarSlot2,
+            SoftKeyRoute::SelectCalendarSlot3, SoftKeyRoute::SelectCalendarSlot4,
+            SoftKeyRoute::SelectCalendarSlot5, SoftKeyRoute::SelectCalendarSlot6,
+            SoftKeyRoute::SelectCalendarSlot7, SoftKeyRoute::SelectCalendarSlot8,
+            SoftKeyRoute::SelectCalendarSlot9};
+        uint8_t visible_index = 0U;
+        const uint8_t event_count =
+            std::min(g_console_state.calendar_event_count,
+                     static_cast<uint8_t>(g_console_state.calendar_events.size()));
+        for (uint8_t i = 0U; i < event_count && visible_index < slots.size(); ++i)
+        {
+            const CalendarEvent& event = g_console_state.calendar_events[i];
+            if (!calendar_event_matches_filter(event))
+            {
+                continue;
+            }
+
+            const SoftKeyId slot = slots[visible_index];
+            softkeys[softkey_index(slot)] = {
+                build_calendar_event_softkey_label(slot, event),
+                routes[visible_index],
+                true,
+            };
+            ++visible_index;
+        }
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "PERSON",
+                                          calendar_owner_selection_text(g_console_state)),
+            SoftKeyRoute::CycleCalendarOwner,
+            true,
+        };
+        break;
+    }
+    case MenuPage::CalendarDetail:
         break;
     case MenuPage::Weather:
         softkeys[softkey_index(SoftKeyId::Left5)] = {
@@ -1996,6 +2194,7 @@ void update_softkeys_from_state()
     }
 
     if (g_console_state.active_page != MenuPage::Home &&
+        g_console_state.active_page != MenuPage::Calendar &&
         g_console_state.active_page != MenuPage::AlertList &&
         g_console_state.active_page != MenuPage::AlertDetail &&
         !(g_console_state.active_page == MenuPage::ScreenSaverSettings &&
@@ -2194,6 +2393,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Home;
         return true;
+    case SoftKeyRoute::GoCalendar:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::Calendar;
+        return true;
     case SoftKeyRoute::GoWeather:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Weather;
@@ -2285,6 +2488,26 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_share_slot(0U);
     case SoftKeyRoute::CycleSharePeriod:
         return cycle_share_period();
+    case SoftKeyRoute::CycleCalendarOwner:
+        return cycle_calendar_owner();
+    case SoftKeyRoute::SelectCalendarSlot1:
+        return open_calendar_detail_from_slot(0U);
+    case SoftKeyRoute::SelectCalendarSlot2:
+        return open_calendar_detail_from_slot(1U);
+    case SoftKeyRoute::SelectCalendarSlot3:
+        return open_calendar_detail_from_slot(2U);
+    case SoftKeyRoute::SelectCalendarSlot4:
+        return open_calendar_detail_from_slot(3U);
+    case SoftKeyRoute::SelectCalendarSlot5:
+        return open_calendar_detail_from_slot(4U);
+    case SoftKeyRoute::SelectCalendarSlot6:
+        return open_calendar_detail_from_slot(5U);
+    case SoftKeyRoute::SelectCalendarSlot7:
+        return open_calendar_detail_from_slot(6U);
+    case SoftKeyRoute::SelectCalendarSlot8:
+        return open_calendar_detail_from_slot(7U);
+    case SoftKeyRoute::SelectCalendarSlot9:
+        return open_calendar_detail_from_slot(8U);
     case SoftKeyRoute::SelectTimeZoneWest1:
         return select_relative_time_zone(-1);
     case SoftKeyRoute::SelectTimeZoneWest2:
@@ -2524,7 +2747,8 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 bool set_time_status(const TimeStatus& time_status)
 {
     const bool kChanged = g_console_state.time_status.synced != time_status.synced ||
-                          g_console_state.time_status.time_text != time_status.time_text;
+                          g_console_state.time_status.time_text != time_status.time_text ||
+                          g_console_state.time_status.weekday_index != time_status.weekday_index;
 
     if (!kChanged)
     {
@@ -2782,6 +3006,10 @@ bool handle_button_event(const ButtonEvent& event)
         {
             changed = change_settings_page(direction);
         }
+        else if (g_console_state.active_page == MenuPage::Calendar)
+        {
+            changed = change_calendar_day(direction);
+        }
         else if (g_console_state.active_page == MenuPage::AlertList)
         {
             const int next_page = static_cast<int>(g_console_state.alert_list_page_index) + direction;
@@ -2825,9 +3053,11 @@ bool handle_button_event(const ButtonEvent& event)
 
         update_softkeys_from_state();
         update_lamps_from_state();
-        PERIODIC_LOG("Console state updated: settings page=%u/%u\n",
+        PERIODIC_LOG("Console state updated: page=%u settings=%u/%u calendar_day=%d\n",
+                     static_cast<unsigned>(g_console_state.active_page),
                      static_cast<unsigned>(g_console_state.settings_page_index + 1U),
-                     static_cast<unsigned>(kSettingsPageCount));
+                     static_cast<unsigned>(kSettingsPageCount),
+                     static_cast<int>(g_console_state.calendar_day_offset));
         return true;
     }
 

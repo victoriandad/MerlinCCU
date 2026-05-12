@@ -41,6 +41,32 @@ constexpr SoftKeyMap kDefaultSoftkeys = {{
     {"", SoftKeyRoute::None, false},
 }};
 
+/// @brief Seeds one display-ready calendar event row.
+/// @details Home Assistant calendar ingestion can later overwrite these same
+/// fixed rows without changing the Calendar page renderer or routing code.
+void set_calendar_event(CalendarEvent& event, CalendarOwner owner, int8_t day_offset,
+                        const char* start_time, const char* end_time, const char* title,
+                        const char* location, const char* reminder, const char* attendees,
+                        const char* description)
+{
+    event.owner = owner;
+    event.day_offset = day_offset;
+    event.start_time.fill('\0');
+    event.end_time.fill('\0');
+    event.title.fill('\0');
+    event.location.fill('\0');
+    event.reminder.fill('\0');
+    event.attendees.fill('\0');
+    event.description.fill('\0');
+    std::snprintf(event.start_time.data(), event.start_time.size(), "%s", start_time);
+    std::snprintf(event.end_time.data(), event.end_time.size(), "%s", end_time);
+    std::snprintf(event.title.data(), event.title.size(), "%s", title);
+    std::snprintf(event.location.data(), event.location.size(), "%s", location);
+    std::snprintf(event.reminder.data(), event.reminder.size(), "%s", reminder);
+    std::snprintf(event.attendees.data(), event.attendees.size(), "%s", attendees);
+    std::snprintf(event.description.data(), event.description.size(), "%s", description);
+}
+
 } // namespace
 
 static_assert((sizeof(kKeyLegends) / sizeof(kKeyLegends[0])) ==
@@ -62,6 +88,10 @@ ConsoleState make_default_console_state()
     state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
     state.weather_period = WeatherPeriod::Hour;
+    state.calendar_owner = CalendarOwner::Combined;
+    state.calendar_day_offset = 0;
+    state.selected_calendar_event_index = 0U;
+    state.calendar_event_count = 0U;
     state.share_period = SharePeriod::Today;
     state.share_data_configured = false;
     state.share_data_valid = false;
@@ -142,6 +172,7 @@ ConsoleState make_default_console_state()
     state.mqtt_status.device_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
+    state.time_status.weekday_index = kInvalidWeekdayIndex;
 
     // The keypad debug surface is always present, so its snapshot fields start
     // cleared rather than being allocated lazily later.
@@ -168,6 +199,140 @@ ConsoleState make_default_console_state()
         alert.summary.fill('\0');
         alert.detail.fill('\0');
     }
+
+    for (auto& event : state.calendar_events)
+    {
+        event.owner = CalendarOwner::Combined;
+        event.day_offset = 0;
+        event.start_time.fill('\0');
+        event.end_time.fill('\0');
+        event.title.fill('\0');
+        event.location.fill('\0');
+        event.reminder.fill('\0');
+        event.attendees.fill('\0');
+        event.description.fill('\0');
+    }
+
+    size_t calendar_event_index = 0U;
+    auto add_calendar_event = [&](CalendarOwner owner, int8_t day_offset, const char* start_time,
+                                  const char* end_time, const char* title, const char* location,
+                                  const char* reminder, const char* attendees,
+                                  const char* description)
+    {
+        if (calendar_event_index >= state.calendar_events.size())
+        {
+            return;
+        }
+
+        set_calendar_event(state.calendar_events[calendar_event_index], owner, day_offset,
+                           start_time, end_time, title, location, reminder, attendees,
+                           description);
+        ++calendar_event_index;
+    };
+
+    auto calendar_day_has_event = [&](int8_t day_offset)
+    {
+        for (size_t i = 0U; i < calendar_event_index; ++i)
+        {
+            if (state.calendar_events[i].day_offset == day_offset &&
+                state.calendar_events[i].title[0] != '\0')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    add_calendar_event(CalendarOwner::Sean, 0, "08:30", "09:00", "Work standup", "Teams",
+                       "10 min popup", "Project team", "Daily status call.");
+    add_calendar_event(CalendarOwner::Luigina, 0, "09:15", "09:45", "School admin",
+                       "School office", "30 min email", "School office",
+                       "Forms and term dates.");
+    add_calendar_event(CalendarOwner::Loris, 0, "15:40", "17:00", "Football", "Sports ground",
+                       "1 hour popup", "Coach, team", "Training kit needed.");
+    add_calendar_event(CalendarOwner::Luca, 0, "16:30", "17:15", "Swimming", "Leisure centre",
+                       "45 min popup", "Instructor", "Take towel and goggles.");
+    add_calendar_event(CalendarOwner::Sean, 0, "19:00", "20:00", "Dinner prep", "Home", "None",
+                       "Family", "Start dinner before clubs end.");
+    add_calendar_event(CalendarOwner::Luigina, 1, "10:00", "10:30", "Appointment", "Clinic",
+                       "1 day email", "Clinic", "Check appointment notes.");
+    add_calendar_event(CalendarOwner::Loris, 1, "13:30", "15:30", "School trip", "Museum",
+                       "1 day popup", "Class", "Packed lunch required.");
+    add_calendar_event(CalendarOwner::Luca, 1, "17:15", "18:30", "Play date", "Friend's house",
+                       "30 min popup", "Parent", "Pickup confirmed by text.");
+    add_calendar_event(CalendarOwner::Sean, 2, "08:45", "17:00", "Office", "London", "None",
+                       "Work", "Office day.");
+    add_calendar_event(CalendarOwner::Luigina, 2, "18:00", "19:00", "Pilates", "Studio",
+                       "1 hour popup", "Class", "Bring mat.");
+    add_calendar_event(CalendarOwner::Loris, 3, "11:00", "11:30", "Dentist", "Dental surgery",
+                       "1 day email", "Dentist", "Routine check-up.");
+    add_calendar_event(CalendarOwner::Luca, 3, "14:00", "16:00", "Party", "Soft play",
+                       "2 hours popup", "Class friends", "Birthday party.");
+    add_calendar_event(CalendarOwner::Sean, -1, "12:30", "13:00", "Lunch call", "Office",
+                       "10 min popup", "Supplier", "Review quote.");
+    add_calendar_event(CalendarOwner::Luigina, -1, "18:30", "19:30", "Parents group",
+                       "School hall", "30 min popup", "Parents", "Planning meeting.");
+    add_calendar_event(CalendarOwner::Sean, 4, "09:30", "10:15", "Service slot", "Garage",
+                       "1 day email", "Garage", "Car service booking.");
+    add_calendar_event(CalendarOwner::Loris, 5, "16:00", "17:30", "Match", "Away pitch",
+                       "2 hours popup", "Coach, team", "Bring boots.");
+    add_calendar_event(CalendarOwner::Luca, 6, "10:30", "12:00", "Library", "Town library",
+                       "1 hour popup", "Family", "Return books.");
+    add_calendar_event(CalendarOwner::Luigina, 7, "15:00", "16:00", "Coffee", "High street",
+                       "30 min popup", "Friend", "Catch-up.");
+    add_calendar_event(CalendarOwner::Sean, -14, "08:00", "08:30", "Old rota", "Home", "None",
+                       "Work", "Historic sample event.");
+    add_calendar_event(CalendarOwner::Luigina, -7, "11:00", "11:45", "School call", "Phone",
+                       "15 min popup", "School office", "Historic weekly sample.");
+    add_calendar_event(CalendarOwner::Sean, 14, "09:00", "09:30", "Budget check", "Home office",
+                       "1 day email", "Accounts", "Two-week sample event.");
+    add_calendar_event(CalendarOwner::Luca, 13, "16:00", "17:00", "Club signup",
+                       "Community hall", "1 day popup", "Club leader",
+                       "Next fortnight sample.");
+
+    // Fill every empty day in the navigation test window so arrow-key day
+    // movement can be verified before live HA data exists. Keep this deliberately
+    // small; ConsoleState is built during boot and should not carry bulky
+    // synthetic test data.
+    struct SampleOwner
+    {
+        CalendarOwner owner;
+        const char* title_prefix;
+        const char* attendee;
+    };
+    constexpr SampleOwner kSampleOwners[] = {
+        {CalendarOwner::Sean, "Sean sample", "Sean"},
+        {CalendarOwner::Luigina, "Luigina sample", "Luigina"},
+        {CalendarOwner::Loris, "Loris sample", "Loris"},
+        {CalendarOwner::Luca, "Luca sample", "Luca"},
+    };
+    for (int day = kCalendarMinDayOffset; day <= kCalendarMaxDayOffset; ++day)
+    {
+        const int8_t day_offset = static_cast<int8_t>(day);
+        if (calendar_day_has_event(day_offset))
+        {
+            continue;
+        }
+
+        const int sample_index = day - static_cast<int>(kCalendarMinDayOffset);
+        const SampleOwner& sample_owner =
+            kSampleOwners[static_cast<size_t>(sample_index) %
+                          (sizeof(kSampleOwners) / sizeof(kSampleOwners[0]))];
+        const int start_hour = 8 + (sample_index % 10);
+        char start_time[6] = {};
+        char end_time[6] = {};
+        char title[32] = {};
+        std::snprintf(start_time, sizeof(start_time), "%02d:00", start_hour);
+        std::snprintf(end_time, sizeof(end_time), "%02d:30", start_hour);
+        std::snprintf(title, sizeof(title), "%s %+d", sample_owner.title_prefix, day);
+
+        add_calendar_event(sample_owner.owner, day_offset, start_time, end_time, title,
+                           "Calendar test", "None", sample_owner.attendee,
+                           "Generated sample for day paging.");
+    }
+
+    state.calendar_event_count = static_cast<uint8_t>(calendar_event_index);
 
     for (auto& share : state.watched_shares)
     {

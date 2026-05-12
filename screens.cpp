@@ -324,6 +324,10 @@ const char* menu_page_title(MenuPage page)
     {
     case MenuPage::Home:
         return "HOME";
+    case MenuPage::Calendar:
+        return "CALENDAR";
+    case MenuPage::CalendarDetail:
+        return "EVENT";
     case MenuPage::Weather:
         return "WEATHER";
     case MenuPage::Status:
@@ -447,6 +451,8 @@ fonts::FontFace softkey_label_font(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Settings:
+    case MenuPage::Calendar:
+    case MenuPage::CalendarDetail:
     case MenuPage::DeviceSettings:
     case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
@@ -1269,6 +1275,225 @@ void draw_blank_menu_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
+/// @brief Returns the owner label used by Calendar labels and details.
+const char* calendar_owner_text(CalendarOwner owner)
+{
+    switch (owner)
+    {
+    case CalendarOwner::Combined:
+        return "Combined";
+    case CalendarOwner::Sean:
+        return "Sean";
+    case CalendarOwner::Luigina:
+        return "Luigina";
+    case CalendarOwner::Loris:
+        return "Loris";
+    case CalendarOwner::Luca:
+        return "Luca";
+    }
+
+    return "Combined";
+}
+
+/// @brief Returns the short weekday label for compact Calendar date text.
+const char* weekday_short_text(uint8_t weekday_index)
+{
+    static constexpr std::array<const char*, 7> kWeekdayLabels = {
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    if (weekday_index >= kWeekdayLabels.size())
+    {
+        return "";
+    }
+
+    return kWeekdayLabels[weekday_index];
+}
+
+/// @brief Returns the weekday index reached by moving relative to today.
+uint8_t shifted_weekday_index(uint8_t today_weekday_index, int8_t day_offset)
+{
+    int index = static_cast<int>(today_weekday_index) + static_cast<int>(day_offset);
+    while (index < 0)
+    {
+        index += 7;
+    }
+
+    return static_cast<uint8_t>(index % 7);
+}
+
+/// @brief Returns the human-readable prefix for a week-distance bucket.
+const char* calendar_week_prefix(int weeks)
+{
+    switch (weeks)
+    {
+    case 1:
+        return "Week";
+    case 2:
+        return "Two Weeks";
+    case 3:
+        return "Three Weeks";
+    case 4:
+        return "Four Weeks";
+    }
+
+    return "Weeks";
+}
+
+/// @brief Formats a single relative day label for the Calendar footer.
+/// @details The wording is deliberately compact because this label lives in
+/// the narrow bottom footer, not in the surrounding event softkeys.
+const char* calendar_day_text(const ConsoleState& console_state, int8_t day_offset, char* buffer,
+                              size_t buffer_size)
+{
+    if (buffer == nullptr || buffer_size == 0)
+    {
+        return "";
+    }
+
+    if (day_offset == 0)
+    {
+        return "Today";
+    }
+    if (day_offset == 1)
+    {
+        return "Tomorrow";
+    }
+    if (day_offset == -1)
+    {
+        return "Yesterday";
+    }
+
+    if (console_state.time_status.synced &&
+        console_state.time_status.weekday_index != kInvalidWeekdayIndex)
+    {
+        const uint8_t weekday =
+            shifted_weekday_index(console_state.time_status.weekday_index, day_offset);
+        const char* weekday_text = weekday_short_text(weekday);
+        if (day_offset < 0)
+        {
+            const int age_days = -static_cast<int>(day_offset);
+            if (age_days < 7)
+            {
+                std::snprintf(buffer, buffer_size, "Last %s", weekday_text);
+                return buffer;
+            }
+
+            std::snprintf(buffer, buffer_size, "%s Last %s",
+                          calendar_week_prefix(age_days / 7), weekday_text);
+            return buffer;
+        }
+
+        if (day_offset < 7)
+        {
+            std::snprintf(buffer, buffer_size, "%s", weekday_text);
+            return buffer;
+        }
+
+        const int weeks = static_cast<int>(day_offset) / 7;
+        const int remainder = static_cast<int>(day_offset) % 7;
+        const char* relative_text = weekday_text;
+        if (remainder == 0)
+        {
+            relative_text = "Today";
+        }
+        else if (remainder == 1)
+        {
+            relative_text = "Tomorrow";
+        }
+
+        std::snprintf(buffer, buffer_size, "%s %s", calendar_week_prefix(weeks), relative_text);
+        return buffer;
+    }
+
+    if (day_offset > 0)
+    {
+        std::snprintf(buffer, buffer_size, "%d days", static_cast<int>(day_offset));
+        return buffer;
+    }
+
+    std::snprintf(buffer, buffer_size, "%d days", static_cast<int>(day_offset));
+    return buffer;
+}
+
+/// @brief Draws a small left or right arrow independent of font glyph support.
+void draw_calendar_footer_arrow(uint8_t* fb, int centre_x, int centre_y, int direction)
+{
+    constexpr int kArrowLength = 11;
+    constexpr int kArrowHead = 4;
+    const int tip_x = centre_x + ((direction < 0) ? -kArrowLength / 2 : kArrowLength / 2);
+    const int tail_x = centre_x + ((direction < 0) ? kArrowLength / 2 : -kArrowLength / 2);
+
+    framebuffer::draw_hline(fb, tail_x, tip_x, centre_y, true);
+    framebuffer::draw_line(fb, tip_x, centre_y, tip_x - (direction * kArrowHead),
+                           centre_y - kArrowHead, true);
+    framebuffer::draw_line(fb, tip_x, centre_y, tip_x - (direction * kArrowHead),
+                           centre_y + kArrowHead, true);
+}
+
+/// @brief Draws the bottom Calendar relative-day footer.
+/// @details The bottom cursor keys move the selected day, so the footer keeps
+/// the active day bracketed by visible left/right arrow markers.
+void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kFooterY = kUiHeight - 25;
+    constexpr int kArrowGap = 12;
+    constexpr int kArrowCentreYOffset = 3;
+    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
+    char day_label[32] = {};
+    const char* day_text = calendar_day_text(console_state, console_state.calendar_day_offset,
+                                             day_label, sizeof(day_label));
+    if (day_text == nullptr || day_text[0] == '\0')
+    {
+        std::snprintf(day_label, sizeof(day_label), "%d days",
+                      static_cast<int>(console_state.calendar_day_offset));
+        day_text = day_label;
+    }
+
+    const int label_width = text_width(day_text, kFooterFont, 1);
+    const int label_x = (kUiWidth - label_width) / 2;
+    framebuffer::draw_text(fb, label_x, kFooterY, day_text, true, kFooterFont, 1);
+    draw_calendar_footer_arrow(fb, label_x - kArrowGap, kFooterY + kArrowCentreYOffset, -1);
+    draw_calendar_footer_arrow(fb, label_x + label_width + kArrowGap,
+                               kFooterY + kArrowCentreYOffset, 1);
+}
+
+constexpr int kCalendarDetailTextX = 10;
+constexpr fonts::FontFace kCalendarDetailFont = fonts::FontFace::Font5x7;
+
+/// @brief Returns the value-column x-coordinate for compact Calendar details.
+/// @details The event-detail font is proportional, so spaces cannot be used for
+/// visual alignment. Measuring the widest rendered `Label:` gives a stable
+/// column for all values.
+int calendar_detail_value_x(const DetailRow* rows, size_t count)
+{
+    constexpr size_t kLabelBufferSize = 32U;
+    int widest_label_width = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        char label_text[kLabelBufferSize] = {};
+        std::snprintf(label_text, sizeof(label_text), "%s:", rows[i].label != nullptr
+                                                                  ? rows[i].label
+                                                                  : "");
+        widest_label_width =
+            std::max(widest_label_width, text_width(label_text, kCalendarDetailFont, 1));
+    }
+
+    return kCalendarDetailTextX + widest_label_width +
+           text_width(" ", kCalendarDetailFont, 1);
+}
+
+/// @brief Draws one compact Calendar detail line with pixel-aligned values.
+void draw_calendar_detail_line(uint8_t* fb, int y, const char* label, const char* value,
+                               int value_x)
+{
+    constexpr size_t kLabelBufferSize = 32U;
+    char label_text[kLabelBufferSize] = {};
+    std::snprintf(label_text, sizeof(label_text), "%s:", label != nullptr ? label : "");
+
+    framebuffer::draw_text(fb, kCalendarDetailTextX, y, label_text, true, kCalendarDetailFont, 1);
+    framebuffer::draw_text(fb, value_x, y, (value != nullptr && value[0] != '\0') ? value : "-",
+                           true, kCalendarDetailFont, 1);
+}
+
 /// @brief Produces a short user-facing weather-status fallback string.
 /// @details Home Assistant keeps the old end-user wording, while direct
 /// providers expose compact transport details because they are the only way to
@@ -1521,6 +1746,62 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                            home_ip_status_text(console_state.wifi_status, ip_text,
                                                sizeof(ip_text)),
                            true, kHomeIpFont, 1);
+}
+
+/// @brief Draws the family calendar overview selected from Home.
+/// @details Event summaries live on the surrounding softkeys. The centre area
+/// deliberately stays blank so the page remains a label-driven CCU view.
+void draw_calendar_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    draw_calendar_navigation_footer(fb, console_state);
+}
+
+/// @brief Draws detailed data for the selected family calendar event.
+/// @details The fields mirror upstream calendar properties that are useful on
+/// a small operational display: time, owner, location, reminders, attendees,
+/// and free-form description text.
+void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (console_state.selected_calendar_event_index >= console_state.calendar_events.size())
+    {
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO EVENT", true, fonts::FontFace::Font8x12, 1);
+        return;
+    }
+
+    const CalendarEvent& event =
+        console_state.calendar_events[console_state.selected_calendar_event_index];
+    if (event.title[0] == '\0')
+    {
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO EVENT", true, fonts::FontFace::Font8x12, 1);
+        return;
+    }
+
+    char owner_line[48] = {};
+    char time_line[48] = {};
+    std::snprintf(owner_line, sizeof(owner_line), "%s", calendar_owner_text(event.owner));
+    std::snprintf(time_line, sizeof(time_line), "%s-%s",
+                  event.start_time[0] != '\0' ? event.start_time.data() : "--:--",
+                  event.end_time[0] != '\0' ? event.end_time.data() : "--:--");
+
+    const DetailRow rows[] = {
+        {"Event", event.title.data()},
+        {"Time", time_line},
+        {"Owner", owner_line},
+        {"Location", event.location[0] != '\0' ? event.location.data() : "-"},
+        {"Alarm", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
+        {"Attendees", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
+        {"Detail", event.description[0] != '\0' ? event.description.data() : "-"},
+    };
+    constexpr int kStartY = 42;
+    constexpr int kRowPitch = 18;
+    constexpr size_t kRowCount = sizeof(rows) / sizeof(rows[0]);
+    const int value_x = calendar_detail_value_x(rows, kRowCount);
+
+    for (size_t i = 0; i < kRowCount; ++i)
+    {
+        draw_calendar_detail_line(fb, kStartY + (static_cast<int>(i) * kRowPitch),
+                                  rows[i].label, rows[i].value, value_x);
+    }
 }
 
 /// @brief Draws the live weather page reached directly from Home.
@@ -2090,6 +2371,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     {
     case MenuPage::Home:
         draw_home_page(fb, console_state);
+        break;
+    case MenuPage::Calendar:
+        draw_calendar_page(fb, console_state);
+        break;
+    case MenuPage::CalendarDetail:
+        draw_calendar_detail_page(fb, console_state);
         break;
     case MenuPage::Weather:
         draw_weather_page(fb, console_state);

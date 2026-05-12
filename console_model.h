@@ -123,6 +123,8 @@ enum class SystemTestState : uint8_t
 enum class MenuPage : uint8_t
 {
     Home = 0,
+    Calendar,
+    CalendarDetail,
     Weather,
     Status,
     Settings,
@@ -206,6 +208,7 @@ struct TimeStatus
 {
     bool synced;
     std::array<char, 6> time_text;
+    uint8_t weekday_index;
 };
 
 inline constexpr size_t kWeatherForecastEntryCount = 10;
@@ -308,6 +311,16 @@ enum class SharePeriod : uint8_t
     AllTime,
 };
 
+/// @brief Family calendar owner filter shown on the Calendar page.
+enum class CalendarOwner : uint8_t
+{
+    Combined = 0,
+    Sean,
+    Luigina,
+    Loris,
+    Luca,
+};
+
 /// @brief Selectable screen-saver modes exposed by the current UI.
 enum class ScreenSaverSelection : uint8_t
 {
@@ -340,6 +353,7 @@ enum class SoftKeyRoute : uint8_t
 {
     None = 0,
     GoHome,
+    GoCalendar,
     GoWeather,
     GoStatus,
     GoSettings,
@@ -396,6 +410,16 @@ enum class SoftKeyRoute : uint8_t
     GoShares,
     SelectShareSlot1,
     CycleSharePeriod,
+    CycleCalendarOwner,
+    SelectCalendarSlot1,
+    SelectCalendarSlot2,
+    SelectCalendarSlot3,
+    SelectCalendarSlot4,
+    SelectCalendarSlot5,
+    SelectCalendarSlot6,
+    SelectCalendarSlot7,
+    SelectCalendarSlot8,
+    SelectCalendarSlot9,
     PanelBrighter,
     PanelDimmer,
     KeysBrighter,
@@ -448,6 +472,26 @@ struct ShareMarketStatus
     std::array<ShareWatchEntry, 6> watched_shares;
 };
 
+inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
+inline constexpr int8_t kCalendarMinDayOffset = -14;
+inline constexpr int8_t kCalendarMaxDayOffset = 14;
+inline constexpr size_t kCalendarEventCapacity = 48;
+inline constexpr size_t kCalendarVisibleEventCount = 9;
+
+/// @brief One compact calendar row ready for display on a softkey.
+struct CalendarEvent
+{
+    CalendarOwner owner;
+    int8_t day_offset;
+    std::array<char, 6> start_time;
+    std::array<char, 6> end_time;
+    std::array<char, 32> title;
+    std::array<char, 40> location;
+    std::array<char, 32> reminder;
+    std::array<char, 48> attendees;
+    std::array<char, 64> description;
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 struct SoftKeyAction
 {
@@ -488,6 +532,10 @@ struct ConsoleState
     uint8_t settings_page_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
+    CalendarOwner calendar_owner;
+    int8_t calendar_day_offset;
+    uint8_t selected_calendar_event_index;
+    uint8_t calendar_event_count;
     SharePeriod share_period;
     bool share_data_configured;
     bool share_data_valid;
@@ -517,6 +565,7 @@ struct ConsoleState
     uint8_t alert_detail_scroll_line;
     MenuPage alert_parent_page;
     std::array<ActiveAlert, 24> active_alerts;
+    std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
     std::array<ShareWatchEntry, 6> watched_shares;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
