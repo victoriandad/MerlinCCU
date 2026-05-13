@@ -54,7 +54,8 @@ Still incomplete or provisional:
 The firmware currently exposes these operator/developer surfaces:
 
 - Physical display output through the EL320 scanout path.
-- Physical/provisional keypad input via `input.cpp` and `keypad_matrix_config.h`.
+- Physical/provisional keypad input via `src/core/input.cpp` and
+  `config/keypad_matrix_config.h`.
 - Local web configuration at `/config` or `/` when remote configuration is enabled.
 - Local browser preview at `/preview`.
 - Framebuffer snapshot endpoints at `/api/framebuffer` and `/api/framebuffer.pbm`.
@@ -68,13 +69,21 @@ The firmware is deliberately split into small managers rather than one large app
 
 Primary runtime flow:
 
-- `MerlinCCU.cpp` owns startup, the main loop, screen saver activation, and display present decisions.
-- `console_controller.cpp` owns UI state, softkey routing, alert state, and runtime config application.
-- `screens.cpp` draws the current menu/page into the back framebuffer.
-- `display.cpp` converts the UI framebuffer into the native panel raster and hands it to DMA.
-- `input.cpp` polls physical/provisional keypad wiring and emits logical button events.
-- `web_config_server.cpp` handles local HTTP configuration, preview, and virtual key input.
-- `wifi_manager.cpp`, `home_assistant_manager.cpp`, `mqtt_manager.cpp`, and `share_price_manager.cpp` advance network-facing state machines.
+- `src/core/MerlinCCU.cpp` owns startup, the main loop, screen saver
+  activation, and display present decisions.
+- `src/core/console_controller.cpp` owns UI state, softkey routing, alert
+  state, and runtime config application.
+- `src/display/screens.cpp` draws the current menu/page into the back
+  framebuffer.
+- `src/display/display.cpp` converts the UI framebuffer into the native panel
+  raster and hands it to DMA.
+- `src/core/input.cpp` polls physical/provisional keypad wiring and emits
+  logical button events.
+- `src/network/web_config_server.cpp` handles local HTTP configuration,
+  preview, and virtual key input.
+- `src/network/wifi_manager.cpp`, `src/network/home_assistant_manager.cpp`,
+  `src/network/mqtt_manager.cpp`, and `src/network/share_price_manager.cpp`
+  advance network-facing state machines.
 
 The important ownership rule is that UI state is changed through `console_controller`, and rendered frames are only presented after drawing a complete back buffer. This avoids partially updated menu frames becoming visible.
 
@@ -147,7 +156,9 @@ Keep CLI checks bounded to one configure/build pass so failures return the first
 
 Known build compatibility note:
 
-- `MerlinCCU.cpp` supports both newer and older generated PIO header symbol names (`kEl320RasterProgram` and `el320_raster_program`). This keeps clean and cached builds consistent across Pico SDK/pioasm combinations.
+- `src/core/MerlinCCU.cpp` supports both newer and older generated PIO header
+  symbol names (`kEl320RasterProgram` and `el320_raster_program`). This keeps
+  clean and cached builds consistent across Pico SDK/pioasm combinations.
 
 ## Configuration
 
@@ -155,11 +166,13 @@ Runtime settings are primarily persisted in Pico flash and can be edited from th
 
 Local machine- or network-specific fallback headers are intentionally kept out of git. Use the `.example` files as starting points:
 
-- `wifi_credentials.example.h` -> `wifi_credentials.h`
-- `home_assistant_credentials.example.h` -> `home_assistant_credentials.h`
-- `mqtt_credentials.example.h` -> `mqtt_credentials.h`
-- `weather_display_config.example.h` -> `weather_display_config.h`
-- `keypad_matrix_config.example.h` -> `keypad_matrix_config.h`
+- `config/wifi_credentials.example.h` -> `config/wifi_credentials.h`
+- `config/home_assistant_credentials.example.h` ->
+  `config/home_assistant_credentials.h`
+- `config/mqtt_credentials.example.h` -> `config/mqtt_credentials.h`
+- `config/weather_display_config.example.h` ->
+  `config/weather_display_config.h`
+- `config/keypad_matrix_config.example.h` -> `config/keypad_matrix_config.h`
 
 Recommended setup order:
 
@@ -182,33 +195,27 @@ Important limits:
 
 Core firmware:
 
-- `MerlinCCU.cpp`: startup, main loop, mode switching, and frame presentation.
-- `panel_config.h`: panel geometry, timing, and fixed scanout pin base.
-- `framebuffer.h` / `framebuffer.cpp`: 1-bit UI framebuffer and drawing helpers.
-- `display.h` / `display.cpp`: native raster composition, DMA, PIO setup, and display presentation.
-- `console_model.h` / `console_model.cpp`: UI state types and default state.
-- `console_controller.h` / `console_controller.cpp`: menu routing, softkeys, alerts, runtime config sync, and UI state changes.
-- `screens.h` / `screens.cpp`: page rendering.
-- `input.h` / `input.cpp`: keypad polling, matrix probing, debounced button events, and diagnostics.
+- `src/core/MerlinCCU.cpp`: startup, main loop, mode switching, and frame presentation.
+- `include/config/panel_config.h`: panel geometry, timing, and fixed scanout pin base.
+- `include/display/framebuffer.h` / `src/display/framebuffer.cpp`: 1-bit UI framebuffer and drawing helpers.
+- `include/display/display.h` / `src/display/display.cpp`: native raster composition, DMA, PIO setup, and display presentation.
+- `include/core/console_model.h` / `src/core/console_model.cpp`: UI state types and default state.
+- `include/core/console_controller.h` / `src/core/console_controller.cpp`: menu routing, softkeys, alerts, runtime config sync, and UI state changes.
+- `include/display/screens.h` / `src/display/screens.cpp`: page rendering.
+- `include/core/input.h` / `src/core/input.cpp`: keypad polling, matrix probing, debounced button events, and diagnostics.
 
 Network/config managers:
 
-- `config_manager.h` / `config_manager.cpp`: flash-backed runtime configuration.
-- `wifi_manager.h` / `wifi_manager.cpp`: Wi-Fi, DHCP/static IP, NetBIOS, SNTP, and reachability state.
-- `home_assistant_manager.h` / `home_assistant_manager.cpp`: Home Assistant and direct weather requests.
-- `mqtt_manager.h` / `mqtt_manager.cpp`: Home Assistant MQTT discovery/state publishing.
-- `share_price_manager.h` / `share_price_manager.cpp`: Yahoo Finance share data fetch and parsing.
-- `web_config_server.h` / `web_config_server.cpp`: local HTTP configuration and preview server.
+- `include/config/config_manager.h` / `src/config/config_manager.cpp`: flash-backed runtime configuration.
+- `include/network/wifi_manager.h` / `src/network/wifi_manager.cpp`: Wi-Fi, DHCP/static IP, NetBIOS, SNTP, and reachability state.
+- `include/network/home_assistant_manager.h` / `src/network/home_assistant_manager.cpp`: Home Assistant and direct weather requests.
+- `include/network/mqtt_manager.h` / `src/network/mqtt_manager.cpp`: Home Assistant MQTT discovery/state publishing.
+- `include/network/share_price_manager.h` / `src/network/share_price_manager.cpp`: Yahoo Finance share data fetch and parsing.
+- `include/network/web_config_server.h` / `src/network/web_config_server.cpp`: local HTTP configuration and preview server.
 
 Screen savers:
 
-- `screensaver_life.*`
-- `screensaver_clock.*`
-- `screensaver_starfield.*`
-- `screensaver_matrix.*`
-- `screensaver_radar.*`
-- `screensaver_rain.*`
-- `screensaver_worms.*`
+- `include/display/screensavers/` and `src/display/screensavers/`
 
 ## Signal Mapping
 
@@ -221,7 +228,8 @@ The active display firmware expects four contiguous GPIO pins starting at GPIO2:
 | `GPIO4` | `HS` |
 | `GPIO5` | `VS` |
 
-If display wiring changes, update `panel_config.h` and this README together.
+If display wiring changes, update `include/config/panel_config.h` and this
+README together.
 
 ## Keypad Bring-Up Status
 
@@ -231,7 +239,7 @@ Current firmware support:
 
 - Logical button IDs exist for the ten softkeys, navigation keys, clear/back, and numeric keys.
 - Matrix closure definitions exist for currently supported front-panel keys.
-- `keypad_matrix_config.h` maps observed panel pins to Pico GPIOs locally.
+- `config/keypad_matrix_config.h` maps observed panel pins to Pico GPIOs locally.
 - The diagnostics page shows active panel pins, active masks, probe drive pins, hit masks, and decoded key legends.
 - Alerts can detect suspicious keypad states such as `MULTI` or too many active lines.
 
@@ -300,7 +308,7 @@ Current practical pin budget:
 | Group | Pins | Current use / policy |
 | --- | --- | --- |
 | Display scanout | `GPIO2`, `GPIO3`, `GPIO4`, `GPIO5` | Reserved for `VID`, `VCLK`, `HS`, `VS` |
-| Keypad matrix bench set | Local `keypad_matrix_config.h` mapping | Used for current matrix monitoring/decoding wiring |
+| Keypad matrix bench set | Local `config/keypad_matrix_config.h` mapping | Used for current matrix monitoring/decoding wiring |
 | Spare digital GPIO | Depends on local keypad mapping | Candidate for LED control or spare logic inputs |
 | ADC-capable GPIO | `GPIO26`, `GPIO27`, `GPIO28` | Prefer for photoresistor or other analogue sensing |
 | Infrastructure pins | `VBUS`, `VSYS`, `3V3`, `ADC_VREF`, `RUN`, `GND` | Not general-purpose front-panel GPIO |
@@ -316,7 +324,7 @@ Recommended order:
 3. Bring up display rail power first, then verify `VID`, `VCLK`, `HS`, and `VS` still produce stable output.
 4. Connect keypad/backlight/LED rails as power or driven-output nets only after current paths are understood.
 5. Route photoresistor lines to ADC-capable pins if analogue readings are required.
-6. Update `Keyboard.xlsx`, `keypad_matrix_config.h`, and this README after final net names are confirmed.
+6. Update `Keyboard.xlsx`, `config/keypad_matrix_config.h`, and this README after final net names are confirmed.
 
 Safety rules:
 

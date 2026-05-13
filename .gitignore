@@ -5,11 +5,16 @@ build*/
 *.bin
 *.uf2
 *.map
-wifi_credentials.h
-home_assistant_credentials.h
-mqtt_credentials.h
-weather_display_config.h
-keypad_matrix_config.h
+/wifi_credentials.h
+/home_assistant_credentials.h
+/mqtt_credentials.h
+/weather_display_config.h
+/keypad_matrix_config.h
+/config/wifi_credentials.h
+/config/home_assistant_credentials.h
+/config/mqtt_credentials.h
+/config/weather_display_config.h
+/config/keypad_matrix_config.h
 
 # Python tooling cache
 __pycache__/

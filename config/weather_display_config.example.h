@@ -1,7 +1,7 @@
 #pragma once
 
 /// @brief Optional Home Assistant weather display settings.
-/// @details Copy this file to `weather_display_config.h` only if you want the
+/// @details Copy this file to `config/weather_display_config.h` only if you want the
 /// Home page to show current weather from a Home Assistant `weather.*` entity.
 ///
 /// This does not talk to an internet weather API directly. Instead, MerlinCCU
@@ -10,7 +10,7 @@
 /// data via Home Assistant's `weather/get_forecasts` service when available.
 ///
 /// Quick start:
-/// 1. Copy this file to `weather_display_config.h`.
+/// 1. Copy this file to `config/weather_display_config.h`.
 /// 2. Set `HOME_ASSISTANT_WEATHER_ENTITY_ID` to a real Home Assistant weather
 ///    entity, for example `weather.forecast_home`.
 /// 3. Optionally set `HOME_ASSISTANT_WEATHER_SOURCE_LABEL` as a fallback label

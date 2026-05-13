@@ -1,14 +1,14 @@
 #pragma once
 
 /// @brief Local Home Assistant API settings.
-/// @details Copy this file to `home_assistant_credentials.h`, fill in your
+/// @details Copy this file to `config/home_assistant_credentials.h`, fill in your
 /// real values, and keep that local file out of version control.
 ///
 /// This initial integration uses plain HTTP on your local network and performs
 /// an authenticated `GET /api/` probe with a long-lived access token.
 ///
 /// Quick start:
-/// 1. Copy this file to `home_assistant_credentials.h`.
+/// 1. Copy this file to `config/home_assistant_credentials.h`.
 /// 2. Set `HOME_ASSISTANT_HOST` to your HA box, usually a LAN IP or
 ///    `homeassistant.local`.
 /// 3. Set `HOME_ASSISTANT_TOKEN` to a Home Assistant long-lived access token.

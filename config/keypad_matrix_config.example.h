@@ -1,6 +1,6 @@
 #pragma once
 
-// Copy this file to keypad_matrix_config.h and fill in the Pico GPIO connected
+// Copy this file to config/keypad_matrix_config.h and fill in the Pico GPIO connected
 // to each front-panel ribbon pin you want to monitor during keypad bring-up.
 //
 // Use -1 for any line that is not wired yet.

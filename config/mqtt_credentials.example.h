@@ -1,7 +1,7 @@
 #pragma once
 
 /// @brief Local MQTT broker settings for Home Assistant discovery.
-/// @details Copy this file to `mqtt_credentials.h`, fill in the broker details,
+/// @details Copy this file to `config/mqtt_credentials.h`, fill in the broker details,
 /// and keep that local file out of version control.
 ///
 /// This integration follows Home Assistant MQTT discovery. The default discovery
@@ -11,7 +11,7 @@
 /// A Home Assistant MQTT integration and broker must already be set up.
 ///
 /// Quick start:
-/// 1. Copy this file to `mqtt_credentials.h`.
+/// 1. Copy this file to `config/mqtt_credentials.h`.
 /// 2. Set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP.
 /// 3. Leave the port at `1883` unless your broker uses a different plain MQTT
 ///    listener.
@@ -21,7 +21,7 @@
 ///    are configured to use a different discovery root.
 ///
 /// These are broker credentials, not the Home Assistant REST token used by
-/// `home_assistant_credentials.h`.
+/// `config/home_assistant_credentials.h`.
 
 inline constexpr char HOME_ASSISTANT_MQTT_HOST[] = "";
 inline constexpr uint16_t HOME_ASSISTANT_MQTT_PORT = 1883;

@@ -5,13 +5,13 @@ better than broad refactors.
 
 ## Setup Checklist
 
-1. Copy `wifi_credentials.example.h` to `wifi_credentials.h` and fill in your
-   Wi-Fi settings.
+1. Copy `config/wifi_credentials.example.h` to
+   `config/wifi_credentials.h` and fill in your Wi-Fi settings.
 2. If you want Home Assistant REST support, copy
-   `home_assistant_credentials.example.h` to
-   `home_assistant_credentials.h`.
+   `config/home_assistant_credentials.example.h` to
+   `config/home_assistant_credentials.h`.
 3. If you want Home Assistant MQTT discovery, copy
-   `mqtt_credentials.example.h` to `mqtt_credentials.h`.
+   `config/mqtt_credentials.example.h` to `config/mqtt_credentials.h`.
 4. Keep those local credential files out of version control.
 
 ## Working Rules
@@ -103,15 +103,15 @@ better than broad refactors.
 
 ## Useful Files
 
-- `MerlinCCU.cpp`
+- `src/core/MerlinCCU.cpp`
   Main loop and module wiring.
-- `display.*`
+- `src/display/display.*`
   Raster generation, PIO scanout, and DMA handoff.
-- `framebuffer.*`
+- `src/display/framebuffer.*`
   UI drawing primitives and text rendering.
-- `wifi_manager.*`
+- `src/network/wifi_manager.*`
   Pico W connection management and internet probe state.
-- `home_assistant_manager.*`
+- `src/network/home_assistant_manager.*`
   REST-based Home Assistant status integration.
-- `mqtt_manager.*`
+- `src/network/mqtt_manager.*`
   MQTT discovery and retained sensor publishing.

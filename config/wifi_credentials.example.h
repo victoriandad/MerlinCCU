@@ -1,7 +1,7 @@
 #pragma once
 
 /// @brief Local Wi-Fi credentials for Pico W bring-up.
-/// @details Copy this file to `wifi_credentials.h`, fill in your real values,
+/// @details Copy this file to `config/wifi_credentials.h`, fill in your real values,
 /// and keep that local file out of version control.
 ///
 /// The preferred simple form mirrors the official Pico W examples. If you need
@@ -9,7 +9,7 @@
 /// `WIFI_COUNTRY` before the credentials.
 ///
 /// Quick start:
-/// 1. Copy this file to `wifi_credentials.h`.
+/// 1. Copy this file to `config/wifi_credentials.h`.
 /// 2. Replace `WIFI_SSID` and `WIFI_PASSWORD`.
 /// 3. Leave the auth and country defaults alone unless your AP needs different
 ///    values.

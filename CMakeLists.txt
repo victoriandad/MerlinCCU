@@ -35,35 +35,35 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 add_executable(MerlinCCU
-    MerlinCCU.cpp
-    config_manager.cpp
-    console_controller.cpp
-    console_model.cpp
-    display.cpp
-    framebuffer.cpp
-    home_assistant_manager.cpp
-    input.cpp
-    mqtt_manager.cpp
-    screen_banners.cpp
-    screens.cpp
-    share_price_manager.cpp
-    screensaver_clock.cpp
-    screensaver_life.cpp
-    screensaver_matrix.cpp
-    screensaver_radar.cpp
-    screensaver_rain.cpp
-    screensaver_starfield.cpp
-    screensaver_worms.cpp
-    time_manager.cpp
-    web_config_server.cpp
-    wifi_manager.cpp
+    src/core/MerlinCCU.cpp
+    src/core/console_controller.cpp
+    src/core/console_model.cpp
+    src/core/input.cpp
+    src/config/config_manager.cpp
+    src/display/display.cpp
+    src/display/framebuffer.cpp
+    src/display/screen_banners.cpp
+    src/display/screens.cpp
+    src/display/screensavers/screensaver_clock.cpp
+    src/display/screensavers/screensaver_life.cpp
+    src/display/screensavers/screensaver_matrix.cpp
+    src/display/screensavers/screensaver_radar.cpp
+    src/display/screensavers/screensaver_rain.cpp
+    src/display/screensavers/screensaver_starfield.cpp
+    src/display/screensavers/screensaver_worms.cpp
+    src/network/home_assistant_manager.cpp
+    src/network/mqtt_manager.cpp
+    src/network/share_price_manager.cpp
+    src/network/time_manager.cpp
+    src/network/web_config_server.cpp
+    src/network/wifi_manager.cpp
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
 pico_set_program_version(MerlinCCU "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(MerlinCCU ${CMAKE_CURRENT_LIST_DIR}/el320_raster.pio)
+pico_generate_pio_header(MerlinCCU ${CMAKE_CURRENT_LIST_DIR}/firmware/el320_raster.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(MerlinCCU 0)
@@ -76,7 +76,14 @@ target_link_libraries(MerlinCCU
 
 # Add the standard include files to the build
 target_include_directories(MerlinCCU PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/include
+    ${CMAKE_CURRENT_LIST_DIR}/include/config
+    ${CMAKE_CURRENT_LIST_DIR}/include/core
+    ${CMAKE_CURRENT_LIST_DIR}/include/display
+    ${CMAKE_CURRENT_LIST_DIR}/include/display/fonts
+    ${CMAKE_CURRENT_LIST_DIR}/include/display/screensavers
+    ${CMAKE_CURRENT_LIST_DIR}/include/network
+    ${CMAKE_CURRENT_LIST_DIR}/config
 )
 
 set_source_files_properties(
