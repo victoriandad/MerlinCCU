@@ -142,6 +142,8 @@ ConsoleState make_default_console_state()
     state.home_assistant_status.sunset_text.fill('\0');
     state.home_assistant_status.weather_forecast_count = 0;
     state.home_assistant_status.weather_daily_forecast_count = 0;
+    state.home_assistant_status.weather_metrics = {};
+    state.home_assistant_status.weather_alert_status = {};
 
     // Forecast rows are fully cleared so pages can safely treat an empty string
     // as "no data yet" without tracking separate validity flags.

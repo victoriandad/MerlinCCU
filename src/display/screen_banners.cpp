@@ -219,8 +219,7 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     }
     draw_internet_icon(fb, icon_x, kHeaderStatusIconY, console_state.wifi_status.internet_reachable,
                        console_state.wifi_status.internet_probe_pending);
-    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true, fonts::FontFace::Font8x12,
-                           1);
+    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true, fonts::FontFace::Font8x12, 1);
 }
 
 /// @brief Draws the standard banner set used by the current UI pages.

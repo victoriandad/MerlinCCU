@@ -248,6 +248,73 @@ inline bool operator==(const WeatherDailyForecastEntry& lhs, const WeatherDailyF
            lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
 }
 
+/// @brief Typed weather values used for provider-neutral alert rules.
+/// @details Display rows keep compact text because the EL320 UI needs fixed
+/// buffers. Alerts need numeric values, so providers normalise current and
+/// short-range forecast facts into this side-channel while preserving the
+/// existing display payload.
+struct WeatherMetrics
+{
+    bool current_temperature_celsius_valid;
+    float current_temperature_celsius;
+    bool current_wind_speed_mph_valid;
+    float current_wind_speed_mph;
+    bool forecast_min_temperature_celsius_valid;
+    float forecast_min_temperature_celsius;
+    bool forecast_max_temperature_celsius_valid;
+    float forecast_max_temperature_celsius;
+    bool forecast_max_wind_speed_mph_valid;
+    float forecast_max_wind_speed_mph;
+};
+
+/// @brief Compares provider-neutral weather metrics field-by-field.
+inline bool operator==(const WeatherMetrics& lhs, const WeatherMetrics& rhs)
+{
+    return lhs.current_temperature_celsius_valid == rhs.current_temperature_celsius_valid &&
+           lhs.current_temperature_celsius == rhs.current_temperature_celsius &&
+           lhs.current_wind_speed_mph_valid == rhs.current_wind_speed_mph_valid &&
+           lhs.current_wind_speed_mph == rhs.current_wind_speed_mph &&
+           lhs.forecast_min_temperature_celsius_valid ==
+               rhs.forecast_min_temperature_celsius_valid &&
+           lhs.forecast_min_temperature_celsius == rhs.forecast_min_temperature_celsius &&
+           lhs.forecast_max_temperature_celsius_valid ==
+               rhs.forecast_max_temperature_celsius_valid &&
+           lhs.forecast_max_temperature_celsius == rhs.forecast_max_temperature_celsius &&
+           lhs.forecast_max_wind_speed_mph_valid == rhs.forecast_max_wind_speed_mph_valid &&
+           lhs.forecast_max_wind_speed_mph == rhs.forecast_max_wind_speed_mph;
+}
+
+inline bool operator!=(const WeatherMetrics& lhs, const WeatherMetrics& rhs)
+{
+    return !(lhs == rhs);
+}
+
+/// @brief One provider-originated weather warning normalised for the ALRT page.
+/// @details Official warning APIs are not wired yet. The field still gives
+/// current providers a stable place to surface severe condition telemetry
+/// without coupling the alert page to Home Assistant or Open-Meteo payloads.
+struct WeatherAlertStatus
+{
+    bool provider_warning_active;
+    AlertSeverity provider_warning_severity;
+    std::array<char, 32> provider_warning_summary;
+    std::array<char, 160> provider_warning_detail;
+};
+
+/// @brief Compares provider-originated warning state field-by-field.
+inline bool operator==(const WeatherAlertStatus& lhs, const WeatherAlertStatus& rhs)
+{
+    return lhs.provider_warning_active == rhs.provider_warning_active &&
+           lhs.provider_warning_severity == rhs.provider_warning_severity &&
+           lhs.provider_warning_summary == rhs.provider_warning_summary &&
+           lhs.provider_warning_detail == rhs.provider_warning_detail;
+}
+
+inline bool operator!=(const WeatherAlertStatus& lhs, const WeatherAlertStatus& rhs)
+{
+    return !(lhs == rhs);
+}
+
 /// @brief Snapshot of Home Assistant state suitable for UI and controller use.
 struct HomeAssistantStatus
 {
@@ -270,6 +337,8 @@ struct HomeAssistantStatus
     std::array<WeatherForecastEntry, kWeatherForecastEntryCount> weather_forecast;
     uint8_t weather_daily_forecast_count;
     std::array<WeatherDailyForecastEntry, kWeatherDailyForecastEntryCount> weather_daily_forecast;
+    WeatherMetrics weather_metrics;
+    WeatherAlertStatus weather_alert_status;
     std::array<char, 48> self_entity_id;
 };
 

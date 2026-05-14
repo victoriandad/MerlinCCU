@@ -298,8 +298,9 @@ int main()
         // events into menu/state changes before the integrations update.
         const ButtonEvent event = input::poll_buttons();
         input::handle_button_event(event);
+        const bool web_user_activity = console_controller::consume_user_activity_request();
         const bool any_key_activity =
-            (event.type == ButtonEventType::Pressed) ||
+            (event.type == ButtonEventType::Pressed) || web_user_activity ||
             (input::keypad_monitor_status().active_count > 0);
         bool console_changed = false;
 

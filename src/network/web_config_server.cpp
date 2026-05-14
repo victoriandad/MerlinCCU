@@ -1919,6 +1919,11 @@ bool handle_button_post(const char* body, char* message, size_t message_size)
     }
 
     const ButtonEvent event = {id, type};
+    if (type == ButtonEventType::Pressed)
+    {
+        console_controller::request_user_activity();
+    }
+
     const bool changed = console_controller::handle_button_event(event);
     if (changed)
     {
@@ -1949,6 +1954,7 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
 
     if (std::strcmp(action_text, "cycle_alert") == 0)
     {
+        console_controller::request_user_activity();
         (void)console_controller::cycle_alert_lamp_preview();
         console_controller::request_redraw();
         std::snprintf(message, message_size, "Preview ALRT lamp cycled.");
@@ -1957,6 +1963,7 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
 
     if (std::strcmp(action_text, "open_alerts") == 0)
     {
+        console_controller::request_user_activity();
         bool changed = false;
         if (console_controller::state().alert_count <= 1U)
         {
@@ -1981,6 +1988,7 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
 
     if (std::strcmp(action_text, "cycle_test") == 0)
     {
+        console_controller::request_user_activity();
         (void)console_controller::cycle_test_lamp_preview();
         console_controller::request_redraw();
         std::snprintf(message, message_size, "Preview TEST lamp cycled.");

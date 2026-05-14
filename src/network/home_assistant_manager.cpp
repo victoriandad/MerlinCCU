@@ -1,5 +1,6 @@
 #include "home_assistant_manager.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdarg>
@@ -1022,20 +1023,62 @@ bool format_compact_scalar_value(const char* scalar_text, char* out, size_t out_
     return out[0] != '\0';
 }
 
-/// @brief Converts a provider wind-speed reading into mph text.
-bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, char* out,
-                               size_t out_size)
+/// @brief Parses one provider numeric scalar into a float.
+bool parse_float_value(const char* value_text, float* out)
 {
-    if (speed_text == nullptr || out == nullptr || out_size == 0)
+    if (value_text == nullptr || out == nullptr)
     {
         return false;
     }
 
-    out[0] = '\0';
-
     char* parse_end = nullptr;
-    const float raw_value = std::strtof(speed_text, &parse_end);
-    if (parse_end == speed_text || parse_end == nullptr || *parse_end != '\0')
+    const float value = std::strtof(value_text, &parse_end);
+    if (parse_end == value_text || parse_end == nullptr)
+    {
+        return false;
+    }
+
+    while (*parse_end != '\0')
+    {
+        if (!std::isspace(static_cast<unsigned char>(*parse_end)))
+        {
+            return false;
+        }
+        ++parse_end;
+    }
+
+    *out = value;
+    return true;
+}
+
+/// @brief Converts a provider temperature reading into Celsius for alert thresholds.
+bool convert_temperature_to_celsius(const char* temperature_text, char source_unit, float* out)
+{
+    float raw_value = 0.0F;
+    if (!parse_float_value(temperature_text, &raw_value) || out == nullptr)
+    {
+        return false;
+    }
+
+    if (source_unit == 'C' || source_unit == 'c')
+    {
+        *out = raw_value;
+        return true;
+    }
+    if (source_unit == 'F' || source_unit == 'f')
+    {
+        *out = (raw_value - 32.0F) * (5.0F / 9.0F);
+        return true;
+    }
+
+    return false;
+}
+
+/// @brief Converts a provider wind-speed reading into mph for alert thresholds.
+bool convert_wind_speed_to_mph_value(const char* speed_text, const char* source_unit, float* out)
+{
+    float raw_value = 0.0F;
+    if (!parse_float_value(speed_text, &raw_value) || out == nullptr)
     {
         return false;
     }
@@ -1065,17 +1108,32 @@ bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, 
                 0.0F,  1.0F,  4.0F,  8.0F,  13.0F, 19.0F, 25.0F,
                 32.0F, 39.0F, 47.0F, 55.0F, 64.0F, 73.0F, 83.0F,
             };
-            int index = static_cast<int>(std::lround(raw_value));
-            if (index < 0)
-            {
-                index = 0;
-            }
-            else if (index >= static_cast<int>(sizeof(kBeaufortToMph) / sizeof(kBeaufortToMph[0])))
-            {
-                index = static_cast<int>((sizeof(kBeaufortToMph) / sizeof(kBeaufortToMph[0])) - 1);
-            }
+            const int index = std::clamp(
+                static_cast<int>(std::lround(raw_value)), 0,
+                static_cast<int>((sizeof(kBeaufortToMph) / sizeof(kBeaufortToMph[0])) - 1));
             mph_value = kBeaufortToMph[index];
         }
+    }
+
+    *out = mph_value;
+    return true;
+}
+
+/// @brief Converts a provider wind-speed reading into mph text.
+bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, char* out,
+                               size_t out_size)
+{
+    if (out == nullptr || out_size == 0)
+    {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    float mph_value = 0.0F;
+    if (!convert_wind_speed_to_mph_value(speed_text, source_unit, &mph_value))
+    {
+        return false;
     }
 
     const int rounded = static_cast<int>(std::lround(mph_value));
@@ -1168,6 +1226,108 @@ bool format_compact_wind_text(const char* speed_text, const char* bearing_text, 
     }
 
     return false;
+}
+
+/// @brief Clears typed current-weather values used by threshold alerts.
+void clear_current_weather_metrics()
+{
+    g_status.weather_metrics.current_temperature_celsius_valid = false;
+    g_status.weather_metrics.current_temperature_celsius = 0.0F;
+    g_status.weather_metrics.current_wind_speed_mph_valid = false;
+    g_status.weather_metrics.current_wind_speed_mph = 0.0F;
+}
+
+/// @brief Clears typed forecast values used by threshold alerts.
+void clear_forecast_weather_metrics()
+{
+    g_status.weather_metrics.forecast_min_temperature_celsius_valid = false;
+    g_status.weather_metrics.forecast_min_temperature_celsius = 0.0F;
+    g_status.weather_metrics.forecast_max_temperature_celsius_valid = false;
+    g_status.weather_metrics.forecast_max_temperature_celsius = 0.0F;
+    g_status.weather_metrics.forecast_max_wind_speed_mph_valid = false;
+    g_status.weather_metrics.forecast_max_wind_speed_mph = 0.0F;
+}
+
+/// @brief Clears provider-originated weather warning state.
+void clear_weather_alert_status()
+{
+    g_status.weather_alert_status.provider_warning_active = false;
+    g_status.weather_alert_status.provider_warning_severity = AlertSeverity::None;
+    g_status.weather_alert_status.provider_warning_summary.fill('\0');
+    g_status.weather_alert_status.provider_warning_detail.fill('\0');
+}
+
+/// @brief Adds one temperature reading to the cached forecast alert range.
+void include_forecast_temperature_celsius(float temperature_celsius)
+{
+    WeatherMetrics& metrics = g_status.weather_metrics;
+    if (!metrics.forecast_min_temperature_celsius_valid ||
+        temperature_celsius < metrics.forecast_min_temperature_celsius)
+    {
+        metrics.forecast_min_temperature_celsius = temperature_celsius;
+        metrics.forecast_min_temperature_celsius_valid = true;
+    }
+
+    if (!metrics.forecast_max_temperature_celsius_valid ||
+        temperature_celsius > metrics.forecast_max_temperature_celsius)
+    {
+        metrics.forecast_max_temperature_celsius = temperature_celsius;
+        metrics.forecast_max_temperature_celsius_valid = true;
+    }
+}
+
+/// @brief Adds one wind-speed reading to the cached forecast alert maximum.
+void include_forecast_wind_speed_mph(float wind_speed_mph)
+{
+    WeatherMetrics& metrics = g_status.weather_metrics;
+    if (!metrics.forecast_max_wind_speed_mph_valid ||
+        wind_speed_mph > metrics.forecast_max_wind_speed_mph)
+    {
+        metrics.forecast_max_wind_speed_mph = wind_speed_mph;
+        metrics.forecast_max_wind_speed_mph_valid = true;
+    }
+}
+
+/// @brief Returns whether a provider condition is severe enough to surface as a warning.
+bool weather_condition_is_warning(const char* condition_text)
+{
+    if (condition_text == nullptr)
+    {
+        return false;
+    }
+
+    char normalized[32] = {};
+    size_t out_index = 0;
+    for (size_t i = 0; condition_text[i] != '\0' && out_index + 1 < sizeof(normalized); ++i)
+    {
+        normalized[out_index++] =
+            static_cast<char>(std::tolower(static_cast<unsigned char>(condition_text[i])));
+    }
+    normalized[out_index] = '\0';
+
+    return std::strstr(normalized, "lightning") != nullptr ||
+           std::strstr(normalized, "thunder") != nullptr ||
+           std::strstr(normalized, "hail") != nullptr ||
+           std::strstr(normalized, "tornado") != nullptr ||
+           std::strstr(normalized, "hurricane") != nullptr;
+}
+
+/// @brief Records one severe provider condition as a weather warning for the ALRT page.
+void record_weather_condition_warning(const char* condition_text, const char* source_context)
+{
+    if (!weather_condition_is_warning(condition_text))
+    {
+        return;
+    }
+
+    WeatherAlertStatus& warning = g_status.weather_alert_status;
+    warning.provider_warning_active = true;
+    warning.provider_warning_severity = AlertSeverity::Warning;
+    std::snprintf(warning.provider_warning_summary.data(),
+                  warning.provider_warning_summary.size(), "%s", "WX WARNING");
+    std::snprintf(warning.provider_warning_detail.data(), warning.provider_warning_detail.size(),
+                  "Weather source reports %s%s.\nCheck the latest local forecast before travel.",
+                  condition_text, source_context != nullptr ? source_context : "");
 }
 
 /// @brief Updates the user-facing weather source hint from a weather entity payload.
@@ -1346,6 +1506,7 @@ void update_sun_times_from_json(const char* json)
 void clear_weather_forecast()
 {
     g_status.weather_forecast_count = 0;
+    clear_forecast_weather_metrics();
     for (auto& entry : g_status.weather_forecast)
     {
         entry.time_text.fill('\0');
@@ -1578,6 +1739,13 @@ bool parse_hourly_forecast_response(const char* json)
         if (extract_json_scalar_value(object_json, "\"temperature\":", temperature_text,
                                       sizeof(temperature_text)))
         {
+            float temperature_celsius = 0.0F;
+            if (convert_temperature_to_celsius(temperature_text, g_weather_temperature_unit,
+                                               &temperature_celsius))
+            {
+                include_forecast_temperature_celsius(temperature_celsius);
+            }
+
             if (g_weather_temperature_unit != '\0')
             {
                 std::snprintf(g_status.weather_forecast[g_status.weather_forecast_count]
@@ -1606,6 +1774,15 @@ bool parse_hourly_forecast_response(const char* json)
                                       sizeof(wind_bearing_text)) ||
             extract_json_scalar_value(object_json, "\"wind_bearing\":", wind_bearing_text,
                                       sizeof(wind_bearing_text));
+        if (have_wind_speed)
+        {
+            float wind_speed_mph = 0.0F;
+            if (convert_wind_speed_to_mph_value(wind_speed_text, g_weather_wind_source_unit,
+                                                &wind_speed_mph))
+            {
+                include_forecast_wind_speed_mph(wind_speed_mph);
+            }
+        }
 
         if (format_compact_wind_text(
                 have_wind_speed ? wind_speed_text : nullptr,
@@ -1624,6 +1801,7 @@ bool parse_hourly_forecast_response(const char* json)
         {
             copy_text(g_status.weather_forecast[g_status.weather_forecast_count].condition_text,
                       friendly_weather_condition(condition_text));
+            record_weather_condition_warning(condition_text, " in the hourly forecast");
         }
         else
         {
@@ -1735,6 +1913,7 @@ bool parse_daily_forecast_response(const char* json)
                                       sizeof(condition_text)))
         {
             copy_text(entry.condition_text, friendly_weather_condition(condition_text));
+            record_weather_condition_warning(condition_text, " in the daily forecast");
         }
         else
         {
@@ -1921,6 +2100,12 @@ bool parse_open_meteo_weather(const char* json)
         return false;
     }
 
+    clear_current_weather_metrics();
+    clear_weather_alert_status();
+    g_weather_temperature_unit = 'C';
+    std::snprintf(g_weather_wind_source_unit, sizeof(g_weather_wind_source_unit), "%s", "mph");
+    copy_text(g_status.weather_wind_unit, "mph");
+
     const char* current_section = std::strstr(json, "\"current\":{");
     if (current_section == nullptr)
     {
@@ -1932,6 +2117,14 @@ bool parse_open_meteo_weather(const char* json)
         extract_json_scalar_value(current_section, "\"temperature_2m\":", temperature,
                                   sizeof(temperature)))
     {
+        float temperature_celsius = 0.0F;
+        if (convert_temperature_to_celsius(temperature, g_weather_temperature_unit,
+                                           &temperature_celsius))
+        {
+            g_status.weather_metrics.current_temperature_celsius = temperature_celsius;
+            g_status.weather_metrics.current_temperature_celsius_valid = true;
+        }
+
         char formatted_temperature[sizeof(g_status.weather_temperature)] = {};
         std::snprintf(formatted_temperature, sizeof(formatted_temperature), "%s C", temperature);
         copy_text(g_status.weather_temperature, formatted_temperature);
@@ -1946,17 +2139,30 @@ bool parse_open_meteo_weather(const char* json)
         extract_json_scalar_value(current_section, "\"weather_code\":", weather_code_text,
                                   sizeof(weather_code_text)))
     {
-        copy_text(g_status.weather_condition,
-                  open_meteo_condition_from_code(std::atoi(weather_code_text)));
+        const char* condition = open_meteo_condition_from_code(std::atoi(weather_code_text));
+        copy_text(g_status.weather_condition, condition);
+        record_weather_condition_warning(condition, " now");
     }
     else
     {
         copy_text(g_status.weather_condition, "Weather");
     }
 
-    g_weather_temperature_unit = 'C';
-    std::snprintf(g_weather_wind_source_unit, sizeof(g_weather_wind_source_unit), "%s", "mph");
-    copy_text(g_status.weather_wind_unit, "mph");
+    char current_wind_speed_text[16] = {};
+    if (current_section != nullptr &&
+        (extract_json_scalar_value(current_section, "\"wind_speed_10m\":", current_wind_speed_text,
+                                   sizeof(current_wind_speed_text)) ||
+         extract_json_scalar_value(current_section, "\"windspeed\":", current_wind_speed_text,
+                                   sizeof(current_wind_speed_text))))
+    {
+        float current_wind_speed_mph = 0.0F;
+        if (convert_wind_speed_to_mph_value(current_wind_speed_text, g_weather_wind_source_unit,
+                                            &current_wind_speed_mph))
+        {
+            g_status.weather_metrics.current_wind_speed_mph = current_wind_speed_mph;
+            g_status.weather_metrics.current_wind_speed_mph_valid = true;
+        }
+    }
 
     const char* hourly_time_array = find_json_array_start(json, "\"hourly\":{\"time\":");
     const char* hourly_temp_array = find_json_array_start(json, "\"hourly\":{\"time\":");
@@ -2014,14 +2220,30 @@ bool parse_open_meteo_weather(const char* json)
             continue;
         }
 
+        float temperature_celsius = 0.0F;
+        if (convert_temperature_to_celsius(temperature_text, g_weather_temperature_unit,
+                                           &temperature_celsius))
+        {
+            include_forecast_temperature_celsius(temperature_celsius);
+        }
+
         std::snprintf(entry.temperature_text.data(), entry.temperature_text.size(), "%s C",
                       temperature_text);
+        float wind_speed_mph = 0.0F;
+        if (convert_wind_speed_to_mph_value(wind_text, g_weather_wind_source_unit,
+                                            &wind_speed_mph))
+        {
+            include_forecast_wind_speed_mph(wind_speed_mph);
+        }
+
         if (!format_compact_wind_text(wind_text, direction_text, entry.wind_text.data(),
                                       entry.wind_text.size()))
         {
             copy_text(entry.wind_text, "-");
         }
-        copy_text(entry.condition_text, open_meteo_condition_from_code(std::atoi(code_text)));
+        const char* condition = open_meteo_condition_from_code(std::atoi(code_text));
+        copy_text(entry.condition_text, condition);
+        record_weather_condition_warning(condition, " in the hourly forecast");
         ++g_status.weather_forecast_count;
     }
 
@@ -2095,7 +2317,9 @@ bool parse_open_meteo_weather(const char* json)
                 copy_text(entry.wind_text, "-");
             }
 
-            copy_text(entry.condition_text, open_meteo_condition_from_code(std::atoi(code_text)));
+            const char* condition = open_meteo_condition_from_code(std::atoi(code_text));
+            copy_text(entry.condition_text, condition);
+            record_weather_condition_warning(condition, " in the daily forecast");
             ++g_status.weather_daily_forecast_count;
         }
     }
@@ -2117,6 +2341,8 @@ void clear_runtime_data()
     g_status.weather_wind_unit.fill('\0');
     g_status.sunrise_text.fill('\0');
     g_status.sunset_text.fill('\0');
+    clear_current_weather_metrics();
+    clear_weather_alert_status();
     clear_weather_forecast();
     clear_weather_daily_forecast();
     g_weather_temperature_unit = '\0';
@@ -2774,6 +3000,10 @@ void handle_http_status(int http_status)
         g_status.sunset_text.fill('\0');
         copy_text(g_status.weather_condition, "No data");
         g_status.weather_temperature.fill('\0');
+        clear_current_weather_metrics();
+        clear_weather_alert_status();
+        g_weather_temperature_unit = '\0';
+        g_weather_wind_source_unit[0] = '\0';
         g_status.last_http_status = http_status;
         direct_weather_log("http=%d parse failed bytes=%u body=%u\n", http_status,
                            static_cast<unsigned>(g_response_len),
@@ -2807,14 +3037,20 @@ void handle_http_status(int http_status)
             char raw_condition[24] = {};
             char raw_temperature[12] = {};
             char raw_unit[8] = {};
+            char raw_wind_speed[16] = {};
             char raw_wind_unit[16] = {};
 
+            clear_current_weather_metrics();
+            clear_weather_alert_status();
+            g_weather_temperature_unit = '\0';
+            g_weather_wind_source_unit[0] = '\0';
             update_weather_source_hint_from_json(response_body());
 
             if (extract_json_string_value(response_body(), "\"state\":\"", raw_condition,
                                           sizeof(raw_condition)))
             {
                 copy_text(g_status.weather_condition, friendly_weather_condition(raw_condition));
+                record_weather_condition_warning(raw_condition, " now");
             }
             else
             {
@@ -2831,6 +3067,15 @@ void handle_http_status(int http_status)
                     g_weather_temperature_unit = unit;
                     if (unit != '\0')
                     {
+                        float temperature_celsius = 0.0F;
+                        if (convert_temperature_to_celsius(raw_temperature, unit,
+                                                           &temperature_celsius))
+                        {
+                            g_status.weather_metrics.current_temperature_celsius =
+                                temperature_celsius;
+                            g_status.weather_metrics.current_temperature_celsius_valid = true;
+                        }
+
                         char formatted_temperature[sizeof(g_status.weather_temperature)] = {};
                         std::snprintf(formatted_temperature, sizeof(formatted_temperature), "%s %c",
                                       raw_temperature, unit);
@@ -2862,6 +3107,18 @@ void handle_http_status(int http_status)
             {
                 g_weather_wind_source_unit[0] = '\0';
                 g_status.weather_wind_unit.fill('\0');
+            }
+
+            if (extract_json_scalar_value(response_body(), "\"wind_speed\":", raw_wind_speed,
+                                          sizeof(raw_wind_speed)))
+            {
+                float wind_speed_mph = 0.0F;
+                if (convert_wind_speed_to_mph_value(raw_wind_speed, g_weather_wind_source_unit,
+                                                    &wind_speed_mph))
+                {
+                    g_status.weather_metrics.current_wind_speed_mph = wind_speed_mph;
+                    g_status.weather_metrics.current_wind_speed_mph_valid = true;
+                }
             }
 
             PERIODIC_LOG("HA weather %s=%s %s\n", g_status.weather_entity_id.data(),
@@ -2953,6 +3210,9 @@ void handle_http_status(int http_status)
         g_status.weather_condition.fill('\0');
         g_status.weather_temperature.fill('\0');
         g_status.weather_wind_unit.fill('\0');
+        clear_current_weather_metrics();
+        clear_weather_alert_status();
+        g_weather_temperature_unit = '\0';
         g_weather_wind_source_unit[0] = '\0';
         reset_attempt_state();
         set_status(HomeAssistantConnectionState::Connected, 0, http_status);

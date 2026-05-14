@@ -377,7 +377,8 @@ Weather and integrations:
 - [x] Calendar UI scaffold for the family combined/person views.
 - [ ] Add Home Assistant calendar ingestion behind the Calendar model.
 - [ ] Add weather icon pipeline and trial small icon sets.
-- [ ] Add weather threshold alerts for temperature, wind, and provider warnings.
+- [x] Add weather threshold alerts for temperature, wind, and severe provider conditions.
+- [ ] Add official provider weather-warning ingestion when a source exposes warning telemetry.
 - [ ] Publish local sensor data back to Home Assistant once sensors exist.
 
 Alerting and operations:

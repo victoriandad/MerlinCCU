@@ -24,6 +24,14 @@ void request_redraw();
 /// @brief Returns and clears any pending redraw request.
 bool consume_redraw_request();
 
+/// @brief Records user activity that originated outside the hardware input scanner.
+/// @details Browser preview key presses use this so the main loop can wake or
+/// defer the screensaver through the same activity path as physical keys.
+void request_user_activity();
+
+/// @brief Returns and clears any pending out-of-band user activity request.
+bool consume_user_activity_request();
+
 /// @brief Copies the latest Wi-Fi status into the logical front-panel state.
 bool set_wifi_status(const WifiStatus& wifi_status);
 

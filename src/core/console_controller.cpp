@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -19,6 +20,7 @@ namespace
 // annunciator model from one central place.
 ConsoleState g_console_state = make_default_console_state();
 bool g_redraw_requested = false;
+bool g_user_activity_requested = false;
 constexpr size_t kSoftkeyLabelCapacity = 48;
 constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
 constexpr uint8_t kSettingsPageCount = 2U;
@@ -38,6 +40,9 @@ uint8_t g_time_unsynced_samples = 0U;
 uint8_t g_keypad_fault_samples = 0U;
 uint32_t g_alert_acknowledged_sequence = 0U;
 constexpr uint8_t kAlertRetryThreshold = 5U;
+constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
+constexpr float kHighTemperatureAlertCelsius = 30.0F;
+constexpr float kHighWindAlertMph = 40.0F;
 
 enum class AlertCode : uint8_t
 {
@@ -48,6 +53,9 @@ enum class AlertCode : uint8_t
     HomeAssistantUnauthorized,
     HomeAssistantEntityMissing,
     WeatherUnavailable,
+    WeatherProviderWarning,
+    WeatherTemperatureWarning,
+    WeatherWindWarning,
     MqttOffline,
     KeypadLineFault,
     DisplayPipelineLag,
@@ -876,6 +884,112 @@ void set_alert_condition(AlertCode code, bool active, AlertSeverity severity, co
     std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
 }
 
+/// @brief Adds one optional temperature value to a min/max range.
+void include_temperature_alert_value(bool valid, float value_celsius, bool& have_range,
+                                     float& min_celsius, float& max_celsius)
+{
+    if (!valid)
+    {
+        return;
+    }
+
+    if (!have_range)
+    {
+        min_celsius = value_celsius;
+        max_celsius = value_celsius;
+        have_range = true;
+        return;
+    }
+
+    min_celsius = std::min(min_celsius, value_celsius);
+    max_celsius = std::max(max_celsius, value_celsius);
+}
+
+/// @brief Builds the combined current/forecast temperature range used by weather alerts.
+bool weather_temperature_alert_range(const WeatherMetrics& metrics, float& min_celsius,
+                                     float& max_celsius)
+{
+    bool have_range = false;
+    include_temperature_alert_value(metrics.current_temperature_celsius_valid,
+                                    metrics.current_temperature_celsius, have_range, min_celsius,
+                                    max_celsius);
+    include_temperature_alert_value(metrics.forecast_min_temperature_celsius_valid,
+                                    metrics.forecast_min_temperature_celsius, have_range,
+                                    min_celsius, max_celsius);
+    include_temperature_alert_value(metrics.forecast_max_temperature_celsius_valid,
+                                    metrics.forecast_max_temperature_celsius, have_range,
+                                    min_celsius, max_celsius);
+    return have_range;
+}
+
+/// @brief Builds the maximum current/forecast wind value used by weather alerts.
+bool weather_wind_alert_maximum(const WeatherMetrics& metrics, float& max_wind_mph)
+{
+    bool have_wind = false;
+    if (metrics.current_wind_speed_mph_valid)
+    {
+        max_wind_mph = metrics.current_wind_speed_mph;
+        have_wind = true;
+    }
+    if (metrics.forecast_max_wind_speed_mph_valid &&
+        (!have_wind || metrics.forecast_max_wind_speed_mph > max_wind_mph))
+    {
+        max_wind_mph = metrics.forecast_max_wind_speed_mph;
+        have_wind = true;
+    }
+
+    return have_wind;
+}
+
+/// @brief Formats the operator-facing temperature alert detail.
+void build_weather_temperature_alert_detail(float min_celsius, float max_celsius, char* out,
+                                            size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    const int min_celsius_rounded = static_cast<int>(std::lround(min_celsius));
+    const int max_celsius_rounded = static_cast<int>(std::lround(max_celsius));
+    const bool freezing = min_celsius <= kFreezingTemperatureAlertCelsius;
+    const bool hot = max_celsius >= kHighTemperatureAlertCelsius;
+
+    if (freezing && hot)
+    {
+        std::snprintf(out, out_size,
+                      "Weather temperature thresholds are active.\nLowest: %d C.\nHighest: %d C.",
+                      min_celsius_rounded, max_celsius_rounded);
+    }
+    else if (freezing)
+    {
+        std::snprintf(out, out_size,
+                      "Weather source reports freezing conditions.\nLowest cached value: %d C.",
+                      min_celsius_rounded);
+    }
+    else
+    {
+        std::snprintf(out, out_size,
+                      "Weather source reports high temperature.\nHighest cached value: %d C.",
+                      max_celsius_rounded);
+    }
+}
+
+/// @brief Formats the operator-facing wind alert detail.
+void build_weather_wind_alert_detail(float max_wind_mph, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    const int max_wind_rounded = static_cast<int>(std::lround(max_wind_mph));
+    std::snprintf(out, out_size,
+                  "Weather source reports wind up to %d mph.\nSecure loose items and check local "
+                  "warnings.",
+                  max_wind_rounded);
+}
+
 /// @brief Rebuilds currently active alerts from live subsystem conditions.
 void sync_system_alerts()
 {
@@ -979,6 +1093,64 @@ void sync_system_alerts()
     set_alert_condition(
         AlertCode::WeatherUnavailable, weather_unavailable, AlertSeverity::Message, "WEATHER",
         "Weather refresh failed after 5 retries.\nCheck source settings and network path.");
+
+    const bool weather_alert_data_current =
+        weather_source_active && weather_prerequisites_ok && weather_payload_present &&
+        !weather_unavailable;
+    const WeatherAlertStatus& weather_alert_status =
+        g_console_state.home_assistant_status.weather_alert_status;
+    const AlertSeverity provider_warning_severity =
+        weather_alert_status.provider_warning_severity == AlertSeverity::None
+            ? AlertSeverity::Warning
+            : weather_alert_status.provider_warning_severity;
+    const char* provider_warning_summary =
+        weather_alert_status.provider_warning_summary[0] != '\0'
+            ? weather_alert_status.provider_warning_summary.data()
+            : "WX WARNING";
+    const char* provider_warning_detail =
+        weather_alert_status.provider_warning_detail[0] != '\0'
+            ? weather_alert_status.provider_warning_detail.data()
+            : "Weather source reports a warning.\nCheck the latest local forecast.";
+    // Official provider-warning APIs are not wired yet. Current weather providers
+    // can still raise this hook from severe condition telemetry such as thunder.
+    set_alert_condition(AlertCode::WeatherProviderWarning,
+                        weather_alert_data_current &&
+                            weather_alert_status.provider_warning_active,
+                        provider_warning_severity, provider_warning_summary,
+                        provider_warning_detail);
+
+    const WeatherMetrics& weather_metrics = g_console_state.home_assistant_status.weather_metrics;
+    float min_temperature_celsius = 0.0F;
+    float max_temperature_celsius = 0.0F;
+    const bool have_temperature_range = weather_temperature_alert_range(
+        weather_metrics, min_temperature_celsius, max_temperature_celsius);
+    const bool temperature_warning =
+        weather_alert_data_current && have_temperature_range &&
+        (min_temperature_celsius <= kFreezingTemperatureAlertCelsius ||
+         max_temperature_celsius >= kHighTemperatureAlertCelsius);
+    char temperature_alert_detail[sizeof(ActiveAlert::detail)] = {};
+    if (temperature_warning)
+    {
+        build_weather_temperature_alert_detail(min_temperature_celsius, max_temperature_celsius,
+                                               temperature_alert_detail,
+                                               sizeof(temperature_alert_detail));
+    }
+    set_alert_condition(AlertCode::WeatherTemperatureWarning, temperature_warning,
+                        AlertSeverity::Warning, "WX TEMP",
+                        temperature_warning ? temperature_alert_detail : "");
+
+    float max_wind_mph = 0.0F;
+    const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
+    const bool wind_warning =
+        weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
+    char wind_alert_detail[sizeof(ActiveAlert::detail)] = {};
+    if (wind_warning)
+    {
+        build_weather_wind_alert_detail(max_wind_mph, wind_alert_detail,
+                                        sizeof(wind_alert_detail));
+    }
+    set_alert_condition(AlertCode::WeatherWindWarning, wind_warning, AlertSeverity::Warning,
+                        "WX WIND", wind_warning ? wind_alert_detail : "");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = g_console_state.mqtt_status.state;
@@ -2692,6 +2864,20 @@ bool consume_redraw_request()
     return requested;
 }
 
+/// @brief Marks that non-hardware input should count as user activity.
+void request_user_activity()
+{
+    g_user_activity_requested = true;
+}
+
+/// @brief Returns and clears the pending non-hardware user activity flag.
+bool consume_user_activity_request()
+{
+    const bool requested = g_user_activity_requested;
+    g_user_activity_requested = false;
+    return requested;
+}
+
 /// @brief Applies persisted runtime preferences to the visible console state.
 bool apply_runtime_config(const RuntimeConfig& settings)
 {
@@ -2813,6 +2999,10 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
             home_assistant_status.weather_daily_forecast_count ||
         g_console_state.home_assistant_status.weather_daily_forecast !=
             home_assistant_status.weather_daily_forecast ||
+        g_console_state.home_assistant_status.weather_metrics !=
+            home_assistant_status.weather_metrics ||
+        g_console_state.home_assistant_status.weather_alert_status !=
+            home_assistant_status.weather_alert_status ||
         g_console_state.home_assistant_status.self_entity_id !=
             home_assistant_status.self_entity_id;
 
