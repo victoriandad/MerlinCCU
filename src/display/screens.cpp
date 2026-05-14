@@ -2287,6 +2287,11 @@ void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
             : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
     draw_page_navigation_arrows(fb, console_state.alert_list_page_index > 0U,
                                 (console_state.alert_list_page_index + 1U) < page_count);
+    if (console_state.alert_count == 0U)
+    {
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO ACTIVE ALERTS", true,
+                           fonts::FontFace::Font8x12, 1);
+    }
 }
 
 /// @brief Draws the selected alert detail text with line-based scrolling.

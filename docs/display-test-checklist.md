@@ -65,6 +65,8 @@ quickly without relying only on photographs of the physical panel.
 ## Alert Workflow Pages
 
 - Pressing `ALERT` opens the alert list immediately.
+- With no active alerts, the list shows `NO ACTIVE ALERTS` and does not create
+  synthetic entries.
 - ALRT lamp stops flashing when `ALERT` is pressed and re-flashes only when a
   newer alert arrives.
 - Alert list ordering is newest-first and oldest-last.
@@ -77,13 +79,6 @@ quickly without relying only on photographs of the physical panel.
   - `R5=ACCEPT` removes selected alert and returns to list.
   - `L5=IGNORE` returns to list without removing selected alert.
   - Cursor arrows scroll additional detail text.
-
-## Web Preview Alert Simulation
-
-- `Seed alerts` creates at least three pages of synthetic alerts for list/detail
-  navigation checks.
-- If the live alert list is sparse, pressing `ALERT` in web preview can reseed
-  synthetic alerts for layout regression testing.
 
 ## Failure Capture
 

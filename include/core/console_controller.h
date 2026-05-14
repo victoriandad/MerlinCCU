@@ -61,19 +61,10 @@ bool set_softkey_label(SoftKeyId key, const char* label);
 /// the keypad hardware to exist yet.
 bool handle_button_event(const ButtonEvent& event);
 
-/// @brief Cycles alert lamp state for web-preview testing when no ALRT key wiring exists yet.
-/// @details This is a temporary harness helper for browser-only bring-up. Real
-/// hardware ALRT key/LED integration should drive the same state through normal
-/// input paths once available.
-bool cycle_alert_lamp_preview();
-
 /// @brief Cycles test lamp state for web-preview testing when TEST key wiring is absent.
 bool cycle_test_lamp_preview();
 
-/// @brief Opens the alert list page when active alerts are present.
+/// @brief Opens the live alert list page.
 bool open_alert_page();
-
-/// @brief Seeds a synthetic alert list for paging and layout testing.
-bool seed_fake_alerts_preview(uint8_t page_count);
 
 } // namespace console_controller

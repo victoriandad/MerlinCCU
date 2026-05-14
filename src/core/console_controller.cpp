@@ -3303,33 +3303,6 @@ bool handle_button_event(const ButtonEvent& event)
     return true;
 }
 
-/// @brief Cycles the alert annunciator state for web preview bring-up.
-bool cycle_alert_lamp_preview()
-{
-    static uint8_t preview_step = 0U;
-    preview_step = static_cast<uint8_t>((preview_step + 1U) % 3U);
-    if (preview_step == 0U)
-    {
-        set_alert_condition(AlertCode::HomeAssistantOffline, false, AlertSeverity::None, "", "");
-        set_alert_condition(AlertCode::HomeAssistantUnauthorized, false, AlertSeverity::None, "",
-                            "");
-    }
-    else if (preview_step == 1U)
-    {
-        set_alert_condition(
-            AlertCode::HomeAssistantOffline, true, AlertSeverity::Message, "HOME ASSISTANT",
-            "Home Assistant is not connected.\nCheck host/port/token and network routing.");
-    }
-    else
-    {
-        set_alert_condition(
-            AlertCode::HomeAssistantUnauthorized, true, AlertSeverity::Alert, "AUTH FAILED",
-            "Home Assistant rejected the API token.\nUpdate the token in settings.");
-    }
-    update_lamps_from_state();
-    return true;
-}
-
 /// @brief Cycles the test annunciator state for web preview bring-up.
 bool cycle_test_lamp_preview()
 {
@@ -3348,74 +3321,6 @@ bool open_alert_page()
         update_lamps_from_state();
     }
     return changed;
-}
-
-/// @brief Seeds synthetic alerts so list/detail/paging can be exercised without live failures.
-bool seed_fake_alerts_preview(uint8_t page_count)
-{
-    constexpr uint8_t kAlertsPerPage = 9U;
-    constexpr uint8_t kMinimumPages = 3U;
-    const uint8_t target_pages = page_count < kMinimumPages ? kMinimumPages : page_count;
-    const uint8_t target_count =
-        static_cast<uint8_t>(target_pages * kAlertsPerPage <= g_console_state.active_alerts.size()
-                                 ? (target_pages * kAlertsPerPage)
-                                 : g_console_state.active_alerts.size());
-
-    struct Template
-    {
-        const char* summary;
-        const char* detail;
-        AlertSeverity severity;
-    };
-    constexpr std::array<Template, 8> kTemplates = {{
-        {"NETWORK", "Wi-Fi link instability detected.\nCheck RF environment and credentials.",
-         AlertSeverity::Warning},
-        {"WIFI AUTH", "Wi-Fi authentication retries exceeded threshold.\nRe-enter SSID/password.",
-         AlertSeverity::Alert},
-        {"TIME", "Clock synchronisation retries exceeded threshold.\nCheck NTP reachability.",
-         AlertSeverity::Warning},
-        {"HOME ASSISTANT",
-         "Home Assistant connector has not recovered.\nInspect host/token and network path.",
-         AlertSeverity::Message},
-        {"AUTH FAILED", "Home Assistant token was rejected by the server.\nUpdate token settings.",
-         AlertSeverity::Alert},
-        {"HA ENTITY", "Tracked Home Assistant entity is missing or unavailable.",
-         AlertSeverity::Warning},
-        {"WEATHER", "Weather refresh has failed repeatedly.\nVerify source configuration.",
-         AlertSeverity::Message},
-        {"MQTT", "MQTT discovery connection retries exceeded threshold.\nCheck broker settings.",
-         AlertSeverity::Message},
-    }};
-
-    g_console_state.alert_count = 0U;
-    for (uint8_t i = 0U; i < target_count; ++i)
-    {
-        const size_t template_index =
-            static_cast<size_t>((g_alert_sequence_counter + i) % kTemplates.size());
-        const Template& entry = kTemplates[template_index];
-        ActiveAlert& alert = g_console_state.active_alerts[g_console_state.alert_count++];
-        alert.severity = entry.severity;
-        // Use synthetic codes outside the real alert-code range so suppression logic does not
-        // collide.
-        alert.code = static_cast<uint8_t>(200U + (i % 40U));
-        alert.sequence = g_alert_sequence_counter++;
-        std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%02u:%02u",
-                      (i * 7U) % 24U, (i * 11U) % 60U);
-        std::snprintf(alert.summary.data(), alert.summary.size(), "%s %u", entry.summary,
-                      static_cast<unsigned>(i + 1U));
-        std::snprintf(alert.detail.data(), alert.detail.size(),
-                      "%s\nSynthetic alert id: %u\nPage test entry: %u/%u", entry.detail,
-                      static_cast<unsigned>(alert.sequence), static_cast<unsigned>(i + 1U),
-                      static_cast<unsigned>(target_count));
-    }
-
-    g_console_state.alert_list_page_index = 0U;
-    g_console_state.alert_detail_index = 0U;
-    g_console_state.alert_detail_scroll_line = 0U;
-    g_console_state.active_page = MenuPage::AlertList;
-    update_softkeys_from_state();
-    update_lamps_from_state();
-    return true;
 }
 
 } // namespace console_controller

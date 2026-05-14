@@ -774,8 +774,7 @@ bool build_preview_page()
         "<p>Live framebuffer mirror plus a browser keypad so the CCU can be driven from your "
         "laptop.</p></header>"
         "<section class=\"card\"><div class=\"meta\"><span class=\"badge\">%d x %d</span>"
-        "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"seed_alerts\" "
-        "type=\"button\">Seed alerts</button><button id=\"open_popup\" "
+        "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"open_popup\" "
         "type=\"button\">Pop-out</button><a href=\"/config\">Back to config</a>"
         "<span id=\"state\" class=\"state\">Starting...</span></div>"
         "<div class=\"ccu-fixed\"><div class=\"ccu\" aria-label=\"Virtual CCU keypad\">"
@@ -915,7 +914,6 @@ bool build_preview_page()
         "const state=document.getElementById('state');"
         "const toggle=document.getElementById('toggle');"
         "const popupButton=document.getElementById('open_popup');"
-        "const seedAlertsButton=document.getElementById('seed_alerts');"
         "const alertLed=document.getElementById('alert_led');"
         "const testLed=document.getElementById('test_led');"
         "const alertKey=document.getElementById('alert_key');"
@@ -1072,8 +1070,6 @@ bool build_preview_page()
         "});"
         "if(popupButton){popupButton.addEventListener('click',function(){openPopup();});}"
         "if(isPopupMode&&popupButton){popupButton.style.display='none';}"
-        "if(seedAlertsButton){seedAlertsButton.addEventListener('click',function(){sendPanelAction("
-        "'seed_fake_alerts');});}"
         "function setLedMode(node,mode){"
         "if(!node){return;}"
         "node.classList.remove('on','flash-slow','flash-fast');"
@@ -1952,37 +1948,15 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
         return false;
     }
 
-    if (std::strcmp(action_text, "cycle_alert") == 0)
-    {
-        console_controller::request_user_activity();
-        (void)console_controller::cycle_alert_lamp_preview();
-        console_controller::request_redraw();
-        std::snprintf(message, message_size, "Preview ALRT lamp cycled.");
-        return true;
-    }
-
     if (std::strcmp(action_text, "open_alerts") == 0)
     {
         console_controller::request_user_activity();
-        bool changed = false;
-        if (console_controller::state().alert_count <= 1U)
-        {
-            changed = console_controller::seed_fake_alerts_preview(3U) || changed;
-        }
-        changed = console_controller::open_alert_page() || changed;
+        const bool changed = console_controller::open_alert_page();
         if (changed)
         {
             console_controller::request_redraw();
         }
         std::snprintf(message, message_size, "Opened alert page.");
-        return true;
-    }
-
-    if (std::strcmp(action_text, "seed_fake_alerts") == 0)
-    {
-        (void)console_controller::seed_fake_alerts_preview(3U);
-        console_controller::request_redraw();
-        std::snprintf(message, message_size, "Seeded 3 pages of synthetic alerts.");
         return true;
     }
 
