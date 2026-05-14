@@ -200,10 +200,7 @@ void draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
 /// @brief Draws one scaled 5x7 glyph.
 void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
 {
-    if (scale < 1)
-    {
-        scale = 1;
-    }
+    scale = std::max(scale, 1);
 
     const fonts::Glyph5x7* g = fonts::lookup_5x7(c);
     const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, c);

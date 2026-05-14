@@ -2,8 +2,8 @@
 
 #include <cctype>
 #include <cmath>
-#include <cstdio>
 #include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -89,49 +89,49 @@ bool active_home_assistant_enabled()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_enabled
-                                                  : kHomeAssistantConfigured;
+                                                   : kHomeAssistantConfigured;
 }
 
 const char* active_home_assistant_host()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_host.data()
-                                                  : kHomeAssistantHost;
+                                                   : kHomeAssistantHost;
 }
 
 uint16_t active_home_assistant_port()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_port
-                                                  : kHomeAssistantPort;
+                                                   : kHomeAssistantPort;
 }
 
 const char* active_home_assistant_token()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_token.data()
-                                                  : kHomeAssistantToken;
+                                                   : kHomeAssistantToken;
 }
 
 const char* active_tracked_entity_id()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_entity_id.data()
-                                                  : kTrackedEntityId;
+                                                   : kTrackedEntityId;
 }
 
 const char* active_self_entity_id()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_self_entity_id.data()
-                                                  : kSelfEntityId;
+                                                   : kSelfEntityId;
 }
 
 const char* active_weather_entity_id()
 {
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.weather_entity_id.data()
-                                                  : kWeatherEntityId;
+                                                   : kWeatherEntityId;
 }
 
 const char* active_sun_entity_id()
@@ -268,7 +268,6 @@ const char* active_weather_source_log_name()
     case WeatherSource::HomeAssistant:
         return "HA";
     case WeatherSource::OpenMeteo:
-        return "Open-Meteo";
     case WeatherSource::MetNorway:
         return "Open-Meteo";
     }
@@ -1014,7 +1013,7 @@ bool format_compact_scalar_value(const char* scalar_text, char* out, size_t out_
     const float value = std::strtof(scalar_text, &parse_end);
     if (parse_end != scalar_text && parse_end != nullptr && *parse_end == '\0')
     {
-        const int rounded = static_cast<int>(value >= 0.0f ? (value + 0.5f) : (value - 0.5f));
+        const int rounded = static_cast<int>(std::lround(value));
         std::snprintf(out, out_size, "%d", rounded);
         return true;
     }
@@ -1046,27 +1045,27 @@ bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, 
     {
         if (std::strcmp(source_unit, "km/h") == 0)
         {
-            mph_value = raw_value * 0.621371f;
+            mph_value = raw_value * 0.621371F;
         }
         else if (std::strcmp(source_unit, "m/s") == 0)
         {
-            mph_value = raw_value * 2.23694f;
+            mph_value = raw_value * 2.23694F;
         }
         else if (std::strcmp(source_unit, "ft/s") == 0)
         {
-            mph_value = raw_value * 0.681818f;
+            mph_value = raw_value * 0.681818F;
         }
         else if (std::strcmp(source_unit, "kn") == 0)
         {
-            mph_value = raw_value * 1.15078f;
+            mph_value = raw_value * 1.15078F;
         }
         else if (std::strcmp(source_unit, "Bft") == 0)
         {
             static constexpr float kBeaufortToMph[] = {
-                0.0f,  1.0f,  4.0f,  8.0f,  13.0f, 19.0f, 25.0f,
-                32.0f, 39.0f, 47.0f, 55.0f, 64.0f, 73.0f, 83.0f,
+                0.0F,  1.0F,  4.0F,  8.0F,  13.0F, 19.0F, 25.0F,
+                32.0F, 39.0F, 47.0F, 55.0F, 64.0F, 73.0F, 83.0F,
             };
-            int index = static_cast<int>(raw_value + 0.5f);
+            int index = static_cast<int>(std::lround(raw_value));
             if (index < 0)
             {
                 index = 0;
@@ -1079,8 +1078,7 @@ bool convert_wind_speed_to_mph(const char* speed_text, const char* source_unit, 
         }
     }
 
-    const int rounded =
-        static_cast<int>(mph_value >= 0.0f ? (mph_value + 0.5f) : (mph_value - 0.5f));
+    const int rounded = static_cast<int>(std::lround(mph_value));
     std::snprintf(out, out_size, "%d", rounded);
     return true;
 }
@@ -1099,20 +1097,20 @@ bool format_wind_direction_text(const char* bearing_text, char* out, size_t out_
     float bearing = std::strtof(bearing_text, &parse_end);
     if (parse_end != bearing_text && parse_end != nullptr && *parse_end == '\0')
     {
-        while (bearing < 0.0f)
+        while (bearing < 0.0F)
         {
-            bearing += 360.0f;
+            bearing += 360.0F;
         }
-        while (bearing >= 360.0f)
+        while (bearing >= 360.0F)
         {
-            bearing -= 360.0f;
+            bearing -= 360.0F;
         }
 
         static constexpr const char* kCompass16[] = {
             "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
             "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
         };
-        const int index = static_cast<int>((bearing + 11.25f) / 22.5f) % 16;
+        const int index = static_cast<int>((bearing + 11.25F) / 22.5F) % 16;
         std::snprintf(out, out_size, "%s", kCompass16[index]);
         return true;
     }
@@ -1381,11 +1379,9 @@ bool format_forecast_date_text(const char* iso_datetime, char* out, size_t out_s
     if (!(std::isdigit(static_cast<unsigned char>(iso_datetime[0])) &&
           std::isdigit(static_cast<unsigned char>(iso_datetime[1])) &&
           std::isdigit(static_cast<unsigned char>(iso_datetime[2])) &&
-          std::isdigit(static_cast<unsigned char>(iso_datetime[3])) &&
-          iso_datetime[4] == '-' &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[3])) && iso_datetime[4] == '-' &&
           std::isdigit(static_cast<unsigned char>(iso_datetime[5])) &&
-          std::isdigit(static_cast<unsigned char>(iso_datetime[6])) &&
-          iso_datetime[7] == '-' &&
+          std::isdigit(static_cast<unsigned char>(iso_datetime[6])) && iso_datetime[7] == '-' &&
           std::isdigit(static_cast<unsigned char>(iso_datetime[8])) &&
           std::isdigit(static_cast<unsigned char>(iso_datetime[9]))))
     {
@@ -1409,8 +1405,9 @@ bool format_temperature_range_text(const char* high_text, const char* low_text, 
 
     char compact_high[8] = {};
     char compact_low[8] = {};
-    const bool have_high = high_text != nullptr &&
-                           format_compact_scalar_value(high_text, compact_high, sizeof(compact_high));
+    const bool have_high =
+        high_text != nullptr &&
+        format_compact_scalar_value(high_text, compact_high, sizeof(compact_high));
     const bool have_low = low_text != nullptr &&
                           format_compact_scalar_value(low_text, compact_low, sizeof(compact_low));
 
@@ -1701,7 +1698,8 @@ bool parse_daily_forecast_response(const char* json)
 
         if (!extract_json_string_value(object_json, "\"datetime\":\"", datetime_text,
                                        sizeof(datetime_text)) ||
-            !format_forecast_date_text(datetime_text, entry.date_text.data(), entry.date_text.size()))
+            !format_forecast_date_text(datetime_text, entry.date_text.data(),
+                                       entry.date_text.size()))
         {
             cursor = object_end + 1;
             continue;
@@ -1709,9 +1707,8 @@ bool parse_daily_forecast_response(const char* json)
 
         const bool have_temperature_high = extract_json_scalar_value(
             object_json, "\"temperature\":", temperature_high_text, sizeof(temperature_high_text));
-        const bool have_temperature_low =
-            extract_json_scalar_value(object_json, "\"templow\":", temperature_low_text,
-                                      sizeof(temperature_low_text));
+        const bool have_temperature_low = extract_json_scalar_value(
+            object_json, "\"templow\":", temperature_low_text, sizeof(temperature_low_text));
         if (!format_temperature_range_text(
                 have_temperature_high ? temperature_high_text : nullptr,
                 have_temperature_low ? temperature_low_text : nullptr, g_weather_temperature_unit,
@@ -1727,10 +1724,9 @@ bool parse_daily_forecast_response(const char* json)
                                       sizeof(wind_bearing_text)) ||
             extract_json_scalar_value(object_json, "\"wind_bearing\":", wind_bearing_text,
                                       sizeof(wind_bearing_text));
-        if (!format_compact_wind_text(
-                have_wind_speed ? wind_speed_text : nullptr,
-                have_wind_bearing ? wind_bearing_text : nullptr, entry.wind_text.data(),
-                entry.wind_text.size()))
+        if (!format_compact_wind_text(have_wind_speed ? wind_speed_text : nullptr,
+                                      have_wind_bearing ? wind_bearing_text : nullptr,
+                                      entry.wind_text.data(), entry.wind_text.size()))
         {
             copy_text(entry.wind_text, "-");
         }
@@ -1984,8 +1980,9 @@ bool parse_open_meteo_weather(const char* json)
         hourly_direction_array =
             find_json_array_start(hourly_direction_array, "\"wind_direction_10m\":");
     }
-    if (hourly_time_array == nullptr || hourly_temp_array == nullptr || hourly_wind_array == nullptr ||
-        hourly_direction_array == nullptr || hourly_code_array == nullptr)
+    if (hourly_time_array == nullptr || hourly_temp_array == nullptr ||
+        hourly_wind_array == nullptr || hourly_direction_array == nullptr ||
+        hourly_code_array == nullptr)
     {
         clear_weather_forecast();
         clear_weather_daily_forecast();
@@ -2001,7 +1998,8 @@ bool parse_open_meteo_weather(const char* json)
         char direction_text[16] = {};
         char code_text[12] = {};
         if (!json_array_string_at(hourly_time_array, i, time_iso, sizeof(time_iso)) ||
-            !json_array_number_at(hourly_temp_array, i, temperature_text, sizeof(temperature_text)) ||
+            !json_array_number_at(hourly_temp_array, i, temperature_text,
+                                  sizeof(temperature_text)) ||
             !json_array_number_at(hourly_wind_array, i, wind_text, sizeof(wind_text)) ||
             !json_array_number_at(hourly_direction_array, i, direction_text,
                                   sizeof(direction_text)) ||
@@ -2039,7 +2037,8 @@ bool parse_open_meteo_weather(const char* json)
     {
         format_hour_text(sunrise_iso, g_status.sunrise_text.data(), g_status.sunrise_text.size());
     }
-    if (sunset_array != nullptr && json_array_string_at(sunset_array, 0, sunset_iso, sizeof(sunset_iso)))
+    if (sunset_array != nullptr &&
+        json_array_string_at(sunset_array, 0, sunset_iso, sizeof(sunset_iso)))
     {
         format_hour_text(sunset_iso, g_status.sunset_text.data(), g_status.sunset_text.size());
     }
@@ -2063,22 +2062,22 @@ bool parse_open_meteo_weather(const char* json)
                 !open_meteo_daily_scalar(daily_section, "\"temperature_2m_min\":", nullptr, i,
                                          temperature_min_text, sizeof(temperature_min_text),
                                          false) ||
-                !open_meteo_daily_scalar(daily_section, "\"wind_speed_10m_max\":",
-                                         "\"windspeed_10m_max\":", i, wind_max_text,
-                                         sizeof(wind_max_text), false) ||
+                !open_meteo_daily_scalar(daily_section,
+                                         "\"wind_speed_10m_max\":", "\"windspeed_10m_max\":", i,
+                                         wind_max_text, sizeof(wind_max_text), false) ||
                 !open_meteo_daily_scalar(daily_section, "\"wind_direction_10m_dominant\":",
-                                         "\"winddirection_10m_dominant\":", i,
-                                         wind_direction_text, sizeof(wind_direction_text),
-                                         false) ||
-                !open_meteo_daily_scalar(daily_section, "\"weather_code\":", "\"weathercode\":",
-                                         i, code_text, sizeof(code_text), false))
+                                         "\"winddirection_10m_dominant\":", i, wind_direction_text,
+                                         sizeof(wind_direction_text), false) ||
+                !open_meteo_daily_scalar(daily_section, "\"weather_code\":", "\"weathercode\":", i,
+                                         code_text, sizeof(code_text), false))
             {
                 break;
             }
 
             WeatherDailyForecastEntry& entry =
                 g_status.weather_daily_forecast[g_status.weather_daily_forecast_count];
-            if (!format_forecast_date_text(date_iso, entry.date_text.data(), entry.date_text.size()))
+            if (!format_forecast_date_text(date_iso, entry.date_text.data(),
+                                           entry.date_text.size()))
             {
                 continue;
             }
@@ -2090,8 +2089,8 @@ bool parse_open_meteo_weather(const char* json)
                 copy_text(entry.temperature_text, "-");
             }
 
-            if (!format_compact_wind_text(wind_max_text, wind_direction_text, entry.wind_text.data(),
-                                          entry.wind_text.size()))
+            if (!format_compact_wind_text(wind_max_text, wind_direction_text,
+                                          entry.wind_text.data(), entry.wind_text.size()))
             {
                 copy_text(entry.wind_text, "-");
             }
@@ -2609,9 +2608,8 @@ bool build_request()
     else if (g_active_weather_source == WeatherSource::HomeAssistant &&
              g_request_kind == RequestKind::FetchSunEntity)
     {
-        const int target_len =
-            std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
-                          active_sun_entity_id());
+        const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
+                                             active_sun_entity_id());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
             set_status(HomeAssistantConnectionState::Error, -1, 0);
@@ -2664,8 +2662,7 @@ bool build_request()
                             "\r\n"
                             "%s",
                             method, target, g_configured_host,
-                            static_cast<unsigned>(g_configured_port),
-                            active_home_assistant_token(),
+                            static_cast<unsigned>(g_configured_port), active_home_assistant_token(),
                             static_cast<unsigned>(std::strlen(g_request_body)), g_request_body);
     }
     else
@@ -2896,7 +2893,8 @@ void handle_http_status(int http_status)
             else
             {
                 clear_weather_daily_forecast();
-                PERIODIC_LOG("HA daily forecast parse failed %s\n", g_status.weather_entity_id.data());
+                PERIODIC_LOG("HA daily forecast parse failed %s\n",
+                             g_status.weather_entity_id.data());
             }
         }
         else if (g_request_kind == RequestKind::FetchSunEntity)
@@ -3165,10 +3163,9 @@ err_t try_send_request()
         {
             if (write_rc == ERR_MEM)
             {
-                direct_weather_log("write deferred sent=%u/%u sndbuf=%u\n",
-                                   static_cast<unsigned>(g_request_sent),
-                                   static_cast<unsigned>(request_len),
-                                   static_cast<unsigned>(sndbuf));
+                direct_weather_log(
+                    "write deferred sent=%u/%u sndbuf=%u\n", static_cast<unsigned>(g_request_sent),
+                    static_cast<unsigned>(request_len), static_cast<unsigned>(sndbuf));
                 return ERR_OK;
             }
 

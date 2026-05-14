@@ -28,15 +28,15 @@ constexpr uint32_t kLifeStableReseedFrames = 200;
 constexpr size_t kLifeHashHistorySize = 8;
 constexpr uint32_t kLifeRepeatReseedFrames = 100;
 
-uint8_t life_a[kLifeCellCount];
-uint8_t life_b[kLifeCellCount];
-uint8_t* life_front = life_a;
-uint8_t* life_back = life_b;
-uint32_t life_hash_ring[kLifeHashHistorySize];
-size_t life_hash_index = 0;
-size_t life_hash_count = 0;
-uint32_t life_stable_frames = 0;
-uint32_t life_repeat_frames = 0;
+uint8_t g_life_a[kLifeCellCount];
+uint8_t g_life_b[kLifeCellCount];
+uint8_t* g_life_front = g_life_a;
+uint8_t* g_life_back = g_life_b;
+uint32_t g_life_hash_ring[kLifeHashHistorySize];
+size_t g_life_hash_index = 0;
+size_t g_life_hash_count = 0;
+uint32_t g_life_stable_frames = 0;
+uint32_t g_life_repeat_frames = 0;
 
 /// @brief Converts 2D Life coordinates into the flat backing-array index.
 /// @details The simulation uses flat arrays instead of nested containers so each generation can
@@ -116,9 +116,9 @@ uint32_t life_hash_grid(const uint8_t* grid)
 /// @brief Clears the recent grid-hash history used for repeat detection.
 void life_reset_hash_history()
 {
-    std::memset(life_hash_ring, 0, sizeof(life_hash_ring));
-    life_hash_index = 0;
-    life_hash_count = 0;
+    std::memset(g_life_hash_ring, 0, sizeof(g_life_hash_ring));
+    g_life_hash_index = 0;
+    g_life_hash_count = 0;
 }
 
 /// @brief Records one grid hash and returns whether it was seen recently.
@@ -126,20 +126,20 @@ bool life_record_hash_and_check_repeat(uint32_t hash)
 {
     bool repeated = false;
 
-    for (size_t i = 0; i < life_hash_count; ++i)
+    for (size_t i = 0; i < g_life_hash_count; ++i)
     {
-        if (life_hash_ring[i] == hash)
+        if (g_life_hash_ring[i] == hash)
         {
             repeated = true;
             break;
         }
     }
 
-    life_hash_ring[life_hash_index] = hash;
-    life_hash_index = (life_hash_index + 1) % kLifeHashHistorySize;
-    if (life_hash_count < kLifeHashHistorySize)
+    g_life_hash_ring[g_life_hash_index] = hash;
+    g_life_hash_index = (g_life_hash_index + 1) % kLifeHashHistorySize;
+    if (g_life_hash_count < kLifeHashHistorySize)
     {
-        ++life_hash_count;
+        ++g_life_hash_count;
     }
 
     return repeated;
@@ -160,7 +160,7 @@ uint8_t life_count_neighbors(const uint8_t* grid, int x, int y)
 
             const int wrapped_x = (xx + kLifeWidth) % kLifeWidth;
             const int wrapped_y = (yy + kLifeHeight) % kLifeHeight;
-                count += grid[life_index(wrapped_x, wrapped_y)] != 0 ? 1U : 0U;
+            count += grid[life_index(wrapped_x, wrapped_y)] != 0 ? 1U : 0U;
         }
     }
 
@@ -200,9 +200,9 @@ bool life_step(const uint8_t* src, uint8_t* dst)
 /// @brief Swaps the front and back Life grids.
 void life_swap()
 {
-    uint8_t* tmp = life_front;
-    life_front = life_back;
-    life_back = tmp;
+    uint8_t* tmp = g_life_front;
+    g_life_front = g_life_back;
+    g_life_back = tmp;
 }
 
 /// @brief Renders one Life grid into the framebuffer.
@@ -233,16 +233,16 @@ void init(const uint8_t* seed_fb)
     // Seed from uptime so repeated power cycles do not always land on the same
     // opening pattern during bench demos.
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
-    life_clear(life_front);
-    const int seeded_live_cells = life_seed_from_frame(life_front, seed_fb);
+    life_clear(g_life_front);
+    const int seeded_live_cells = life_seed_from_frame(g_life_front, seed_fb);
     if (seeded_live_cells == 0)
     {
-        life_seed_random(life_front);
+        life_seed_random(g_life_front);
     }
     life_reset_hash_history();
-    (void)life_record_hash_and_check_repeat(life_hash_grid(life_front));
-    life_stable_frames = 0;
-    life_repeat_frames = 0;
+    (void)life_record_hash_and_check_repeat(life_hash_grid(g_life_front));
+    g_life_stable_frames = 0;
+    g_life_repeat_frames = 0;
 }
 
 /// @brief Advances the simulation, applies reseed logic, and renders one frame.
@@ -251,56 +251,56 @@ void step_and_render(uint8_t* fb, LifeFrameStats& stats)
     // Keep simulation timing separate from draw timing so scan performance and
     // automaton performance can be tuned independently.
     const absolute_time_t step_start = get_absolute_time();
-    const bool life_changed = life_step(life_front, life_back);
+    const bool life_changed = life_step(g_life_front, g_life_back);
     stats.sim_us = absolute_time_diff_us(step_start, get_absolute_time());
 
     // Stable and repeating patterns are treated differently so the screensaver
     // recovers both from static extinction and from short oscillator loops.
-    const bool life_repeated = life_record_hash_and_check_repeat(life_hash_grid(life_back));
+    const bool life_repeated = life_record_hash_and_check_repeat(life_hash_grid(g_life_back));
 
     if (life_changed)
     {
-        life_stable_frames = 0;
+        g_life_stable_frames = 0;
     }
     else
     {
-        ++life_stable_frames;
+        ++g_life_stable_frames;
     }
 
     if (life_repeated)
     {
-        ++life_repeat_frames;
+        ++g_life_repeat_frames;
     }
     else
     {
-        life_repeat_frames = 0;
+        g_life_repeat_frames = 0;
     }
 
     // Reseed before drawing so the user immediately sees a fresh pattern rather
     // than one extra stale frame after the timeout triggers.
-    if (life_stable_frames >= kLifeStableReseedFrames)
+    if (g_life_stable_frames >= kLifeStableReseedFrames)
     {
-        life_seed_random(life_back);
-        life_stable_frames = 0;
-        life_repeat_frames = 0;
+        life_seed_random(g_life_back);
+        g_life_stable_frames = 0;
+        g_life_repeat_frames = 0;
         life_reset_hash_history();
-        (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
+        (void)life_record_hash_and_check_repeat(life_hash_grid(g_life_back));
         PERIODIC_LOG("Life reseeded after stable timeout\n");
     }
-    else if (life_repeat_frames >= kLifeRepeatReseedFrames)
+    else if (g_life_repeat_frames >= kLifeRepeatReseedFrames)
     {
-        life_seed_random(life_back);
-        life_stable_frames = 0;
-        life_repeat_frames = 0;
+        life_seed_random(g_life_back);
+        g_life_stable_frames = 0;
+        g_life_repeat_frames = 0;
         life_reset_hash_history();
-        (void)life_record_hash_and_check_repeat(life_hash_grid(life_back));
+        (void)life_record_hash_and_check_repeat(life_hash_grid(g_life_back));
         PERIODIC_LOG("Life reseeded after repeat-cycle timeout\n");
     }
 
     // Render from the newly computed back grid, then swap ownership so the next
     // simulation step reads the frame that was just displayed.
     const absolute_time_t draw_start = get_absolute_time();
-    draw_life_screen(fb, life_back);
+    draw_life_screen(fb, g_life_back);
     stats.draw_us = absolute_time_diff_us(draw_start, get_absolute_time());
 
     life_swap();

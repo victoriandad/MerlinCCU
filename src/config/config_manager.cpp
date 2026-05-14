@@ -1,5 +1,6 @@
 #include "config_manager.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -21,6 +22,7 @@ constexpr uint32_t kConfigStorageBytes = FLASH_SECTOR_SIZE * kFlashSlotCount;
 constexpr uint32_t kConfigStorageOffset = PICO_FLASH_SIZE_BYTES - kConfigStorageBytes;
 constexpr uint32_t kSlot0Offset = kConfigStorageOffset;
 constexpr uint32_t kSlot1Offset = kConfigStorageOffset + FLASH_SECTOR_SIZE;
+constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
 constexpr char kDefaultDeviceName[] = "MerlinCCU";
 constexpr char kDefaultAdminPassword[] = "merlin";
 
@@ -94,8 +96,7 @@ struct LegacyConfigSlotV1
 };
 
 /// @brief Copies a C string into one fixed-size config field.
-template <size_t N>
-void copy_text(std::array<char, N>& dest, const char* src)
+template <size_t N> void copy_text(std::array<char, N>& dest, const char* src)
 {
     dest.fill('\0');
     if (src == nullptr)
@@ -166,6 +167,9 @@ RuntimeConfig make_default_settings()
 /// @brief Returns a const pointer to one flash slot.
 const ConfigSlot* flash_slot(uint32_t offset)
 {
+    // XIP flash is memory mapped on the RP2040/RP2350, so this hardware address
+    // cast is intentional and cannot be expressed as an ordinary object pointer.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<const ConfigSlot*>(XIP_BASE + offset);
 }
 
@@ -238,8 +242,7 @@ RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
 bool should_auto_enable_home_assistant(const RuntimeConfig& settings)
 {
     return !settings.home_assistant_enabled && settings.home_assistant_host[0] != '\0' &&
-           settings.home_assistant_token[0] != '\0' &&
-           settings.home_assistant_entity_id[0] != '\0';
+           settings.home_assistant_token[0] != '\0' && settings.home_assistant_entity_id[0] != '\0';
 }
 
 struct ConfigCandidate
@@ -390,10 +393,8 @@ bool save(const RuntimeConfig& settings)
     {
         sanitized.mqtt_port = 1883;
     }
-    if (sanitized.screen_saver_timeout_minutes > 120)
-    {
-        sanitized.screen_saver_timeout_minutes = 120;
-    }
+    sanitized.screen_saver_timeout_minutes =
+        std::min(sanitized.screen_saver_timeout_minutes, kMaxScreenSaverTimeoutMinutes);
     if (sanitized.weather_source == WeatherSource::MetNorway)
     {
         sanitized.weather_source = WeatherSource::OpenMeteo;

@@ -411,6 +411,7 @@ enum class SoftKeyRoute : uint8_t
     SelectShareSlot1,
     CycleSharePeriod,
     CycleCalendarOwner,
+    ResetCalendarFilters,
     SelectCalendarSlot1,
     SelectCalendarSlot2,
     SelectCalendarSlot3,
@@ -473,8 +474,8 @@ struct ShareMarketStatus
 };
 
 inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
-inline constexpr int8_t kCalendarMinDayOffset = -14;
-inline constexpr int8_t kCalendarMaxDayOffset = 14;
+inline constexpr int kCalendarMinDayOffset = -14;
+inline constexpr int kCalendarMaxDayOffset = 14;
 inline constexpr size_t kCalendarEventCapacity = 48;
 inline constexpr size_t kCalendarVisibleEventCount = 9;
 
@@ -576,4 +577,3 @@ const KeyLegend& key_legend(HardKeyId key);
 
 /// @brief Builds a default console state for startup.
 ConsoleState make_default_console_state();
-

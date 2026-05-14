@@ -1,8 +1,8 @@
 #include "console_controller.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -81,8 +81,8 @@ void build_uppercase_title(const char* input, char* output, size_t output_size)
     size_t write_index = 0U;
     while (input[write_index] != '\0' && write_index + 1U < output_size)
     {
-        output[write_index] = static_cast<char>(std::toupper(static_cast<unsigned char>(
-            input[write_index])));
+        output[write_index] =
+            static_cast<char>(std::toupper(static_cast<unsigned char>(input[write_index])));
         ++write_index;
     }
 
@@ -238,8 +238,7 @@ bool change_settings_page(int direction)
 /// @brief Persists one runtime-config mutation and refreshes the menu UI.
 /// @details Front-panel settings must write back to the same flash-backed
 /// configuration used by the web UI so the two surfaces never diverge.
-template <typename Mutator>
-bool persist_runtime_config_change(Mutator&& mutator)
+template <typename Mutator> bool persist_runtime_config_change(Mutator&& mutator)
 {
     RuntimeConfig settings = config_manager::settings();
     if (!mutator(settings))
@@ -596,7 +595,8 @@ const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection select
 }
 
 /// @brief Returns the selectable time zone at a relative offset from the current one.
-const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state, int offset)
+const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
+                                                        int offset)
 {
     const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
     const int kTargetIndex = kCurrentIndex + offset;
@@ -747,8 +747,7 @@ const char* time_zone_selection_text(const ConsoleState& console_state)
 /// the label uses singular/plural wording that reads naturally on the menu.
 const char* screen_saver_timeout_selection_text(const ConsoleState& console_state)
 {
-    const char* unit =
-        (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
+    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
     std::snprintf(g_screen_saver_timeout_selection_text.data(),
                   g_screen_saver_timeout_selection_text.size(), "%u %s",
                   static_cast<unsigned>(console_state.screen_saver_timeout_minutes), unit);
@@ -881,13 +880,15 @@ void set_alert_condition(AlertCode code, bool active, AlertSeverity severity, co
 void sync_system_alerts()
 {
     const bool wifi_connected = g_console_state.wifi_status.state == WifiConnectionState::Connected;
-    set_alert_condition(
-        AlertCode::WifiDisconnected, !wifi_connected, AlertSeverity::Warning, "NETWORK",
-        "Wi-Fi link is down.\nCheck SSID/password or signal.\nWithout network, cloud features are unavailable.");
+    set_alert_condition(AlertCode::WifiDisconnected, !wifi_connected, AlertSeverity::Warning,
+                        "NETWORK",
+                        "Wi-Fi link is down.\nCheck SSID/password or signal.\nWithout network, "
+                        "cloud features are unavailable.");
     const bool wifi_auth_failed =
         g_console_state.wifi_status.state == WifiConnectionState::AuthFailed;
-    set_alert_condition(AlertCode::WifiAuthFailed, wifi_auth_failed, AlertSeverity::Alert, "WIFI AUTH",
-                        "Wi-Fi authentication failed.\nVerify SSID and password in NETWORK settings.");
+    set_alert_condition(
+        AlertCode::WifiAuthFailed, wifi_auth_failed, AlertSeverity::Alert, "WIFI AUTH",
+        "Wi-Fi authentication failed.\nVerify SSID and password in NETWORK settings.");
 
     if (!g_console_state.time_status.synced && wifi_connected)
     {
@@ -900,9 +901,10 @@ void sync_system_alerts()
     {
         g_time_unsynced_samples = 0U;
     }
-    set_alert_condition(AlertCode::TimeNotSynced,
-                        g_time_unsynced_samples >= kAlertRetryThreshold, AlertSeverity::Warning,
-                        "TIME", "Clock sync has failed after 5 attempts.\nCheck NTP reachability and timezone setup.");
+    set_alert_condition(
+        AlertCode::TimeNotSynced, g_time_unsynced_samples >= kAlertRetryThreshold,
+        AlertSeverity::Warning, "TIME",
+        "Clock sync has failed after 5 attempts.\nCheck NTP reachability and timezone setup.");
 
     const bool ha_enabled = config_manager::settings().home_assistant_enabled;
     const HomeAssistantConnectionState ha_state = g_console_state.home_assistant_status.state;
@@ -919,18 +921,18 @@ void sync_system_alerts()
         }
     }
 
-    const bool ha_unauthorised =
-        ha_state == HomeAssistantConnectionState::Unauthorized;
-    const bool ha_offline =
-        ha_enabled && ha_state != HomeAssistantConnectionState::Connected &&
-        ha_state != HomeAssistantConnectionState::Unauthorized &&
-        g_home_assistant_connect_failures >= kAlertRetryThreshold;
-    set_alert_condition(
-        AlertCode::HomeAssistantOffline, ha_offline, AlertSeverity::Message, "HOME ASSISTANT",
-        "Home Assistant is not connected.\nCheck host/port/token and network routing.\nStatus page shows the latest connector state.");
-    set_alert_condition(
-        AlertCode::HomeAssistantUnauthorized, ha_unauthorised, AlertSeverity::Alert, "AUTH FAILED",
-        "Home Assistant rejected the API token.\nUpdate the token in Settings > Home Assistant.\nThis alert clears after a successful authorisation.");
+    const bool ha_unauthorised = ha_state == HomeAssistantConnectionState::Unauthorized;
+    const bool ha_offline = ha_enabled && ha_state != HomeAssistantConnectionState::Connected &&
+                            ha_state != HomeAssistantConnectionState::Unauthorized &&
+                            g_home_assistant_connect_failures >= kAlertRetryThreshold;
+    set_alert_condition(AlertCode::HomeAssistantOffline, ha_offline, AlertSeverity::Message,
+                        "HOME ASSISTANT",
+                        "Home Assistant is not connected.\nCheck host/port/token and network "
+                        "routing.\nStatus page shows the latest connector state.");
+    set_alert_condition(AlertCode::HomeAssistantUnauthorized, ha_unauthorised, AlertSeverity::Alert,
+                        "AUTH FAILED",
+                        "Home Assistant rejected the API token.\nUpdate the token in Settings > "
+                        "Home Assistant.\nThis alert clears after a successful authorisation.");
     const bool tracked_entity_configured =
         config_manager::settings().home_assistant_entity_id[0] != '\0';
     const bool tracked_entity_missing =
@@ -941,9 +943,10 @@ void sync_system_alerts()
                      "unknown") == 0 ||
          std::strcmp(g_console_state.home_assistant_status.tracked_entity_state.data(),
                      "unavailable") == 0);
-    set_alert_condition(
-        AlertCode::HomeAssistantEntityMissing, tracked_entity_missing, AlertSeverity::Warning,
-        "HA ENTITY", "Tracked Home Assistant entity is missing or unavailable.\nCheck the entity id in settings and HA integration state.");
+    set_alert_condition(AlertCode::HomeAssistantEntityMissing, tracked_entity_missing,
+                        AlertSeverity::Warning, "HA ENTITY",
+                        "Tracked Home Assistant entity is missing or unavailable.\nCheck the "
+                        "entity id in settings and HA integration state.");
 
     const bool weather_source_active =
         g_console_state.weather_source == WeatherSource::OpenMeteo ||
@@ -959,11 +962,7 @@ void sync_system_alerts()
             : g_console_state.wifi_status.internet_reachable;
     const bool weather_http_failed = g_console_state.home_assistant_status.last_http_status >= 400;
     const bool weather_failed_now = !weather_payload_present || weather_http_failed;
-    if (!weather_source_active || !weather_prerequisites_ok)
-    {
-        g_weather_refresh_failures = 0U;
-    }
-    else if (weather_failed_now)
+    if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
     {
         if (g_weather_refresh_failures < 255U)
         {
@@ -977,8 +976,9 @@ void sync_system_alerts()
 
     const bool weather_unavailable = weather_source_active && weather_prerequisites_ok &&
                                      g_weather_refresh_failures >= kAlertRetryThreshold;
-    set_alert_condition(AlertCode::WeatherUnavailable, weather_unavailable, AlertSeverity::Message,
-                        "WEATHER", "Weather refresh failed after 5 retries.\nCheck source settings and network path.");
+    set_alert_condition(
+        AlertCode::WeatherUnavailable, weather_unavailable, AlertSeverity::Message, "WEATHER",
+        "Weather refresh failed after 5 retries.\nCheck source settings and network path.");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = g_console_state.mqtt_status.state;
@@ -997,7 +997,8 @@ void sync_system_alerts()
         AlertCode::MqttOffline,
         mqtt_enabled && mqtt_state != MqttConnectionState::Connected &&
             g_mqtt_connect_failures >= kAlertRetryThreshold,
-        AlertSeverity::Message, "MQTT", "MQTT discovery is offline after 5 retries.\nCheck broker host/port and credentials.");
+        AlertSeverity::Message, "MQTT",
+        "MQTT discovery is offline after 5 retries.\nCheck broker host/port and credentials.");
 
     const bool keypad_fault_now =
         (std::strcmp(g_console_state.keypad_debug_status.pressed_key_name.data(), "MULTI") == 0) ||
@@ -1013,11 +1014,10 @@ void sync_system_alerts()
     {
         g_keypad_fault_samples = 0U;
     }
-    set_alert_condition(
-        AlertCode::KeypadLineFault, g_keypad_fault_samples >= kAlertRetryThreshold,
-        AlertSeverity::Warning,
-        "KEYPAD",
-        "Matrix line fault suspected.\nMultiple simultaneous/stuck lines were detected repeatedly.");
+    set_alert_condition(AlertCode::KeypadLineFault, g_keypad_fault_samples >= kAlertRetryThreshold,
+                        AlertSeverity::Warning, "KEYPAD",
+                        "Matrix line fault suspected.\nMultiple simultaneous/stuck lines were "
+                        "detected repeatedly.");
 
     // Placeholder: enable this once render/frame timing counters are exposed to console state.
     const bool display_pipeline_lag = false;
@@ -1025,19 +1025,21 @@ void sync_system_alerts()
         AlertCode::DisplayPipelineLag, display_pipeline_lag, AlertSeverity::Message, "DISPLAY LAG",
         "Display update pipeline is lagging.\nAdd frame timing telemetry to activate this alert.");
 
-    const bool share_data_unavailable =
-        g_console_state.share_data_configured && !g_console_state.share_data_valid &&
-        (g_console_state.share_data_last_error != 0 ||
-         g_console_state.share_data_last_http_status >= 400);
-    set_alert_condition(
-        AlertCode::ShareDataUnavailable, share_data_unavailable, AlertSeverity::Message,
-        "SHARES", "Share price data is unavailable.\nCheck the market data provider and watchlist configuration.");
+    const bool share_data_unavailable = g_console_state.share_data_configured &&
+                                        !g_console_state.share_data_valid &&
+                                        (g_console_state.share_data_last_error != 0 ||
+                                         g_console_state.share_data_last_http_status >= 400);
+    set_alert_condition(AlertCode::ShareDataUnavailable, share_data_unavailable,
+                        AlertSeverity::Message, "SHARES",
+                        "Share price data is unavailable.\nCheck the market data provider and "
+                        "watchlist configuration.");
 
     if (g_console_state.alert_detail_index >= g_console_state.alert_count)
     {
         g_console_state.alert_detail_index =
-            g_console_state.alert_count > 0U ? static_cast<uint8_t>(g_console_state.alert_count - 1U)
-                                             : 0U;
+            g_console_state.alert_count > 0U
+                ? static_cast<uint8_t>(g_console_state.alert_count - 1U)
+                : 0U;
     }
     const uint8_t pages = alert_page_count();
     if (g_console_state.alert_list_page_index >= pages)
@@ -1101,7 +1103,6 @@ MenuPage parent_page(MenuPage page)
     switch (page)
     {
     case MenuPage::Home:
-        return MenuPage::Home;
     case MenuPage::Weather:
     case MenuPage::Calendar:
     case MenuPage::Status:
@@ -1154,7 +1155,8 @@ bool stop_screen_saver_timeout_editing()
     }
 
     g_console_state.screen_saver_timeout_editing = false;
-    g_console_state.screen_saver_timeout_edit_minutes = g_console_state.screen_saver_timeout_minutes;
+    g_console_state.screen_saver_timeout_edit_minutes =
+        g_console_state.screen_saver_timeout_minutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = true;
     return true;
 }
@@ -1168,7 +1170,8 @@ bool start_screen_saver_timeout_editing()
     }
 
     g_console_state.screen_saver_timeout_editing = true;
-    g_console_state.screen_saver_timeout_edit_minutes = g_console_state.screen_saver_timeout_minutes;
+    g_console_state.screen_saver_timeout_edit_minutes =
+        g_console_state.screen_saver_timeout_minutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = true;
     return true;
 }
@@ -1258,22 +1261,19 @@ bool apply_screen_saver_timeout_digit(uint8_t digit)
         return false;
     }
 
-    const uint16_t kCurrentMinutes =
-        g_console_state.screen_saver_timeout_replace_on_next_digit
-            ? 0
-            : g_console_state.screen_saver_timeout_edit_minutes;
-    const uint16_t kCandidateMinutes =
-        g_console_state.screen_saver_timeout_replace_on_next_digit
-            ? digit
-            : static_cast<uint16_t>((kCurrentMinutes * 10U) + digit);
+    const uint16_t kCurrentMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
+                                         ? 0
+                                         : g_console_state.screen_saver_timeout_edit_minutes;
+    const uint16_t kCandidateMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
+                                           ? digit
+                                           : static_cast<uint16_t>((kCurrentMinutes * 10U) + digit);
     if (kCandidateMinutes > kMaxScreenSaverTimeoutMinutes)
     {
         return false;
     }
 
-    const bool kChanged =
-        g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
-        g_console_state.screen_saver_timeout_replace_on_next_digit;
+    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
+                          g_console_state.screen_saver_timeout_replace_on_next_digit;
     g_console_state.screen_saver_timeout_edit_minutes = kCandidateMinutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = false;
     return kChanged;
@@ -1396,6 +1396,26 @@ bool cycle_calendar_owner()
     }
 
     g_console_state.calendar_owner = next;
+    return true;
+}
+
+/// @brief Returns whether the Calendar filters are showing the default view.
+bool calendar_filters_are_default()
+{
+    return g_console_state.calendar_owner == CalendarOwner::Combined &&
+           g_console_state.calendar_day_offset == 0;
+}
+
+/// @brief Restores the Calendar page to the default combined-today view.
+bool reset_calendar_filters()
+{
+    if (calendar_filters_are_default())
+    {
+        return false;
+    }
+
+    g_console_state.calendar_owner = CalendarOwner::Combined;
+    g_console_state.calendar_day_offset = 0;
     return true;
 }
 
@@ -1709,16 +1729,14 @@ void update_softkeys_from_state()
         break;
     case MenuPage::Calendar:
     {
-        constexpr std::array<SoftKeyId, kCalendarVisibleEventCount> slots = {
-            SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
-            SoftKeyId::Left4,  SoftKeyId::Right1, SoftKeyId::Right2,
-            SoftKeyId::Right3, SoftKeyId::Right4, SoftKeyId::Right5};
-        constexpr std::array<SoftKeyRoute, kCalendarVisibleEventCount> routes = {
+        constexpr std::array<SoftKeyId, 8> slots = {
+            SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,  SoftKeyId::Left4,
+            SoftKeyId::Right1, SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
+        constexpr std::array<SoftKeyRoute, 8> routes = {
             SoftKeyRoute::SelectCalendarSlot1, SoftKeyRoute::SelectCalendarSlot2,
             SoftKeyRoute::SelectCalendarSlot3, SoftKeyRoute::SelectCalendarSlot4,
             SoftKeyRoute::SelectCalendarSlot5, SoftKeyRoute::SelectCalendarSlot6,
-            SoftKeyRoute::SelectCalendarSlot7, SoftKeyRoute::SelectCalendarSlot8,
-            SoftKeyRoute::SelectCalendarSlot9};
+            SoftKeyRoute::SelectCalendarSlot7, SoftKeyRoute::SelectCalendarSlot8};
         uint8_t visible_index = 0U;
         const uint8_t event_count =
             std::min(g_console_state.calendar_event_count,
@@ -1745,6 +1763,10 @@ void update_softkeys_from_state()
             SoftKeyRoute::CycleCalendarOwner,
             true,
         };
+        softkeys[softkey_index(SoftKeyId::Right5)] =
+            calendar_filters_are_default()
+                ? SoftKeyAction{"HOME", SoftKeyRoute::GoHome, true}
+                : SoftKeyAction{"RESET", SoftKeyRoute::ResetCalendarFilters, true};
         break;
     }
     case MenuPage::CalendarDetail:
@@ -1877,9 +1899,9 @@ void update_softkeys_from_state()
             config_manager::settings().remote_config_enabled,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Left2, "SAVE PASSWORD",
-                admin_requirement_selection_text(config_manager::settings().require_admin_password)),
+            build_selection_softkey_label(SoftKeyId::Left2, "SAVE PASSWORD",
+                                          admin_requirement_selection_text(
+                                              config_manager::settings().require_admin_password)),
             SoftKeyRoute::ToggleRequireAdminPassword,
             true,
             config_manager::settings().require_admin_password,
@@ -2163,9 +2185,10 @@ void update_softkeys_from_state()
         constexpr uint8_t kAlertsPerPage = 9U;
         const uint8_t page_start =
             static_cast<uint8_t>(g_console_state.alert_list_page_index * kAlertsPerPage);
-        const std::array<SoftKeyId, 9> slots = {SoftKeyId::Left1, SoftKeyId::Left2, SoftKeyId::Left3,
-                                                SoftKeyId::Left4, SoftKeyId::Left5, SoftKeyId::Right1,
-                                                SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
+        const std::array<SoftKeyId, 9> slots = {
+            SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
+            SoftKeyId::Left4,  SoftKeyId::Left5,  SoftKeyId::Right1,
+            SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
         const std::array<SoftKeyRoute, 9> routes = {
             SoftKeyRoute::SelectAlertSlot1, SoftKeyRoute::SelectAlertSlot2,
             SoftKeyRoute::SelectAlertSlot3, SoftKeyRoute::SelectAlertSlot4,
@@ -2173,7 +2196,7 @@ void update_softkeys_from_state()
             SoftKeyRoute::SelectAlertSlot7, SoftKeyRoute::SelectAlertSlot8,
             SoftKeyRoute::SelectAlertSlot9};
 
-        for (uint8_t i = 0U; i < slots.size(); ++i)
+        for (size_t i = 0U; i < slots.size(); ++i)
         {
             const uint8_t index = static_cast<uint8_t>(page_start + i);
             if (index >= sorted_count)
@@ -2261,10 +2284,7 @@ void update_lamps_from_state()
         {
             highest_severity = severity;
         }
-        if (g_console_state.active_alerts[i].sequence > newest_sequence)
-        {
-            newest_sequence = g_console_state.active_alerts[i].sequence;
-        }
+        newest_sequence = std::max(newest_sequence, g_console_state.active_alerts[i].sequence);
     }
     g_console_state.alert_severity = highest_severity;
 
@@ -2282,8 +2302,6 @@ void update_lamps_from_state()
             g_console_state.lamps[lamp_index(LampId::AlertLamp)] = LampMode::Off;
             break;
         case AlertSeverity::Message:
-            g_console_state.lamps[lamp_index(LampId::AlertLamp)] = LampMode::FlashSlow;
-            break;
         case AlertSeverity::Warning:
             g_console_state.lamps[lamp_index(LampId::AlertLamp)] = LampMode::FlashSlow;
             break;
@@ -2326,10 +2344,7 @@ bool open_alert_list_page()
     uint32_t newest_sequence = 0U;
     for (uint8_t i = 0U; i < g_console_state.alert_count; ++i)
     {
-        if (g_console_state.active_alerts[i].sequence > newest_sequence)
-        {
-            newest_sequence = g_console_state.active_alerts[i].sequence;
-        }
+        newest_sequence = std::max(newest_sequence, g_console_state.active_alerts[i].sequence);
     }
     g_alert_acknowledged_sequence = newest_sequence;
     if (g_console_state.active_page != MenuPage::AlertList &&
@@ -2490,6 +2505,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return cycle_share_period();
     case SoftKeyRoute::CycleCalendarOwner:
         return cycle_calendar_owner();
+    case SoftKeyRoute::ResetCalendarFilters:
+        return reset_calendar_filters();
     case SoftKeyRoute::SelectCalendarSlot1:
         return open_calendar_detail_from_slot(0U);
     case SoftKeyRoute::SelectCalendarSlot2:
@@ -2680,9 +2697,9 @@ bool apply_runtime_config(const RuntimeConfig& settings)
 {
     bool changed = false;
 
-    const WeatherSource weather_source =
-        settings.weather_source == WeatherSource::MetNorway ? WeatherSource::OpenMeteo
-                                                            : settings.weather_source;
+    const WeatherSource weather_source = settings.weather_source == WeatherSource::MetNorway
+                                             ? WeatherSource::OpenMeteo
+                                             : settings.weather_source;
     if (g_console_state.weather_source != weather_source)
     {
         g_console_state.weather_source = weather_source;
@@ -3012,7 +3029,8 @@ bool handle_button_event(const ButtonEvent& event)
         }
         else if (g_console_state.active_page == MenuPage::AlertList)
         {
-            const int next_page = static_cast<int>(g_console_state.alert_list_page_index) + direction;
+            const int next_page =
+                static_cast<int>(g_console_state.alert_list_page_index) + direction;
             if (next_page >= 0 && next_page < static_cast<int>(alert_page_count()))
             {
                 g_console_state.alert_list_page_index = static_cast<uint8_t>(next_page);
@@ -3021,7 +3039,8 @@ bool handle_button_event(const ButtonEvent& event)
         }
         else if (g_console_state.active_page == MenuPage::AlertDetail)
         {
-            const ActiveAlert& alert = g_console_state.active_alerts[g_console_state.alert_detail_index];
+            const ActiveAlert& alert =
+                g_console_state.active_alerts[g_console_state.alert_detail_index];
             uint8_t max_lines = 0U;
             for (char c : alert.detail)
             {
@@ -3102,17 +3121,20 @@ bool cycle_alert_lamp_preview()
     if (preview_step == 0U)
     {
         set_alert_condition(AlertCode::HomeAssistantOffline, false, AlertSeverity::None, "", "");
-        set_alert_condition(AlertCode::HomeAssistantUnauthorized, false, AlertSeverity::None, "", "");
+        set_alert_condition(AlertCode::HomeAssistantUnauthorized, false, AlertSeverity::None, "",
+                            "");
     }
     else if (preview_step == 1U)
     {
-        set_alert_condition(AlertCode::HomeAssistantOffline, true, AlertSeverity::Message, "HOME ASSISTANT",
-                            "Home Assistant is not connected.\nCheck host/port/token and network routing.");
+        set_alert_condition(
+            AlertCode::HomeAssistantOffline, true, AlertSeverity::Message, "HOME ASSISTANT",
+            "Home Assistant is not connected.\nCheck host/port/token and network routing.");
     }
     else
     {
-        set_alert_condition(AlertCode::HomeAssistantUnauthorized, true, AlertSeverity::Alert, "AUTH FAILED",
-                            "Home Assistant rejected the API token.\nUpdate the token in settings.");
+        set_alert_condition(
+            AlertCode::HomeAssistantUnauthorized, true, AlertSeverity::Alert, "AUTH FAILED",
+            "Home Assistant rejected the API token.\nUpdate the token in settings.");
     }
     update_lamps_from_state();
     return true;
@@ -3183,12 +3205,12 @@ bool seed_fake_alerts_preview(uint8_t page_count)
         const Template& entry = kTemplates[template_index];
         ActiveAlert& alert = g_console_state.active_alerts[g_console_state.alert_count++];
         alert.severity = entry.severity;
-        // Use synthetic codes outside the real alert-code range so suppression logic does not collide.
+        // Use synthetic codes outside the real alert-code range so suppression logic does not
+        // collide.
         alert.code = static_cast<uint8_t>(200U + (i % 40U));
         alert.sequence = g_alert_sequence_counter++;
         std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%02u:%02u",
-                      static_cast<unsigned>((i * 7U) % 24U),
-                      static_cast<unsigned>((i * 11U) % 60U));
+                      (i * 7U) % 24U, (i * 11U) % 60U);
         std::snprintf(alert.summary.data(), alert.summary.size(), "%s %u", entry.summary,
                       static_cast<unsigned>(i + 1U));
         std::snprintf(alert.detail.data(), alert.detail.size(),
@@ -3207,4 +3229,3 @@ bool seed_fake_alerts_preview(uint8_t page_count)
 }
 
 } // namespace console_controller
-

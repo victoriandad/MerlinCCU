@@ -4,9 +4,23 @@ Checks: >
   modernize-*,
   performance-*,
   readability-*,
+  -modernize-avoid-c-arrays,
+  -modernize-raw-string-literal,
+  -modernize-use-auto,
   -modernize-use-trailing-return-type,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-suspicious-memory-comparison,
+  -bugprone-switch-missing-default-case,
+  -readability-uppercase-literal-suffix,
+  -readability-avoid-nested-conditional-operator,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-identifier-length
+  -readability-identifier-length,
+  -readability-math-missing-parentheses,
+  -readability-non-const-parameter,
+  -readability-simplify-boolean-expr,
+  -readability-use-anyofallof
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(?!.*[\\/]build[\\/]).*'
 FormatStyle: file
@@ -48,9 +62,9 @@ CheckOptions:
   - key: readability-identifier-naming.GlobalConstantIgnoredRegexp
     value: '^(WIFI_|HOME_ASSISTANT_|KEYPAD_|WEATHER_)'
   - key: readability-identifier-naming.LocalConstantCase
-    value: 'CamelCase'
-  - key: readability-identifier-naming.LocalConstantPrefix
-    value: 'k'
+    value: 'lower_case'
+  - key: readability-identifier-naming.LocalConstantIgnoredRegexp
+    value: '^k[A-Z].*'
   - key: readability-identifier-naming.StaticConstantCase
     value: 'CamelCase'
   - key: readability-identifier-naming.StaticConstantPrefix

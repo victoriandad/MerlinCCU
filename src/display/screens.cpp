@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
-#include "console_model.h"
 #include "config_manager.h"
+#include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screen_banners.h"
@@ -46,8 +46,8 @@ void build_uppercase_label(const char* input, char* output, size_t output_size)
     size_t write_index = 0U;
     while (input[write_index] != '\0' && write_index + 1U < output_size)
     {
-        output[write_index] = static_cast<char>(std::toupper(static_cast<unsigned char>(
-            input[write_index])));
+        output[write_index] =
+            static_cast<char>(std::toupper(static_cast<unsigned char>(input[write_index])));
         ++write_index;
     }
 
@@ -302,7 +302,6 @@ const char* weather_source_text(WeatherSource source)
     case WeatherSource::HomeAssistant:
         return "Home Assistant";
     case WeatherSource::OpenMeteo:
-        return "Open-Meteo";
     case WeatherSource::MetNorway:
         return "Open-Meteo";
     }
@@ -386,9 +385,9 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     {
         constexpr uint8_t kAlertsPerPage = 9U;
         const uint8_t page_count = static_cast<uint8_t>(
-            (console_state.alert_count == 0U) ? 1U
-                                              : ((console_state.alert_count + (kAlertsPerPage - 1U)) /
-                                                 kAlertsPerPage));
+            (console_state.alert_count == 0U)
+                ? 1U
+                : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
         std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
                       static_cast<unsigned>(console_state.alert_list_page_index + 1U),
                       static_cast<unsigned>(page_count));
@@ -749,8 +748,8 @@ void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state
                            kScratchpadHeight - 2, false);
     draw_softkey_selection_brackets(fb, kScratchpadLeftX, kScratchpadTopY, kScratchpadHeight,
                                     kScratchpadWidth, fonts::FontFace::Font5x7, true);
-    framebuffer::draw_text(fb, kTextX, kScratchpadTopY + kTextInsetY,
-                           timeout_text, true, fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kTextX, kScratchpadTopY + kTextInsetY, timeout_text, true,
+                           fonts::FontFace::Font5x7, 1);
 }
 
 /// @brief Extracts the inner text from a bracketed softkey value line.
@@ -907,10 +906,9 @@ ForecastRenderSlice build_forecast_render_slice(const ConsoleState& console_stat
         for (const int candidate_offset : kOffsetCandidates)
         {
             const int candidate_minutes = raw_minutes[0] + candidate_offset;
-            const int candidate_distance =
-                candidate_minutes > slice.current_hour_floor
-                    ? (candidate_minutes - slice.current_hour_floor)
-                    : (slice.current_hour_floor - candidate_minutes);
+            const int candidate_distance = candidate_minutes > slice.current_hour_floor
+                                               ? (candidate_minutes - slice.current_hour_floor)
+                                               : (slice.current_hour_floor - candidate_minutes);
             if (candidate_distance < best_distance)
             {
                 best_distance = candidate_distance;
@@ -1016,8 +1014,7 @@ uint8_t build_day_forecast_sample(const ForecastRenderSlice& forecast_slice,
 /// @brief Parses one `YYYY-MM-DD` date string used by daily forecast rows.
 bool parse_forecast_iso_date(const char* date_text, int* out_month, int* out_day)
 {
-    if (date_text == nullptr || out_month == nullptr || out_day == nullptr ||
-        date_text[0] == '\0')
+    if (date_text == nullptr || out_month == nullptr || out_day == nullptr || date_text[0] == '\0')
     {
         return false;
     }
@@ -1115,9 +1112,9 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         constexpr int kBracketPadY = 2;
         const int kInnerTextWidth =
             kBracketedValue ? text_width(bracketed_value, font) : text_width(line_text, font);
-        const int kLabelWidth =
-            kBracketedValue ? (kInnerTextWidth + (kBracketDepth * 2) + (kBracketGap * 2))
-                            : kInnerTextWidth;
+        const int kLabelWidth = kBracketedValue
+                                    ? (kInnerTextWidth + (kBracketDepth * 2) + (kBracketGap * 2))
+                                    : kInnerTextWidth;
         const int kTextX =
             left_side
                 ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
@@ -1134,8 +1131,7 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
             const int kHighlightHeight =
                 (kBracketedValue ? kBracketHeight : kLineHeight) + (kHighlightPadY * 2);
             framebuffer::fill_rect(fb, kTextX - kHighlightPadX, kHighlightTopY,
-                                   kLabelWidth + (kHighlightPadX * 2),
-                                   kHighlightHeight, true);
+                                   kLabelWidth + (kHighlightPadX * 2), kHighlightHeight, true);
         }
 
         if (!kBracketedValue)
@@ -1145,8 +1141,8 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         }
 
         const int kInnerTextX = kTextX + kBracketDepth + kBracketGap;
-        draw_softkey_selection_brackets(fb, kTextX, kBracketTopY, kBracketHeight, kLabelWidth,
-                                        font, kTextOn);
+        draw_softkey_selection_brackets(fb, kTextX, kBracketTopY, kBracketHeight, kLabelWidth, font,
+                                        kTextOn);
         framebuffer::draw_text(fb, kInnerTextX, kTextY, bracketed_value, kTextOn, font, 1);
     };
 
@@ -1298,8 +1294,8 @@ const char* calendar_owner_text(CalendarOwner owner)
 /// @brief Returns the short weekday label for compact Calendar date text.
 const char* weekday_short_text(uint8_t weekday_index)
 {
-    static constexpr std::array<const char*, 7> kWeekdayLabels = {
-        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static constexpr std::array<const char*, 7> kWeekdayLabels = {"Sun", "Mon", "Tue", "Wed",
+                                                                  "Thu", "Fri", "Sat"};
     if (weekday_index >= kWeekdayLabels.size())
     {
         return "";
@@ -1377,8 +1373,8 @@ const char* calendar_day_text(const ConsoleState& console_state, int8_t day_offs
                 return buffer;
             }
 
-            std::snprintf(buffer, buffer_size, "%s Last %s",
-                          calendar_week_prefix(age_days / 7), weekday_text);
+            std::snprintf(buffer, buffer_size, "%s Last %s", calendar_week_prefix(age_days / 7),
+                          weekday_text);
             return buffer;
         }
 
@@ -1470,15 +1466,13 @@ int calendar_detail_value_x(const DetailRow* rows, size_t count)
     for (size_t i = 0; i < count; ++i)
     {
         char label_text[kLabelBufferSize] = {};
-        std::snprintf(label_text, sizeof(label_text), "%s:", rows[i].label != nullptr
-                                                                  ? rows[i].label
-                                                                  : "");
+        std::snprintf(label_text, sizeof(label_text),
+                      "%s:", rows[i].label != nullptr ? rows[i].label : "");
         widest_label_width =
             std::max(widest_label_width, text_width(label_text, kCalendarDetailFont, 1));
     }
 
-    return kCalendarDetailTextX + widest_label_width +
-           text_width(" ", kCalendarDetailFont, 1);
+    return kCalendarDetailTextX + widest_label_width + text_width(" ", kCalendarDetailFont, 1);
 }
 
 /// @brief Draws one compact Calendar detail line with pixel-aligned values.
@@ -1579,7 +1573,7 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
 
 /// @brief Draws the dense hourly forecast table used by the hour period mode.
 bool draw_hour_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                                const ForecastRenderSlice& forecast_slice)
+                               const ForecastRenderSlice& forecast_slice)
 {
     if (forecast_slice.count == 0)
     {
@@ -1604,12 +1598,12 @@ bool draw_hour_forecast_period(uint8_t* fb, const ConsoleState& console_state,
         format_weather_phrase(entry.condition_text.data(), formatted_condition,
                               sizeof(formatted_condition));
         framebuffer::draw_text(fb, 12, row_y, entry.time_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 60, row_y, entry.temperature_text.data(), true, kForecastBodyFont,
-                               1);
+        framebuffer::draw_text(fb, 60, row_y, entry.temperature_text.data(), true,
+                               kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 102, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 160, row_y,
                                formatted_condition[0] != '\0' ? formatted_condition
-                                                               : entry.condition_text.data(),
+                                                              : entry.condition_text.data(),
                                true, kForecastBodyFont, 1);
     }
 
@@ -1618,7 +1612,7 @@ bool draw_hour_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
 /// @brief Draws the day period layout with room for condition text per row.
 bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                               const ForecastRenderSlice& forecast_slice)
+                              const ForecastRenderSlice& forecast_slice)
 {
     std::array<uint8_t, 5> day_sample_indices = {};
     const uint8_t row_count = build_day_forecast_sample(forecast_slice, day_sample_indices);
@@ -1643,12 +1637,12 @@ bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
         format_weather_phrase(entry.condition_text.data(), formatted_condition,
                               sizeof(formatted_condition));
         framebuffer::draw_text(fb, 12, row_y, entry.time_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 64, row_y, entry.temperature_text.data(), true, kForecastBodyFont,
-                               1);
+        framebuffer::draw_text(fb, 64, row_y, entry.temperature_text.data(), true,
+                               kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 112, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 12, row_y + 14,
                                formatted_condition[0] != '\0' ? formatted_condition
-                                                               : entry.condition_text.data(),
+                                                              : entry.condition_text.data(),
                                true, kForecastBodyFont, 1);
 
         if (i + 1 < row_count)
@@ -1662,7 +1656,7 @@ bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
 /// @brief Draws a week period summary using provider-native daily forecast rows.
 bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                                const ForecastRenderSlice& forecast_slice)
+                               const ForecastRenderSlice& forecast_slice)
 {
     (void)forecast_slice;
 
@@ -1692,16 +1686,16 @@ bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
         format_weather_phrase(entry.condition_text.data(), formatted_condition,
                               sizeof(formatted_condition));
 
-        framebuffer::draw_text(fb, 12, row_y,
-                               week_day_label_text(i, entry.date_text.data(), day_label,
-                                                   sizeof(day_label)),
-                               true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 56, row_y, entry.temperature_text.data(), true, kForecastBodyFont,
-                               1);
+        framebuffer::draw_text(
+            fb, 12, row_y,
+            week_day_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)), true,
+            kForecastBodyFont, 1);
+        framebuffer::draw_text(fb, 56, row_y, entry.temperature_text.data(), true,
+                               kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 106, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 148, row_y,
                                formatted_condition[0] != '\0' ? formatted_condition
-                                                               : entry.condition_text.data(),
+                                                              : entry.condition_text.data(),
                                true, kForecastBodyFont, 1);
 
         if (i + 1 < row_count)
@@ -1715,7 +1709,7 @@ bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
 /// @brief Draws weather forecast content for the active hour/day/week period.
 bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                                   const ForecastRenderSlice& forecast_slice)
+                                  const ForecastRenderSlice& forecast_slice)
 {
     switch (console_state.weather_period)
     {
@@ -1743,8 +1737,7 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 
     char ip_text[32] = {};
     framebuffer::draw_text(fb, kHomeIpX, kHomeIpY,
-                           home_ip_status_text(console_state.wifi_status, ip_text,
-                                               sizeof(ip_text)),
+                           home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
                            true, kHomeIpFont, 1);
 }
 
@@ -1799,8 +1792,8 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
 
     for (size_t i = 0; i < kRowCount; ++i)
     {
-        draw_calendar_detail_line(fb, kStartY + (static_cast<int>(i) * kRowPitch),
-                                  rows[i].label, rows[i].value, value_x);
+        draw_calendar_detail_line(fb, kStartY + (static_cast<int>(i) * kRowPitch), rows[i].label,
+                                  rows[i].value, value_x);
     }
 }
 
@@ -1849,17 +1842,17 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
         }
         else
         {
-            weather_condition =
-                console_state.home_assistant_status.weather_condition[0]
-                    ? console_state.home_assistant_status.weather_condition.data()
-                    : (console_state.home_assistant_status.state ==
-                               HomeAssistantConnectionState::Connected
-                           ? "NO DATA AVAILABLE"
-                           : weather_status_detail(console_state, status_detail,
-                                                   sizeof(status_detail)));
+            weather_condition = console_state.home_assistant_status.weather_condition[0]
+                                    ? console_state.home_assistant_status.weather_condition.data()
+                                    : (console_state.home_assistant_status.state ==
+                                               HomeAssistantConnectionState::Connected
+                                           ? "NO DATA AVAILABLE"
+                                           : weather_status_detail(console_state, status_detail,
+                                                                   sizeof(status_detail)));
             weather_temperature = console_state.home_assistant_status.weather_temperature.data();
 
-            if (console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected)
+            if (console_state.home_assistant_status.state ==
+                HomeAssistantConnectionState::Connected)
             {
                 weather_footer = "NO DATA AVAILABLE";
             }
@@ -1933,8 +1926,7 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.share_count == 0U)
     {
-        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true, fonts::FontFace::Font8x12,
-                           1);
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true, fonts::FontFace::Font8x12, 1);
         draw_centered_text(fb, kUiWidth / 2, 142, "ADD FLOW PENDING", true,
                            fonts::FontFace::Font5x7, 1);
         return;
@@ -1983,7 +1975,8 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const uint16_t range = (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
+    const uint16_t range =
+        (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
     int previous_x = kGraphX + kGraphPlotLeftInset;
     int previous_y = kGraphY + kGraphHeight - 1;
     for (int i = 0; i < kPointCount; ++i)
@@ -2022,7 +2015,8 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         period_label = "ALL-TIME";
         break;
     }
-    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
+                           1);
 
     char min_value_text[16] = {};
     char max_value_text[16] = {};
@@ -2045,8 +2039,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.selected_share_index >= console_state.share_count)
     {
-        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true, fonts::FontFace::Font8x12,
-                           1);
+        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true, fonts::FontFace::Font8x12, 1);
         return;
     }
 
@@ -2055,8 +2048,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
     framebuffer::draw_text(fb, 42, 184, share.display_name.data(), true, fonts::FontFace::Font8x12,
                            1);
     framebuffer::draw_text(fb, 42, 210, share.symbol.data(), true, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, 86, 210, share.price_text.data(), true, fonts::FontFace::Font5x7,
-                           1);
+    framebuffer::draw_text(fb, 86, 210, share.price_text.data(), true, fonts::FontFace::Font5x7, 1);
     framebuffer::draw_text(fb, 150, 210, share.change_text.data(), true, fonts::FontFace::Font5x7,
                            1);
 }
@@ -2102,8 +2094,8 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     }
 
     const DetailRow rows[] = {
-        {"TIME", console_state.time_status.synced ? console_state.time_status.time_text.data()
-                                                  : "--:--"},
+        {"TIME",
+         console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
         {"WIFI", wifi_state_text(console_state.wifi_status.state)},
         {"SSID", console_state.wifi_status.credentials_present
                      ? console_state.wifi_status.ssid.data()
@@ -2278,9 +2270,9 @@ void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr uint8_t kAlertsPerPage = 9U;
     const uint8_t page_count = static_cast<uint8_t>(
-        (console_state.alert_count == 0U) ? 1U
-                                          : ((console_state.alert_count + (kAlertsPerPage - 1U)) /
-                                             kAlertsPerPage));
+        (console_state.alert_count == 0U)
+            ? 1U
+            : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
     draw_page_navigation_arrows(fb, console_state.alert_list_page_index > 0U,
                                 (console_state.alert_list_page_index + 1U) < page_count);
 }
@@ -2497,4 +2489,3 @@ void draw_calibration_screen(uint8_t* fb)
 }
 
 } // namespace screens
-

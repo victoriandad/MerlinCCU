@@ -225,8 +225,7 @@ ConsoleState make_default_console_state()
         }
 
         set_calendar_event(state.calendar_events[calendar_event_index], owner, day_offset,
-                           start_time, end_time, title, location, reminder, attendees,
-                           description);
+                           start_time, end_time, title, location, reminder, attendees, description);
         ++calendar_event_index;
     };
 
@@ -246,9 +245,8 @@ ConsoleState make_default_console_state()
 
     add_calendar_event(CalendarOwner::Sean, 0, "08:30", "09:00", "Work standup", "Teams",
                        "10 min popup", "Project team", "Daily status call.");
-    add_calendar_event(CalendarOwner::Luigina, 0, "09:15", "09:45", "School admin",
-                       "School office", "30 min email", "School office",
-                       "Forms and term dates.");
+    add_calendar_event(CalendarOwner::Luigina, 0, "09:15", "09:45", "School admin", "School office",
+                       "30 min email", "School office", "Forms and term dates.");
     add_calendar_event(CalendarOwner::Loris, 0, "15:40", "17:00", "Football", "Sports ground",
                        "1 hour popup", "Coach, team", "Training kit needed.");
     add_calendar_event(CalendarOwner::Luca, 0, "16:30", "17:15", "Swimming", "Leisure centre",
@@ -261,8 +259,8 @@ ConsoleState make_default_console_state()
                        "1 day popup", "Class", "Packed lunch required.");
     add_calendar_event(CalendarOwner::Luca, 1, "17:15", "18:30", "Play date", "Friend's house",
                        "30 min popup", "Parent", "Pickup confirmed by text.");
-    add_calendar_event(CalendarOwner::Sean, 2, "08:45", "17:00", "Office", "London", "None",
-                       "Work", "Office day.");
+    add_calendar_event(CalendarOwner::Sean, 2, "08:45", "17:00", "Office", "London", "None", "Work",
+                       "Office day.");
     add_calendar_event(CalendarOwner::Luigina, 2, "18:00", "19:00", "Pilates", "Studio",
                        "1 hour popup", "Class", "Bring mat.");
     add_calendar_event(CalendarOwner::Loris, 3, "11:00", "11:30", "Dentist", "Dental surgery",
@@ -271,8 +269,8 @@ ConsoleState make_default_console_state()
                        "2 hours popup", "Class friends", "Birthday party.");
     add_calendar_event(CalendarOwner::Sean, -1, "12:30", "13:00", "Lunch call", "Office",
                        "10 min popup", "Supplier", "Review quote.");
-    add_calendar_event(CalendarOwner::Luigina, -1, "18:30", "19:30", "Parents group",
-                       "School hall", "30 min popup", "Parents", "Planning meeting.");
+    add_calendar_event(CalendarOwner::Luigina, -1, "18:30", "19:30", "Parents group", "School hall",
+                       "30 min popup", "Parents", "Planning meeting.");
     add_calendar_event(CalendarOwner::Sean, 4, "09:30", "10:15", "Service slot", "Garage",
                        "1 day email", "Garage", "Car service booking.");
     add_calendar_event(CalendarOwner::Loris, 5, "16:00", "17:30", "Match", "Away pitch",
@@ -287,9 +285,8 @@ ConsoleState make_default_console_state()
                        "15 min popup", "School office", "Historic weekly sample.");
     add_calendar_event(CalendarOwner::Sean, 14, "09:00", "09:30", "Budget check", "Home office",
                        "1 day email", "Accounts", "Two-week sample event.");
-    add_calendar_event(CalendarOwner::Luca, 13, "16:00", "17:00", "Club signup",
-                       "Community hall", "1 day popup", "Club leader",
-                       "Next fortnight sample.");
+    add_calendar_event(CalendarOwner::Luca, 13, "16:00", "17:00", "Club signup", "Community hall",
+                       "1 day popup", "Club leader", "Next fortnight sample.");
 
     // Fill every empty day in the navigation test window so arrow-key day
     // movement can be verified before live HA data exists. Keep this deliberately
@@ -315,7 +312,7 @@ ConsoleState make_default_console_state()
             continue;
         }
 
-        const int sample_index = day - static_cast<int>(kCalendarMinDayOffset);
+        const int sample_index = day - kCalendarMinDayOffset;
         const SampleOwner& sample_owner =
             kSampleOwners[static_cast<size_t>(sample_index) %
                           (sizeof(kSampleOwners) / sizeof(kSampleOwners[0]))];
@@ -363,4 +360,3 @@ ConsoleState make_default_console_state()
     state.softkeys = kDefaultSoftkeys;
     return state;
 }
-

@@ -97,20 +97,20 @@ int days_in_month(int year, int month)
 /// @brief Builds a UTC epoch from broken-down UTC calendar fields.
 bool utc_parts_to_epoch(const DateTimeParts& parts, uint32_t* out_epoch_seconds)
 {
-    if (out_epoch_seconds == nullptr || parts.year < 1970 || parts.month < 1 ||
-        parts.month > 12 || parts.day < 1 || parts.day > days_in_month(parts.year, parts.month) ||
-        parts.hour < 0 || parts.hour > 23 || parts.minute < 0 || parts.minute > 59 ||
-        parts.second < 0 || parts.second > 59)
+    if (out_epoch_seconds == nullptr || parts.year < 1970 || parts.month < 1 || parts.month > 12 ||
+        parts.day < 1 || parts.day > days_in_month(parts.year, parts.month) || parts.hour < 0 ||
+        parts.hour > 23 || parts.minute < 0 || parts.minute > 59 || parts.second < 0 ||
+        parts.second > 59)
     {
         return false;
     }
 
-    constexpr int64_t kSecondsPerDay = 24 * 60 * 60;
-    const int64_t days =
-        static_cast<int64_t>(days_from_civil(parts.year, static_cast<unsigned>(parts.month),
-                                             static_cast<unsigned>(parts.day)));
-    const int64_t epoch = (days * kSecondsPerDay) + (parts.hour * 60 * 60) +
-                          (parts.minute * 60) + parts.second;
+    constexpr int64_t kSecondsPerDay = 24LL * 60LL * 60LL;
+    const int64_t days = static_cast<int64_t>(days_from_civil(
+        parts.year, static_cast<unsigned>(parts.month), static_cast<unsigned>(parts.day)));
+    const int64_t epoch = (days * kSecondsPerDay) +
+                          (static_cast<int64_t>(parts.hour) * 60LL * 60LL) +
+                          (static_cast<int64_t>(parts.minute) * 60LL) + parts.second;
     if (epoch < 0 || epoch > UINT32_MAX)
     {
         return false;
@@ -144,6 +144,18 @@ bool parse_fixed_digits(const char** cursor, int digits, int* out_value)
     return true;
 }
 
+/// @brief Consumes one exact separator character from a parser cursor.
+bool consume_char(const char** cursor, char expected)
+{
+    if (cursor == nullptr || *cursor == nullptr || **cursor != expected)
+    {
+        return false;
+    }
+
+    ++(*cursor);
+    return true;
+}
+
 /// @brief Parses ISO-8601 timestamps used by Home Assistant and weather APIs.
 bool parse_iso8601_datetime(const char* iso_datetime, ParsedIsoDateTime* out_datetime)
 {
@@ -154,16 +166,19 @@ bool parse_iso8601_datetime(const char* iso_datetime, ParsedIsoDateTime* out_dat
 
     const char* cursor = iso_datetime;
     ParsedIsoDateTime parsed = {};
-    if (!parse_fixed_digits(&cursor, 4, &parsed.parts.year) || *cursor++ != '-' ||
-        !parse_fixed_digits(&cursor, 2, &parsed.parts.month) || *cursor++ != '-' ||
-        !parse_fixed_digits(&cursor, 2, &parsed.parts.day) ||
-        (*cursor != 'T' && *cursor != 't' && *cursor != ' '))
+    if (!parse_fixed_digits(&cursor, 4, &parsed.parts.year) || !consume_char(&cursor, '-') ||
+        !parse_fixed_digits(&cursor, 2, &parsed.parts.month) || !consume_char(&cursor, '-') ||
+        !parse_fixed_digits(&cursor, 2, &parsed.parts.day))
+    {
+        return false;
+    }
+    if (*cursor != 'T' && *cursor != 't' && *cursor != ' ')
     {
         return false;
     }
     ++cursor;
 
-    if (!parse_fixed_digits(&cursor, 2, &parsed.parts.hour) || *cursor++ != ':' ||
+    if (!parse_fixed_digits(&cursor, 2, &parsed.parts.hour) || !consume_char(&cursor, ':') ||
         !parse_fixed_digits(&cursor, 2, &parsed.parts.minute))
     {
         return false;
@@ -378,8 +393,7 @@ bool update_time_text()
     {
         const DateTimeParts local = unix_time_to_utc(current_local_epoch_seconds());
         std::snprintf(next_text, sizeof(next_text), "%02d:%02d", local.hour, local.minute);
-        next_weekday =
-            static_cast<uint8_t>(weekday_from_ymd(local.year, local.month, local.day));
+        next_weekday = static_cast<uint8_t>(weekday_from_ymd(local.year, local.month, local.day));
     }
 
     if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0 &&

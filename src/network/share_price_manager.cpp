@@ -307,6 +307,9 @@ void finish_failure(err_t err, int http_status)
 {
     reset_attempt_state();
     g_status.data_valid = false;
+    // lwIP defines err_t as signed char; preserving the negative protocol code
+    // is the useful behaviour here, despite clang-tidy's generic char warning.
+    // NOLINTNEXTLINE(bugprone-signed-char-misuse)
     g_status.last_error = static_cast<int>(err);
     g_status.last_http_status = http_status;
     schedule_next_attempt(kRetryDelayMs);
@@ -337,8 +340,8 @@ void defer_completion(bool success, err_t err, int http_status)
 /// @brief Skips JSON whitespace and returns the next meaningful character.
 const char* skip_json_space(const char* cursor)
 {
-    while (cursor != nullptr && (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' ||
-                                *cursor == '\n'))
+    while (cursor != nullptr &&
+           (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n'))
     {
         ++cursor;
     }
@@ -977,8 +980,14 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
         }
         else
         {
-            finish_failure(g_completion_success ? ERR_VAL : g_completion_error,
-                           completed_http_status);
+            if (g_completion_success)
+            {
+                finish_failure(ERR_VAL, completed_http_status);
+            }
+            else
+            {
+                finish_failure(g_completion_error, completed_http_status);
+            }
         }
         return status_changed(previous, g_status);
     }
