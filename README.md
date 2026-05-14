@@ -30,7 +30,7 @@ Working now:
 - Wi-Fi station mode with DHCP/static-IP support, NetBIOS hostname, NTP/SNTP, and simple internet reachability probing.
 - Home Assistant REST client for status/entity/weather flows.
 - Open-Meteo direct weather source using configured latitude/longitude.
-- Hour, day, and week weather period views.
+- Hourly, Today, and Next 7 Days weather period views.
 - MQTT discovery/state publishing for Home Assistant diagnostic sensors.
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
 - Calendar UI scaffold with Combined/Sean/Luigina/Loris/Luca filtering, relative-day footer, and softkey event-detail pages.
@@ -372,7 +372,7 @@ Weather and integrations:
 
 - [x] Home Assistant REST status/entity/weather flow.
 - [x] Open-Meteo direct weather source.
-- [x] Hour/day/week weather views.
+- [x] Hourly/Today/Next 7 Days weather views.
 - [x] MQTT discovery for core diagnostic sensors.
 - [x] Calendar UI scaffold for the family combined/person views.
 - [ ] Add Home Assistant calendar ingestion behind the Calendar model.

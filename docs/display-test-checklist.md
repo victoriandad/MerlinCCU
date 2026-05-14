@@ -28,10 +28,11 @@ quickly without relying only on photographs of the physical panel.
 
 ## Weather Page
 
-- `PERIOD` softkey cycles `Hour` -> `Day` -> `Week` and wraps back to `Hour`.
+- `PERIOD` softkey cycles `Hourly` -> `Today` -> `Next 7 Days` and wraps back to
+  `Hourly`.
 - Forecast table columns align (`Time`, `Temp`, `Wind mph`, `Conditions`).
-- `Day` period uses spaced rows with condition sub-lines and no clipped text.
-- `Week` period shows provider daily rows (typically up to 7 entries) with
+- `Today` period uses spaced rows with condition sub-lines and no clipped text.
+- `Next 7 Days` period shows provider daily rows (typically up to 7 entries) with
   labels (`Today`, `Tmrw`, then date labels like `DD/MM`).
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.

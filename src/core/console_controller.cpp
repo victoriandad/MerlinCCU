@@ -134,9 +134,9 @@ constexpr std::array<WeatherSourceDefinition, 2> kWeatherSources = {{
 }};
 
 constexpr std::array<WeatherPeriodDefinition, 3> kWeatherPeriods = {{
-    {WeatherPeriod::Hour, "Hour"},
-    {WeatherPeriod::Day, "Day"},
-    {WeatherPeriod::Week, "Week"},
+    {WeatherPeriod::Hourly, "Hourly"},
+    {WeatherPeriod::Today, "Today"},
+    {WeatherPeriod::NextSevenDays, "Next 7 Days"},
 }};
 
 constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
@@ -510,7 +510,7 @@ const WeatherSourceDefinition& weather_source_definition(WeatherSource source)
     return kWeatherSources[0];
 }
 
-/// @brief Returns the static metadata for one selectable weather period.
+/// @brief Returns the static metadata for one selectable weather period label.
 const WeatherPeriodDefinition& weather_period_definition(WeatherPeriod period)
 {
     for (const WeatherPeriodDefinition& definition : kWeatherPeriods)
@@ -712,7 +712,7 @@ const char* weather_source_selection_text(const ConsoleState& console_state)
     return weather_source_definition(console_state.weather_source).selection_label;
 }
 
-/// @brief Returns the currently selected weather-period label for menu softkeys.
+/// @brief Returns the currently selected weather period label for menu softkeys.
 const char* weather_period_selection_text(const ConsoleState& console_state)
 {
     return weather_period_definition(console_state.weather_period).selection_label;
@@ -1337,23 +1337,23 @@ bool select_weather_source(WeatherSource source)
         });
 }
 
-/// @brief Returns the next weather period in the user-facing cycle order.
+/// @brief Returns the next weather range in the user-facing cycle order.
 WeatherPeriod next_weather_period(WeatherPeriod period)
 {
     switch (period)
     {
-    case WeatherPeriod::Hour:
-        return WeatherPeriod::Day;
-    case WeatherPeriod::Day:
-        return WeatherPeriod::Week;
-    case WeatherPeriod::Week:
-        return WeatherPeriod::Hour;
+    case WeatherPeriod::Hourly:
+        return WeatherPeriod::Today;
+    case WeatherPeriod::Today:
+        return WeatherPeriod::NextSevenDays;
+    case WeatherPeriod::NextSevenDays:
+        return WeatherPeriod::Hourly;
     }
 
-    return WeatherPeriod::Hour;
+    return WeatherPeriod::Hourly;
 }
 
-/// @brief Advances the active weather page period without touching persisted config.
+/// @brief Advances the active weather page range without touching persisted config.
 bool cycle_weather_period()
 {
     const WeatherPeriod next = next_weather_period(g_console_state.weather_period);

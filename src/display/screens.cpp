@@ -955,11 +955,11 @@ ForecastRenderSlice build_forecast_render_slice(const ConsoleState& console_stat
     return slice;
 }
 
-/// @brief Chooses representative rows for a day-focused forecast layout.
-/// @details The day period is capped to a handful of rows so each entry can
+/// @brief Chooses representative rows for the Today forecast layout.
+/// @details The Today range is capped to a handful of rows so each entry can
 /// include both headline values and the condition text without clipping.
-uint8_t build_day_forecast_sample(const ForecastRenderSlice& forecast_slice,
-                                  std::array<uint8_t, 5>& out_forecast_indices)
+uint8_t build_today_forecast_sample(const ForecastRenderSlice& forecast_slice,
+                                    std::array<uint8_t, 5>& out_forecast_indices)
 {
     out_forecast_indices.fill(0);
     if (forecast_slice.count == 0)
@@ -972,8 +972,8 @@ uint8_t build_day_forecast_sample(const ForecastRenderSlice& forecast_slice,
         (forecast_slice.current_time_valid ? forecast_slice.current_hour_floor
                                            : forecast_slice.entries[0].absolute_minutes) +
         kDayMinutes;
-    std::array<uint8_t, kWeatherForecastEntryCount> day_entries = {};
-    uint8_t day_entry_count = 0;
+    std::array<uint8_t, kWeatherForecastEntryCount> today_entries = {};
+    uint8_t today_entry_count = 0;
     for (uint8_t i = 0; i < forecast_slice.count; ++i)
     {
         if (forecast_slice.entries[i].absolute_minutes > period_end_minutes)
@@ -981,31 +981,31 @@ uint8_t build_day_forecast_sample(const ForecastRenderSlice& forecast_slice,
             break;
         }
 
-        day_entries[day_entry_count] = forecast_slice.entries[i].forecast_index;
-        ++day_entry_count;
+        today_entries[today_entry_count] = forecast_slice.entries[i].forecast_index;
+        ++today_entry_count;
     }
 
-    if (day_entry_count == 0)
+    if (today_entry_count == 0)
     {
-        day_entries[0] = forecast_slice.entries[0].forecast_index;
-        day_entry_count = 1;
+        today_entries[0] = forecast_slice.entries[0].forecast_index;
+        today_entry_count = 1;
     }
 
     const uint8_t max_rows = static_cast<uint8_t>(out_forecast_indices.size());
-    if (day_entry_count <= max_rows)
+    if (today_entry_count <= max_rows)
     {
-        for (uint8_t i = 0; i < day_entry_count; ++i)
+        for (uint8_t i = 0; i < today_entry_count; ++i)
         {
-            out_forecast_indices[i] = day_entries[i];
+            out_forecast_indices[i] = today_entries[i];
         }
-        return day_entry_count;
+        return today_entry_count;
     }
 
     for (uint8_t row = 0; row < max_rows; ++row)
     {
         const uint8_t sample_index =
-            static_cast<uint8_t>((row * (day_entry_count - 1U)) / (max_rows - 1U));
-        out_forecast_indices[row] = day_entries[sample_index];
+            static_cast<uint8_t>((row * (today_entry_count - 1U)) / (max_rows - 1U));
+        out_forecast_indices[row] = today_entries[sample_index];
     }
 
     return max_rows;
@@ -1036,9 +1036,9 @@ bool parse_forecast_iso_date(const char* date_text, int* out_month, int* out_day
     return *out_month >= 1 && *out_month <= 12 && *out_day >= 1 && *out_day <= 31;
 }
 
-/// @brief Formats one day label for the weekly period rows.
-const char* week_day_label_text(uint8_t row_index, const char* date_text, char* buffer,
-                                size_t buffer_size)
+/// @brief Formats one day label for the Next 7 Days rows.
+const char* next_seven_days_label_text(uint8_t row_index, const char* date_text, char* buffer,
+                                       size_t buffer_size)
 {
     if (buffer == nullptr || buffer_size == 0)
     {
@@ -1571,9 +1571,9 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
     dest[out_index] = '\0';
 }
 
-/// @brief Draws the dense hourly forecast table used by the hour period mode.
-bool draw_hour_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                               const ForecastRenderSlice& forecast_slice)
+/// @brief Draws the dense forecast table used by the Hourly range mode.
+bool draw_hourly_forecast_period(uint8_t* fb, const ConsoleState& console_state,
+                                 const ForecastRenderSlice& forecast_slice)
 {
     if (forecast_slice.count == 0)
     {
@@ -1610,12 +1610,12 @@ bool draw_hour_forecast_period(uint8_t* fb, const ConsoleState& console_state,
     return true;
 }
 
-/// @brief Draws the day period layout with room for condition text per row.
-bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                              const ForecastRenderSlice& forecast_slice)
+/// @brief Draws the Today range layout with room for condition text per row.
+bool draw_today_forecast_period(uint8_t* fb, const ConsoleState& console_state,
+                                const ForecastRenderSlice& forecast_slice)
 {
-    std::array<uint8_t, 5> day_sample_indices = {};
-    const uint8_t row_count = build_day_forecast_sample(forecast_slice, day_sample_indices);
+    std::array<uint8_t, 5> today_sample_indices = {};
+    const uint8_t row_count = build_today_forecast_sample(forecast_slice, today_sample_indices);
     if (row_count == 0)
     {
         return false;
@@ -1632,7 +1632,7 @@ bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
     for (uint8_t i = 0; i < row_count; ++i)
     {
         const WeatherForecastEntry& entry =
-            console_state.home_assistant_status.weather_forecast[day_sample_indices[i]];
+            console_state.home_assistant_status.weather_forecast[today_sample_indices[i]];
         const int row_y = 54 + (static_cast<int>(i) * 36);
         format_weather_phrase(entry.condition_text.data(), formatted_condition,
                               sizeof(formatted_condition));
@@ -1654,9 +1654,9 @@ bool draw_day_forecast_period(uint8_t* fb, const ConsoleState& console_state,
     return true;
 }
 
-/// @brief Draws a week period summary using provider-native daily forecast rows.
-bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                               const ForecastRenderSlice& forecast_slice)
+/// @brief Draws a Next 7 Days summary using provider-native daily forecast rows.
+bool draw_next_seven_days_forecast_period(uint8_t* fb, const ConsoleState& console_state,
+                                          const ForecastRenderSlice& forecast_slice)
 {
     (void)forecast_slice;
 
@@ -1688,8 +1688,8 @@ bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
         framebuffer::draw_text(
             fb, 12, row_y,
-            week_day_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)), true,
-            kForecastBodyFont, 1);
+            next_seven_days_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)),
+            true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 56, row_y, entry.temperature_text.data(), true,
                                kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 106, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
@@ -1707,18 +1707,18 @@ bool draw_week_forecast_period(uint8_t* fb, const ConsoleState& console_state,
     return true;
 }
 
-/// @brief Draws weather forecast content for the active hour/day/week period.
+/// @brief Draws weather forecast content for the active Hourly/Today/Next 7 Days range.
 bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state,
                                   const ForecastRenderSlice& forecast_slice)
 {
     switch (console_state.weather_period)
     {
-    case WeatherPeriod::Hour:
-        return draw_hour_forecast_period(fb, console_state, forecast_slice);
-    case WeatherPeriod::Day:
-        return draw_day_forecast_period(fb, console_state, forecast_slice);
-    case WeatherPeriod::Week:
-        return draw_week_forecast_period(fb, console_state, forecast_slice);
+    case WeatherPeriod::Hourly:
+        return draw_hourly_forecast_period(fb, console_state, forecast_slice);
+    case WeatherPeriod::Today:
+        return draw_today_forecast_period(fb, console_state, forecast_slice);
+    case WeatherPeriod::NextSevenDays:
+        return draw_next_seven_days_forecast_period(fb, console_state, forecast_slice);
     }
 
     return false;
@@ -1883,7 +1883,7 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
     }
 
     const bool have_active_period_data =
-        (console_state.weather_period == WeatherPeriod::Week)
+        (console_state.weather_period == WeatherPeriod::NextSevenDays)
             ? (console_state.home_assistant_status.weather_daily_forecast_count > 0)
             : (kForecastSlice.count > 0);
     if (have_active_period_data && draw_weather_forecast_period(fb, console_state, kForecastSlice))

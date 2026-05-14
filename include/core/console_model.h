@@ -232,7 +232,7 @@ inline bool operator==(const WeatherForecastEntry& lhs, const WeatherForecastEnt
            lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
 }
 
-/// @brief One compact daily forecast entry used by the week weather period.
+/// @brief One compact daily forecast entry used by the Next 7 Days weather period.
 struct WeatherDailyForecastEntry
 {
     std::array<char, 11> date_text;
@@ -293,12 +293,12 @@ enum class WeatherSource : uint8_t
     MetNorway,
 };
 
-/// @brief Weather forecast period modes available on the Weather page.
+/// @brief Weather forecast range modes available on the Weather page.
 enum class WeatherPeriod : uint8_t
 {
-    Hour = 0,
-    Day,
-    Week,
+    Hourly = 0,
+    Today,
+    NextSevenDays,
 };
 
 /// @brief Share price history periods shown on the share detail page.

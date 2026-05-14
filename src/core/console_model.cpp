@@ -87,7 +87,7 @@ ConsoleState make_default_console_state()
     state.active_page = MenuPage::Home;
     state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
-    state.weather_period = WeatherPeriod::Hour;
+    state.weather_period = WeatherPeriod::Hourly;
     state.calendar_owner = CalendarOwner::Combined;
     state.calendar_day_offset = 0;
     state.selected_calendar_event_index = 0U;
@@ -153,8 +153,8 @@ ConsoleState make_default_console_state()
         entry.condition_text.fill('\0');
     }
 
-    // Weekly rows are cached separately from the hourly/day table so the
-    // week period can use true daily provider data.
+    // Next-seven-days rows are cached separately from the hourly/today table
+    // so that range can use true daily provider data.
     for (auto& entry : state.home_assistant_status.weather_daily_forecast)
     {
         entry.date_text.fill('\0');
