@@ -30,7 +30,7 @@ Working now:
 - Wi-Fi station mode with DHCP/static-IP support, NetBIOS hostname, NTP/SNTP, and simple internet reachability probing.
 - Home Assistant REST client for status/entity/weather flows.
 - Open-Meteo direct weather source using configured latitude/longitude.
-- Hourly, Today, and Next 7 Days weather period views.
+- Hourly, Next 24 Hours, and Next 7 Days weather period views.
 - MQTT discovery/state publishing for Home Assistant diagnostic sensors.
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
 - Calendar UI scaffold with Combined/Sean/Luigina/Loris/Luca filtering, relative-day footer, and softkey event-detail pages.
@@ -178,6 +178,13 @@ Recommended setup order:
 
 1. Get Wi-Fi connected first.
 2. Enable the local web config page and move editable settings into flash.
+
+`config/wifi_credentials.h` can define an ordered `kLocalWifiCredentials`
+array. The firmware tries each access point in definition order, then pauses
+briefly before starting the list again. If a Wi-Fi SSID is saved from the web
+config page, that runtime network is tried after the compile-time list as a
+fallback. If an AP associates but repeated internet probes fail, the firmware
+leaves that AP and moves to the next configured credential.
 3. Add Home Assistant REST once Wi-Fi is stable.
 4. Add MQTT discovery after the broker is reachable from the Pico.
 5. Add direct weather coordinates if using Open-Meteo.
@@ -372,7 +379,7 @@ Weather and integrations:
 
 - [x] Home Assistant REST status/entity/weather flow.
 - [x] Open-Meteo direct weather source.
-- [x] Hourly/Today/Next 7 Days weather views.
+- [x] Hourly/Next 24 Hours/Next 7 Days weather views.
 - [x] MQTT discovery for core diagnostic sensors.
 - [x] Calendar UI scaffold for the family combined/person views.
 - [ ] Add Home Assistant calendar ingestion behind the Calendar model.

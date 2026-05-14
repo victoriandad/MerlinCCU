@@ -143,7 +143,7 @@ constexpr std::array<WeatherSourceDefinition, 2> kWeatherSources = {{
 
 constexpr std::array<WeatherPeriodDefinition, 3> kWeatherPeriods = {{
     {WeatherPeriod::Hourly, "Hourly"},
-    {WeatherPeriod::Today, "Today"},
+    {WeatherPeriod::NextTwentyFourHours, "Next 24 Hours"},
     {WeatherPeriod::NextSevenDays, "Next 7 Days"},
 }};
 
@@ -700,15 +700,15 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 /// @brief Returns the configured or connected Wi-Fi name for the settings menu.
 const char* wifi_selection_text(const ConsoleState& console_state)
 {
+    if (console_state.wifi_status.ssid[0] != '\0')
+    {
+        return console_state.wifi_status.ssid.data();
+    }
+
     const RuntimeConfig& config = config_manager::settings();
     if (config.wifi_ssid[0] != '\0')
     {
         return config.wifi_ssid.data();
-    }
-
-    if (console_state.wifi_status.ssid[0] != '\0')
-    {
-        return console_state.wifi_status.ssid.data();
     }
 
     return console_state.wifi_status.credentials_present ? "Configured" : "Not Set";
@@ -1515,8 +1515,8 @@ WeatherPeriod next_weather_period(WeatherPeriod period)
     switch (period)
     {
     case WeatherPeriod::Hourly:
-        return WeatherPeriod::Today;
-    case WeatherPeriod::Today:
+        return WeatherPeriod::NextTwentyFourHours;
+    case WeatherPeriod::NextTwentyFourHours:
         return WeatherPeriod::NextSevenDays;
     case WeatherPeriod::NextSevenDays:
         return WeatherPeriod::Hourly;

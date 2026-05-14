@@ -12,11 +12,18 @@
 #include "pico/cyw43_arch.h"
 #include "pico/error.h"
 #include "pico/stdlib.h"
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
 namespace
 {
+
+struct WifiCredential
+{
+    const char* ssid;
+    const char* password;
+};
 
 #if __has_include("wifi_credentials.h")
 #include "wifi_credentials.h"
@@ -63,18 +70,14 @@ constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDhcpWaitTimeoutMs = 30000;
 constexpr uint32_t kInternetProbeIntervalMs = 20000;
 constexpr uint32_t kInternetProbeTimeoutMs = 5000;
+constexpr uint8_t kInternetFailureRoamThreshold = 3U;
 constexpr char kInternetProbeHostName[] = "dns.google";
 constexpr char kAdvertisedHostName[] = "MerlinCCU";
 constexpr char kNtpServerHostName[] = "pool.ntp.org";
-
-struct WifiCredential
-{
-    const char* ssid;
-    const char* password;
-};
+constexpr size_t kNoWifiCredentialIndex = static_cast<size_t>(-1);
 
 #if __has_include("wifi_credentials.h")
-#if defined(WIFI_CREDENTIALS_COUNT)
+#if defined(WIFI_CREDENTIALS_COUNT) && defined(WIFI_CREDENTIALS)
 inline constexpr const WifiCredential* kWifiCredentials = WIFI_CREDENTIALS;
 constexpr size_t kWifiCredentialCount = WIFI_CREDENTIALS_COUNT;
 #else
@@ -108,6 +111,8 @@ absolute_time_t g_probe_deadline = nil_time;
 bool g_probe_in_flight = false;
 bool g_netbios_started = false;
 bool g_sntp_started = false;
+size_t g_next_credential_index = kNoWifiCredentialIndex;
+uint8_t g_internet_probe_failures = 0U;
 char g_runtime_host_name[32] = {};
 
 /// @brief Returns whether one configured Wi-Fi credential has a usable SSID.
@@ -116,27 +121,103 @@ bool credential_valid(const WifiCredential& credential)
     return credential.ssid && credential.ssid[0] != '\0';
 }
 
-const WifiCredential* active_credential()
+/// @brief Returns whether the web-configured Wi-Fi SSID should be tried first.
+bool runtime_wifi_configured()
 {
     const RuntimeConfig& config = config_manager::settings();
-    static WifiCredential runtime_credential = {};
-    if (config.wifi_ssid[0] != '\0')
+    return config.wifi_ssid[0] != '\0';
+}
+
+/// @brief Counts every compile-time candidate slot plus the optional runtime fallback.
+size_t credential_candidate_count()
+{
+    return kWifiCredentialCount + (runtime_wifi_configured() ? 1U : 0U);
+}
+
+/// @brief Returns a credential by ordered candidate index, skipping invalid entries.
+/// @details Compile-time credentials keep their definition order. The saved
+/// web-config SSID is appended as a fallback so stale runtime settings cannot
+/// unexpectedly override the local preferred AP list.
+const WifiCredential* credential_at_index(size_t index)
+{
+    if (index < kWifiCredentialCount)
     {
-        runtime_credential = {config.wifi_ssid.data(), config.wifi_password.data()};
-        return &runtime_credential;
+        if (!credential_valid(kWifiCredentials[index]))
+        {
+            return nullptr;
+        }
+
+        return &kWifiCredentials[index];
     }
 
-    // The first valid entry wins so a local credentials header can carry a
-    // small ordered list of preferred networks without changing the state machine.
-    for (size_t i = 0; i < kWifiCredentialCount; ++i)
+    index -= kWifiCredentialCount;
+    if (index != 0U || !runtime_wifi_configured())
     {
-        if (credential_valid(kWifiCredentials[i]))
+        return nullptr;
+    }
+
+    const RuntimeConfig& config = config_manager::settings();
+    static WifiCredential runtime_credential = {};
+    runtime_credential = {config.wifi_ssid.data(), config.wifi_password.data()};
+    return credential_valid(runtime_credential) ? &runtime_credential : nullptr;
+}
+
+/// @brief Finds the first usable Wi-Fi credential candidate.
+size_t first_valid_credential_index()
+{
+    const size_t candidate_count = credential_candidate_count();
+    for (size_t i = 0; i < candidate_count; ++i)
+    {
+        if (credential_at_index(i) != nullptr)
         {
-            return &kWifiCredentials[i];
+            return i;
         }
     }
 
-    return nullptr;
+    return kNoWifiCredentialIndex;
+}
+
+/// @brief Finds the next usable Wi-Fi credential after the supplied candidate index.
+size_t next_valid_credential_index_after(size_t current_index)
+{
+    const size_t candidate_count = credential_candidate_count();
+    for (size_t i = current_index + 1U; i < candidate_count; ++i)
+    {
+        if (credential_at_index(i) != nullptr)
+        {
+            return i;
+        }
+    }
+
+    return kNoWifiCredentialIndex;
+}
+
+/// @brief Returns whether at least one usable Wi-Fi credential is configured.
+bool credentials_available()
+{
+    return first_valid_credential_index() != kNoWifiCredentialIndex;
+}
+
+/// @brief Counts usable credentials so roaming only runs when there is another AP to try.
+size_t valid_credential_count()
+{
+    size_t count = 0;
+    const size_t candidate_count = credential_candidate_count();
+    for (size_t i = 0; i < candidate_count; ++i)
+    {
+        if (credential_at_index(i) != nullptr)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+/// @brief Returns whether failing over to a different configured AP is possible.
+bool alternate_credentials_available()
+{
+    return valid_credential_count() > 1U;
 }
 
 /// @brief Builds a DNS/NetBIOS-safe hostname from the configured device name.
@@ -264,6 +345,12 @@ void reset_internet_probe_timers()
     g_probe_started_at = nil_time;
     g_probe_deadline = nil_time;
     g_next_probe = nil_time;
+}
+
+/// @brief Clears the consecutive upstream-probe failure counter.
+void reset_internet_probe_failures()
+{
+    g_internet_probe_failures = 0U;
 }
 
 /// @brief Starts SNTP once the station has a usable network path.
@@ -436,6 +523,43 @@ void schedule_retry()
     g_next_retry = make_timeout_time_ms(kRetryDelayMs);
 }
 
+/// @brief Starts a fresh pass through the configured credential list after a pause.
+void schedule_credential_cycle_retry()
+{
+    g_next_credential_index = first_valid_credential_index();
+    schedule_retry();
+}
+
+/// @brief Moves to the next configured credential, or delays before restarting the list.
+void schedule_next_credential_or_retry(size_t current_index)
+{
+    if (current_index == kNoWifiCredentialIndex)
+    {
+        schedule_credential_cycle_retry();
+        return;
+    }
+
+    const size_t next_index = next_valid_credential_index_after(current_index);
+    if (next_index != kNoWifiCredentialIndex)
+    {
+        g_next_credential_index = next_index;
+        g_next_retry = get_absolute_time();
+        PERIODIC_LOG("WiFi trying next configured credential\n");
+        return;
+    }
+
+    schedule_credential_cycle_retry();
+}
+
+/// @brief Moves immediately to the next available credential when the current AP has no internet.
+void schedule_next_credential_for_roam(size_t current_index)
+{
+    const size_t next_index = next_valid_credential_index_after(current_index);
+    g_next_credential_index =
+        (next_index != kNoWifiCredentialIndex) ? next_index : first_valid_credential_index();
+    g_next_retry = get_absolute_time();
+}
+
 /// @brief Starts the wait-for-DHCP deadline timer.
 void schedule_wait_for_ip_deadline()
 {
@@ -462,6 +586,61 @@ void advertise_hostname()
     cyw43_arch_lwip_end();
 }
 
+/// @brief Records one internet probe outcome and optionally roams to the next AP.
+/// @details Association and DHCP can succeed on a hotspot that has no usable
+/// upstream path. After several consecutive DNS probe failures, the manager
+/// leaves that AP and tries the next configured credential. Single-network
+/// installs stay associated so local diagnostics and the web UI remain reachable.
+void record_internet_probe_result(bool reachable)
+{
+    if (reachable)
+    {
+        reset_internet_probe_failures();
+        g_status.internet_reachable = true;
+        g_status.internet_probe_pending = false;
+        g_status.internet_rtt_ms = -1;
+        return;
+    }
+
+    g_status.internet_reachable = false;
+    g_status.internet_probe_pending = false;
+    g_status.internet_rtt_ms = -1;
+
+    if (g_internet_probe_failures < kInternetFailureRoamThreshold)
+    {
+        ++g_internet_probe_failures;
+    }
+
+    if (g_internet_probe_failures < kInternetFailureRoamThreshold ||
+        !alternate_credentials_available())
+    {
+        return;
+    }
+
+    const size_t previous_index = g_next_credential_index;
+    schedule_next_credential_for_roam(previous_index);
+    if (g_next_credential_index == kNoWifiCredentialIndex ||
+        g_next_credential_index == previous_index)
+    {
+        return;
+    }
+
+    std::printf("WiFi internet probe failed %u times on '%s'; trying next configured credential\n",
+                static_cast<unsigned int>(g_internet_probe_failures),
+                g_status.ssid[0] ? g_status.ssid.data() : "-");
+
+    cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+    clear_ip_address();
+    g_status.state = WifiConnectionState::ConnectFailed;
+    g_status.link_status = CYW43_LINK_DOWN;
+    g_last_observed_link_status = CYW43_LINK_DOWN;
+    g_wait_for_ip_deadline = nil_time;
+    reset_internet_probe_failures();
+    reset_internet_probe_status();
+    reset_internet_probe_timers();
+    stop_sntp_if_started();
+}
+
 /// @brief Completes one asynchronous internet reachability probe.
 /// @details A successful DNS lookup is treated as a lightweight signal that the
 /// device has a usable upstream path, not just a local Wi-Fi association.
@@ -474,12 +653,10 @@ void dns_probe_found(const char* name, const ip_addr_t* ipaddr, void* callback_a
         return;
     }
 
-    g_status.internet_reachable = (ipaddr != nullptr);
-    g_status.internet_probe_pending = false;
-    g_status.internet_rtt_ms = -1;
     g_probe_in_flight = false;
     g_probe_deadline = nil_time;
     g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
+    record_internet_probe_result(ipaddr != nullptr);
     PERIODIC_LOG("WiFi internet probe %s host=%s\n", ipaddr ? "ok" : "failed",
                  kInternetProbeHostName);
 }
@@ -507,11 +684,11 @@ bool start_dns_probe()
     if (kResult != ERR_INPROGRESS)
     {
         std::printf("WiFi internet probe start failed: %d\n", static_cast<int>(kResult));
-        g_status.internet_reachable = false;
-        g_status.internet_probe_pending = false;
-        g_status.internet_rtt_ms = -1;
+        g_probe_in_flight = false;
+        g_probe_deadline = nil_time;
         g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
-        return false;
+        record_internet_probe_result(false);
+        return true;
     }
 
     g_probe_in_flight = true;
@@ -548,10 +725,8 @@ bool update_internet_probe()
         {
             g_probe_in_flight = false;
             g_probe_deadline = nil_time;
-            g_status.internet_probe_pending = false;
-            g_status.internet_reachable = false;
-            g_status.internet_rtt_ms = -1;
             g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
+            record_internet_probe_result(false);
             PERIODIC_LOG("WiFi internet probe timeout for %s\n", kInternetProbeHostName);
             return true;
         }
@@ -567,12 +742,18 @@ bool update_internet_probe()
     return false;
 }
 
-/// @brief Attempts one Wi-Fi connection using the highest-priority configured credential.
+/// @brief Attempts one Wi-Fi connection using the current ordered credential candidate.
 /// @details The status model is populated before association completes so the UI
 /// can explain what network and auth mode the firmware is currently trying.
 bool attempt_connect()
 {
-    const WifiCredential* credential = active_credential();
+    if (g_next_credential_index == kNoWifiCredentialIndex)
+    {
+        g_next_credential_index = first_valid_credential_index();
+    }
+
+    const size_t credential_index = g_next_credential_index;
+    const WifiCredential* credential = credential_at_index(credential_index);
     if (!credential || !credential_valid(*credential))
     {
         return false;
@@ -607,6 +788,7 @@ bool attempt_connect()
         start_sntp_if_needed();
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
+        reset_internet_probe_failures();
         g_next_probe = get_absolute_time();
         PERIODIC_LOG("WiFi connected to '%s' ip=%s\n", credential->ssid,
                      g_status.ip_address[0] ? g_status.ip_address.data() : "-");
@@ -621,6 +803,7 @@ bool attempt_connect()
             start_sntp_if_needed();
             g_next_retry = nil_time;
             g_wait_for_ip_deadline = nil_time;
+            reset_internet_probe_failures();
             g_next_probe = get_absolute_time();
             PERIODIC_LOG("WiFi treating joined link as up after static IP assignment\n");
             return true;
@@ -656,7 +839,7 @@ bool attempt_connect()
     reset_internet_probe_status();
     reset_internet_probe_timers();
     stop_sntp_if_started();
-    schedule_retry();
+    schedule_next_credential_or_retry(credential_index);
     return true;
 }
 
@@ -670,7 +853,8 @@ void init()
 {
     g_status = {};
     g_status.state = WifiConnectionState::Initializing;
-    g_status.credentials_present = (active_credential() != nullptr);
+    g_next_credential_index = first_valid_credential_index();
+    g_status.credentials_present = credentials_available();
     g_status.link_status = CYW43_LINK_DOWN;
     g_status.last_error = 0;
     reset_internet_probe_status();
@@ -688,7 +872,7 @@ void init()
         return;
     }
 
-    const WifiCredential* credential = active_credential();
+    const WifiCredential* credential = credential_at_index(g_next_credential_index);
     copy_text(g_status.ssid, credential->ssid);
     copy_auth_mode(configured_auth_mode(*credential));
 
@@ -746,6 +930,7 @@ bool update()
             start_sntp_if_needed();
             g_next_retry = nil_time;
             g_wait_for_ip_deadline = nil_time;
+            reset_internet_probe_failures();
             g_next_probe = get_absolute_time();
         }
         else if (kLinkStatus == CYW43_LINK_JOIN || kLinkStatus == CYW43_LINK_NOIP)
@@ -756,6 +941,7 @@ bool update()
                 start_sntp_if_needed();
                 g_next_retry = nil_time;
                 g_wait_for_ip_deadline = nil_time;
+                reset_internet_probe_failures();
                 g_next_probe = get_absolute_time();
                 changed = true;
                 return changed;
@@ -774,7 +960,7 @@ bool update()
             reset_internet_probe_status();
             reset_internet_probe_timers();
             stop_sntp_if_started();
-            schedule_retry();
+            schedule_next_credential_or_retry(g_next_credential_index);
         }
 
         changed = true;
@@ -792,6 +978,7 @@ bool update()
         start_sntp_if_needed();
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
+        reset_internet_probe_failures();
         g_next_probe = get_absolute_time();
         changed = true;
     }
@@ -801,7 +988,7 @@ bool update()
     {
         PERIODIC_LOG("WiFi DHCP wait expired; retrying connection\n");
         g_wait_for_ip_deadline = nil_time;
-        schedule_retry();
+        schedule_next_credential_or_retry(g_next_credential_index);
         changed = true;
     }
 

@@ -853,6 +853,16 @@ struct ForecastRenderSlice
     int current_hour_floor;
 };
 
+constexpr size_t kForecastVisibleRows = 10U;
+constexpr int kForecastHeaderY = 36;
+constexpr int kForecastDividerY = 46;
+constexpr int kForecastFirstRowY = 54;
+constexpr int kForecastRowPitchY = 18;
+constexpr int kForecastTimeX = 12;
+constexpr int kForecastTemperatureX = 60;
+constexpr int kForecastWindX = 102;
+constexpr int kForecastConditionX = 160;
+
 /// @brief Reconstructs monotonic forecast minutes and drops stale pre-now rows.
 /// @details Weather rows expose only local `HH:MM` text, so this helper rebuilds
 /// a chronological timeline, then returns only the forward-looking slice that
@@ -955,11 +965,13 @@ ForecastRenderSlice build_forecast_render_slice(const ConsoleState& console_stat
     return slice;
 }
 
-/// @brief Chooses representative rows for the Today forecast layout.
-/// @details The Today range is capped to a handful of rows so each entry can
-/// include both headline values and the condition text without clipping.
-uint8_t build_today_forecast_sample(const ForecastRenderSlice& forecast_slice,
-                                    std::array<uint8_t, 5>& out_forecast_indices)
+/// @brief Chooses representative hourly rows for the Next 24 Hours weather layout.
+/// @details The provider cache holds up to 24 rows, but the EL320 page can only
+/// show a readable subset. Sampling preserves the beginning and end of the
+/// 24-hour window rather than merely showing the next few consecutive hours.
+uint8_t build_next_twenty_four_hours_forecast_sample(
+    const ForecastRenderSlice& forecast_slice,
+    std::array<uint8_t, kForecastVisibleRows>& out_forecast_indices)
 {
     out_forecast_indices.fill(0);
     if (forecast_slice.count == 0)
@@ -972,40 +984,41 @@ uint8_t build_today_forecast_sample(const ForecastRenderSlice& forecast_slice,
         (forecast_slice.current_time_valid ? forecast_slice.current_hour_floor
                                            : forecast_slice.entries[0].absolute_minutes) +
         kDayMinutes;
-    std::array<uint8_t, kWeatherForecastEntryCount> today_entries = {};
-    uint8_t today_entry_count = 0;
+    std::array<uint8_t, kWeatherForecastEntryCount> next_twenty_four_hour_entries = {};
+    uint8_t next_twenty_four_hour_entry_count = 0;
     for (uint8_t i = 0; i < forecast_slice.count; ++i)
     {
-        if (forecast_slice.entries[i].absolute_minutes > period_end_minutes)
+        if (forecast_slice.entries[i].absolute_minutes >= period_end_minutes)
         {
             break;
         }
 
-        today_entries[today_entry_count] = forecast_slice.entries[i].forecast_index;
-        ++today_entry_count;
+        next_twenty_four_hour_entries[next_twenty_four_hour_entry_count] =
+            forecast_slice.entries[i].forecast_index;
+        ++next_twenty_four_hour_entry_count;
     }
 
-    if (today_entry_count == 0)
+    if (next_twenty_four_hour_entry_count == 0)
     {
-        today_entries[0] = forecast_slice.entries[0].forecast_index;
-        today_entry_count = 1;
+        next_twenty_four_hour_entries[0] = forecast_slice.entries[0].forecast_index;
+        next_twenty_four_hour_entry_count = 1;
     }
 
     const uint8_t max_rows = static_cast<uint8_t>(out_forecast_indices.size());
-    if (today_entry_count <= max_rows)
+    if (next_twenty_four_hour_entry_count <= max_rows)
     {
-        for (uint8_t i = 0; i < today_entry_count; ++i)
+        for (uint8_t i = 0; i < next_twenty_four_hour_entry_count; ++i)
         {
-            out_forecast_indices[i] = today_entries[i];
+            out_forecast_indices[i] = next_twenty_four_hour_entries[i];
         }
-        return today_entry_count;
+        return next_twenty_four_hour_entry_count;
     }
 
     for (uint8_t row = 0; row < max_rows; ++row)
     {
-        const uint8_t sample_index =
-            static_cast<uint8_t>((row * (today_entry_count - 1U)) / (max_rows - 1U));
-        out_forecast_indices[row] = today_entries[sample_index];
+        const uint8_t sample_index = static_cast<uint8_t>(
+            (row * (next_twenty_four_hour_entry_count - 1U)) / (max_rows - 1U));
+        out_forecast_indices[row] = next_twenty_four_hour_entries[sample_index];
     }
 
     return max_rows;
@@ -1571,6 +1584,34 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
     dest[out_index] = '\0';
 }
 
+/// @brief Draws the shared forecast table header for hourly-derived rows.
+void draw_weather_forecast_table_header(uint8_t* fb, fonts::FontFace font)
+{
+    framebuffer::draw_text(fb, kForecastTimeX, kForecastHeaderY, "Time", true, font, 1);
+    framebuffer::draw_text(fb, kForecastTemperatureX, kForecastHeaderY, "Temp", true, font, 1);
+    framebuffer::draw_text(fb, kForecastWindX, kForecastHeaderY, "Wind mph", true, font, 1);
+    framebuffer::draw_text(fb, kForecastConditionX, kForecastHeaderY, "Conditions", true, font, 1);
+    framebuffer::draw_hline(fb, 12, kUiWidth - 12, kForecastDividerY, true);
+}
+
+/// @brief Draws one single-line hourly forecast table row.
+void draw_weather_forecast_table_row(uint8_t* fb, const WeatherForecastEntry& entry, int row_y,
+                                     fonts::FontFace font)
+{
+    char formatted_condition[24] = {};
+    format_weather_phrase(entry.condition_text.data(), formatted_condition,
+                          sizeof(formatted_condition));
+
+    framebuffer::draw_text(fb, kForecastTimeX, row_y, entry.time_text.data(), true, font, 1);
+    framebuffer::draw_text(fb, kForecastTemperatureX, row_y, entry.temperature_text.data(), true,
+                           font, 1);
+    framebuffer::draw_text(fb, kForecastWindX, row_y, entry.wind_text.data(), true, font, 1);
+    framebuffer::draw_text(fb, kForecastConditionX, row_y,
+                           formatted_condition[0] != '\0' ? formatted_condition
+                                                          : entry.condition_text.data(),
+                           true, font, 1);
+}
+
 /// @brief Draws the dense forecast table used by the Hourly range mode.
 bool draw_hourly_forecast_period(uint8_t* fb, const ConsoleState& console_state,
                                  const ForecastRenderSlice& forecast_slice)
@@ -1582,40 +1623,29 @@ bool draw_hourly_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
     constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
     constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, 12, 36, "Time", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 60, 36, "Temp", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 102, 36, "Wind mph", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 160, 36, "Conditions", true, kForecastHeaderFont, 1);
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
+    draw_weather_forecast_table_header(fb, kForecastHeaderFont);
 
-    char formatted_condition[24] = {};
-    for (uint8_t i = 0; i < forecast_slice.count; ++i)
+    const uint8_t row_count =
+        std::min(forecast_slice.count, static_cast<uint8_t>(kForecastVisibleRows));
+    for (uint8_t i = 0; i < row_count; ++i)
     {
         const WeatherForecastEntry& entry =
             console_state.home_assistant_status
                 .weather_forecast[forecast_slice.entries[i].forecast_index];
-        const int row_y = 54 + (static_cast<int>(i) * 18);
-        format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                              sizeof(formatted_condition));
-        framebuffer::draw_text(fb, 12, row_y, entry.time_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 60, row_y, entry.temperature_text.data(), true,
-                               kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 102, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 160, row_y,
-                               formatted_condition[0] != '\0' ? formatted_condition
-                                                              : entry.condition_text.data(),
-                               true, kForecastBodyFont, 1);
+        const int row_y = kForecastFirstRowY + (static_cast<int>(i) * kForecastRowPitchY);
+        draw_weather_forecast_table_row(fb, entry, row_y, kForecastBodyFont);
     }
 
     return true;
 }
 
-/// @brief Draws the Today range layout with room for condition text per row.
-bool draw_today_forecast_period(uint8_t* fb, const ConsoleState& console_state,
-                                const ForecastRenderSlice& forecast_slice)
+/// @brief Draws the Next 24 Hours range as a sampled hourly table.
+bool draw_next_twenty_four_hours_forecast_period(uint8_t* fb, const ConsoleState& console_state,
+                                                 const ForecastRenderSlice& forecast_slice)
 {
-    std::array<uint8_t, 5> today_sample_indices = {};
-    const uint8_t row_count = build_today_forecast_sample(forecast_slice, today_sample_indices);
+    std::array<uint8_t, kForecastVisibleRows> forecast_sample_indices = {};
+    const uint8_t row_count = build_next_twenty_four_hours_forecast_sample(
+        forecast_slice, forecast_sample_indices);
     if (row_count == 0)
     {
         return false;
@@ -1623,32 +1653,14 @@ bool draw_today_forecast_period(uint8_t* fb, const ConsoleState& console_state,
 
     constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
     constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, 12, 36, "Time", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 64, 36, "Temp", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 112, 36, "Wind", true, kForecastHeaderFont, 1);
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
+    draw_weather_forecast_table_header(fb, kForecastHeaderFont);
 
-    char formatted_condition[24] = {};
     for (uint8_t i = 0; i < row_count; ++i)
     {
         const WeatherForecastEntry& entry =
-            console_state.home_assistant_status.weather_forecast[today_sample_indices[i]];
-        const int row_y = 54 + (static_cast<int>(i) * 36);
-        format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                              sizeof(formatted_condition));
-        framebuffer::draw_text(fb, 12, row_y, entry.time_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 64, row_y, entry.temperature_text.data(), true,
-                               kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 112, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 12, row_y + 14,
-                               formatted_condition[0] != '\0' ? formatted_condition
-                                                              : entry.condition_text.data(),
-                               true, kForecastBodyFont, 1);
-
-        if (i + 1 < row_count)
-        {
-            framebuffer::draw_hline(fb, 12, kUiWidth - 12, row_y + 26, true);
-        }
+            console_state.home_assistant_status.weather_forecast[forecast_sample_indices[i]];
+        const int row_y = kForecastFirstRowY + (static_cast<int>(i) * kForecastRowPitchY);
+        draw_weather_forecast_table_row(fb, entry, row_y, kForecastBodyFont);
     }
 
     return true;
@@ -1707,7 +1719,7 @@ bool draw_next_seven_days_forecast_period(uint8_t* fb, const ConsoleState& conso
     return true;
 }
 
-/// @brief Draws weather forecast content for the active Hourly/Today/Next 7 Days range.
+/// @brief Draws weather forecast content for the active Hourly/Next 24 Hours/Next 7 Days range.
 bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state,
                                   const ForecastRenderSlice& forecast_slice)
 {
@@ -1715,8 +1727,8 @@ bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state
     {
     case WeatherPeriod::Hourly:
         return draw_hourly_forecast_period(fb, console_state, forecast_slice);
-    case WeatherPeriod::Today:
-        return draw_today_forecast_period(fb, console_state, forecast_slice);
+    case WeatherPeriod::NextTwentyFourHours:
+        return draw_next_twenty_four_hours_forecast_period(fb, console_state, forecast_slice);
     case WeatherPeriod::NextSevenDays:
         return draw_next_seven_days_forecast_period(fb, console_state, forecast_slice);
     }

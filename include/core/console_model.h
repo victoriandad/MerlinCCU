@@ -211,7 +211,7 @@ struct TimeStatus
     uint8_t weekday_index;
 };
 
-inline constexpr size_t kWeatherForecastEntryCount = 10;
+inline constexpr size_t kWeatherForecastEntryCount = 24;
 inline constexpr size_t kWeatherDailyForecastEntryCount = 7;
 
 /// @brief One compact hourly forecast entry for the dedicated weather page.
@@ -366,7 +366,7 @@ enum class WeatherSource : uint8_t
 enum class WeatherPeriod : uint8_t
 {
     Hourly = 0,
-    Today,
+    NextTwentyFourHours,
     NextSevenDays,
 };
 
