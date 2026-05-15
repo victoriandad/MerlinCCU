@@ -57,7 +57,17 @@ void build_uppercase_label(const char* input, char* output, size_t output_size)
 /// @brief Returns the compact label used for the letter annunciator mode.
 const char* letter_mode_text(LetterMode mode)
 {
-    return (mode == LetterMode::On) ? "ON" : "OFF";
+    switch (mode)
+    {
+    case LetterMode::UpperCase:
+        return "ABC";
+    case LetterMode::LowerCase:
+        return "abc";
+    case LetterMode::Numbers:
+        return "123";
+    }
+
+    return "ABC";
 }
 
 /// @brief Returns the shortened alert label used on the constrained settings UI.

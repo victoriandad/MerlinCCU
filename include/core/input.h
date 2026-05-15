@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
-/// @brief Logical button identifiers surfaced by the unfinished CCU keypad scan.
-/// @details The list currently covers the ten bezel softkeys, core navigation
-/// keys, and numeric keys needed by the menu controller before every hardware
-/// key has been fully mapped.
+/// @brief Logical button identifiers surfaced by the CCU keypad scan.
+/// @details The list mirrors the confirmed front-panel switch matrix so higher
+/// layers can reason about physical keys first, then apply the current LTRS
+/// input mode when a key carries alternate letter or number legends.
 enum class ButtonId : uint8_t
 {
     LeftTop = 0,
@@ -20,20 +20,46 @@ enum class ButtonId : uint8_t
     RightMiddle,
     RightLower,
     RightBottom,
+    Alert,
+    Test,
+    Brt,
+    Dim,
+    Ltrs,
     BackStep,
     CursorLeft,
     CursorRight,
+    Slash,
     Clr,
-    Digit1,
-    Digit2,
-    Digit3,
-    Digit4,
-    Digit5,
-    Digit6,
-    Digit7,
-    Digit8,
-    Digit9,
-    Digit0,
+    AlphaA,
+    AlphaB,
+    AlphaC,
+    AlphaD,
+    AlphaE,
+    AlphaF,
+    AlphaG,
+    AlphaH,
+    AlphaI,
+    AlphaJ,
+    AlphaK,
+    AlphaL,
+    AlphaM,
+    AlphaN,
+    AlphaO,
+    AlphaP,
+    AlphaQ,
+    AlphaR,
+    AlphaS,
+    AlphaT,
+    AlphaU,
+    AlphaV,
+    AlphaW,
+    AlphaX,
+    AlphaY,
+    AlphaZ,
+    TFunc,
+    Dot,
+    Zero,
+    Spc,
     Count,
 };
 

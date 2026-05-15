@@ -36,12 +36,12 @@ Working now:
 - Calendar UI scaffold with Combined/Sean/Luigina/Loris/Luca filtering, relative-day footer, and softkey event-detail pages.
 - Share page and share detail graph for BAE Systems using Yahoo Finance chart data.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
-- Provisional keypad matrix monitor/decoder for confirmed softkeys, navigation keys, and numeric keys.
+- Provisional keypad matrix monitor/decoder for all confirmed front-panel keys.
 
 Still incomplete or provisional:
 
 - Physical ALRT/TEST LED drive, key backlight, panel backlight, and photoresistor wiring are not final.
-- Some printed front-panel keys are shown in the web preview but are not wired into firmware behaviour yet.
+- Text-entry consumers are still limited, but the confirmed front-panel keys now generate firmware events.
 - Live Home Assistant calendar ingestion is not implemented yet.
 - Watched share symbols are not user-configurable from the UI or web config yet.
 - Weather iconography and warning/threshold alert rules are still planned.
@@ -127,8 +127,8 @@ Current behaviour:
 
 - `/preview` renders the display, softkeys, mapped hard keys, ALRT/TEST lamp indicators, and a pop-out mode.
 - Mapped browser keys POST to `/api/button` as logical `ButtonId` events.
+- `LTRS` cycles the front-panel text mode between `ABC`, `123`, and `abc`; the same indicator is shown in the top display banner.
 - The preview deliberately de-prioritises framebuffer/lamp polling while key presses are queued so the single-session Pico HTTP server does not make web keys feel sluggish.
-- Ghost keys preserve visual panel fidelity but report that they are not wired in firmware yet.
 
 ## Display Validation Workflow
 
@@ -244,8 +244,8 @@ The keypad matrix is no longer just a placeholder, but it remains a bench bring-
 
 Current firmware support:
 
-- Logical button IDs exist for the ten softkeys, navigation keys, clear/back, and numeric keys.
-- Matrix closure definitions exist for currently supported front-panel keys.
+- Logical button IDs exist for all confirmed front-panel matrix keys, including the `A..Z` block, punctuation, `LTRS`, `ALERT`, `TEST`, `BRT`, and `DIM`.
+- Matrix closure definitions exist for all confirmed front-panel keys.
 - `config/keypad_matrix_config.h` maps observed panel pins to Pico GPIOs locally.
 - The diagnostics page shows active panel pins, active masks, probe drive pins, hit masks, and decoded key legends.
 - Alerts can detect suspicious keypad states such as `MULTI` or too many active lines.

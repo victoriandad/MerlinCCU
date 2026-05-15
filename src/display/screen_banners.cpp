@@ -25,6 +25,9 @@ constexpr int kHeaderTimeTextY = 10;
 /// @brief Right inset used by the compact header status cluster.
 constexpr int kHeaderStatusRightInset = 2;
 
+/// @brief Left inset used by the compact LTRS input-mode indicator.
+constexpr int kHeaderInputModeLeftInset = 2;
+
 /// @brief Gap between the header network icon and the time text.
 constexpr int kHeaderStatusGap = 2;
 
@@ -37,8 +40,40 @@ constexpr int kHeaderStatusIconWidth = 16;
 /// @brief Width reserved for the compact Home Assistant status icon.
 constexpr int kHeaderHomeAssistantIconWidth = 12;
 
+/// @brief Width reserved for the compact LTRS input-mode indicator.
+constexpr int kHeaderInputModeIconWidth = 23;
+
+/// @brief Height reserved for the compact LTRS input-mode indicator.
+constexpr int kHeaderInputModeIconHeight = 11;
+
 /// @brief Y position of the header status icon.
 constexpr int kHeaderStatusIconY = 11;
+
+/// @brief Returns the banner glyph for the current LTRS interpretation mode.
+const char* input_mode_icon_text(LetterMode mode)
+{
+    switch (mode)
+    {
+    case LetterMode::UpperCase:
+        return "ABC";
+    case LetterMode::LowerCase:
+        return "abc";
+    case LetterMode::Numbers:
+        return "123";
+    }
+
+    return "ABC";
+}
+
+/// @brief Draws the compact boxed LTRS input-mode indicator.
+void draw_input_mode_icon(uint8_t* fb, int x, int y, LetterMode mode)
+{
+    constexpr bool kIconOn = true;
+    framebuffer::draw_rect(fb, x, y, kHeaderInputModeIconWidth, kHeaderInputModeIconHeight,
+                           kIconOn);
+    framebuffer::draw_text(fb, x + 3, y + 2, input_mode_icon_text(mode), kIconOn,
+                           fonts::FontFace::Font5x7, 1);
+}
 
 /// @brief Draws the small Wi-Fi symbol used inside the compact header status icon.
 void draw_wifi_symbol(uint8_t* fb, int x, int y, bool on)
@@ -191,6 +226,8 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     // Draw the shared frame first so the remaining elements can key off its
     // baseline and right-edge measurements.
     framebuffer::draw_hline(fb, 0, kUiWidth - 1, kHeaderBannerY + kBannerHeight - 1, true);
+    draw_input_mode_icon(fb, kHeaderInputModeLeftInset, kHeaderStatusIconY,
+                         console_state.letter_mode);
     framebuffer::draw_text(fb, (kUiWidth / 2) - (title_width / 2), kHeaderTextY, title, true,
                            fonts::FontFace::FontTitle8x12, 1);
 
@@ -219,7 +256,8 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     }
     draw_internet_icon(fb, icon_x, kHeaderStatusIconY, console_state.wifi_status.internet_reachable,
                        console_state.wifi_status.internet_probe_pending);
-    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true, fonts::FontFace::Font8x12, 1);
+    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true,
+                           fonts::FontFace::Font8x12, 1);
 }
 
 /// @brief Draws the standard banner set used by the current UI pages.

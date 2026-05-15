@@ -89,8 +89,9 @@ constexpr int64_t kButtonDebounceUs = static_cast<int64_t>(kButtonDebounceMs) * 
 constexpr uint32_t kKeypadProbeSettleUs = 20U;
 constexpr size_t kButtonCount = static_cast<size_t>(ButtonId::Count);
 
-/// @brief Static metadata for the panel softkeys read as direct GPIO inputs.
-/// @details This table ties each logical `ButtonId` to the eventual GPIO mapping so the
+/// @brief Static metadata for panel keys that may later gain direct GPIO inputs.
+/// @details The current bench harness decodes these keys through the matrix
+/// table below, but keeping the direct-GPIO metadata in enum order means the
 /// debounce and polling code stays generic while the hardware breakout evolves.
 constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
     {ButtonId::LeftTop, -1, true, "L1"},
@@ -103,27 +104,52 @@ constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
     {ButtonId::RightMiddle, -1, true, "R3"},
     {ButtonId::RightLower, -1, true, "R4"},
     {ButtonId::RightBottom, -1, true, "R5"},
-    // The controller already understands Back Step even though the physical
-    // matrix decode still needs to be wired into this scan table later.
+    {ButtonId::Alert, -1, true, "ALERT"},
+    {ButtonId::Test, -1, true, "TEST"},
+    {ButtonId::Brt, -1, true, "BRT"},
+    {ButtonId::Dim, -1, true, "DIM"},
+    {ButtonId::Ltrs, -1, true, "LTRS"},
     {ButtonId::BackStep, -1, true, "BACK STEP"},
     {ButtonId::CursorLeft, -1, true, "LEFT"},
     {ButtonId::CursorRight, -1, true, "RIGHT"},
+    {ButtonId::Slash, -1, true, "/"},
     {ButtonId::Clr, -1, true, "CLR"},
-    {ButtonId::Digit1, -1, true, "1"},
-    {ButtonId::Digit2, -1, true, "2"},
-    {ButtonId::Digit3, -1, true, "3"},
-    {ButtonId::Digit4, -1, true, "4"},
-    {ButtonId::Digit5, -1, true, "5"},
-    {ButtonId::Digit6, -1, true, "6"},
-    {ButtonId::Digit7, -1, true, "7"},
-    {ButtonId::Digit8, -1, true, "8"},
-    {ButtonId::Digit9, -1, true, "9"},
-    {ButtonId::Digit0, -1, true, "0"},
+    {ButtonId::AlphaA, -1, true, "A"},
+    {ButtonId::AlphaB, -1, true, "B"},
+    {ButtonId::AlphaC, -1, true, "C"},
+    {ButtonId::AlphaD, -1, true, "D"},
+    {ButtonId::AlphaE, -1, true, "E"},
+    {ButtonId::AlphaF, -1, true, "F"},
+    {ButtonId::AlphaG, -1, true, "G"},
+    {ButtonId::AlphaH, -1, true, "H"},
+    {ButtonId::AlphaI, -1, true, "I"},
+    {ButtonId::AlphaJ, -1, true, "J"},
+    {ButtonId::AlphaK, -1, true, "K"},
+    {ButtonId::AlphaL, -1, true, "L"},
+    {ButtonId::AlphaM, -1, true, "M"},
+    {ButtonId::AlphaN, -1, true, "N"},
+    {ButtonId::AlphaO, -1, true, "O"},
+    {ButtonId::AlphaP, -1, true, "P"},
+    {ButtonId::AlphaQ, -1, true, "Q"},
+    {ButtonId::AlphaR, -1, true, "R"},
+    {ButtonId::AlphaS, -1, true, "S"},
+    {ButtonId::AlphaT, -1, true, "T"},
+    {ButtonId::AlphaU, -1, true, "U"},
+    {ButtonId::AlphaV, -1, true, "V"},
+    {ButtonId::AlphaW, -1, true, "W"},
+    {ButtonId::AlphaX, -1, true, "X"},
+    {ButtonId::AlphaY, -1, true, "Y"},
+    {ButtonId::AlphaZ, -1, true, "Z"},
+    {ButtonId::TFunc, -1, true, "T FUNC"},
+    {ButtonId::Dot, -1, true, "."},
+    {ButtonId::Zero, -1, true, "0"},
+    {ButtonId::Spc, -1, true, "SPC"},
 }};
 
-/// @brief Confirmed matrix closures for the currently supported front-panel buttons.
-/// @details Side softkeys and `BackStep` are decoded from the scanned matrix so
-/// navigation works on real hardware using the measured ribbon-pin map.
+/// @brief Confirmed matrix closures for every decoded front-panel button.
+/// @details The table follows the measured ribbon-pin map in README.md so the
+/// full keypad can generate the same logical button events as the browser
+/// preview before the final hardware harness is frozen.
 constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
     {ButtonId::LeftTop, 7, 22},
     {ButtonId::LeftUpper, 8, 22},
@@ -135,20 +161,46 @@ constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
     {ButtonId::RightMiddle, 9, 15},
     {ButtonId::RightLower, 10, 15},
     {ButtonId::RightBottom, 11, 15},
+    {ButtonId::Alert, 5, 20},
+    {ButtonId::Test, 5, 17},
+    {ButtonId::Brt, 5, 16},
+    {ButtonId::Dim, 5, 15},
+    {ButtonId::Ltrs, 6, 21},
     {ButtonId::BackStep, 6, 20},
     {ButtonId::CursorLeft, 6, 19},
     {ButtonId::CursorRight, 6, 18},
+    {ButtonId::Slash, 6, 17},
     {ButtonId::Clr, 6, 16},
-    {ButtonId::Digit1, 8, 18},
-    {ButtonId::Digit2, 8, 17},
-    {ButtonId::Digit3, 8, 16},
-    {ButtonId::Digit4, 9, 18},
-    {ButtonId::Digit5, 9, 17},
-    {ButtonId::Digit6, 9, 16},
-    {ButtonId::Digit7, 10, 18},
-    {ButtonId::Digit8, 10, 17},
-    {ButtonId::Digit9, 10, 16},
-    {ButtonId::Digit0, 11, 17},
+    {ButtonId::AlphaA, 7, 21},
+    {ButtonId::AlphaB, 7, 20},
+    {ButtonId::AlphaC, 7, 19},
+    {ButtonId::AlphaD, 7, 18},
+    {ButtonId::AlphaE, 7, 17},
+    {ButtonId::AlphaF, 7, 16},
+    {ButtonId::AlphaG, 8, 21},
+    {ButtonId::AlphaH, 8, 20},
+    {ButtonId::AlphaI, 8, 19},
+    {ButtonId::AlphaJ, 8, 18},
+    {ButtonId::AlphaK, 8, 17},
+    {ButtonId::AlphaL, 8, 16},
+    {ButtonId::AlphaM, 9, 21},
+    {ButtonId::AlphaN, 9, 20},
+    {ButtonId::AlphaO, 9, 19},
+    {ButtonId::AlphaP, 9, 18},
+    {ButtonId::AlphaQ, 9, 17},
+    {ButtonId::AlphaR, 9, 16},
+    {ButtonId::AlphaS, 10, 21},
+    {ButtonId::AlphaT, 10, 20},
+    {ButtonId::AlphaU, 10, 19},
+    {ButtonId::AlphaV, 10, 18},
+    {ButtonId::AlphaW, 10, 17},
+    {ButtonId::AlphaX, 10, 16},
+    {ButtonId::AlphaY, 11, 21},
+    {ButtonId::AlphaZ, 11, 20},
+    {ButtonId::TFunc, 11, 19},
+    {ButtonId::Dot, 11, 18},
+    {ButtonId::Zero, 11, 17},
+    {ButtonId::Spc, 11, 16},
 }};
 
 /// @brief Ribbon-pin to Pico-GPIO mapping for the keypad matrix probe logic.
@@ -177,6 +229,10 @@ std::array<ButtonState, kButtonCount> g_button_states = {};
 KeypadMonitorStatus g_keypad_monitor_status = {};
 std::array<uint16_t, kKeypadObservedLineCount> g_probe_hits_by_drive = {};
 std::array<uint16_t, kKeypadObservedLineCount> g_last_logged_probe_hits_by_drive = {};
+constexpr int kRawKeyStateNone = -1;
+constexpr int kRawKeyStateMulti = -2;
+int g_last_logged_raw_key_state = kRawKeyStateNone;
+uint8_t g_last_logged_raw_key_count = 0U;
 
 /// @brief Returns the 16-bit hit mask bit for one observed line index.
 constexpr uint16_t observed_line_hit_bit(size_t line_index)
@@ -231,6 +287,88 @@ bool panel_pins_are_closed(uint8_t panel_pin_a, uint8_t panel_pin_b)
     const uint16_t kBitB = observed_line_hit_bit(kIndexB);
     return ((g_probe_hits_by_drive[kIndexA] & kBitB) != 0) ||
            ((g_probe_hits_by_drive[kIndexB] & kBitA) != 0);
+}
+
+/// @brief Returns true when the configured matrix closure for one button is active.
+/// @details Some early harness notes placed `LTRS` on the neighbouring return
+/// line (`6 x 22`) instead of the later-confirmed `6 x 21`. Accepting both
+/// keeps bring-up usable while wiring is still being verified.
+bool matrix_button_is_pressed(const MatrixButtonConfig& button)
+{
+    if (button.id == ButtonId::Ltrs)
+    {
+        return panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b) ||
+               panel_pins_are_closed(6U, 22U);
+    }
+
+    return panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b);
+}
+
+/// @brief Returns the currently detected raw matrix key state.
+/// @details This bypasses debounce so bench bring-up can confirm electrical
+/// closures even when high-level button events are not yet firing.
+int raw_matrix_key_state(uint8_t* out_pressed_count)
+{
+    uint8_t pressed_count = 0U;
+    int state = kRawKeyStateNone;
+
+    for (const MatrixButtonConfig& button : kMatrixButtons)
+    {
+        if (!matrix_button_is_pressed(button))
+        {
+            continue;
+        }
+
+        ++pressed_count;
+        if (pressed_count == 1U)
+        {
+            state = static_cast<int>(button_index(button.id));
+        }
+        else
+        {
+            state = kRawKeyStateMulti;
+        }
+    }
+
+    if (out_pressed_count != nullptr)
+    {
+        *out_pressed_count = pressed_count;
+    }
+
+    return state;
+}
+
+/// @brief Logs raw keypad key state changes to aid hardware bring-up.
+void log_raw_matrix_key_state_if_changed()
+{
+    uint8_t pressed_count = 0U;
+    const int raw_key_state = raw_matrix_key_state(&pressed_count);
+    if (raw_key_state == g_last_logged_raw_key_state &&
+        pressed_count == g_last_logged_raw_key_count)
+    {
+        return;
+    }
+
+    g_last_logged_raw_key_state = raw_key_state;
+    g_last_logged_raw_key_count = pressed_count;
+
+    if (raw_key_state == kRawKeyStateNone)
+    {
+        std::printf("Keypad raw: none\n");
+        return;
+    }
+
+    if (raw_key_state == kRawKeyStateMulti)
+    {
+        std::printf("Keypad raw: MULTI (%u)\n", static_cast<unsigned>(pressed_count));
+        return;
+    }
+
+    const size_t index = static_cast<size_t>(raw_key_state);
+    if (index < kButtons.size())
+    {
+        std::printf("Keypad raw: %s\n", kButtons[index].name);
+    }
 }
 
 ButtonEvent poll_button_state(ButtonState& state, ButtonId id, bool pressed);
@@ -518,7 +656,7 @@ ButtonEvent poll_button_state(ButtonState& state, ButtonId id, bool pressed)
 /// @brief Polls and debounces one logical button decoded from the keypad matrix.
 ButtonEvent poll_matrix_button(ButtonState& state, const MatrixButtonConfig& button)
 {
-    const bool kPressed = panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b);
+    const bool kPressed = matrix_button_is_pressed(button);
     return poll_button_state(state, button.id, kPressed);
 }
 
@@ -528,7 +666,7 @@ void initialize_matrix_button_states()
     for (const MatrixButtonConfig& button : kMatrixButtons)
     {
         ButtonState& state = g_button_states[button_index(button.id)];
-        const bool kPressed = panel_pins_are_closed(button.panel_pin_a, button.panel_pin_b);
+        const bool kPressed = matrix_button_is_pressed(button);
         state.raw_level = kPressed;
         state.stable_pressed = kPressed;
     }
@@ -624,6 +762,10 @@ void init()
     refresh_keypad_monitor_status();
     initialize_matrix_button_states();
     log_keypad_probe_results_if_changed();
+    log_raw_matrix_key_state_if_changed();
+    std::printf("Keypad init: configured lines=%u mapped keys=%u\n",
+                static_cast<unsigned>(g_keypad_monitor_status.configured_count),
+                static_cast<unsigned>(kButtonCount));
 }
 
 /// @brief Returns the fixed debug label for one logical button.
@@ -647,6 +789,7 @@ ButtonEvent poll_buttons()
     // tracks the live electrical picture, not just debounced button edges.
     refresh_keypad_monitor_status();
     log_keypad_probe_results_if_changed();
+    log_raw_matrix_key_state_if_changed();
 
     // Return the first debounced edge found so the rest of the UI can keep a
     // simple "one event per loop" input model.

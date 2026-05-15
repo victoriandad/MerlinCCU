@@ -86,10 +86,13 @@ enum class LampMode : uint8_t
 };
 
 /// @brief Text entry mode controlled by the `LTRS` key.
+/// @details The Merlin panel carries both letter and number legends. The LTRS
+/// key cycles how those physical keys are interpreted by editable UI fields.
 enum class LetterMode : uint8_t
 {
-    Off = 0,
-    On,
+    UpperCase = 0,
+    LowerCase,
+    Numbers,
 };
 
 /// @brief Brightness level placeholder for panel and key lighting.

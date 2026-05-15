@@ -105,7 +105,7 @@ ConsoleState make_default_console_state()
     state.screen_saver_timeout_editing = false;
     state.screen_saver_timeout_edit_minutes = 5;
     state.screen_saver_timeout_replace_on_next_digit = true;
-    state.letter_mode = LetterMode::Off;
+    state.letter_mode = LetterMode::UpperCase;
     state.alert_severity = AlertSeverity::None;
     state.test_state = SystemTestState::Idle;
     state.panel_brightness = BrightnessLevel::Medium;

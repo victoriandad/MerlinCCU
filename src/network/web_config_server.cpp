@@ -28,7 +28,8 @@ constexpr size_t kRequestCapacity = 4096;
 constexpr size_t kResponseCapacity = 24576;
 constexpr u16_t kTcpWriteChunkMax = 512;
 constexpr char kHttpOkHeader[] =
-    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
+    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store, "
+    "max-age=0\r\nPragma: no-cache\r\nConnection: close\r\n\r\n";
 constexpr char kHttpBadRequestHeader[] = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; "
                                          "charset=utf-8\r\nConnection: close\r\n\r\n";
 constexpr char kHttpBinaryHeader[] =
@@ -64,19 +65,43 @@ struct WebButtonBinding
     ButtonId button_id;
 };
 
-constexpr std::array<WebButtonBinding, static_cast<size_t>(ButtonId::Count)> kWebButtonBindings = {{
+constexpr size_t kLegacyDigitWebBindingCount = 10U;
+constexpr size_t kWebButtonBindingCount =
+    static_cast<size_t>(ButtonId::Count) + kLegacyDigitWebBindingCount;
+
+constexpr std::array<WebButtonBinding, kWebButtonBindingCount> kWebButtonBindings = {{
     {"LeftTop", ButtonId::LeftTop},         {"LeftUpper", ButtonId::LeftUpper},
     {"LeftMiddle", ButtonId::LeftMiddle},   {"LeftLower", ButtonId::LeftLower},
     {"LeftBottom", ButtonId::LeftBottom},   {"RightTop", ButtonId::RightTop},
     {"RightUpper", ButtonId::RightUpper},   {"RightMiddle", ButtonId::RightMiddle},
     {"RightLower", ButtonId::RightLower},   {"RightBottom", ButtonId::RightBottom},
-    {"BackStep", ButtonId::BackStep},       {"CursorLeft", ButtonId::CursorLeft},
-    {"CursorRight", ButtonId::CursorRight}, {"Clr", ButtonId::Clr},
-    {"Digit1", ButtonId::Digit1},           {"Digit2", ButtonId::Digit2},
-    {"Digit3", ButtonId::Digit3},           {"Digit4", ButtonId::Digit4},
-    {"Digit5", ButtonId::Digit5},           {"Digit6", ButtonId::Digit6},
-    {"Digit7", ButtonId::Digit7},           {"Digit8", ButtonId::Digit8},
-    {"Digit9", ButtonId::Digit9},           {"Digit0", ButtonId::Digit0},
+    {"Alert", ButtonId::Alert},             {"Test", ButtonId::Test},
+    {"Brt", ButtonId::Brt},                 {"Dim", ButtonId::Dim},
+    {"Ltrs", ButtonId::Ltrs},               {"BackStep", ButtonId::BackStep},
+    {"CursorLeft", ButtonId::CursorLeft},   {"CursorRight", ButtonId::CursorRight},
+    {"Slash", ButtonId::Slash},             {"Clr", ButtonId::Clr},
+    {"AlphaA", ButtonId::AlphaA},           {"AlphaB", ButtonId::AlphaB},
+    {"AlphaC", ButtonId::AlphaC},           {"AlphaD", ButtonId::AlphaD},
+    {"AlphaE", ButtonId::AlphaE},           {"AlphaF", ButtonId::AlphaF},
+    {"AlphaG", ButtonId::AlphaG},           {"AlphaH", ButtonId::AlphaH},
+    {"AlphaI", ButtonId::AlphaI},           {"AlphaJ", ButtonId::AlphaJ},
+    {"AlphaK", ButtonId::AlphaK},           {"AlphaL", ButtonId::AlphaL},
+    {"AlphaM", ButtonId::AlphaM},           {"AlphaN", ButtonId::AlphaN},
+    {"AlphaO", ButtonId::AlphaO},           {"AlphaP", ButtonId::AlphaP},
+    {"AlphaQ", ButtonId::AlphaQ},           {"AlphaR", ButtonId::AlphaR},
+    {"AlphaS", ButtonId::AlphaS},           {"AlphaT", ButtonId::AlphaT},
+    {"AlphaU", ButtonId::AlphaU},           {"AlphaV", ButtonId::AlphaV},
+    {"AlphaW", ButtonId::AlphaW},           {"AlphaX", ButtonId::AlphaX},
+    {"AlphaY", ButtonId::AlphaY},           {"AlphaZ", ButtonId::AlphaZ},
+    {"TFunc", ButtonId::TFunc},             {"Dot", ButtonId::Dot},
+    {"Zero", ButtonId::Zero},               {"Spc", ButtonId::Spc},
+    // Keep old preview pages and cached browser scripts working after the
+    // internal model switched from number IDs to physical key IDs.
+    {"Digit1", ButtonId::AlphaJ},           {"Digit2", ButtonId::AlphaK},
+    {"Digit3", ButtonId::AlphaL},           {"Digit4", ButtonId::AlphaP},
+    {"Digit5", ButtonId::AlphaQ},           {"Digit6", ButtonId::AlphaR},
+    {"Digit7", ButtonId::AlphaV},           {"Digit8", ButtonId::AlphaW},
+    {"Digit9", ButtonId::AlphaX},           {"Digit0", ButtonId::Zero},
 }};
 
 constexpr size_t kAlertLampIndex = static_cast<size_t>(LampId::AlertLamp);
@@ -779,17 +804,15 @@ bool build_preview_page()
         "<span id=\"state\" class=\"state\">Starting...</span></div>"
         "<div class=\"ccu-fixed\"><div class=\"ccu\" aria-label=\"Virtual CCU keypad\">"
         "<div class=\"row top-row\">"
-        "<button id=\"alert_key\" class=\"key ghost\" type=\"button\" title=\"Open alert "
+        "<button class=\"key\" type=\"button\" data-button-id=\"Alert\" title=\"Open alert "
         "list\"><span>Alert</span></button>"
         "<div id=\"alert_led\" class=\"top-gap led-mask\" aria-hidden=\"true\"><span "
         "class=\"led-label\">ALRT</span></div><div id=\"test_led\" class=\"top-gap led-mask\" "
         "aria-hidden=\"true\"><span class=\"led-label\">TEST</span></div>"
-        "<button id=\"test_key\" class=\"key ghost\" type=\"button\" title=\"Preview: click to "
-        "cycle TEST lamp\"><span>Test</span></button>"
-        "<button class=\"key ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>Brt</span></button>"
-        "<button class=\"key ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>Dim</span></button></div>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Test\" title=\"Cycle TEST "
+        "lamp\"><span>Test</span></button>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Brt\"><span>Brt</span></button>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Dim\"><span>Dim</span></button></div>"
         "<div class=\"display-bay\"><div class=\"display-shell\">"
         "<div class=\"soft-column left-soft\">"
         "<div class=\"soft-cell r0\"><button class=\"key\" type=\"button\" "
@@ -827,82 +850,80 @@ bool build_preview_page()
         "data-button-id=\"RightBottom\"><span>&#8592;</span></button></div>"
         "</div></div></div>"
         "<div class=\"keybed\"><div class=\"row nav-row\">"
-        "<button class=\"key key-emphasis ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>Ltrs</span></button>"
+        "<button class=\"key key-emphasis\" type=\"button\" "
+        "data-button-id=\"Ltrs\"><span>Ltrs</span></button>"
         "<button class=\"key\" type=\"button\" data-button-id=\"BackStep\"><span>Back</span><span "
         "class=\"sub\">Step</span></button>"
         "<button class=\"key\" type=\"button\" "
         "data-button-id=\"CursorLeft\"><span>&#8592;</span></button>"
         "<button class=\"key\" type=\"button\" "
         "data-button-id=\"CursorRight\"><span>&#8594;</span></button>"
-        "<button class=\"key ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>/</span></button>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Slash\"><span>/</span></button>"
         "<button class=\"key key-emphasis\" type=\"button\" "
         "data-button-id=\"Clr\"><span>Clr</span></button></div>"
         "<div class=\"keypad\">"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>A</span><span class=\"sub\">Comm</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>B</span><span class=\"sub\">R Nav</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>C</span><span class=\"sub\">Perf</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>D</span><span class=\"sub\">Ams</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>E</span><span class=\"sub\">Maint</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>F</span><span class=\"sub\">Iff</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>G</span><span class=\"sub\">Totes</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>H</span><span class=\"sub\">Dsply</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>I</span><span class=\"sub\">D Link</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit1\"><span>J</span><span class=\"sub\">1</span></button>"
+        "data-button-id=\"AlphaA\"><span>A</span><span class=\"sub\">Comm</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit2\"><span>K</span><span class=\"sub\">2</span></button>"
+        "data-button-id=\"AlphaB\"><span>B</span><span class=\"sub\">R Nav</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit3\"><span>L</span><span class=\"sub\">3</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>M</span><span class=\"sub\">Sonics</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>N</span><span class=\"sub\">Radar</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>O</span><span class=\"sub\">Esm</span></button>"
+        "data-button-id=\"AlphaC\"><span>C</span><span class=\"sub\">Perf</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit4\"><span>P</span><span class=\"sub\">4</span></button>"
+        "data-button-id=\"AlphaD\"><span>D</span><span class=\"sub\">Ams</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit5\"><span>Q</span><span class=\"sub\">5</span></button>"
+        "data-button-id=\"AlphaE\"><span>E</span><span class=\"sub\">Maint</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit6\"><span>R</span><span class=\"sub\">6</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>S</span><span class=\"sub\">Stores</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>T</span><span class=\"sub\">Ads</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>U</span></button>"
+        "data-button-id=\"AlphaF\"><span>F</span><span class=\"sub\">Iff</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit7\"><span>V</span><span class=\"sub\">7</span></button>"
+        "data-button-id=\"AlphaG\"><span>G</span><span class=\"sub\">Totes</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit8\"><span>W</span><span class=\"sub\">8</span></button>"
+        "data-button-id=\"AlphaH\"><span>H</span><span class=\"sub\">Dsply</span></button>"
         "<button class=\"key key-alpha\" type=\"button\" "
-        "data-button-id=\"Digit9\"><span>X</span><span class=\"sub\">9</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>Y</span><span class=\"sub\">T Nav</span></button>"
-        "<button class=\"key key-alpha ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>Z</span><span class=\"sub\">T Data</span></button>"
-        "<button class=\"key key-bottom-centre ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>T Func</span></button>"
-        "<button class=\"key ghost\" type=\"button\" title=\"Not yet "
-        "wired\"><span>.</span></button>"
+        "data-button-id=\"AlphaI\"><span>I</span><span class=\"sub\">D Link</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaJ\"><span>J</span><span class=\"sub\">1</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaK\"><span>K</span><span class=\"sub\">2</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaL\"><span>L</span><span class=\"sub\">3</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaM\"><span>M</span><span class=\"sub\">Sonics</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaN\"><span>N</span><span class=\"sub\">Radar</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaO\"><span>O</span><span class=\"sub\">Esm</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaP\"><span>P</span><span class=\"sub\">4</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaQ\"><span>Q</span><span class=\"sub\">5</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaR\"><span>R</span><span class=\"sub\">6</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaS\"><span>S</span><span class=\"sub\">Stores</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaT\"><span>T</span><span class=\"sub\">Ads</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaU\"><span>U</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaV\"><span>V</span><span class=\"sub\">7</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaW\"><span>W</span><span class=\"sub\">8</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaX\"><span>X</span><span class=\"sub\">9</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaY\"><span>Y</span><span class=\"sub\">T Nav</span></button>"
+        "<button class=\"key key-alpha\" type=\"button\" "
+        "data-button-id=\"AlphaZ\"><span>Z</span><span class=\"sub\">T Data</span></button>"
+        "<button class=\"key key-bottom-centre\" type=\"button\" "
+        "data-button-id=\"TFunc\"><span>T Func</span></button>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Dot\"><span>.</span></button>"
         "<button class=\"key\" type=\"button\" "
-        "data-button-id=\"Digit0\"><span>&oslash;</span></button>"
-        "<button class=\"key ghost\" type=\"button\" title=\"Not yet wired\"><span>Spc</span><span "
+        "data-button-id=\"Zero\"><span>&oslash;</span></button>"
+        "<button class=\"key\" type=\"button\" data-button-id=\"Spc\"><span>Spc</span><span "
         "class=\"sub small\">:</span></button>"
-        "</div><p class=\"hint-line\">Only keys with amber labels are wired into the current "
-        "firmware model.</p></div></div></div>"
-        "<div class=\"keystate\" id=\"keys_state\">Ready. Press a mapped key to send an "
+        "</div><p class=\"hint-line\">All confirmed matrix keys are mapped. LTRS cycles ABC, "
+        "123, and abc input modes.</p></div></div></div>"
+        "<div class=\"keystate\" id=\"keys_state\">Ready. Press any keypad key to send an "
         "event.</div></section>"
         "<script>"
         "(function(){"
@@ -916,11 +937,8 @@ bool build_preview_page()
         "const popupButton=document.getElementById('open_popup');"
         "const alertLed=document.getElementById('alert_led');"
         "const testLed=document.getElementById('test_led');"
-        "const alertKey=document.getElementById('alert_key');"
-        "const testKey=document.getElementById('test_key');"
         "const keysState=document.getElementById('keys_state');"
         "const mappedKeys=document.querySelectorAll('.key[data-button-id]');"
-        "const ghostKeys=document.querySelectorAll('.key.ghost');"
         "const isPopupMode=window.location.search.indexOf('popup=1')>=0;"
         "if(isPopupMode){document.body.classList.add('popup-mode');}"
         "let running=true;"
@@ -995,21 +1013,23 @@ bool build_preview_page()
         "for(let "
         "i=0;i<mappedKeys.length;i++){mappedKeys[i].addEventListener('click',function(){"
         "triggerMappedKey(this);});}"
-        "for(let i=0;i<ghostKeys.length;i++){ghostKeys[i].addEventListener('click',function(){"
-        "const text=(this.textContent||'Key').replace(/\\s+/g,' ').trim();"
-        "setKeyState(text+' is shown for panel fidelity, but is not wired in firmware yet.');"
-        "});}"
         "const keyboardMap={"
-        "'1':'Digit1','2':'Digit2','3':'Digit3','4':'Digit4','5':'Digit5','6':'Digit6',"
-        "'7':'Digit7','8':'Digit8','9':'Digit9','0':'Digit0',"
+        "'1':'AlphaJ','2':'AlphaK','3':'AlphaL','4':'AlphaP','5':'AlphaQ','6':'AlphaR',"
+        "'7':'AlphaV','8':'AlphaW','9':'AlphaX','0':'Zero',"
+        "'a':'AlphaA','b':'AlphaB','c':'AlphaC','d':'AlphaD','e':'AlphaE','f':'AlphaF',"
+        "'g':'AlphaG','h':'AlphaH','i':'AlphaI','j':'AlphaJ','k':'AlphaK','l':'AlphaL',"
+        "'m':'AlphaM','n':'AlphaN','o':'AlphaO','p':'AlphaP','q':'AlphaQ','r':'AlphaR',"
+        "'s':'AlphaS','t':'AlphaT','u':'AlphaU','v':'AlphaV','w':'AlphaW','x':'AlphaX',"
+        "'y':'AlphaY','z':'AlphaZ','.':'Dot','/':'Slash',' ':'Spc',"
         "'ArrowLeft':'CursorLeft','ArrowRight':'CursorRight','Backspace':'BackStep','Delete':'Clr',"
-        "'Escape':'Clr',"
+        "'Escape':'Clr','Tab':'Ltrs','F11':'Alert','F12':'Test',"
         "'F1':'LeftTop','F2':'LeftUpper','F3':'LeftMiddle','F4':'LeftLower','F5':'LeftBottom',"
         "'F6':'RightTop','F7':'RightUpper','F8':'RightMiddle','F9':'RightLower','F10':'RightBottom'"
         "};"
         "document.addEventListener('keydown',function(event){"
         "if(event.repeat){return;}"
-        "const mapped=keyboardMap[event.key];"
+        "const keyName=event.key.length===1?event.key.toLowerCase():event.key;"
+        "const mapped=keyboardMap[keyName];"
         "if(!mapped){return;}"
         "event.preventDefault();"
         "const key=document.querySelector('[data-button-id=\"'+mapped+'\"]');"
@@ -1102,21 +1122,7 @@ bool build_preview_page()
         "if(panelAbortController===controller){panelAbortController=null;}"
         "}"
         "}"
-        "async function sendPanelAction(action){"
-        "try{"
-        "const response=await fetch('/api/panel-state',{method:'POST',cache:'no-store',"
-        "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
-        "body:'action='+encodeURIComponent(action)});"
-        "if(!response.ok){return;}"
-        "const message=(await response.text()).trim();"
-        "if(message){setKeyState(message);}"
-        "refreshPanelState();"
-        "}catch(_){ }"
-        "}"
         "bindVirtualKeys();"
-        "if(alertKey){alertKey.addEventListener('click',function(){sendPanelAction('open_alerts');}"
-        ");}"
-        "if(testKey){testKey.addEventListener('click',function(){sendPanelAction('cycle_test');});}"
         "setInterval(refreshPanelState,500);"
         "refreshPanelState();"
         "schedule();"
@@ -1915,6 +1921,7 @@ bool handle_button_post(const char* body, char* message, size_t message_size)
     }
 
     const ButtonEvent event = {id, type};
+    input::handle_button_event(event);
     if (type == ButtonEventType::Pressed)
     {
         console_controller::request_user_activity();

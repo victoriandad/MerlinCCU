@@ -1365,7 +1365,46 @@ bool set_screen_saver_timeout_minutes(uint16_t minutes)
     return true;
 }
 
-/// @brief Returns true when the button is one of the numeric timeout-editor keys.
+/// @brief Returns the compact label for the current LTRS interpretation mode.
+const char* letter_mode_text(LetterMode mode)
+{
+    switch (mode)
+    {
+    case LetterMode::UpperCase:
+        return "ABC";
+    case LetterMode::LowerCase:
+        return "abc";
+    case LetterMode::Numbers:
+        return "123";
+    }
+
+    return "ABC";
+}
+
+/// @brief Advances the LTRS input mode through upper, lower, and numeric entry.
+LetterMode next_letter_mode(LetterMode mode)
+{
+    switch (mode)
+    {
+    case LetterMode::UpperCase:
+        return LetterMode::Numbers;
+    case LetterMode::Numbers:
+        return LetterMode::LowerCase;
+    case LetterMode::LowerCase:
+        return LetterMode::UpperCase;
+    }
+
+    return LetterMode::UpperCase;
+}
+
+/// @brief Cycles the shared LTRS input mode and reports the state change.
+bool cycle_letter_mode()
+{
+    g_console_state.letter_mode = next_letter_mode(g_console_state.letter_mode);
+    return true;
+}
+
+/// @brief Returns true when the current LTRS mode maps a button to a digit.
 bool button_digit_value(ButtonId id, uint8_t* out_digit)
 {
     if (out_digit == nullptr)
@@ -1373,56 +1412,127 @@ bool button_digit_value(ButtonId id, uint8_t* out_digit)
         return false;
     }
 
+    if (g_console_state.letter_mode != LetterMode::Numbers)
+    {
+        return false;
+    }
+
     switch (id)
     {
-    case ButtonId::Digit1:
+    case ButtonId::AlphaJ:
         *out_digit = 1;
         return true;
-    case ButtonId::Digit2:
+    case ButtonId::AlphaK:
         *out_digit = 2;
         return true;
-    case ButtonId::Digit3:
+    case ButtonId::AlphaL:
         *out_digit = 3;
         return true;
-    case ButtonId::Digit4:
+    case ButtonId::AlphaP:
         *out_digit = 4;
         return true;
-    case ButtonId::Digit5:
+    case ButtonId::AlphaQ:
         *out_digit = 5;
         return true;
-    case ButtonId::Digit6:
+    case ButtonId::AlphaR:
         *out_digit = 6;
         return true;
-    case ButtonId::Digit7:
+    case ButtonId::AlphaV:
         *out_digit = 7;
         return true;
-    case ButtonId::Digit8:
+    case ButtonId::AlphaW:
         *out_digit = 8;
         return true;
-    case ButtonId::Digit9:
+    case ButtonId::AlphaX:
         *out_digit = 9;
         return true;
-    case ButtonId::Digit0:
+    case ButtonId::Zero:
         *out_digit = 0;
         return true;
-    case ButtonId::LeftTop:
-    case ButtonId::LeftUpper:
-    case ButtonId::LeftMiddle:
-    case ButtonId::LeftLower:
-    case ButtonId::LeftBottom:
-    case ButtonId::RightTop:
-    case ButtonId::RightUpper:
-    case ButtonId::RightMiddle:
-    case ButtonId::RightLower:
-    case ButtonId::RightBottom:
-    case ButtonId::BackStep:
-    case ButtonId::CursorLeft:
-    case ButtonId::CursorRight:
-    case ButtonId::Clr:
+    default:
         break;
     }
 
     return false;
+}
+
+/// @brief Maps a physical alpha key to its alphabetical character.
+bool alpha_character_from_button(ButtonId id, char* out_character)
+{
+    if (out_character == nullptr)
+    {
+        return false;
+    }
+
+    // The `AlphaA..AlphaZ` enum values are intentionally contiguous to mirror
+    // the physical keypad block. That keeps the conversion table-free while
+    // still preserving the physical key identifiers elsewhere in the model.
+    const uint8_t value = static_cast<uint8_t>(id);
+    const uint8_t kFirstAlpha = static_cast<uint8_t>(ButtonId::AlphaA);
+    const uint8_t kLastAlpha = static_cast<uint8_t>(ButtonId::AlphaZ);
+    if (value < kFirstAlpha || value > kLastAlpha)
+    {
+        return false;
+    }
+
+    *out_character = static_cast<char>('A' + (value - kFirstAlpha));
+    return true;
+}
+
+/// @brief Resolves one printable key according to the active LTRS mode.
+bool text_character_from_button(ButtonId id, char* out_character)
+{
+    if (out_character == nullptr)
+    {
+        return false;
+    }
+
+    uint8_t digit = 0U;
+    if (button_digit_value(id, &digit))
+    {
+        *out_character = static_cast<char>('0' + digit);
+        return true;
+    }
+
+    switch (id)
+    {
+    case ButtonId::Slash:
+        *out_character = '/';
+        return true;
+    case ButtonId::Dot:
+        *out_character = '.';
+        return true;
+    case ButtonId::Spc:
+        *out_character = ' ';
+        return true;
+    case ButtonId::Zero:
+        if (g_console_state.letter_mode == LetterMode::Numbers)
+        {
+            *out_character = '0';
+            return true;
+        }
+        return false;
+    default:
+        break;
+    }
+
+    if (g_console_state.letter_mode == LetterMode::Numbers)
+    {
+        return false;
+    }
+
+    char alpha = '\0';
+    if (!alpha_character_from_button(id, &alpha))
+    {
+        return false;
+    }
+
+    if (g_console_state.letter_mode == LetterMode::LowerCase)
+    {
+        alpha = static_cast<char>(alpha - 'A' + 'a');
+    }
+    *out_character = alpha;
+    return true;
 }
 
 /// @brief Appends or replaces the timeout scratchpad value with one digit.
@@ -1809,58 +1919,18 @@ bool confirm_screen_saver_timeout_edit()
 /// @brief Maps a physical bezel button to its logical softkey slot.
 SoftKeyId softkey_id_from_button(ButtonId button)
 {
-    switch (button)
+    if (static_cast<uint8_t>(button) > static_cast<uint8_t>(ButtonId::RightBottom))
     {
-    case ButtonId::LeftTop:
-        return SoftKeyId::Left1;
-    case ButtonId::LeftUpper:
-        return SoftKeyId::Left2;
-    case ButtonId::LeftMiddle:
-        return SoftKeyId::Left3;
-    case ButtonId::LeftLower:
-        return SoftKeyId::Left4;
-    case ButtonId::LeftBottom:
-        return SoftKeyId::Left5;
-    case ButtonId::RightTop:
-        return SoftKeyId::Right1;
-    case ButtonId::RightUpper:
-        return SoftKeyId::Right2;
-    case ButtonId::RightMiddle:
-        return SoftKeyId::Right3;
-    case ButtonId::RightLower:
-        return SoftKeyId::Right4;
-    case ButtonId::RightBottom:
-        return SoftKeyId::Right5;
-    case ButtonId::CursorLeft:
-    case ButtonId::CursorRight:
-    default:
         return SoftKeyId::Left1;
     }
+
+    return static_cast<SoftKeyId>(static_cast<uint8_t>(button));
 }
 
 /// @brief Returns whether the input event belongs to one of the ten softkeys.
 bool button_maps_to_softkey(ButtonId button)
 {
-    switch (button)
-    {
-    case ButtonId::LeftTop:
-    case ButtonId::LeftUpper:
-    case ButtonId::LeftMiddle:
-    case ButtonId::LeftLower:
-    case ButtonId::LeftBottom:
-    case ButtonId::RightTop:
-    case ButtonId::RightUpper:
-    case ButtonId::RightMiddle:
-    case ButtonId::RightLower:
-    case ButtonId::RightBottom:
-        return true;
-    case ButtonId::BackStep:
-    case ButtonId::CursorLeft:
-    case ButtonId::CursorRight:
-        return false;
-    }
-
-    return false;
+    return static_cast<uint8_t>(button) <= static_cast<uint8_t>(ButtonId::RightBottom);
 }
 
 /// @brief Rebuilds the current softkey map from the active console state.
@@ -2716,9 +2786,7 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::CycleAlert:
         return open_alert_list_page();
     case SoftKeyRoute::ToggleLetters:
-        g_console_state.letter_mode =
-            (g_console_state.letter_mode == LetterMode::Off) ? LetterMode::On : LetterMode::Off;
-        return true;
+        return cycle_letter_mode();
     case SoftKeyRoute::CycleTest:
         g_console_state.test_state = next_test_state(g_console_state.test_state);
         return true;
@@ -3150,6 +3218,86 @@ bool set_softkey_label(SoftKeyId key, const char* label)
     return true;
 }
 
+/// @brief Returns true for hard keys that represent text-entry surfaces.
+bool is_text_entry_button(ButtonId id)
+{
+    const uint8_t value = static_cast<uint8_t>(id);
+    if (value >= static_cast<uint8_t>(ButtonId::AlphaA) &&
+        value <= static_cast<uint8_t>(ButtonId::AlphaZ))
+    {
+        return true;
+    }
+
+    switch (id)
+    {
+    case ButtonId::Slash:
+    case ButtonId::TFunc:
+    case ButtonId::Dot:
+    case ButtonId::Zero:
+    case ButtonId::Spc:
+        return true;
+    default:
+        break;
+    }
+
+    return false;
+}
+
+/// @brief Applies globally active hard-key behaviours before softkey routing.
+bool handle_direct_hard_key_event(ButtonId id)
+{
+    switch (id)
+    {
+    case ButtonId::Alert:
+        return open_alert_list_page();
+    case ButtonId::Test:
+        g_console_state.test_state = next_test_state(g_console_state.test_state);
+        return true;
+    case ButtonId::Brt:
+        if (g_console_state.panel_brightness == BrightnessLevel::High)
+        {
+            return false;
+        }
+        g_console_state.panel_brightness = brighter(g_console_state.panel_brightness);
+        return true;
+    case ButtonId::Dim:
+        if (g_console_state.panel_brightness == BrightnessLevel::Off)
+        {
+            return false;
+        }
+        g_console_state.panel_brightness = dimmer(g_console_state.panel_brightness);
+        return true;
+    case ButtonId::Ltrs:
+        if (!cycle_letter_mode())
+        {
+            return false;
+        }
+        std::printf("LTRS mode -> %s\n", letter_mode_text(g_console_state.letter_mode));
+        return true;
+    default:
+        break;
+    }
+
+    if (!is_text_entry_button(id))
+    {
+        return false;
+    }
+
+    char character = '\0';
+    if (text_character_from_button(id, &character))
+    {
+        PERIODIC_LOG("Text key accepted: mode=%s char=%c\n",
+                     letter_mode_text(g_console_state.letter_mode),
+                     (character == ' ') ? '_' : character);
+    }
+    else
+    {
+        PERIODIC_LOG("Text key accepted: mode=%s key=%s\n",
+                     letter_mode_text(g_console_state.letter_mode), input::button_name(id));
+    }
+    return true;
+}
+
 /// @brief Records one button event and applies any enabled softkey action.
 bool handle_button_event(const ButtonEvent& event)
 {
@@ -3163,6 +3311,27 @@ bool handle_button_event(const ButtonEvent& event)
     if (event.type != ButtonEventType::Pressed)
     {
         return false;
+    }
+
+    if (event.id == ButtonId::Alert || event.id == ButtonId::Test || event.id == ButtonId::Brt ||
+        event.id == ButtonId::Dim || event.id == ButtonId::Ltrs)
+    {
+        const bool kHardKeyChanged = handle_direct_hard_key_event(event.id);
+        if (!kHardKeyChanged)
+        {
+            return false;
+        }
+
+        update_softkeys_from_state();
+        update_lamps_from_state();
+        PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+                     static_cast<unsigned>(g_console_state.active_page),
+                     letter_mode_text(g_console_state.letter_mode),
+                     static_cast<unsigned>(g_console_state.alert_severity),
+                     static_cast<unsigned>(g_console_state.test_state),
+                     static_cast<unsigned>(g_console_state.panel_brightness),
+                     static_cast<unsigned>(g_console_state.key_backlight_brightness));
+        return true;
     }
 
     if (g_console_state.screen_saver_timeout_editing)
@@ -3197,7 +3366,7 @@ bool handle_button_event(const ButtonEvent& event)
         update_lamps_from_state();
         PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
                      static_cast<unsigned>(g_console_state.active_page),
-                     (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
+                     letter_mode_text(g_console_state.letter_mode),
                      static_cast<unsigned>(g_console_state.alert_severity),
                      static_cast<unsigned>(g_console_state.test_state),
                      static_cast<unsigned>(g_console_state.panel_brightness),
@@ -3270,6 +3439,20 @@ bool handle_button_event(const ButtonEvent& event)
         return true;
     }
 
+    if (handle_direct_hard_key_event(event.id))
+    {
+        update_softkeys_from_state();
+        update_lamps_from_state();
+        PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
+                     static_cast<unsigned>(g_console_state.active_page),
+                     letter_mode_text(g_console_state.letter_mode),
+                     static_cast<unsigned>(g_console_state.alert_severity),
+                     static_cast<unsigned>(g_console_state.test_state),
+                     static_cast<unsigned>(g_console_state.panel_brightness),
+                     static_cast<unsigned>(g_console_state.key_backlight_brightness));
+        return true;
+    }
+
     if (!button_maps_to_softkey(event.id))
     {
         return false;
@@ -3295,7 +3478,7 @@ bool handle_button_event(const ButtonEvent& event)
     update_lamps_from_state();
     PERIODIC_LOG("Console state updated: page=%u ltrs=%s alert=%u test=%u panel=%u keys=%u\n",
                  static_cast<unsigned>(g_console_state.active_page),
-                 (g_console_state.letter_mode == LetterMode::On) ? "on" : "off",
+                 letter_mode_text(g_console_state.letter_mode),
                  static_cast<unsigned>(g_console_state.alert_severity),
                  static_cast<unsigned>(g_console_state.test_state),
                  static_cast<unsigned>(g_console_state.panel_brightness),
