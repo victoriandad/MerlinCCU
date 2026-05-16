@@ -10,11 +10,13 @@ build*/
 /mqtt_credentials.h
 /weather_display_config.h
 /keypad_matrix_config.h
+/environment_sensor_config.h
 /config/wifi_credentials.h
 /config/home_assistant_credentials.h
 /config/mqtt_credentials.h
 /config/weather_display_config.h
 /config/keypad_matrix_config.h
+/config/environment_sensor_config.h
 
 # Python tooling cache
 __pycache__/

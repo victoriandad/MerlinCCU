@@ -57,6 +57,10 @@ add_executable(MerlinCCU
     src/network/time_manager.cpp
     src/network/web_config_server.cpp
     src/network/wifi_manager.cpp
+    src/sensors/bme_environmental_sensor.cpp
+    src/sensors/environment_sensor_manager.cpp
+    src/sensors/i2c_bus.cpp
+    src/sensors/i2c_register_device.cpp
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
@@ -83,6 +87,7 @@ target_include_directories(MerlinCCU PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/include/display/fonts
     ${CMAKE_CURRENT_LIST_DIR}/include/display/screensavers
     ${CMAKE_CURRENT_LIST_DIR}/include/network
+    ${CMAKE_CURRENT_LIST_DIR}/include/sensors
     ${CMAKE_CURRENT_LIST_DIR}/config
 )
 
@@ -104,6 +109,7 @@ pico_stdlib
     hardware_pio
     hardware_dma
     hardware_flash
+    hardware_i2c
 )
 
 pico_add_extra_outputs(MerlinCCU)

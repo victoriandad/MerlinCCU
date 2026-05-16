@@ -45,7 +45,9 @@ Still incomplete or provisional:
 - Live Home Assistant calendar ingestion is not implemented yet.
 - Watched share symbols are not user-configurable from the UI or web config yet.
 - Weather iconography and warning/threshold alert rules are still planned.
-- I2C sensor support is planned but not implemented.
+- Disabled I2C sensor-discovery scaffolding exists for the optional Waveshare
+  Pico Environment Sensor board, including BME280/BME680 chip-ID probing; full
+  sensor reads are not implemented yet.
 - TLS certificate validation is not complete. HTTPS/TLS client paths exist, but trust-store and certificate validation policy still need hardening.
 - Multicore separation is not implemented yet.
 
@@ -84,6 +86,8 @@ Primary runtime flow:
 - `src/network/wifi_manager.cpp`, `src/network/home_assistant_manager.cpp`,
   `src/network/mqtt_manager.cpp`, and `src/network/share_price_manager.cpp`
   advance network-facing state machines.
+- `src/sensors/environment_sensor_manager.cpp` owns optional I2C environment
+  board discovery while full sensor drivers are still pending.
 
 The important ownership rule is that UI state is changed through `console_controller`, and rendered frames are only presented after drawing a complete back buffer. This avoids partially updated menu frames becoming visible.
 
@@ -98,6 +102,8 @@ Preferred future direction:
 - Cross-core communication should use small queues or mailboxes containing immutable snapshots or compact events.
 - The background core must not mutate `ConsoleState`, framebuffer pointers, or display state directly.
 - Moving lwIP/CYW43 network traffic across cores needs explicit locking and testing. Payload decoding is a safer first candidate than moving raw Wi-Fi stack ownership.
+
+The fuller preparation contract lives in `docs/architecture-prep.md`.
 
 This split is a design target, not current behaviour.
 
@@ -173,6 +179,8 @@ Local machine- or network-specific fallback headers are intentionally kept out o
 - `config/weather_display_config.example.h` ->
   `config/weather_display_config.h`
 - `config/keypad_matrix_config.example.h` -> `config/keypad_matrix_config.h`
+- `config/environment_sensor_config.example.h` ->
+  `config/environment_sensor_config.h`
 
 Recommended setup order:
 
@@ -189,6 +197,8 @@ leaves that AP and moves to the next configured credential.
 4. Add MQTT discovery after the broker is reachable from the Pico.
 5. Add direct weather coordinates if using Open-Meteo.
 6. Configure keypad matrix pins only after the front-panel line is verified as safe for Pico GPIO.
+7. Enable the optional Waveshare environment sensor board only after confirming
+   its I2C pins do not clash with the keypad harness.
 
 Important limits:
 
@@ -219,6 +229,18 @@ Network/config managers:
 - `include/network/mqtt_manager.h` / `src/network/mqtt_manager.cpp`: Home Assistant MQTT discovery/state publishing.
 - `include/network/share_price_manager.h` / `src/network/share_price_manager.cpp`: Yahoo Finance share data fetch and parsing.
 - `include/network/web_config_server.h` / `src/network/web_config_server.cpp`: local HTTP configuration and preview server.
+
+Sensor managers:
+
+- `include/sensors/i2c_bus.h` / `src/sensors/i2c_bus.cpp`: small Pico SDK I2C
+  wrapper for static-lifetime sensor drivers.
+- `include/sensors/i2c_register_device.h` / `src/sensors/i2c_register_device.cpp`:
+  bounded register transactions for simple I2C devices.
+- `include/sensors/bme_environmental_sensor.h` /
+  `src/sensors/bme_environmental_sensor.cpp`: BME280/BME680 ID probe scaffold.
+- `include/sensors/environment_sensor_manager.h` /
+  `src/sensors/environment_sensor_manager.cpp`: disabled-by-default Waveshare
+  board discovery scaffold.
 
 Screen savers:
 
@@ -316,6 +338,7 @@ Current practical pin budget:
 | --- | --- | --- |
 | Display scanout | `GPIO2`, `GPIO3`, `GPIO4`, `GPIO5` | Reserved for `VID`, `VCLK`, `HS`, `VS` |
 | Keypad matrix bench set | Local `config/keypad_matrix_config.h` mapping | Used for current matrix monitoring/decoding wiring |
+| Optional environment I2C | Local `config/environment_sensor_config.h` mapping | Disabled by default; confirm it does not clash with keypad GPIOs before enabling |
 | Spare digital GPIO | Depends on local keypad mapping | Candidate for LED control or spare logic inputs |
 | ADC-capable GPIO | `GPIO26`, `GPIO27`, `GPIO28` | Prefer for photoresistor or other analogue sensing |
 | Infrastructure pins | `VBUS`, `VSYS`, `3V3`, `ADC_VREF`, `RUN`, `GND` | Not general-purpose front-panel GPIO |
@@ -362,8 +385,8 @@ Platform and architecture:
 - [x] Flash-backed runtime configuration.
 - [x] Local web configuration and display preview.
 - [ ] Define and implement a safe multicore split for UI and background processing.
-- [ ] Add I2C bus support on spare GPIOs.
-- [ ] Add sensor abstractions for temperature, humidity, air quality, CO2, and particulates.
+- [x] Add disabled I2C bus discovery scaffold for the optional environment board.
+- [ ] Add sensor readings for temperature, humidity, air quality, CO2, and particulates.
 - [ ] Keep module boundaries under review as feature scope grows.
 
 Input and front-panel hardware:
@@ -422,5 +445,6 @@ Short-term useful slices:
 2. Finalise physical ALRT/TEST LED and backlight wiring assumptions.
 3. Make watched shares configurable from web config.
 4. Add weather icons after settling the small bitmap asset size.
-5. Define the multicore event/message boundary before moving any work to core 1.
-6. Add I2C sensor scaffolding once spare GPIO allocation is confirmed.
+5. Add BME280/BME680 calibration loading, compensation maths, and first
+   temperature/humidity/pressure readings.
+6. Define the multicore event/message boundary before moving any work to core 1.

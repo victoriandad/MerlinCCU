@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "environment_sensor_manager.h"
+
 /// @brief Physical softkeys mounted beside the display.
 enum class SoftKeyId : uint8_t
 {
@@ -631,6 +633,7 @@ struct ConsoleState
     HomeAssistantStatus home_assistant_status;
     MqttStatus mqtt_status;
     TimeStatus time_status;
+    environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
     uint8_t alert_count;
     uint8_t alert_list_page_index;

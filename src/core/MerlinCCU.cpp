@@ -9,6 +9,7 @@
 #include "debug_logging.h"
 #include "display.h"
 #include "el320_raster.pio.h"
+#include "environment_sensor_manager.h"
 #include "framebuffer.h"
 #include "home_assistant_manager.h"
 #include "input.h"
@@ -229,12 +230,14 @@ int main()
     home_assistant_manager::init();
     mqtt_manager::init();
     share_price_manager::init();
+    environment_sensor_manager::init();
     web_config_server::init();
     console_controller::set_wifi_status(wifi_manager::status());
     console_controller::set_time_status(time_manager::status());
     console_controller::set_home_assistant_status(home_assistant_manager::status());
     console_controller::set_mqtt_status(mqtt_manager::status());
     console_controller::set_share_market_status(share_price_manager::status());
+    console_controller::set_environment_sensor_status(environment_sensor_manager::status());
 
     // Render one complete back buffer before scanout starts so the panel never
     // shows an uninitialized frame during bring-up.
@@ -310,6 +313,13 @@ int main()
             last_user_activity = get_absolute_time();
             next_life_stats = make_timeout_time_ms(1000);
             console_changed = true;
+            if (event.type == ButtonEventType::Pressed && event.id == ButtonId::Alert)
+            {
+                // ALERT is an operator-facing hard key, so preserve its action
+                // even when the panel was asleep. Generic keys still behave as
+                // wake-only input to avoid accidental menu navigation.
+                console_changed = console_controller::handle_button_event(event) || console_changed;
+            }
         }
         else if (active_mode != ScreenMode::LifeScreensaver)
         {
@@ -346,6 +356,7 @@ int main()
             share_price_manager::update(wifi_manager::status(), share_fetch_period,
                                         share_fetch_enabled) ||
             console_changed;
+        environment_sensor_manager::update();
 
         // Mirror subsystem status back into the console model only after the
         // managers have had a chance to update this iteration.
@@ -364,6 +375,9 @@ int main()
         console_changed =
             console_controller::set_share_market_status(share_price_manager::status()) ||
             console_changed;
+        console_changed = console_controller::set_environment_sensor_status(
+                              environment_sensor_manager::status()) ||
+                          console_changed;
         console_changed = console_controller::consume_redraw_request() || console_changed;
 
         const uint16_t screen_saver_timeout_minutes =

@@ -26,7 +26,7 @@ namespace
 constexpr uint16_t kHttpPort = 80;
 constexpr size_t kRequestCapacity = 4096;
 constexpr size_t kResponseCapacity = 24576;
-constexpr u16_t kTcpWriteChunkMax = 512;
+constexpr u16_t kTcpWriteChunkMax = 1024;
 constexpr char kHttpOkHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store, "
     "max-age=0\r\nPragma: no-cache\r\nConnection: close\r\n\r\n";
@@ -51,6 +51,7 @@ struct WebSession
     size_t response_len;
     size_t response_sent;
     bool close_pending;
+    bool low_priority_response;
     char request[kRequestCapacity];
 };
 
@@ -206,6 +207,25 @@ err_t on_sent(void* arg, tcp_pcb* pcb, u16_t len)
     }
 
     return send_pending_response(session, pcb);
+}
+
+/// @brief Aborts a preview-style transfer so control requests can take priority.
+/// @details The preview framebuffer is deliberately lossy: the browser can
+/// request another frame. Button/control requests should not wait behind a slow
+/// frame response on the single-session Pico HTTP server.
+void abort_active_session()
+{
+    if (g_session.pcb == nullptr)
+    {
+        return;
+    }
+
+    tcp_arg(g_session.pcb, nullptr);
+    tcp_recv(g_session.pcb, nullptr);
+    tcp_sent(g_session.pcb, nullptr);
+    tcp_err(g_session.pcb, nullptr);
+    tcp_abort(g_session.pcb);
+    g_session = {};
 }
 
 /// @brief Copies a C string into one fixed-size configuration field.
@@ -968,7 +988,7 @@ bool build_preview_page()
         "if(panelAbortController){panelAbortController.abort();panelAbortController=null;}"
         "}"
         "async function sendVirtualKeyNow(id,type){"
-        "for(let attempt=1;attempt<=4;attempt++){"
+        "for(let attempt=1;attempt<=12;attempt++){"
         "try{"
         "const response=await fetch('/api/button',{method:'POST',cache:'no-store',"
         "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
@@ -980,7 +1000,7 @@ bool build_preview_page()
         "}catch(error){"
         "const text=String(error&&error.message?error.message:error);"
         "const busy=/busy|503|retry/i.test(text);"
-        "if(attempt<4&&busy){await delay(45*attempt);continue;}"
+        "if(attempt<12&&busy){await delay(Math.min(250,45*attempt));continue;}"
         "setKeyState('Key send failed: '+text);"
         "return false;"
         "}"
@@ -995,7 +1015,7 @@ bool build_preview_page()
         "const next=keyQueue.shift();"
         "await sendVirtualKeyNow(next.id,next.type);"
         "}"
-        "}finally{keyPostInFlight=false;}"
+        "}finally{keyPostInFlight=false;if(running){void refreshPanelState();void refresh();}}"
         "}"
         "function queueVirtualKey(id,type){"
         "abortLowPriorityFetches();"
@@ -1053,6 +1073,17 @@ bool build_preview_page()
         "}"
         "ctx.putImageData(image,0,0);"
         "}"
+        "function decodeRle(encoded){"
+        "const decoded=new Uint8Array(h*s);"
+        "let src=0;let dst=0;"
+        "while(src+1<encoded.length&&dst<decoded.length){"
+        "const count=encoded[src++];const value=encoded[src++];"
+        "decoded.fill(value,dst,Math.min(decoded.length,dst+count));"
+        "dst+=count;"
+        "}"
+        "if(dst!==decoded.length){throw new Error('Frame decode '+dst);}"
+        "return decoded;"
+        "}"
         "async function refresh(){"
         "if(!running||frameFetchInFlight||keyPostInFlight||keyQueue.length>0){return;}"
         "const controller=newAbortController();"
@@ -1061,9 +1092,9 @@ bool build_preview_page()
         "frameAbortController=controller;"
         "frameFetchInFlight=true;"
         "try{"
-        "const response=await fetch('/api/framebuffer?t='+Date.now(),options);"
+        "const response=await fetch('/api/framebuffer.rle?t='+Date.now(),options);"
         "if(!response.ok){throw new Error('HTTP '+response.status);}"
-        "const bytes=new Uint8Array(await response.arrayBuffer());"
+        "const bytes=decodeRle(new Uint8Array(await response.arrayBuffer()));"
         "if(bytes.length!==(h*s)){throw new Error('Frame size '+bytes.length);}"
         "draw(bytes);"
         "consecutiveFrameFailures=0;"
@@ -1079,7 +1110,7 @@ bool build_preview_page()
         "}"
         "function schedule(){"
         "if(timer!==null){clearInterval(timer);timer=null;}"
-        "if(running){timer=setInterval(refresh,1000);}"
+        "if(running){timer=setInterval(refresh,500);}"
         "}"
         "toggle.addEventListener('click',function(){"
         "running=!running;"
@@ -1123,7 +1154,7 @@ bool build_preview_page()
         "}"
         "}"
         "bindVirtualKeys();"
-        "setInterval(refreshPanelState,500);"
+        "setInterval(refreshPanelState,1000);"
         "refreshPanelState();"
         "schedule();"
         "refresh();"
@@ -1164,6 +1195,49 @@ size_t build_framebuffer_response()
 
     std::memcpy(g_response + header_len, source, kUiFbSize);
     return static_cast<size_t>(header_len) + kUiFbSize;
+}
+
+/// @brief Builds a run-length encoded framebuffer response for browser preview.
+/// @details Status and menu pages contain long spans of identical bytes. Sending
+/// `(count, value)` pairs keeps the local preview responsive on a constrained
+/// single-session HTTP server without changing the actual display framebuffer.
+size_t build_framebuffer_rle_response()
+{
+    const int header_len = std::snprintf(g_response, sizeof(g_response), "%s", kHttpBinaryHeader);
+    if (header_len <= 0 || static_cast<size_t>(header_len) >= sizeof(g_response))
+    {
+        return 0;
+    }
+
+    const uint8_t* source = framebuffer::front();
+    if (source == nullptr)
+    {
+        return 0;
+    }
+
+    size_t write_index = static_cast<size_t>(header_len);
+    size_t read_index = 0U;
+    while (read_index < static_cast<size_t>(kUiFbSize))
+    {
+        const uint8_t value = source[read_index];
+        uint8_t run_length = 1U;
+        while (read_index + run_length < static_cast<size_t>(kUiFbSize) && run_length < 255U &&
+               source[read_index + run_length] == value)
+        {
+            ++run_length;
+        }
+
+        if (write_index + 2U > sizeof(g_response))
+        {
+            return 0;
+        }
+
+        g_response[write_index++] = static_cast<char>(run_length);
+        g_response[write_index++] = static_cast<char>(value);
+        read_index += run_length;
+    }
+
+    return write_index;
 }
 
 /// @brief Builds a PBM (P4) snapshot response for regression capture and diffing.
@@ -1997,7 +2071,7 @@ void build_panel_state_text(char* message, size_t message_size)
 
 /// @brief Starts sending prepared response bytes for this session.
 void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* response,
-                               size_t response_len)
+                               size_t response_len, bool low_priority_response)
 {
     if (session == nullptr || pcb == nullptr || response == nullptr)
     {
@@ -2007,8 +2081,16 @@ void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* re
     session->response_len = response_len;
     session->response_sent = 0;
     session->close_pending = false;
+    session->low_priority_response = low_priority_response;
     tcp_sent(pcb, on_sent);
     (void)send_pending_response(session, pcb);
+}
+
+/// @brief Starts sending prepared high-priority response bytes for this session.
+void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* response,
+                               size_t response_len)
+{
+    send_response_with_length(session, pcb, response, response_len, false);
 }
 
 /// @brief Starts sending a null-terminated text response.
@@ -2081,7 +2163,22 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
             return;
         }
 
-        send_response_with_length(session, pcb, g_response, response_len);
+        send_response_with_length(session, pcb, g_response, response_len, true);
+        return;
+    }
+    else if (matches_get_path(request, "/api/framebuffer.rle"))
+    {
+        const size_t response_len = build_framebuffer_rle_response();
+        if (response_len == 0)
+        {
+            std::snprintf(g_response, sizeof(g_response),
+                          "%sFramebuffer RLE preview response buffer exhausted\n",
+                          kHttpBadRequestHeader);
+            send_response(session, pcb, g_response);
+            return;
+        }
+
+        send_response_with_length(session, pcb, g_response, response_len, true);
         return;
     }
     else if (matches_get_path(request, "/api/framebuffer"))
@@ -2096,7 +2193,7 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
             return;
         }
 
-        send_response_with_length(session, pcb, g_response, response_len);
+        send_response_with_length(session, pcb, g_response, response_len, true);
         return;
     }
     else if (std::strncmp(request, "GET / ", 6) != 0 &&
@@ -2215,8 +2312,13 @@ err_t on_accept(void* arg, tcp_pcb* new_pcb, err_t err)
 
     if (g_session.pcb != nullptr)
     {
-        reject_busy_connection(new_pcb);
-        return ERR_OK;
+        if (!g_session.low_priority_response)
+        {
+            reject_busy_connection(new_pcb);
+            return ERR_OK;
+        }
+
+        abort_active_session();
     }
 
     g_session = {};

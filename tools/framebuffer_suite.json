@@ -4,7 +4,7 @@
     {
       "name": "status-page",
       "baseline": "baselines/status_page.pbm",
-      "capture_prompt": "Open HOME ASSISTANT status page and wait for values to settle.",
+      "capture_prompt": "Open STATUS page and wait for values to settle.",
       "settle_seconds": 1.0,
       "masks": [
         [190, 0, 62, 20],

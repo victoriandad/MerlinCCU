@@ -304,6 +304,118 @@ const char* mqtt_state_text(MqttConnectionState state)
     return "?";
 }
 
+/// @brief Returns the optional environment-board health label for diagnostics.
+const char* environment_sensor_health_text(
+    environment_sensor_manager::EnvironmentSensorHealth health)
+{
+    switch (health)
+    {
+    case environment_sensor_manager::EnvironmentSensorHealth::Disabled:
+        return "Disabled";
+    case environment_sensor_manager::EnvironmentSensorHealth::BusReady:
+        return "Bus ready";
+    case environment_sensor_manager::EnvironmentSensorHealth::BoardMissing:
+        return "Missing";
+    case environment_sensor_manager::EnvironmentSensorHealth::Partial:
+        return "Partial";
+    case environment_sensor_manager::EnvironmentSensorHealth::BoardDetected:
+        return "Detected";
+    case environment_sensor_manager::EnvironmentSensorHealth::Fault:
+        return "Fault";
+    }
+
+    return "?";
+}
+
+/// @brief Formats configured I2C pins into one compact status-page value.
+void build_environment_bus_text(const environment_sensor_manager::EnvironmentSensorStatus& status,
+                                char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    if (!status.enabled)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    std::snprintf(out, out_size, "I2C%d SDA%d SCL%d", static_cast<int>(status.i2c_bus),
+                  static_cast<int>(status.sda_gpio), static_cast<int>(status.scl_gpio));
+}
+
+/// @brief Formats the detected Waveshare device addresses without overflowing the row.
+void build_environment_address_text(
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    out[0] = '\0';
+    if (!status.enabled || status.detected_device_count == 0U)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    size_t used = 0U;
+    for (const environment_sensor_manager::EnvironmentSensorPresence& presence : status.devices)
+    {
+        if (!presence.detected)
+        {
+            continue;
+        }
+
+        const int written =
+            std::snprintf(out + used, out_size - used, "%s%s%02X", used == 0U ? "" : ",",
+                          used == 0U ? "0x" : "", static_cast<unsigned>(presence.i2c_address));
+        if (written <= 0)
+        {
+            break;
+        }
+
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_size - used))
+        {
+            out[out_size - 1U] = '\0';
+            break;
+        }
+        used += write_size;
+    }
+}
+
+/// @brief Returns the detected BME pressure-sensor variant for the status page.
+const char* environment_bme_text(
+    const environment_sensor_manager::EnvironmentSensorStatus& status)
+{
+    if (!status.enabled)
+    {
+        return "-";
+    }
+
+    switch (status.bme_variant)
+    {
+    case environment_sensor_manager::EnvironmentBmeVariant::NotChecked:
+        return "UNKNOWN";
+    case environment_sensor_manager::EnvironmentBmeVariant::Missing:
+        return "MISSING";
+    case environment_sensor_manager::EnvironmentBmeVariant::Bme280:
+        return "BME280";
+    case environment_sensor_manager::EnvironmentBmeVariant::Bme680:
+        return "BME680";
+    case environment_sensor_manager::EnvironmentBmeVariant::Unknown:
+        return "UNKNOWN";
+    case environment_sensor_manager::EnvironmentBmeVariant::Fault:
+        return "FAULT";
+    }
+
+    return "UNKNOWN";
+}
+
 /// @brief Returns the user-facing label for the currently selected weather source.
 const char* weather_source_text(WeatherSource source)
 {
@@ -340,7 +452,7 @@ const char* menu_page_title(MenuPage page)
     case MenuPage::Weather:
         return "WEATHER";
     case MenuPage::Status:
-        return "HOME ASSISTANT";
+        return "STATUS";
     case MenuPage::Settings:
         return "SETTINGS";
     case MenuPage::DeviceSettings:
@@ -1475,14 +1587,14 @@ void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_st
                                kFooterY + kArrowCentreYOffset, 1);
 }
 
-constexpr int kCalendarDetailTextX = 10;
-constexpr fonts::FontFace kCalendarDetailFont = fonts::FontFace::Font5x7;
+constexpr int kCompactDetailTextX = 10;
+constexpr fonts::FontFace kCompactDetailFont = fonts::FontFace::Font5x7;
 
-/// @brief Returns the value-column x-coordinate for compact Calendar details.
-/// @details The event-detail font is proportional, so spaces cannot be used for
+/// @brief Returns the value-column x-coordinate for compact detail pages.
+/// @details The compact font is proportional, so spaces cannot be used for
 /// visual alignment. Measuring the widest rendered `Label:` gives a stable
 /// column for all values.
-int calendar_detail_value_x(const DetailRow* rows, size_t count)
+int compact_detail_value_x(const DetailRow* rows, size_t count)
 {
     constexpr size_t kLabelBufferSize = 32U;
     int widest_label_width = 0;
@@ -1492,23 +1604,34 @@ int calendar_detail_value_x(const DetailRow* rows, size_t count)
         std::snprintf(label_text, sizeof(label_text),
                       "%s:", rows[i].label != nullptr ? rows[i].label : "");
         widest_label_width =
-            std::max(widest_label_width, text_width(label_text, kCalendarDetailFont, 1));
+            std::max(widest_label_width, text_width(label_text, kCompactDetailFont, 1));
     }
 
-    return kCalendarDetailTextX + widest_label_width + text_width(" ", kCalendarDetailFont, 1);
+    return kCompactDetailTextX + widest_label_width + text_width(" ", kCompactDetailFont, 1);
 }
 
-/// @brief Draws one compact Calendar detail line with pixel-aligned values.
-void draw_calendar_detail_line(uint8_t* fb, int y, const char* label, const char* value,
-                               int value_x)
+/// @brief Draws one compact detail line with pixel-aligned values.
+void draw_compact_detail_line(uint8_t* fb, int y, const char* label, const char* value, int value_x)
 {
     constexpr size_t kLabelBufferSize = 32U;
     char label_text[kLabelBufferSize] = {};
     std::snprintf(label_text, sizeof(label_text), "%s:", label != nullptr ? label : "");
 
-    framebuffer::draw_text(fb, kCalendarDetailTextX, y, label_text, true, kCalendarDetailFont, 1);
+    framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text, true, kCompactDetailFont, 1);
     framebuffer::draw_text(fb, value_x, y, (value != nullptr && value[0] != '\0') ? value : "-",
-                           true, kCalendarDetailFont, 1);
+                           true, kCompactDetailFont, 1);
+}
+
+/// @brief Draws compact `Label: value` rows for data-dense pages.
+void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y,
+                              int row_pitch)
+{
+    const int value_x = compact_detail_value_x(rows, count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        draw_compact_detail_line(fb, start_y + (static_cast<int>(i) * row_pitch), rows[i].label,
+                                 rows[i].value, value_x);
+    }
 }
 
 /// @brief Produces a short user-facing weather-status fallback string.
@@ -1810,13 +1933,8 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
     constexpr int kStartY = 42;
     constexpr int kRowPitch = 18;
     constexpr size_t kRowCount = sizeof(rows) / sizeof(rows[0]);
-    const int value_x = calendar_detail_value_x(rows, kRowCount);
 
-    for (size_t i = 0; i < kRowCount; ++i)
-    {
-        draw_calendar_detail_line(fb, kStartY + (static_cast<int>(i) * kRowPitch), rows[i].label,
-                                  rows[i].value, value_x);
-    }
+    draw_compact_detail_rows(fb, rows, kRowCount, kStartY, kRowPitch);
 }
 
 /// @brief Draws the live weather page reached directly from Home.
@@ -2115,6 +2233,35 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(http_text, sizeof(http_text), "-");
     }
 
+    char sensor_bus_text[24] = {};
+    build_environment_bus_text(console_state.environment_sensor_status, sensor_bus_text,
+                               sizeof(sensor_bus_text));
+    char sensor_addresses_text[24] = {};
+    build_environment_address_text(console_state.environment_sensor_status, sensor_addresses_text,
+                                   sizeof(sensor_addresses_text));
+    char sensor_scan_text[16] = {};
+    if (console_state.environment_sensor_status.enabled &&
+        console_state.environment_sensor_status.last_scan_ms > 0U)
+    {
+        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "%lus",
+                      static_cast<unsigned long>(
+                          console_state.environment_sensor_status.last_scan_ms / 1000U));
+    }
+    else
+    {
+        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "-");
+    }
+    char sensor_error_text[16] = {};
+    if (console_state.environment_sensor_status.enabled)
+    {
+        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "%d",
+                      console_state.environment_sensor_status.last_error);
+    }
+    else
+    {
+        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "-");
+    }
+
     const DetailRow rows[] = {
         {"TIME",
          console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
@@ -2135,9 +2282,16 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
                         : "-"},
         {"HTTP", http_text},
         {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
+        {"ENV SENSOR",
+         environment_sensor_health_text(console_state.environment_sensor_status.health)},
+        {"ENV BUS", sensor_bus_text},
+        {"ENV BME", environment_bme_text(console_state.environment_sensor_status)},
+        {"ENV ADDR", sensor_addresses_text},
+        {"ENV SCAN", sensor_scan_text},
+        {"ENV ERR", sensor_error_text},
     };
 
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
+    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
 }
 
 /// @brief Draws shared left/right page-navigation arrows used by paged menus.

@@ -8,22 +8,22 @@
 #if __has_include("keypad_matrix_config.h")
 #include "keypad_matrix_config.h"
 #else
-inline constexpr int KEYPAD_PANEL_PIN_5_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_6_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_7_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_8_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_9_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_10_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_11_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_14_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_15_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_16_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_17_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_18_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_19_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_20_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_21_GPIO = -1;
-inline constexpr int KEYPAD_PANEL_PIN_22_GPIO = -1;
+inline constexpr int kKeypadPanelPin5Gpio = -1;
+inline constexpr int kKeypadPanelPin6Gpio = -1;
+inline constexpr int kKeypadPanelPin7Gpio = -1;
+inline constexpr int kKeypadPanelPin8Gpio = -1;
+inline constexpr int kKeypadPanelPin9Gpio = -1;
+inline constexpr int kKeypadPanelPin10Gpio = -1;
+inline constexpr int kKeypadPanelPin11Gpio = -1;
+inline constexpr int kKeypadPanelPin14Gpio = -1;
+inline constexpr int kKeypadPanelPin15Gpio = -1;
+inline constexpr int kKeypadPanelPin16Gpio = -1;
+inline constexpr int kKeypadPanelPin17Gpio = -1;
+inline constexpr int kKeypadPanelPin18Gpio = -1;
+inline constexpr int kKeypadPanelPin19Gpio = -1;
+inline constexpr int kKeypadPanelPin20Gpio = -1;
+inline constexpr int kKeypadPanelPin21Gpio = -1;
+inline constexpr int kKeypadPanelPin22Gpio = -1;
 #endif
 
 namespace input

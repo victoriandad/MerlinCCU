@@ -58,6 +58,7 @@ enum class AlertCode : uint8_t
     WeatherWindWarning,
     MqttOffline,
     KeypadLineFault,
+    EnvironmentSensorFault,
     DisplayPipelineLag,
     ShareDataUnavailable,
     Count,
@@ -502,6 +503,37 @@ constexpr size_t softkey_index(SoftKeyId key)
 constexpr size_t alert_code_index(AlertCode code)
 {
     return static_cast<size_t>(code);
+}
+
+/// @brief Compares environment sensor snapshots without relying on structure padding.
+bool environment_sensor_status_matches(
+    const environment_sensor_manager::EnvironmentSensorStatus& lhs,
+    const environment_sensor_manager::EnvironmentSensorStatus& rhs)
+{
+    if (lhs.enabled != rhs.enabled || lhs.board != rhs.board || lhs.health != rhs.health ||
+        lhs.detected_device_count != rhs.detected_device_count ||
+        lhs.last_scan_ms != rhs.last_scan_ms ||
+        lhs.successful_scan_count != rhs.successful_scan_count ||
+        lhs.failed_scan_count != rhs.failed_scan_count || lhs.last_error != rhs.last_error ||
+        lhs.i2c_bus != rhs.i2c_bus || lhs.sda_gpio != rhs.sda_gpio ||
+        lhs.scl_gpio != rhs.scl_gpio || lhs.baudrate_hz != rhs.baudrate_hz ||
+        lhs.bme_variant != rhs.bme_variant || lhs.bme_chip_id != rhs.bme_chip_id ||
+        lhs.bme_last_error != rhs.bme_last_error)
+    {
+        return false;
+    }
+
+    for (size_t index = 0; index < lhs.devices.size(); ++index)
+    {
+        if (lhs.devices[index].device != rhs.devices[index].device ||
+            lhs.devices[index].i2c_address != rhs.devices[index].i2c_address ||
+            lhs.devices[index].detected != rhs.devices[index].detected)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /// @brief Returns the static metadata for one selectable weather source.
@@ -1190,6 +1222,20 @@ void sync_system_alerts()
                         AlertSeverity::Warning, "KEYPAD",
                         "Matrix line fault suspected.\nMultiple simultaneous/stuck lines were "
                         "detected repeatedly.");
+
+    const environment_sensor_manager::EnvironmentSensorStatus& environment_status =
+        g_console_state.environment_sensor_status;
+    const bool environment_sensor_fault =
+        environment_status.enabled &&
+        (environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Fault ||
+         environment_status.health ==
+             environment_sensor_manager::EnvironmentSensorHealth::BoardMissing ||
+         environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Partial);
+    set_alert_condition(
+        AlertCode::EnvironmentSensorFault, environment_sensor_fault, AlertSeverity::Warning,
+        "ENV SENSOR",
+        "Environment sensor board is not fully detected.\nCheck I2C pins, power, and address "
+        "jumpers.\nStatus page shows the detected addresses.");
 
     // Placeholder: enable this once render/frame timing counters are exposed to console state.
     const bool display_pipeline_lag = false;
@@ -1957,8 +2003,7 @@ void update_softkeys_from_state()
     switch (g_console_state.active_page)
     {
     case MenuPage::Home:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {"HOME ASSISTANT", SoftKeyRoute::GoStatus,
-                                                     true};
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"STATUS", SoftKeyRoute::GoStatus, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {"SHARES", SoftKeyRoute::GoShares, true};
         softkeys[softkey_index(SoftKeyId::Left3)] = {"CALENDAR", SoftKeyRoute::GoCalendar, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
@@ -2044,6 +2089,7 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::Status:
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         break;
     case MenuPage::Settings:
         if (g_console_state.settings_page_index == 0U)
@@ -3131,6 +3177,21 @@ bool set_share_market_status(const ShareMarketStatus& share_market_status)
     {
         g_console_state.selected_share_index = 0U;
     }
+    update_softkeys_from_state();
+    return true;
+}
+
+/// @brief Updates the cached environment sensor discovery snapshot in the console model.
+bool set_environment_sensor_status(
+    const environment_sensor_manager::EnvironmentSensorStatus& environment_sensor_status)
+{
+    if (environment_sensor_status_matches(g_console_state.environment_sensor_status,
+                                          environment_sensor_status))
+    {
+        return false;
+    }
+
+    g_console_state.environment_sensor_status = environment_sensor_status;
     update_softkeys_from_state();
     return true;
 }
