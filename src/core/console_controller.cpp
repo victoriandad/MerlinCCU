@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "debug_logging.h"
+#include "pico/error.h"
 
 namespace console_controller
 {
@@ -43,6 +44,9 @@ constexpr uint8_t kAlertRetryThreshold = 5U;
 constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
 constexpr float kHighTemperatureAlertCelsius = 30.0F;
 constexpr float kHighWindAlertMph = 40.0F;
+constexpr uint32_t kStormLowPressurePa = 98000U;
+constexpr uint32_t kStormRapidPressureFallPa = 200U;
+constexpr uint8_t kStormPressureMinimumSamples = 6U;
 
 enum class AlertCode : uint8_t
 {
@@ -59,6 +63,7 @@ enum class AlertCode : uint8_t
     MqttOffline,
     KeypadLineFault,
     EnvironmentSensorFault,
+    LocalPressureStormWarning,
     DisplayPipelineLag,
     ShareDataUnavailable,
     Count,
@@ -518,7 +523,26 @@ bool environment_sensor_status_matches(
         lhs.i2c_bus != rhs.i2c_bus || lhs.sda_gpio != rhs.sda_gpio ||
         lhs.scl_gpio != rhs.scl_gpio || lhs.baudrate_hz != rhs.baudrate_hz ||
         lhs.bme_variant != rhs.bme_variant || lhs.bme_chip_id != rhs.bme_chip_id ||
-        lhs.bme_last_error != rhs.bme_last_error)
+        lhs.bme_last_error != rhs.bme_last_error ||
+        lhs.bme_reading_valid != rhs.bme_reading_valid ||
+        lhs.bme_temperature_centi_celsius != rhs.bme_temperature_centi_celsius ||
+        lhs.bme_pressure_pa != rhs.bme_pressure_pa ||
+        lhs.bme_humidity_milli_percent != rhs.bme_humidity_milli_percent ||
+        lhs.bme_last_read_ms != rhs.bme_last_read_ms ||
+        lhs.bme_read_error != rhs.bme_read_error ||
+        lhs.bme_history_count != rhs.bme_history_count ||
+        lhs.bme_temperature_history_centi_celsius != rhs.bme_temperature_history_centi_celsius ||
+        lhs.bme_pressure_history_deci_hpa != rhs.bme_pressure_history_deci_hpa ||
+        lhs.bme_humidity_history_centi_percent != rhs.bme_humidity_history_centi_percent ||
+        lhs.air_quality_raw_valid != rhs.air_quality_raw_valid ||
+        lhs.air_quality_raw_signal != rhs.air_quality_raw_signal ||
+        lhs.air_quality_baseline_raw_signal != rhs.air_quality_baseline_raw_signal ||
+        lhs.air_quality_score_valid != rhs.air_quality_score_valid ||
+        lhs.air_quality_score != rhs.air_quality_score ||
+        lhs.air_quality_last_read_ms != rhs.air_quality_last_read_ms ||
+        lhs.air_quality_read_error != rhs.air_quality_read_error ||
+        lhs.air_quality_history_count != rhs.air_quality_history_count ||
+        lhs.air_quality_history_score != rhs.air_quality_history_score)
     {
         return false;
     }
@@ -768,6 +792,80 @@ const char* share_period_selection_text(const ConsoleState& console_state)
 const char* calendar_owner_selection_text(const ConsoleState& console_state)
 {
     return calendar_owner_definition(console_state.calendar_owner).selection_label;
+}
+
+/// @brief Formats local temperature for softkey value brackets.
+const char* local_temperature_selection_text()
+{
+    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left1)];
+    const auto& status = g_console_state.environment_sensor_status;
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(buffer.data(), buffer.size(), "-");
+        return buffer.data();
+    }
+
+    const int32_t raw_value = status.bme_temperature_centi_celsius;
+    const bool negative = raw_value < 0;
+    const uint32_t absolute_value =
+        static_cast<uint32_t>(negative ? -static_cast<int64_t>(raw_value) : raw_value);
+    std::snprintf(buffer.data(), buffer.size(), "%s%lu.%02luC", negative ? "-" : "",
+                  static_cast<unsigned long>(absolute_value / 100U),
+                  static_cast<unsigned long>(absolute_value % 100U));
+    return buffer.data();
+}
+
+/// @brief Formats local humidity for softkey value brackets.
+const char* local_humidity_selection_text()
+{
+    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left2)];
+    const auto& status = g_console_state.environment_sensor_status;
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(buffer.data(), buffer.size(), "-");
+        return buffer.data();
+    }
+
+    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
+    std::snprintf(buffer.data(), buffer.size(), "%lu.%lu%%",
+                  static_cast<unsigned long>(tenths_percent / 10U),
+                  static_cast<unsigned long>(tenths_percent % 10U));
+    return buffer.data();
+}
+
+/// @brief Formats local pressure for softkey value brackets.
+const char* local_pressure_selection_text()
+{
+    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left3)];
+    const auto& status = g_console_state.environment_sensor_status;
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(buffer.data(), buffer.size(), "-");
+        return buffer.data();
+    }
+
+    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
+    std::snprintf(buffer.data(), buffer.size(), "%lu.%luhPa",
+                  static_cast<unsigned long>(tenths_hpa / 10U),
+                  static_cast<unsigned long>(tenths_hpa % 10U));
+    return buffer.data();
+}
+
+/// @brief Formats the local VOC-change band for softkey value brackets.
+const char* local_air_quality_selection_text()
+{
+    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left4)];
+    const auto& status = g_console_state.environment_sensor_status;
+    if (!status.enabled || !status.air_quality_score_valid)
+    {
+        std::snprintf(buffer.data(), buffer.size(), "%s",
+                      status.air_quality_read_error == PICO_ERROR_NONE ? "-" : "ERR");
+        return buffer.data();
+    }
+
+    std::snprintf(buffer.data(), buffer.size(), "%s",
+                  environment_sensor_manager::air_quality_band_text(status.air_quality_score));
+    return buffer.data();
 }
 
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
@@ -1022,6 +1120,91 @@ void build_weather_wind_alert_detail(float max_wind_mph, char* out, size_t out_s
                   max_wind_rounded);
 }
 
+/// @brief Formats pascals as tenths of a hectopascal for operator messages.
+void build_pressure_tenths_hpa_text(uint32_t pressure_pa, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    const uint32_t tenths_hpa = (pressure_pa + 5U) / 10U;
+    std::snprintf(out, out_size, "%lu.%lu", static_cast<unsigned long>(tenths_hpa / 10U),
+                  static_cast<unsigned long>(tenths_hpa % 10U));
+}
+
+/// @brief Detects local pressure conditions that can indicate storm risk.
+/// @details BME280 pressure is local station pressure, so a rapid fall is more
+/// portable than an absolute threshold. The low-pressure threshold remains as a
+/// secondary signal for low-altitude installations.
+bool local_pressure_storm_warning(
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* detail,
+    size_t detail_size)
+{
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        return false;
+    }
+
+    uint32_t pressure_fall_pa = 0U;
+    bool rapid_fall = false;
+    if (status.bme_history_count >= kStormPressureMinimumSamples)
+    {
+        const uint16_t comparison_index =
+            status.bme_history_count - kStormPressureMinimumSamples;
+        const uint32_t comparison_pressure =
+            static_cast<uint32_t>(status.bme_pressure_history_deci_hpa[comparison_index]) * 10U;
+        const uint32_t latest_pressure =
+            static_cast<uint32_t>(
+                status.bme_pressure_history_deci_hpa[status.bme_history_count - 1U]) *
+            10U;
+        if (comparison_pressure > latest_pressure)
+        {
+            pressure_fall_pa = comparison_pressure - latest_pressure;
+            rapid_fall = pressure_fall_pa >= kStormRapidPressureFallPa;
+        }
+    }
+
+    const bool low_pressure = status.bme_pressure_pa <= kStormLowPressurePa;
+    if (!low_pressure && !rapid_fall)
+    {
+        return false;
+    }
+
+    char current_pressure_text[12] = {};
+    char pressure_fall_text[12] = {};
+    build_pressure_tenths_hpa_text(status.bme_pressure_pa, current_pressure_text,
+                                   sizeof(current_pressure_text));
+    build_pressure_tenths_hpa_text(pressure_fall_pa, pressure_fall_text,
+                                   sizeof(pressure_fall_text));
+
+    if (detail != nullptr && detail_size > 0U)
+    {
+        if (low_pressure && rapid_fall)
+        {
+            std::snprintf(detail, detail_size,
+                          "Local pressure is %s hPa and has fallen %s hPa across recent "
+                          "averages.\nCheck local forecast and conditions.",
+                          current_pressure_text, pressure_fall_text);
+        }
+        else if (rapid_fall)
+        {
+            std::snprintf(detail, detail_size,
+                          "Local pressure has fallen %s hPa across recent five-minute "
+                          "averages.\nCheck local forecast and conditions.",
+                          pressure_fall_text);
+        }
+        else
+        {
+            std::snprintf(detail, detail_size,
+                          "Local pressure is low at %s hPa.\nCheck local forecast and conditions.",
+                          current_pressure_text);
+        }
+    }
+
+    return true;
+}
+
 /// @brief Rebuilds currently active alerts from live subsystem conditions.
 void sync_system_alerts()
 {
@@ -1225,17 +1408,35 @@ void sync_system_alerts()
 
     const environment_sensor_manager::EnvironmentSensorStatus& environment_status =
         g_console_state.environment_sensor_status;
+    const bool sgp40_detected = std::any_of(
+        environment_status.devices.begin(), environment_status.devices.end(),
+        [](const environment_sensor_manager::EnvironmentSensorPresence& presence) {
+            return presence.device == environment_sensor_manager::EnvironmentSensorDevice::Sgp40 &&
+                   presence.detected;
+        });
     const bool environment_sensor_fault =
         environment_status.enabled &&
         (environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Fault ||
          environment_status.health ==
              environment_sensor_manager::EnvironmentSensorHealth::BoardMissing ||
-         environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Partial);
+         environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Partial ||
+         (environment_status.bme_variant == environment_sensor_manager::EnvironmentBmeVariant::Bme280 &&
+          !environment_status.bme_reading_valid &&
+          environment_status.bme_read_error != PICO_ERROR_NONE) ||
+         (sgp40_detected && !environment_status.air_quality_raw_valid &&
+          environment_status.air_quality_read_error != PICO_ERROR_NONE));
     set_alert_condition(
         AlertCode::EnvironmentSensorFault, environment_sensor_fault, AlertSeverity::Warning,
         "ENV SENSOR",
         "Environment sensor board is not fully detected.\nCheck I2C pins, power, and address "
-        "jumpers.\nStatus page shows the detected addresses.");
+        "jumpers.\nStatus page shows the detected addresses and read errors.");
+
+    char local_pressure_alert_detail[sizeof(ActiveAlert::detail)] = {};
+    const bool pressure_storm_warning = local_pressure_storm_warning(
+        environment_status, local_pressure_alert_detail, sizeof(local_pressure_alert_detail));
+    set_alert_condition(AlertCode::LocalPressureStormWarning, pressure_storm_warning,
+                        AlertSeverity::Warning, "STORM WARN",
+                        pressure_storm_warning ? local_pressure_alert_detail : "");
 
     // Placeholder: enable this once render/frame timing counters are exposed to console state.
     const bool display_pipeline_lag = false;
@@ -1324,6 +1525,7 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Weather:
     case MenuPage::Calendar:
     case MenuPage::Status:
+    case MenuPage::LocalConditions:
     case MenuPage::Settings:
     case MenuPage::Alignment:
     case MenuPage::Shares:
@@ -1346,6 +1548,8 @@ MenuPage parent_page(MenuPage page)
         return MenuPage::Calendar;
     case MenuPage::ShareDetail:
         return MenuPage::Shares;
+    case MenuPage::LocalConditionGraph:
+        return MenuPage::LocalConditions;
     }
 
     return MenuPage::Home;
@@ -2013,6 +2217,8 @@ void update_softkeys_from_state()
             SoftKeyRoute::GoWeather,
             true,
         };
+        softkeys[softkey_index(SoftKeyId::Right3)] = {
+            "LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions, true};
         break;
     case MenuPage::Calendar:
     {
@@ -2090,6 +2296,36 @@ void update_softkeys_from_state()
         break;
     case MenuPage::Status:
         softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
+        break;
+    case MenuPage::LocalConditions:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(SoftKeyId::Left1, "TEMP",
+                                          local_temperature_selection_text()),
+            SoftKeyRoute::ShowLocalTemperatureGraph,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(SoftKeyId::Left2, "HUMIDITY",
+                                          local_humidity_selection_text()),
+            SoftKeyRoute::ShowLocalHumidityGraph,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            build_selection_softkey_label(SoftKeyId::Left3, "AIR PRESSURE",
+                                          local_pressure_selection_text()),
+            SoftKeyRoute::ShowLocalPressureGraph,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            build_selection_softkey_label(SoftKeyId::Left4, "VOC CHANGE",
+                                          local_air_quality_selection_text()),
+            SoftKeyRoute::ShowLocalAirQualityGraph,
+            true,
+        };
+        break;
+    case MenuPage::LocalConditionGraph:
+        softkeys[softkey_index(SoftKeyId::Right4)] = {
+            "BACK", SoftKeyRoute::GoLocalConditions, true};
         break;
     case MenuPage::Settings:
         if (g_console_state.settings_page_index == 0U)
@@ -2711,6 +2947,30 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoStatus:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Status;
+        return true;
+    case SoftKeyRoute::GoLocalConditions:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::LocalConditions;
+        return true;
+    case SoftKeyRoute::ShowLocalTemperatureGraph:
+        stop_screen_saver_timeout_editing();
+        g_console_state.local_condition_metric = LocalConditionMetric::Temperature;
+        g_console_state.active_page = MenuPage::LocalConditionGraph;
+        return true;
+    case SoftKeyRoute::ShowLocalHumidityGraph:
+        stop_screen_saver_timeout_editing();
+        g_console_state.local_condition_metric = LocalConditionMetric::Humidity;
+        g_console_state.active_page = MenuPage::LocalConditionGraph;
+        return true;
+    case SoftKeyRoute::ShowLocalPressureGraph:
+        stop_screen_saver_timeout_editing();
+        g_console_state.local_condition_metric = LocalConditionMetric::AirPressure;
+        g_console_state.active_page = MenuPage::LocalConditionGraph;
+        return true;
+    case SoftKeyRoute::ShowLocalAirQualityGraph:
+        stop_screen_saver_timeout_editing();
+        g_console_state.local_condition_metric = LocalConditionMetric::AirQuality;
+        g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::GoSettings:
         stop_screen_saver_timeout_editing();

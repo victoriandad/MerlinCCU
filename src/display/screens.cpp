@@ -11,6 +11,7 @@
 #include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "pico/error.h"
 #include "screen_banners.h"
 
 #if __has_include("weather_display_config.h")
@@ -416,6 +417,208 @@ const char* environment_bme_text(
     return "UNKNOWN";
 }
 
+/// @brief Formats a fixed-point centi-Celsius temperature for the Status page.
+void build_environment_temperature_text(
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
+    size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    const int64_t raw_value = status.bme_temperature_centi_celsius;
+    const bool negative = raw_value < 0;
+    const uint32_t absolute_value =
+        static_cast<uint32_t>(negative ? -raw_value : raw_value);
+    std::snprintf(out, out_size, "%s%lu.%02luC", negative ? "-" : "",
+                  static_cast<unsigned long>(absolute_value / 100U),
+                  static_cast<unsigned long>(absolute_value % 100U));
+}
+
+/// @brief Formats BME280 humidity as percent relative humidity.
+void build_environment_humidity_text(
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
+    size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
+    std::snprintf(out, out_size, "%lu.%lu%%",
+                  static_cast<unsigned long>(tenths_percent / 10U),
+                  static_cast<unsigned long>(tenths_percent % 10U));
+}
+
+/// @brief Formats BME280 pressure as hPa, which is easier to scan than raw Pa.
+void build_environment_pressure_text(
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
+    size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    if (!status.enabled || !status.bme_reading_valid)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
+    std::snprintf(out, out_size, "%lu.%luhPa",
+                  static_cast<unsigned long>(tenths_hpa / 10U),
+                  static_cast<unsigned long>(tenths_hpa % 10U));
+}
+
+/// @brief Returns the display label for one local condition metric.
+const char* local_condition_metric_text(LocalConditionMetric metric)
+{
+    switch (metric)
+    {
+    case LocalConditionMetric::Temperature:
+        return "TEMP";
+    case LocalConditionMetric::Humidity:
+        return "HUMIDITY";
+    case LocalConditionMetric::AirPressure:
+        return "AIR PRESSURE";
+    case LocalConditionMetric::AirQuality:
+        return "VOC CHANGE";
+    }
+
+    return "LOCAL";
+}
+
+struct LocalConditionGraphScale
+{
+    int32_t minimum;
+    int32_t middle;
+    int32_t maximum;
+    const char* minimum_label;
+    const char* middle_label;
+    const char* maximum_label;
+    const char* unit_label;
+};
+
+/// @brief Returns the fixed operator-facing graph range for one local metric.
+/// @details Fixed ranges make short histories readable and comparable. Pressure
+/// is displayed as local station pressure, not corrected sea-level pressure.
+LocalConditionGraphScale local_condition_graph_scale(LocalConditionMetric metric)
+{
+    switch (metric)
+    {
+    case LocalConditionMetric::Temperature:
+        return {-1000, 1500, 4000, "-10C", "15C", "40C", "C"};
+    case LocalConditionMetric::Humidity:
+        return {0, 50000, 100000, "0%", "50%", "100%", "%RH"};
+    case LocalConditionMetric::AirPressure:
+        return {95000, 100000, 105000, "950", "1000", "1050", "hPa"};
+    case LocalConditionMetric::AirQuality:
+        return {0, 50, 100, "0", "50", "100", "VOC score"};
+    }
+
+    return {0, 50, 100, "0", "50", "100", ""};
+}
+
+/// @brief Draws a graph axis label right-aligned against the plot edge.
+void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
+{
+    constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
+    framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
+                           true, kAxisFont, 1);
+}
+
+/// @brief Formats one local-condition value according to its stored fixed-point unit.
+void build_local_condition_value_text(
+    LocalConditionMetric metric,
+    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
+    size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    switch (metric)
+    {
+    case LocalConditionMetric::Temperature:
+        build_environment_temperature_text(status, out, out_size);
+        return;
+    case LocalConditionMetric::Humidity:
+        build_environment_humidity_text(status, out, out_size);
+        return;
+    case LocalConditionMetric::AirPressure:
+        build_environment_pressure_text(status, out, out_size);
+        return;
+    case LocalConditionMetric::AirQuality:
+        if (!status.enabled || !status.air_quality_score_valid)
+        {
+            std::snprintf(out, out_size, "%s",
+                          status.air_quality_read_error == PICO_ERROR_NONE ? "-" : "ERR");
+            return;
+        }
+        std::snprintf(out, out_size, "%s",
+                      environment_sensor_manager::air_quality_band_text(status.air_quality_score));
+        return;
+    }
+
+    std::snprintf(out, out_size, "-");
+}
+
+/// @brief Copies the selected 24-hour five-minute average history into a work buffer.
+std::size_t copy_local_condition_history(
+    LocalConditionMetric metric,
+    const environment_sensor_manager::EnvironmentSensorStatus& status,
+    std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount>& out)
+{
+    out.fill(0);
+
+    switch (metric)
+    {
+    case LocalConditionMetric::Temperature:
+        for (std::size_t i = 0; i < status.bme_history_count; ++i)
+        {
+            out[i] = status.bme_temperature_history_centi_celsius[i];
+        }
+        return status.bme_history_count;
+    case LocalConditionMetric::Humidity:
+        for (std::size_t i = 0; i < status.bme_history_count; ++i)
+        {
+            out[i] = static_cast<int32_t>(status.bme_humidity_history_centi_percent[i]) * 10;
+        }
+        return status.bme_history_count;
+    case LocalConditionMetric::AirPressure:
+        for (std::size_t i = 0; i < status.bme_history_count; ++i)
+        {
+            out[i] = static_cast<int32_t>(status.bme_pressure_history_deci_hpa[i]) * 10;
+        }
+        return status.bme_history_count;
+    case LocalConditionMetric::AirQuality:
+        for (std::size_t i = 0; i < status.air_quality_history_count; ++i)
+        {
+            out[i] = static_cast<int32_t>(status.air_quality_history_score[i]);
+        }
+        return status.air_quality_history_count;
+    }
+
+    return 0U;
+}
+
 /// @brief Returns the user-facing label for the currently selected weather source.
 const char* weather_source_text(WeatherSource source)
 {
@@ -453,6 +656,10 @@ const char* menu_page_title(MenuPage page)
         return "WEATHER";
     case MenuPage::Status:
         return "STATUS";
+    case MenuPage::LocalConditions:
+        return "LOCAL CONDITIONS";
+    case MenuPage::LocalConditionGraph:
+        return "LOCAL GRAPH";
     case MenuPage::Settings:
         return "SETTINGS";
     case MenuPage::DeviceSettings:
@@ -574,6 +781,8 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::Settings:
     case MenuPage::Calendar:
     case MenuPage::CalendarDetail:
+    case MenuPage::LocalConditions:
+    case MenuPage::LocalConditionGraph:
     case MenuPage::DeviceSettings:
     case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
@@ -2193,6 +2402,101 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
                            1);
 }
 
+/// @brief Draws the local environment summary page.
+void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Draws one local-condition history graph using the compact status history.
+void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kGraphX = 42;
+    constexpr int kGraphY = 52;
+    constexpr int kGraphWidth = kUiWidth - (kGraphX * 2);
+    constexpr int kGraphHeight = 128;
+    constexpr int kTimelineLabelY = kGraphY + kGraphHeight + 5;
+    constexpr int kMetricLabelY = kTimelineLabelY + 13;
+    constexpr int kPlotInset = 1;
+    constexpr int kAxisLabelRightX = kGraphX - 6;
+
+    std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount> values = {};
+    const std::size_t count = copy_local_condition_history(
+        console_state.local_condition_metric, console_state.environment_sensor_status, values);
+    const LocalConditionGraphScale scale =
+        local_condition_graph_scale(console_state.local_condition_metric);
+    if (count < 2U)
+    {
+        const char* metric_label = local_condition_metric_text(console_state.local_condition_metric);
+        char current_text[20] = {};
+        build_local_condition_value_text(console_state.local_condition_metric,
+                                         console_state.environment_sensor_status, current_text,
+                                         sizeof(current_text));
+        draw_centered_text(fb, kUiWidth / 2, 106, metric_label, true, fonts::FontFace::Font8x12,
+                           1);
+        draw_centered_text(fb, kUiWidth / 2, 136,
+                           current_text[0] != '\0' && std::strcmp(current_text, "-") != 0
+                               ? current_text
+                               : "NO DATA",
+                           true, fonts::FontFace::Font8x12, 1);
+        return;
+    }
+
+    const int32_t range = scale.maximum - scale.minimum;
+    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
+    draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
+    draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
+                    scale.middle_label);
+    draw_axis_label(fb, kAxisLabelRightX, kGraphY + kGraphHeight - 8, scale.minimum_label);
+    framebuffer::draw_hline(fb, kGraphX - 3, kGraphX - 1, kGraphY + (kGraphHeight / 2), true);
+
+    int previous_x = kGraphX + kPlotInset;
+    int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
+    for (std::size_t i = 0U; i < count; ++i)
+    {
+        const int x = kGraphX + kPlotInset +
+                      ((kGraphWidth - (kPlotInset * 2) - 1) * static_cast<int>(i)) /
+                          static_cast<int>(count - 1U);
+        const int32_t clamped_value = std::clamp(values[i], scale.minimum, scale.maximum);
+        const int normalised = static_cast<int>(
+            (static_cast<int64_t>(clamped_value - scale.minimum) *
+             (kGraphHeight - (kPlotInset * 2) - 1)) /
+            range);
+        const int y = kGraphY + kGraphHeight - 1 - kPlotInset - normalised;
+        if (i > 0U)
+        {
+            framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
+        }
+        previous_x = x;
+        previous_y = y;
+    }
+
+    char current_text[20] = {};
+    build_local_condition_value_text(console_state.local_condition_metric,
+                                     console_state.environment_sensor_status, current_text,
+                                     sizeof(current_text));
+
+    framebuffer::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", true,
+                           fonts::FontFace::Font5x7, 1);
+    const int now_width = text_width("NOW", fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kGraphX + kGraphWidth - now_width, kTimelineLabelY, "NOW", true,
+                           fonts::FontFace::Font5x7, 1);
+
+    framebuffer::draw_text(fb, kGraphX, kMetricLabelY,
+                           local_condition_metric_text(console_state.local_condition_metric), true,
+                           fonts::FontFace::Font5x7, 1);
+    const int unit_x =
+        kGraphX + text_width(local_condition_metric_text(console_state.local_condition_metric),
+                             fonts::FontFace::Font5x7, 1) +
+        text_width(" ", fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, true,
+                           fonts::FontFace::Font5x7, 1);
+    const int current_width = text_width(current_text, fonts::FontFace::Font8x12, 1);
+    framebuffer::draw_text(fb, kGraphX + kGraphWidth - current_width, kMetricLabelY - 3,
+                           current_text, true, fonts::FontFace::Font8x12, 1);
+}
+
 /// @brief Draws the weather-source selection page under Settings.
 /// @details Settings subpages keep values on the surrounding softkeys so the
 /// centre of the display stays free of duplicate status text.
@@ -2239,6 +2543,16 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     char sensor_addresses_text[24] = {};
     build_environment_address_text(console_state.environment_sensor_status, sensor_addresses_text,
                                    sizeof(sensor_addresses_text));
+    char sensor_temperature_text[16] = {};
+    build_environment_temperature_text(console_state.environment_sensor_status,
+                                       sensor_temperature_text,
+                                       sizeof(sensor_temperature_text));
+    char sensor_humidity_text[16] = {};
+    build_environment_humidity_text(console_state.environment_sensor_status, sensor_humidity_text,
+                                    sizeof(sensor_humidity_text));
+    char sensor_pressure_text[16] = {};
+    build_environment_pressure_text(console_state.environment_sensor_status, sensor_pressure_text,
+                                    sizeof(sensor_pressure_text));
     char sensor_scan_text[16] = {};
     if (console_state.environment_sensor_status.enabled &&
         console_state.environment_sensor_status.last_scan_ms > 0U)
@@ -2260,6 +2574,26 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
     else
     {
         std::snprintf(sensor_error_text, sizeof(sensor_error_text), "-");
+    }
+    char sensor_bme_error_text[16] = {};
+    if (console_state.environment_sensor_status.enabled)
+    {
+        std::snprintf(sensor_bme_error_text, sizeof(sensor_bme_error_text), "%d",
+                      console_state.environment_sensor_status.bme_read_error);
+    }
+    else
+    {
+        std::snprintf(sensor_bme_error_text, sizeof(sensor_bme_error_text), "-");
+    }
+    char sensor_air_quality_error_text[16] = {};
+    if (console_state.environment_sensor_status.enabled)
+    {
+        std::snprintf(sensor_air_quality_error_text, sizeof(sensor_air_quality_error_text), "%d",
+                      console_state.environment_sensor_status.air_quality_read_error);
+    }
+    else
+    {
+        std::snprintf(sensor_air_quality_error_text, sizeof(sensor_air_quality_error_text), "-");
     }
 
     const DetailRow rows[] = {
@@ -2286,9 +2620,14 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
          environment_sensor_health_text(console_state.environment_sensor_status.health)},
         {"ENV BUS", sensor_bus_text},
         {"ENV BME", environment_bme_text(console_state.environment_sensor_status)},
+        {"ENV TEMP", sensor_temperature_text},
+        {"ENV HUM", sensor_humidity_text},
+        {"ENV PRESS", sensor_pressure_text},
         {"ENV ADDR", sensor_addresses_text},
         {"ENV SCAN", sensor_scan_text},
         {"ENV ERR", sensor_error_text},
+        {"ENV BME ERR", sensor_bme_error_text},
+        {"ENV AQ ERR", sensor_air_quality_error_text},
     };
 
     draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
@@ -2562,6 +2901,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::Status:
         draw_status_page(fb, console_state);
+        break;
+    case MenuPage::LocalConditions:
+        draw_local_conditions_page(fb, console_state);
+        break;
+    case MenuPage::LocalConditionGraph:
+        draw_local_condition_history_graph(fb, console_state);
         break;
     case MenuPage::Settings:
         draw_settings_page(fb, console_state);

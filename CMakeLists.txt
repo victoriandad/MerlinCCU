@@ -61,6 +61,7 @@ add_executable(MerlinCCU
     src/sensors/environment_sensor_manager.cpp
     src/sensors/i2c_bus.cpp
     src/sensors/i2c_register_device.cpp
+    src/sensors/sgp40_air_quality_sensor.cpp
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")

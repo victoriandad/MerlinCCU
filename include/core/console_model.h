@@ -132,6 +132,8 @@ enum class MenuPage : uint8_t
     CalendarDetail,
     Weather,
     Status,
+    LocalConditions,
+    LocalConditionGraph,
     Settings,
     DeviceSettings,
     SecuritySettings,
@@ -422,6 +424,15 @@ enum class TimeZoneSelection : uint8_t
     GulfStandard,
 };
 
+/// @brief Local environmental metric selected for the graph detail page.
+enum class LocalConditionMetric : uint8_t
+{
+    Temperature = 0,
+    Humidity,
+    AirPressure,
+    AirQuality,
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
 {
@@ -430,6 +441,11 @@ enum class SoftKeyRoute : uint8_t
     GoCalendar,
     GoWeather,
     GoStatus,
+    GoLocalConditions,
+    ShowLocalTemperatureGraph,
+    ShowLocalHumidityGraph,
+    ShowLocalPressureGraph,
+    ShowLocalAirQualityGraph,
     GoSettings,
     GoDeviceSettings,
     GoSecuritySettings,
@@ -607,6 +623,7 @@ struct ConsoleState
     uint8_t settings_page_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
+    LocalConditionMetric local_condition_metric;
     CalendarOwner calendar_owner;
     int8_t calendar_day_offset;
     uint8_t selected_calendar_event_index;

@@ -88,6 +88,7 @@ ConsoleState make_default_console_state()
     state.settings_page_index = 0;
     state.weather_source = WeatherSource::HomeAssistant;
     state.weather_period = WeatherPeriod::Hourly;
+    state.local_condition_metric = LocalConditionMetric::Temperature;
     state.calendar_owner = CalendarOwner::Combined;
     state.calendar_day_offset = 0;
     state.selected_calendar_event_index = 0U;

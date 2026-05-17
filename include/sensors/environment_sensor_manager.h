@@ -24,6 +24,10 @@ enum class EnvironmentSensorDevice : uint8_t
 
 inline constexpr std::size_t kEnvironmentSensorDeviceCount =
     static_cast<std::size_t>(EnvironmentSensorDevice::Count);
+inline constexpr std::size_t kLocalConditionHistoryPointCount = 288U;
+
+/// @brief Returns the operator-facing VOC-change label for a local 0-100 score.
+const char* air_quality_band_text(uint8_t score);
 
 /// @brief High-level board identity detected by this manager.
 enum class EnvironmentSensorBoard : uint8_t
@@ -81,6 +85,44 @@ struct EnvironmentSensorStatus
     EnvironmentBmeVariant bme_variant;
     uint8_t bme_chip_id;
     int bme_last_error;
+    /// @brief True when BME280 fixed-point readings below contain a successful sample.
+    bool bme_reading_valid;
+    /// @brief Temperature in hundredths of a degree Celsius.
+    int32_t bme_temperature_centi_celsius;
+    /// @brief Pressure in pascals.
+    uint32_t bme_pressure_pa;
+    /// @brief Relative humidity in thousandths of a percent.
+    uint32_t bme_humidity_milli_percent;
+    /// @brief System uptime timestamp for the last successful BME280 sample.
+    uint32_t bme_last_read_ms;
+    /// @brief Pico SDK style status code for the latest BME280 read attempt.
+    int bme_read_error;
+    /// @brief Number of valid five-minute average BME entries in each rolling history array.
+    uint16_t bme_history_count;
+    /// @brief Rolling BME280 temperature history in hundredths of a degree Celsius.
+    std::array<int16_t, kLocalConditionHistoryPointCount> bme_temperature_history_centi_celsius;
+    /// @brief Rolling BME280 pressure history in tenths of a hectopascal.
+    std::array<uint16_t, kLocalConditionHistoryPointCount> bme_pressure_history_deci_hpa;
+    /// @brief Rolling BME280 relative-humidity history in hundredths of a percent.
+    std::array<uint16_t, kLocalConditionHistoryPointCount> bme_humidity_history_centi_percent;
+    /// @brief True when the latest SGP40 raw VOC reading is valid.
+    bool air_quality_raw_valid;
+    /// @brief Latest compensated SGP40 SRAW_VOC value.
+    uint16_t air_quality_raw_signal;
+    /// @brief Highest raw SGP40 signal seen locally, used as the clean-air baseline.
+    uint16_t air_quality_baseline_raw_signal;
+    /// @brief True when the local air-quality score below is valid.
+    bool air_quality_score_valid;
+    /// @brief Local air-quality score where 100 is best and 0 is worst.
+    uint8_t air_quality_score;
+    /// @brief System uptime timestamp for the last successful SGP40 sample.
+    uint32_t air_quality_last_read_ms;
+    /// @brief Pico SDK style status code for the latest SGP40 read attempt.
+    int air_quality_read_error;
+    /// @brief Number of valid five-minute average VOC-score entries in the rolling history.
+    uint16_t air_quality_history_count;
+    /// @brief Rolling local VOC-change score history.
+    std::array<uint8_t, kLocalConditionHistoryPointCount> air_quality_history_score;
 };
 
 /// @brief Initialises the optional I2C environment sensor bus.
