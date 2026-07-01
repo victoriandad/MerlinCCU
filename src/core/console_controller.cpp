@@ -615,9 +615,9 @@ bool environment_sensor_status_matches(
 
     for (size_t index = 0; index < lhs.devices.size(); ++index)
     {
-        if (lhs.devices[index].device != rhs.devices[index].device ||
-            lhs.devices[index].i2c_address != rhs.devices[index].i2c_address ||
-            lhs.devices[index].detected != rhs.devices[index].detected)
+        if (lhs.devices[index].device !=        rhs.devices[index].device ||
+            lhs.devices[index].i2c_address !=   rhs.devices[index].i2c_address ||
+            lhs.devices[index].detected !=      rhs.devices[index].detected)
         {
             return false;
         }
@@ -954,9 +954,13 @@ void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
             continue;
         }
 
-        const int kWritten =
-            std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                          (used == 0) ? "" : " ", static_cast<unsigned>(line.panel_pin));
+        const int kWritten = std::snprintf(
+            out_text.data() + used, 
+            out_text.size() - used, 
+            "%s%u", 
+            (used == 0) ? "" : " ", 
+            static_cast<unsigned>(line.panel_pin));
+
         if (kWritten <= 0)
         {
             break;

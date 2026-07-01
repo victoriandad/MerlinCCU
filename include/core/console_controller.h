@@ -68,6 +68,7 @@ struct PinterBrewTiming
     uint8_t recommended_conditioning_days;
     uint8_t minimum_brewing_days;
     uint8_t minimum_conditioning_days;
+    uint8_t optional_cold_crashing_days;
 };
 
 /// @brief Returns timing metadata for a Pinter brew-pack catalogue index.
