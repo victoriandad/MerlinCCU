@@ -1,0 +1,49 @@
+name: Work Item
+description: Bug, feature, technical debt, documentation, hardware, or validation work
+title: ''
+labels: []
+body:
+  - type: checkboxes
+    id: issue_type
+    attributes:
+      label: Type
+      description: Choose the best fit. More than one can apply when necessary.
+      options:
+        - label: Bug
+        - label: Feature
+        - label: Technical debt
+        - label: Documentation
+        - label: Hardware / bring-up
+        - label: Testing / validation
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Describe the problem, feature, improvement, observation, or technical debt item.
+      placeholder: What needs to happen and why?
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: List the minimum conditions that must be true for this to be considered complete.
+      placeholder: "- ..."
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Describe the observable outcome that should exist when the work is done.
+      placeholder: "- ..."
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional implementation notes, test observations, screenshots, links, hardware findings, or related issues.
+      placeholder: Add any extra context here.
+    validations:
+      required: false

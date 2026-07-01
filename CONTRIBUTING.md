@@ -23,9 +23,9 @@ For build setup, coding standards, comment guidance, and validation rules, see
 - Keep network secrets, tokens, broker passwords and local IP choices in the
   ignored local headers, never in tracked files.
 - Prefer updating public headers and example files when behaviour changes.
-- Keep the roadmap in `README.md` current:
-  - use `[ ]` for open roadmap tasks and `[x]` for completed tasks
-  - when marking complete, append a short note with date and PR/commit reference
+- Track open work in GitHub Issues rather than in `README.md`.
+- When a change needs follow-up work, add or update the relevant issue instead
+  of growing the README backlog.
 - Keep the repository's development rules in `docs/development.md` and the
   domain rules in the focused docs under `docs/`.
 
@@ -43,4 +43,3 @@ For build setup, coding standards, comment guidance, and validation rules, see
   REST-based Home Assistant status integration.
 - `src/network/mqtt_manager.*`
   MQTT discovery and retained sensor publishing.
-
