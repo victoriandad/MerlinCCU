@@ -160,6 +160,8 @@ The Pico VS Code extension workflow is the normal day-to-day path. CLI builds ar
 
 Keep CLI checks bounded to one configure/build pass so failures return the first actionable error.
 
+For the repo-wide build, style, and validation rules, see [docs/development.md](docs/development.md).
+
 Known build compatibility note:
 
 - `src/core/MerlinCCU.cpp` supports both newer and older generated PIO header
