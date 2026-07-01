@@ -103,8 +103,6 @@ Preferred future direction:
 - The background core must not mutate `ConsoleState`, framebuffer pointers, or display state directly.
 - Moving lwIP/CYW43 network traffic across cores needs explicit locking and testing. Payload decoding is a safer first candidate than moving raw Wi-Fi stack ownership.
 
-The fuller preparation contract lives in `docs/architecture-prep.md`.
-
 This split is a design target, not current behaviour.
 
 ## Display Path
@@ -366,87 +364,18 @@ Safety rules:
 
 ## Security And Hardening TODOs
 
-Network support is currently development-friendly rather than hardened.
+Network support is currently development-friendly rather than hardened. The
+remaining hardening work is tracked in GitHub Issues rather than in this file.
 
-Deferred hardening work:
+## Open Work
 
-- Add certificate validation for HTTPS Home Assistant requests.
-- Move MQTT to TLS and configure broker certificates.
-- Create a dedicated Home Assistant user/token with only the access MerlinCCU needs.
-- Create a dedicated MQTT account and restrict it to required topics with broker ACLs.
-- Decide whether MerlinCCU should use trusted local DNS and NTP rather than public defaults.
-- Consider placing MerlinCCU on a trusted SSID or VLAN during and after TLS migration.
-- Add rate limiting and clearer malformed-response diagnostics for externally sourced payloads.
+Active development work is tracked in GitHub Issues. Current themes are:
 
-## Roadmap
+- hardware bring-up and pinout finalisation
+- environment sensor and multicore preparation
+- alert and lamp hardware completion
+- calendar and weather integration follow-up
+- shares configurability and display polish
+- validation, regression, and host-test coverage
 
-Platform and architecture:
-
-- [x] Display scanout through PIO/DMA.
-- [x] Menu state model and contextual softkey map.
-- [x] Flash-backed runtime configuration.
-- [x] Local web configuration and display preview.
-- [ ] Define and implement a safe multicore split for UI and background processing.
-- [x] Add disabled I2C bus discovery scaffold for the optional environment board.
-- [ ] Add sensor readings for temperature, humidity, air quality, CO2, and particulates.
-- [ ] Keep module boundaries under review as feature scope grows.
-
-Input and front-panel hardware:
-
-- [x] Provisional keypad matrix monitor and decoder.
-- [x] Keypad diagnostics page.
-- [ ] Finalise physical keypad harness/netlist.
-- [ ] Bring up ALRT/TEST LED hardware drive.
-- [ ] Bring up key and panel backlight control.
-- [ ] Bring up photoresistor or brightness sensing if retained.
-
-Weather and integrations:
-
-- [x] Home Assistant REST status/entity/weather flow.
-- [x] Open-Meteo direct weather source.
-- [x] Hourly/Next 24 Hours/Next 7 Days weather views.
-- [x] MQTT discovery for core diagnostic sensors.
-- [x] Calendar UI scaffold for the family combined/person views.
-- [ ] Add Home Assistant calendar ingestion behind the Calendar model.
-- [ ] Add weather icon pipeline and trial small icon sets.
-- [x] Add weather threshold alerts for temperature, wind, and severe provider conditions.
-- [ ] Add official provider weather-warning ingestion when a source exposes warning telemetry.
-- [ ] Publish local sensor data back to Home Assistant once sensors exist.
-
-Alerting and operations:
-
-- [x] Alert state machine and escalation workflow.
-- [x] System alerts for Wi-Fi, time sync, Home Assistant, weather, MQTT, keypad, display lag placeholder, and share data failures.
-- [x] ALRT-key workflow in web preview and UI state.
-- [ ] Wire the real ALRT lamp path once hardware is ready.
-- [ ] Add access/presence telemetry if multiple CCUs are used.
-- [ ] Define stale-data display policy during outages.
-
-Shares and data display:
-
-- [x] Shares landing page and BAE Systems initial watch row.
-- [x] Share detail page with period cycling and trend graph.
-- [x] Yahoo Finance chart fetch and parser for current price/history.
-- [x] Five-minute refresh while shares pages are active.
-- [ ] Make watched shares configurable.
-- [ ] Show live up/down/flat indicators beside share softkey labels.
-
-Display quality R&D:
-
-- [ ] Investigate deterministic temporal modulation for perceived greyscale.
-- [ ] Test coverage-aware glyph/icon assets.
-- [ ] Evaluate mixed spatial and temporal anti-aliasing.
-- [ ] Expose user mode selection between crisp 1-bit and smoothed rendering if the panel tolerates it.
-- [ ] Validate flicker, shimmer, CPU cost, and raster budget before promoting beyond experiment.
-
-## Next Practical Candidates
-
-Short-term useful slices:
-
-1. Add Home Assistant calendar ingestion behind the Calendar model.
-2. Finalise physical ALRT/TEST LED and backlight wiring assumptions.
-3. Make watched shares configurable from web config.
-4. Add weather icons after settling the small bitmap asset size.
-5. Add BME280/BME680 calibration loading, compensation maths, and first
-   temperature/humidity/pressure readings.
-6. Define the multicore event/message boundary before moving any work to core 1.
+Use the issue tracker for detailed acceptance criteria and progress notes.

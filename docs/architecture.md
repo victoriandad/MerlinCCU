@@ -11,8 +11,8 @@ README history, chat context, or incidental source-code discovery.
   and sensor modules.
 - Data-flow rules for `ConsoleState`, framebuffer ownership, manager snapshots,
   and persistent configuration.
-- Constraints specific to Raspberry Pi Pico, Pico SDK, lwIP/CYW43, flash writes,
-  PIO, DMA, and optional future multicore work.
+- Constraints specific to Raspberry Pi Pico, Pico SDK, lwIP/CYW43, flash
+  writes, PIO, DMA, and multicore work.
 - Architecture decisions that affect how new features should be integrated.
 
 ## Current Runtime Shape
@@ -54,15 +54,42 @@ README history, chat context, or incidental source-code discovery.
 - Current firmware is single application core.
 - Do not move work to core 1 until ownership, stack use, flash-write safety,
   and lwIP/CYW43 callback rules are reviewed.
-- Safe early candidates are sensor polling, compensation maths, payload parsing,
-  and data reduction.
+- Safe early candidates are sensor polling, compensation maths, payload
+  parsing, and data reduction.
+
+## Environment Sensor Direction
+
+- The Waveshare Pico Environment Sensor board is treated as an optional
+  subsystem behind `environment_sensor_manager`.
+- I2C configuration is local-machine or harness-specific and lives in
+  `config/environment_sensor_config.h`, copied from the example file.
+- Sensor drivers should be concrete, allocation-free classes with static
+  lifetime where practical.
+- The first hardware milestone is bus discovery and a diagnostic snapshot. The
+  BME280/BME680 path starts with chip-ID probing before calibration loading and
+  compensation maths are added. Full readings should follow as separate
+  drivers for BME280/BME680, SGP40, TSL2591, LTR390, and ICM20948.
+- SGP40 compensation should consume temperature and humidity from the BME
+  sensor when that driver exists.
+- Future CCU alerts should be based on compact signals: board missing, stale
+  readings, failed compensation, or operator-relevant thresholds.
+
+## Multicore Admission Checklist
+
+Do not move work to core 1 until these are true:
+
+- The work has a single owner and communicates with core 0 through a queue or
+  immutable snapshot.
+- The work does not write `ConsoleState`, framebuffer memory, display state,
+  or Pico SDK flash state directly.
+- Stack usage has been estimated for the background task.
+- Flash writes are protected so the second core is not executing from flash
+  during erase/program operations.
+- lwIP/CYW43 calls remain on their current owner unless explicit locking and
+  callback-context rules have been reviewed.
 
 ## Decision Log
 
 | Date | Decision | Reason | Follow-up |
 | --- | --- | --- | --- |
 | YYYY-MM-DD |  |  |  |
-
-## Open Questions
-
-- 
