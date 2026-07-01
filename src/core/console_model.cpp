@@ -67,6 +67,23 @@ void set_calendar_event(CalendarEvent& event, CalendarOwner owner, int8_t day_of
     std::snprintf(event.description.data(), event.description.size(), "%s", description);
 }
 
+/// @brief Seeds one manually tracked Pinter vessel with a stable panel label.
+void set_pinter(PinterStatus& pinter, const char* label)
+{
+    pinter.label.fill('\0');
+    std::snprintf(pinter.label.data(), pinter.label.size(), "%s", label);
+    pinter.state = PinterState::Idle;
+    pinter.brew_index = kDefaultPinterBrewIndex;
+    pinter.brew_start_day = 0U;
+    pinter.cold_crash_start_day = 0U;
+    pinter.conditioning_start_day = 0U;
+    pinter.ready_day = 0U;
+    pinter.planned_brewing_days = 0U;
+    pinter.planned_cold_crash_days = 0U;
+    pinter.planned_conditioning_days = 0U;
+    pinter.cold_crash_used = false;
+}
+
 } // namespace
 
 static_assert((sizeof(kKeyLegends) / sizeof(kKeyLegends[0])) ==
@@ -100,6 +117,19 @@ ConsoleState make_default_console_state()
     state.share_data_last_http_status = 0;
     state.share_count = 1U;
     state.selected_share_index = 0U;
+    state.selected_pinter_index = 0U;
+    state.pinter_brew_pack_count = 0U;
+    state.pinter_selected_brew_index = kDefaultPinterBrewIndex;
+    state.pinter_selected_brew_count = 0U;
+    state.pinter_selected_brews.fill(kInvalidPinterBrewSelection);
+    state.pinter_catalogue_page_index = 0U;
+    state.pinter_selected_brews_page_index = 0U;
+    state.pinter_start_brews_page_index = 0U;
+    state.pinter_pending_inventory_index = kInvalidPinterBrewSelection;
+    state.pinter_pending_brew_index = kDefaultPinterBrewIndex;
+    state.pinter_pending_brewing_days = 0U;
+    state.pinter_pending_cold_crash_days = 0U;
+    state.pinter_pending_conditioning_days = 0U;
     state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;
     state.screen_saver_timeout_minutes = 5;
@@ -175,6 +205,8 @@ ConsoleState make_default_console_state()
     state.mqtt_status.device_id.fill('\0');
     state.time_status.synced = false;
     state.time_status.time_text.fill('\0');
+    state.time_status.date_text.fill('\0');
+    state.time_status.local_epoch_day = 0U;
     state.time_status.weekday_index = kInvalidWeekdayIndex;
 
     // The keypad debug surface is always present, so its snapshot fields start
@@ -193,6 +225,12 @@ ConsoleState make_default_console_state()
     state.alert_detail_index = 0U;
     state.alert_detail_scroll_line = 0U;
     state.alert_parent_page = MenuPage::Home;
+
+    set_pinter(state.pinters[0], "P1");
+    set_pinter(state.pinters[1], "P3 A");
+    set_pinter(state.pinters[2], "P3 B");
+    set_pinter(state.pinters[3], "P3 C");
+
     for (auto& alert : state.active_alerts)
     {
         alert.severity = AlertSeverity::None;

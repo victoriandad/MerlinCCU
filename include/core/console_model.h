@@ -147,6 +147,13 @@ enum class MenuPage : uint8_t
     KeypadDebug,
     AlertList,
     AlertDetail,
+    Pinter,
+    PinterPacks,
+    PinterToBeBrewed,
+    PinterSelectBrew,
+    PinterSelectedBrews,
+    PinterStartBrew,
+    PinterStartTiming,
     Shares,
     ShareDetail,
 };
@@ -215,6 +222,8 @@ struct TimeStatus
 {
     bool synced;
     std::array<char, 6> time_text;
+    std::array<char, 11> date_text;
+    uint32_t local_epoch_day;
     uint8_t weekday_index;
 };
 
@@ -433,6 +442,26 @@ enum class LocalConditionMetric : uint8_t
     AirQuality,
 };
 
+/// @brief Physical Pinter lifecycle states tracked by the manual brew scheduler.
+enum class PinterState : uint8_t
+{
+    Idle = 0,
+    Brewing,
+    ColdCrash,
+    Conditioning,
+    Ready,
+    Consumed,
+};
+
+inline constexpr size_t kPinterCount = 4;
+inline constexpr size_t kPinterBrewCatalogueCount = 35;
+inline constexpr uint8_t kDefaultPinterBrewIndex = 0U;
+inline constexpr uint8_t kPinterBrewDockCapacity = 3U;
+inline constexpr uint8_t kPinterFridgeCapacity = 2U;
+inline constexpr size_t kPinterBrewListVisibleCount = 8;
+inline constexpr size_t kPinterSelectedBrewCapacity = 24;
+inline constexpr uint8_t kInvalidPinterBrewSelection = 255U;
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
 {
@@ -497,6 +526,40 @@ enum class SoftKeyRoute : uint8_t
     SelectAlertSlot9,
     AlertAccept,
     AlertIgnore,
+    GoPinter,
+    GoPinterPacks,
+    SelectPinterSlot1,
+    SelectPinterSlot2,
+    SelectPinterSlot3,
+    SelectPinterSlot4,
+    CyclePinterBrew,
+    AddPinterBrewPack,
+    RemovePinterBrewPack,
+    ApplyPinterPrimaryAction,
+    ResetSelectedPinter,
+    GoPinterToBeBrewed,
+    GoPinterSelectBrew,
+    GoPinterSelectedBrews,
+    GoPinterStartBrew,
+    SelectPinterListItem1,
+    SelectPinterListItem2,
+    SelectPinterListItem3,
+    SelectPinterListItem4,
+    SelectPinterListItem5,
+    SelectPinterListItem6,
+    SelectPinterListItem7,
+    SelectPinterListItem8,
+    PinterListPreviousPage,
+    PinterListNextPage,
+    SelectPinterMinimumTiming,
+    SelectPinterRecommendedTiming,
+    DecreasePinterBrewDays,
+    IncreasePinterBrewDays,
+    DecreasePinterConditioningDays,
+    IncreasePinterConditioningDays,
+    DecreasePinterColdCrashDays,
+    IncreasePinterColdCrashDays,
+    ConfirmPinterStart,
     GoShares,
     SelectShareSlot1,
     CycleSharePeriod,
@@ -616,6 +679,22 @@ struct KeypadDebugStatus
     std::array<char, 48> probe_hit_panel_pins;
 };
 
+/// @brief One manually tracked Pinter vessel in the home brewing workflow.
+struct PinterStatus
+{
+    std::array<char, 8> label;
+    PinterState state;
+    uint8_t brew_index;
+    uint32_t brew_start_day;
+    uint32_t cold_crash_start_day;
+    uint32_t conditioning_start_day;
+    uint32_t ready_day;
+    uint8_t planned_brewing_days;
+    uint8_t planned_cold_crash_days;
+    uint8_t planned_conditioning_days;
+    bool cold_crash_used;
+};
+
 /// @brief Captures the logical front-panel state independent of hardware wiring.
 struct ConsoleState
 {
@@ -635,6 +714,19 @@ struct ConsoleState
     int share_data_last_http_status;
     uint8_t share_count;
     uint8_t selected_share_index;
+    uint8_t selected_pinter_index;
+    uint8_t pinter_brew_pack_count;
+    uint8_t pinter_selected_brew_index;
+    uint8_t pinter_selected_brew_count;
+    std::array<uint8_t, kPinterSelectedBrewCapacity> pinter_selected_brews;
+    uint8_t pinter_catalogue_page_index;
+    uint8_t pinter_selected_brews_page_index;
+    uint8_t pinter_start_brews_page_index;
+    uint8_t pinter_pending_inventory_index;
+    uint8_t pinter_pending_brew_index;
+    uint8_t pinter_pending_brewing_days;
+    uint8_t pinter_pending_cold_crash_days;
+    uint8_t pinter_pending_conditioning_days;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;
@@ -659,6 +751,7 @@ struct ConsoleState
     MenuPage alert_parent_page;
     std::array<ActiveAlert, 24> active_alerts;
     std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
+    std::array<PinterStatus, kPinterCount> pinters;
     std::array<ShareWatchEntry, 6> watched_shares;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;

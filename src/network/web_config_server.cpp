@@ -649,7 +649,8 @@ void build_config_page(const char* message)
         "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
         "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved "
         "locally "
-        "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/preview\" "
+        "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/pinter\" "
+        "id=\"open_pinter\">Pinter activity</a><a class=\"ghost\" href=\"/preview\" "
         "id=\"open_preview\">Display preview</a>"
         "<button type=\"submit\">Save Configuration</button></div></div></form>"
         "<script>"
@@ -681,6 +682,500 @@ void build_config_page(const char* message)
         "form.addEventListener('submit',syncPw)}"
         "</script></main></body></html>",
         static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
+}
+
+enum class PinterTimelineStage : uint8_t
+{
+    Brew,
+    Crash,
+    Condition,
+    Ready,
+};
+
+/// @brief Returns a web-facing lifecycle label for one manually tracked Pinter.
+const char* pinter_state_text(PinterState state)
+{
+    switch (state)
+    {
+    case PinterState::Idle:
+        return "Idle";
+    case PinterState::Brewing:
+        return "Brewing";
+    case PinterState::ColdCrash:
+        return "Cold crash";
+    case PinterState::Conditioning:
+        return "Conditioning";
+    case PinterState::Ready:
+        return "Ready";
+    case PinterState::Consumed:
+        return "Consumed";
+    }
+
+    return "Unknown";
+}
+
+/// @brief Chooses the visual state for a planned Pinter timeline segment.
+const char* pinter_stage_tone(PinterState state, PinterTimelineStage stage)
+{
+    switch (state)
+    {
+    case PinterState::Idle:
+        return "future";
+    case PinterState::Brewing:
+        return stage == PinterTimelineStage::Brew ? "current" : "future";
+    case PinterState::ColdCrash:
+        if (stage == PinterTimelineStage::Brew)
+        {
+            return "done";
+        }
+        return stage == PinterTimelineStage::Crash ? "current" : "future";
+    case PinterState::Conditioning:
+        if (stage == PinterTimelineStage::Brew || stage == PinterTimelineStage::Crash)
+        {
+            return "done";
+        }
+        return stage == PinterTimelineStage::Condition ? "current" : "future";
+    case PinterState::Ready:
+        return stage == PinterTimelineStage::Ready ? "current" : "done";
+    case PinterState::Consumed:
+        return "done";
+    }
+
+    return "future";
+}
+
+struct WebDateParts
+{
+    int year;
+    int month;
+    int day;
+};
+
+/// @brief Converts a Unix epoch day into Gregorian fields for web labels.
+WebDateParts epoch_day_to_date(uint32_t epoch_day)
+{
+    int z = static_cast<int>(epoch_day) + 719468;
+    const int era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
+    int year = static_cast<int>(yoe) + era * 400;
+    const unsigned doy = doe - ((365U * yoe) + (yoe / 4U) - (yoe / 100U));
+    const unsigned mp = ((5U * doy) + 2U) / 153U;
+    const unsigned day = doy - (((153U * mp) + 2U) / 5U) + 1U;
+    const int month = static_cast<int>(mp) + (mp < 10U ? 3 : -9);
+    year += month <= 2 ? 1 : 0;
+
+    WebDateParts parts = {};
+    parts.year = year;
+    parts.month = month;
+    parts.day = static_cast<int>(day);
+    return parts;
+}
+
+/// @brief Formats an epoch day for compact timeline axis labels.
+void format_epoch_day_label(uint32_t epoch_day, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0)
+    {
+        return;
+    }
+
+    static constexpr std::array<const char*, 12> kMonthNames = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    };
+    if (epoch_day == 0U)
+    {
+        std::snprintf(out, out_size, "-");
+        return;
+    }
+
+    const WebDateParts parts = epoch_day_to_date(epoch_day);
+    const char* month = (parts.month >= 1 && parts.month <= 12)
+                            ? kMonthNames[static_cast<size_t>(parts.month - 1)]
+                            : "---";
+    std::snprintf(out, out_size, "%02d %s", parts.day, month);
+}
+
+/// @brief Returns the active start day, or zero when a Pinter has no dated activity.
+uint32_t pinter_activity_start_day(const PinterStatus& pinter, uint32_t today)
+{
+    if (pinter.brew_start_day != 0U)
+    {
+        return pinter.brew_start_day;
+    }
+
+    if (pinter.state == PinterState::Idle)
+    {
+        return 0U;
+    }
+
+    return today != 0U ? today : 1U;
+}
+
+/// @brief Appends one proportional bar segment to a Pinter timeline row.
+bool append_pinter_stage(char*& cursor, size_t& remaining, const char* stage_class,
+                         const char* tone_class, const char* label, uint32_t start_day,
+                         uint32_t duration_days, uint32_t window_start_day,
+                         unsigned timeline_days)
+{
+    if (duration_days == 0U || timeline_days == 0U)
+    {
+        return true;
+    }
+
+    const uint32_t window_end_day = window_start_day + timeline_days;
+    const uint32_t stage_start_day = start_day;
+    const uint32_t stage_end_day = stage_start_day + duration_days;
+    if (stage_end_day <= window_start_day || stage_start_day >= window_end_day)
+    {
+        return true;
+    }
+
+    const uint32_t visible_start_day = std::max(stage_start_day, window_start_day);
+    const uint32_t visible_end_day = std::min(stage_end_day, window_end_day);
+    const double left_percent = (static_cast<double>(visible_start_day - window_start_day) * 100.0) /
+                                static_cast<double>(timeline_days);
+    const double width_percent = (static_cast<double>(visible_end_day - visible_start_day) * 100.0) /
+                                 static_cast<double>(timeline_days);
+    return append(cursor, remaining,
+                  "<div class=\"stage %s %s\" style=\"left:%.2f%%;width:%.2f%%\"><span>%s</span>"
+                  "</div>",
+                  stage_class, tone_class, left_percent, width_percent, label);
+}
+
+/// @brief Appends one Pinter activity row using real event dates where available.
+bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterStatus& pinter,
+                                uint32_t window_start_day, unsigned timeline_days,
+                                uint32_t today_day)
+{
+    constexpr unsigned kReadyHoldDisplayDays = 2U;
+    char label[24] = {};
+    char brew_name[96] = {};
+    char brew_label[24] = {};
+    char crash_label[16] = {};
+    char condition_label[24] = {};
+    char ready_label[16] = {};
+    char timing_text[24] = {};
+    char start_text[48] = {};
+    char start_date[16] = {};
+
+    const console_controller::PinterBrewTiming& timing =
+        console_controller::pinter_brew_timing(pinter.brew_index);
+    const unsigned brew_days = pinter.planned_brewing_days != 0U
+                                   ? pinter.planned_brewing_days
+                                   : timing.recommended_brewing_days;
+    const unsigned crash_days = pinter.planned_cold_crash_days;
+    const unsigned conditioning_days = pinter.planned_conditioning_days != 0U
+                                           ? pinter.planned_conditioning_days
+                                           : timing.recommended_conditioning_days;
+    html_escape(pinter.label.data(), label, sizeof(label));
+    html_escape(timing.name, brew_name, sizeof(brew_name));
+    std::snprintf(brew_label, sizeof(brew_label), "Brew %ud", brew_days);
+    std::snprintf(crash_label, sizeof(crash_label), "Crash %ud", crash_days);
+    std::snprintf(condition_label, sizeof(condition_label), "Condition %ud", conditioning_days);
+    std::snprintf(ready_label, sizeof(ready_label), "Ready");
+    std::snprintf(timing_text, sizeof(timing_text), "Plan %ud",
+                  static_cast<unsigned>(brew_days + crash_days + conditioning_days));
+    const uint32_t activity_start_day = pinter_activity_start_day(pinter, today_day);
+    if (activity_start_day != 0U)
+    {
+        if (today_day != 0U || pinter.brew_start_day != 0U)
+        {
+            format_epoch_day_label(activity_start_day, start_date, sizeof(start_date));
+            std::snprintf(start_text, sizeof(start_text), "Start %s, %s", start_date, timing_text);
+        }
+        else
+        {
+            std::snprintf(start_text, sizeof(start_text), "Undated, %s", timing_text);
+        }
+    }
+    else
+    {
+        std::snprintf(start_text, sizeof(start_text), "%s", timing_text);
+    }
+
+    bool ok = append(cursor, remaining,
+                     "<section class=\"pinter-row\"><div class=\"pinter-name\"><strong>%s</strong>"
+                     "<span>%s</span></div><div class=\"track\">",
+                     label, brew_name);
+    if (!ok)
+    {
+        return false;
+    }
+
+    const bool today_visible =
+        today_day != 0U && today_day >= window_start_day &&
+        today_day <= window_start_day + static_cast<uint32_t>(timeline_days);
+    if (today_visible)
+    {
+        const double today_percent =
+            (static_cast<double>(today_day - window_start_day) * 100.0) /
+            static_cast<double>(timeline_days);
+        ok = append(cursor, remaining,
+                    "<div class=\"today-line\" style=\"left:%.2f%%\" aria-hidden=\"true\"></div>",
+                    today_percent);
+    }
+
+    if (pinter.state == PinterState::Idle || activity_start_day == 0U)
+    {
+        ok = ok && append(cursor, remaining,
+                          "<div class=\"empty-track\">No active brew on this Pinter</div>");
+    }
+    else
+    {
+        uint32_t start_day = activity_start_day;
+        ok = append_pinter_stage(cursor, remaining, "brew",
+                                 pinter_stage_tone(pinter.state, PinterTimelineStage::Brew),
+                                 brew_label, start_day, brew_days, window_start_day,
+                                 timeline_days);
+        start_day += brew_days;
+
+        if (crash_days > 0U)
+        {
+            if (pinter.cold_crash_start_day != 0U)
+            {
+                start_day = pinter.cold_crash_start_day;
+            }
+            ok = ok && append_pinter_stage(cursor, remaining, "crash",
+                                           pinter_stage_tone(pinter.state,
+                                                             PinterTimelineStage::Crash),
+                                           crash_label, start_day, crash_days,
+                                           window_start_day, timeline_days);
+            start_day += crash_days;
+        }
+
+        if (pinter.conditioning_start_day != 0U)
+        {
+            start_day = pinter.conditioning_start_day;
+        }
+        ok = ok && append_pinter_stage(cursor, remaining, "condition",
+                                       pinter_stage_tone(pinter.state,
+                                                         PinterTimelineStage::Condition),
+                                       condition_label, start_day, conditioning_days,
+                                       window_start_day,
+                                       timeline_days);
+        start_day += conditioning_days;
+
+        if (pinter.ready_day != 0U)
+        {
+            start_day = pinter.ready_day;
+        }
+        ok = ok && append_pinter_stage(cursor, remaining, "ready",
+                                       pinter_stage_tone(pinter.state,
+                                                         PinterTimelineStage::Ready),
+                                       ready_label, start_day, kReadyHoldDisplayDays,
+                                       window_start_day,
+                                       timeline_days);
+    }
+
+    ok = ok && append(cursor, remaining,
+                      "</div><div class=\"pinter-status\"><strong>%s</strong><span>%s</span>"
+                      "</div></section>",
+                      pinter_state_text(pinter.state), start_text);
+    return ok;
+}
+
+/// @brief Builds the Pinter activity timeline page.
+bool build_pinter_activity_page()
+{
+    constexpr unsigned kTimelineDays = 28U;
+    constexpr unsigned kDefaultPastContextDays = 7U;
+    const ConsoleState& state = console_controller::state();
+    char* cursor = g_response;
+    size_t remaining = sizeof(g_response);
+    const uint32_t today_day =
+        state.time_status.synced ? state.time_status.local_epoch_day : 0U;
+    uint32_t earliest_start_day = 0U;
+    bool real_start_seen = false;
+
+    unsigned brewing = 0U;
+    unsigned conditioning = 0U;
+    unsigned ready = 0U;
+    for (const PinterStatus& pinter : state.pinters)
+    {
+        const uint32_t start_day = pinter_activity_start_day(pinter, today_day);
+        if (start_day != 0U && (earliest_start_day == 0U || start_day < earliest_start_day))
+        {
+            earliest_start_day = start_day;
+        }
+        real_start_seen = real_start_seen || pinter.brew_start_day != 0U;
+
+        switch (pinter.state)
+        {
+        case PinterState::Brewing:
+        case PinterState::ColdCrash:
+            ++brewing;
+            break;
+        case PinterState::Conditioning:
+            ++conditioning;
+            break;
+        case PinterState::Ready:
+            ++ready;
+            break;
+        case PinterState::Idle:
+        case PinterState::Consumed:
+            break;
+        }
+    }
+
+    uint32_t window_start_day = today_day != 0U ? today_day : earliest_start_day;
+    if (earliest_start_day != 0U)
+    {
+        window_start_day =
+            today_day != 0U ? std::min(earliest_start_day, today_day) : earliest_start_day;
+    }
+    if (today_day != 0U && window_start_day + kTimelineDays < today_day)
+    {
+        window_start_day = today_day > kDefaultPastContextDays ? today_day - kDefaultPastContextDays
+                                                               : today_day;
+    }
+    if (window_start_day == 0U)
+    {
+        window_start_day = 1U;
+    }
+
+    char axis_0[16] = {};
+    char axis_7[16] = {};
+    char axis_14[16] = {};
+    char axis_21[16] = {};
+    char axis_28[16] = {};
+    char today_label[24] = {};
+    const bool has_real_dates = today_day != 0U || real_start_seen;
+    if (has_real_dates)
+    {
+        format_epoch_day_label(window_start_day, axis_0, sizeof(axis_0));
+        format_epoch_day_label(window_start_day + 7U, axis_7, sizeof(axis_7));
+        format_epoch_day_label(window_start_day + 14U, axis_14, sizeof(axis_14));
+        format_epoch_day_label(window_start_day + 21U, axis_21, sizeof(axis_21));
+        format_epoch_day_label(window_start_day + 28U, axis_28, sizeof(axis_28));
+    }
+    else
+    {
+        std::snprintf(axis_0, sizeof(axis_0), "0d");
+        std::snprintf(axis_7, sizeof(axis_7), "7d");
+        std::snprintf(axis_14, sizeof(axis_14), "14d");
+        std::snprintf(axis_21, sizeof(axis_21), "21d");
+        std::snprintf(axis_28, sizeof(axis_28), "28d");
+    }
+    if (today_day != 0U)
+    {
+        char today_date[16] = {};
+        format_epoch_day_label(today_day, today_date, sizeof(today_date));
+        std::snprintf(today_label, sizeof(today_label), "Today %s", today_date);
+    }
+    else
+    {
+        std::snprintf(today_label, sizeof(today_label), "Waiting for network time");
+    }
+
+    const bool today_visible =
+        today_day != 0U && today_day >= window_start_day &&
+        today_day <= window_start_day + static_cast<uint32_t>(kTimelineDays);
+    const double today_percent =
+        today_visible ? (static_cast<double>(today_day - window_start_day) * 100.0) /
+                            static_cast<double>(kTimelineDays)
+                      : 0.0;
+
+    bool ok = append(
+        cursor, remaining,
+        "%s"
+        "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
+        "initial-scale=1\"><link rel=\"icon\" href=\"data:,\"><title>Merlin CCU Pinter"
+        " Activity</title><style>"
+        ":root{color-scheme:dark;--bg:#07100d;--panel:#111e1a;--line:#2d493f;"
+        "--text:#eefbf3;--muted:#92b8aa;--accent:#b7ff57;--warn:#ffcf5a;"
+        "--blue:#77b7ff;--ice:#96e8ff;--amber:#ffd05a;--green:#77e8a3}"
+        "*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#10241d,#07100d "
+        "54%%,#040706);font:14px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
+        ".wrap{max-width:1120px;margin:0 auto;padding:28px 18px 44px}.top{display:flex;"
+        "justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}"
+        "h1{margin:0;font-size:30px;letter-spacing:.03em}.sub{color:var(--muted);max-width:680px}"
+        ".tools{display:flex;gap:10px;flex-wrap:wrap}.ghost{border:1px solid var(--line);"
+        "border-radius:999px;padding:9px 13px;color:var(--text);text-decoration:none;"
+        "background:#0b1512;font-weight:700;font-size:12px;text-transform:uppercase;"
+        "letter-spacing:.05em}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
+        "gap:10px;margin:0 0 16px}.tile{border:1px solid var(--line);border-radius:8px;"
+        "background:#0d1815;padding:12px}.tile strong{display:block;font-size:22px;color:"
+        "var(--accent)}.tile span{color:var(--muted);text-transform:uppercase;font-size:11px;"
+        "letter-spacing:.1em}.timeline{border:1px solid var(--line);border-radius:10px;"
+        "background:linear-gradient(180deg,var(--panel),#0a1310);overflow:hidden}.axis,"
+        ".pinter-row{display:grid;grid-template-columns:150px minmax(520px,1fr) 120px;gap:14px;"
+        "align-items:center}.axis{padding:14px 16px 6px;color:var(--muted);font-size:12px}"
+        ".scale{position:relative;height:30px;border-bottom:1px solid #355b4e}.scale span{"
+        "position:absolute;bottom:4px;transform:translateX(-50%%);white-space:nowrap}"
+        ".scale .today-label{top:0;bottom:auto;color:var(--accent);font-weight:800}.pinter-row{"
+        "padding:14px 16px;"
+        "border-top:1px solid #20392f}.pinter-name strong,.pinter-status strong{display:block;"
+        "font-size:15px}.pinter-name span,.pinter-status span{display:block;color:var(--muted);"
+        "font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.track{"
+        "position:relative;height:58px;border:1px solid #29473d;border-radius:8px;background:"
+        "repeating-linear-gradient(90deg,#13231e 0,#13231e 1px,transparent 1px,transparent "
+        "25%%),linear-gradient(180deg,#08120f,#0d1915)}.empty-track{position:absolute;inset:0;"
+        "display:flex;align-items:center;padding:0 14px;color:#6f8f83}.stage{position:absolute;"
+        "top:10px;height:36px;border-radius:6px;display:flex;align-items:center;min-width:34px;"
+        "z-index:1;"
+        "box-shadow:inset 0 1px 0 #ffffff40}.stage span{padding:0 8px;white-space:nowrap;"
+        "overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:800;color:#07100d}"
+        ".today-line{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);"
+        "box-shadow:0 0 12px #b7ff57aa;z-index:3}"
+        ".brew{background:var(--blue)}.crash{background:var(--ice)}.condition{background:"
+        "var(--amber)}.ready{background:var(--green)}.future{opacity:.32}.done{opacity:.72}"
+        ".current{opacity:1;outline:2px solid #eefbf380;box-shadow:0 0 18px #b7ff5740,"
+        "inset 0 1px 0 #ffffff55}.legend{display:flex;gap:10px;flex-wrap:wrap;color:"
+        "var(--muted);font-size:12px;margin-top:12px}.swatch{display:inline-block;width:12px;"
+        "height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}.note{margin-top:14px;"
+        "color:var(--muted);font-size:12px}@media(max-width:760px){.top{display:block}.summary{"
+        "grid-template-columns:repeat(2,minmax(0,1fr))}.timeline{overflow-x:auto}.axis,"
+        ".pinter-row{grid-template-columns:130px 620px 100px}}</style></head><body><main "
+        "class=\"wrap\"><div class=\"top\"><div><h1>Pinter Activity</h1><p class=\"sub\">"
+        "Each Pinter has its own row. Time runs left to right using real dates; today's date is "
+        "shown by the vertical green indicator.</p></div><nav class=\"tools\"><a class=\"ghost\" "
+        "href=\"/config\">Config</a><a class=\"ghost\" href=\"/preview\">Display preview</a></nav>"
+        "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>Waiting "
+        "packs</span></div><div class=\"tile\"><strong>%u</strong><span>Brewing</span></div><div "
+        "class=\"tile\"><strong>%u</strong><span>Conditioning</span></div><div class=\"tile\">"
+        "<strong>%u</strong><span>Ready</span></div></section><section class=\"timeline\">"
+        "<div class=\"axis\"><div></div><div class=\"scale\"><span style=\"left:0%%\">%s</span>"
+        "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
+        "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
+        kHttpOkHeader, static_cast<unsigned>(state.pinter_selected_brew_count), brewing,
+        conditioning, ready, axis_0, axis_7, axis_14, axis_21, axis_28);
+
+    if (ok && today_visible)
+    {
+        ok = append(cursor, remaining,
+                    "<span class=\"today-label\" style=\"left:%.2f%%\">%s</span>"
+                    "<div class=\"today-line\" style=\"left:%.2f%%\" aria-hidden=\"true\"></div>",
+                    today_percent, today_label, today_percent);
+    }
+    ok = ok && append(cursor, remaining, "</div><div>%s</div></div>", today_label);
+
+    for (const PinterStatus& pinter : state.pinters)
+    {
+        ok = ok && append_pinter_activity_row(cursor, remaining, pinter, window_start_day,
+                                              kTimelineDays, today_day);
+    }
+
+    ok = ok && append(
+                   cursor, remaining,
+                   "</section><div class=\"legend\"><span><i class=\"swatch brew\"></i>Brew</span>"
+                   "<span><i class=\"swatch crash\"></i>Cold crash</span><span><i class=\"swatch "
+                   "condition\"></i>Condition</span><span><i class=\"swatch ready\"></i>Ready</span>"
+                   "</div><p class=\"note\">Start, fridge, and ready dates are stamped from the "
+                   "CCU clock when those Pinter actions are pressed. Rows without a start date use "
+                   "today until the next real event is recorded.</p></main></body></html>");
+
+    if (!ok)
+    {
+        std::snprintf(g_response, sizeof(g_response),
+                      "HTTP/1.1 500 Internal Server Error\r\n"
+                      "Content-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n"
+                      "Pinter activity page exceeded response buffer.\n");
+        return false;
+    }
+
+    return true;
 }
 
 /// @brief Builds the live display preview page rendered in-browser from raw framebuffer data.
@@ -2152,6 +2647,12 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         send_response(session, pcb, g_response);
         return;
     }
+    else if (matches_get_path(request, "/pinter"))
+    {
+        (void)build_pinter_activity_page();
+        send_response(session, pcb, g_response);
+        return;
+    }
     else if (matches_get_path(request, "/api/framebuffer.pbm"))
     {
         const size_t response_len = build_framebuffer_pbm_response();
@@ -2245,12 +2746,32 @@ err_t on_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
     auto* session = static_cast<WebSession*>(arg);
     if (err != ERR_OK || p == nullptr || session == nullptr)
     {
+        bool aborted = false;
         if (p != nullptr)
         {
             pbuf_free(p);
         }
-        (void)tcp_close(pcb);
-        return ERR_OK;
+        if (pcb != nullptr)
+        {
+            tcp_arg(pcb, nullptr);
+            tcp_recv(pcb, nullptr);
+            tcp_sent(pcb, nullptr);
+            tcp_err(pcb, nullptr);
+            const err_t close_rc = tcp_close(pcb);
+            if (close_rc != ERR_OK)
+            {
+                tcp_abort(pcb);
+                aborted = true;
+            }
+        }
+        if (g_session.pcb == pcb)
+        {
+            // A browser refresh or dropped Wi-Fi packet can close the request
+            // before headers are complete. Release the singleton session so
+            // the next page load is not rejected as permanently busy.
+            g_session = {};
+        }
+        return aborted ? ERR_ABRT : ERR_OK;
     }
 
     const size_t copy_len = (session->request_len + p->tot_len < sizeof(session->request) - 1)

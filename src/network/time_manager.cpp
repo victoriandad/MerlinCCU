@@ -383,20 +383,31 @@ uint32_t current_local_epoch_seconds()
 bool update_time_text()
 {
     const char* previous_text = g_status.time_text.data();
+    const char* previous_date = g_status.date_text.data();
+    const uint32_t previous_epoch_day = g_status.local_epoch_day;
     const uint8_t previous_weekday = g_status.weekday_index;
     char next_text[sizeof(g_status.time_text)] = {};
+    char next_date[sizeof(g_status.date_text)] = {};
+    uint32_t next_epoch_day = 0U;
     uint8_t next_weekday = kInvalidWeekdayIndex;
 
     // The formatted string is rebuilt from the stored sync point each time so
     // the UI stays monotonic without needing a separate RTC subsystem.
     if (g_status.synced)
     {
-        const DateTimeParts local = unix_time_to_utc(current_local_epoch_seconds());
+        constexpr uint32_t kSecondsPerDay = 24U * 60U * 60U;
+        const uint32_t local_epoch_seconds = current_local_epoch_seconds();
+        const DateTimeParts local = unix_time_to_utc(local_epoch_seconds);
         std::snprintf(next_text, sizeof(next_text), "%02d:%02d", local.hour, local.minute);
+        std::snprintf(next_date, sizeof(next_date), "%04d-%02d-%02d", local.year, local.month,
+                      local.day);
+        next_epoch_day = local_epoch_seconds / kSecondsPerDay;
         next_weekday = static_cast<uint8_t>(weekday_from_ymd(local.year, local.month, local.day));
     }
 
     if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0 &&
+        std::strncmp(previous_date, next_date, sizeof(g_status.date_text)) == 0 &&
+        previous_epoch_day == next_epoch_day &&
         previous_weekday == next_weekday)
     {
         return false;
@@ -404,6 +415,9 @@ bool update_time_text()
 
     g_status.time_text.fill('\0');
     std::snprintf(g_status.time_text.data(), g_status.time_text.size(), "%s", next_text);
+    g_status.date_text.fill('\0');
+    std::snprintf(g_status.date_text.data(), g_status.date_text.size(), "%s", next_date);
+    g_status.local_epoch_day = next_epoch_day;
     g_status.weekday_index = next_weekday;
     return true;
 }
@@ -431,6 +445,8 @@ void init()
     g_status = {};
     g_status.synced = false;
     g_status.time_text.fill('\0');
+    g_status.date_text.fill('\0');
+    g_status.local_epoch_day = 0U;
     g_status.weekday_index = kInvalidWeekdayIndex;
     g_last_ntp_epoch_utc = 0;
     g_last_ntp_sync_time = nil_time;

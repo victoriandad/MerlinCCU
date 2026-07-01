@@ -60,6 +60,19 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status);
 /// truncate any content that would exceed two lines on screen.
 bool set_softkey_label(SoftKeyId key, const char* label);
 
+/// @brief Scheduling data for one selectable Pinter brew pack.
+struct PinterBrewTiming
+{
+    const char* name;
+    uint8_t recommended_brewing_days;
+    uint8_t recommended_conditioning_days;
+    uint8_t minimum_brewing_days;
+    uint8_t minimum_conditioning_days;
+};
+
+/// @brief Returns timing metadata for a Pinter brew-pack catalogue index.
+const PinterBrewTiming& pinter_brew_timing(uint8_t brew_index);
+
 /// @brief Applies one button event to the logical front-panel state.
 /// @details For now this is a pure software state machine. It does not require
 /// the keypad hardware to exist yet.

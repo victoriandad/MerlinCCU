@@ -39,6 +39,29 @@ quickly without relying only on photographs of the physical panel.
 - Sunrise and sunset are both present when provider data is available.
 - Source footer is visible and readable.
 
+## Pinter Page
+
+- Home `L4` shows the Pinter summary as `[nW, nB, nC, nR]` and opens the
+  Pinter scheduler page. `W` is waiting brew packs.
+- `L1` to `L4` select `P1`, `P3 A`, `P3 B`, and `P3 C`; the selected Pinter is
+  inverted on the softkey.
+- `L5=BREW` cycles the Pinter brew-pack catalogue and shows recommended/minimum
+  total days before the beer name, for example `12/7d Public House`.
+- `R1` applies the normal next event: start, move to fridge, ready, drink, or
+  clean, depending on the selected Pinter state.
+- `R2=PACKS` opens the Pinter Packs page and shows the current pack count.
+- Pinter centre data is intentionally blank; status is carried by the softkey
+  labels.
+- Starting is blocked when there are no packs or no brew dock capacity.
+- Moving to the fridge is blocked once two Pinters are conditioning or ready.
+- `R3=RESET` clears the selected Pinter back to idle after a mistaken event.
+- Pinter Packs `L1=ADD PACK` increments brew-pack inventory; `R1=DROP PACK`
+  decrements it, and `R4=PINTER` returns to the main Pinter page.
+- `R5=HOME` returns from Pinter pages to Home.
+- `http://merlinccu/pinter` shows one row per Pinter, real date ticks, and a
+  vertical today marker. Starting, moving to fridge, and marking ready stamp
+  event dates from the CCU clock.
+
 ## Shares Pages
 
 - Home `L2` opens the shares watchlist.
