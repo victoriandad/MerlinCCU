@@ -511,6 +511,7 @@ enum class SoftKeyRoute : uint8_t
     SelectWeatherHomeAssistant,
     SelectWeatherOpenMeteo,
     CycleWeatherPeriod,
+    GoSelectedShareDetail,
     GoStatusOverview,
     GoStatusConnectivity,
     GoStatusResources,

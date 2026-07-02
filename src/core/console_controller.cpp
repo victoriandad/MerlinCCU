@@ -2880,6 +2880,12 @@ bool select_share_slot(uint8_t slot)
     return true;
 }
 
+/// @brief Opens the currently selected share detail page from the watchlist.
+bool open_selected_share_detail()
+{
+    return select_share_slot(g_console_state.selected_share_index);
+}
+
 /// @brief Updates the selected time zone by moving relative to the current choice.
 bool select_relative_time_zone(int offset)
 {
@@ -3315,7 +3321,8 @@ void update_softkeys_from_state()
                 true,
             };
         }
-        softkeys[softkey_index(SoftKeyId::Right1)] = {"ADD", SoftKeyRoute::None, false};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            "HISTORY", SoftKeyRoute::GoSelectedShareDetail, g_console_state.share_count > 0U};
         softkeys[softkey_index(SoftKeyId::Right2)] = {"REMOVE", SoftKeyRoute::None, false};
         break;
     case MenuPage::ShareDetail:
@@ -4215,6 +4222,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_share_slot(0U);
     case SoftKeyRoute::CycleSharePeriod:
         return cycle_share_period();
+    case SoftKeyRoute::GoSelectedShareDetail:
+        return open_selected_share_detail();
     case SoftKeyRoute::CycleCalendarOwner:
         return cycle_calendar_owner();
     case SoftKeyRoute::ResetCalendarFilters:
@@ -4921,6 +4930,10 @@ bool handle_button_event(const ButtonEvent& event)
                  g_console_state.active_page == MenuPage::PinterStartBrew)
         {
             changed = change_pinter_list_page(direction);
+        }
+        else if (g_console_state.active_page == MenuPage::Shares && direction > 0)
+        {
+            changed = open_selected_share_detail();
         }
 
         if (!changed)
