@@ -37,7 +37,7 @@ constexpr size_t kResponseBufferSize = 16384U;
 constexpr size_t kMaxParsedHistoryValues = 256U;
 constexpr const char* kWatchedSymbol = "BA.L";
 /// @brief Temporary safety switch while stabilising the live share fetch path.
-constexpr bool kEnableLiveShareFetch = true;
+constexpr bool kEnableLiveShareFetch = false;
 
 ShareMarketStatus g_status = {};
 ip_addr_t g_resolved_ip = {};
