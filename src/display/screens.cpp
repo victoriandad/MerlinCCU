@@ -14,6 +14,12 @@
 #include "pico/error.h"
 #include "screen_banners.h"
 
+#if __has_include("calendar_identities.h")
+#include "calendar_identities.h"
+#else
+#include "calendar_identities.example.h"
+#endif
+
 #if __has_include("weather_display_config.h")
 #include "weather_display_config.h"
 #else
@@ -1656,13 +1662,21 @@ const char* calendar_owner_text(CalendarOwner owner)
     case CalendarOwner::Combined:
         return "Combined";
     case CalendarOwner::Owner1:
-        return "Owner 1";
+        return kLocalCalendarIdentities[0][0] != '\0' ? kLocalCalendarIdentities[0] : "Owner 1";
     case CalendarOwner::Owner2:
-        return "Owner 2";
+        return kLocalCalendarIdentities[1][0] != '\0' ? kLocalCalendarIdentities[1] : "Owner 2";
     case CalendarOwner::Owner3:
-        return "Owner 3";
+        return kLocalCalendarIdentities[2][0] != '\0' ? kLocalCalendarIdentities[2] : "Owner 3";
     case CalendarOwner::Owner4:
-        return "Owner 4";
+        return kLocalCalendarIdentities[3][0] != '\0' ? kLocalCalendarIdentities[3] : "Owner 4";
+    case CalendarOwner::Owner5:
+        return kLocalCalendarIdentities[4][0] != '\0' ? kLocalCalendarIdentities[4] : "Owner 5";
+    case CalendarOwner::Owner6:
+        return kLocalCalendarIdentities[5][0] != '\0' ? kLocalCalendarIdentities[5] : "Owner 6";
+    case CalendarOwner::Owner7:
+        return kLocalCalendarIdentities[6][0] != '\0' ? kLocalCalendarIdentities[6] : "Owner 7";
+    case CalendarOwner::Owner8:
+        return kLocalCalendarIdentities[7][0] != '\0' ? kLocalCalendarIdentities[7] : "Owner 8";
     }
 
     return "Combined";

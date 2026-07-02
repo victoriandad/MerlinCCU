@@ -10,6 +10,12 @@
 #include "debug_logging.h"
 #include "pico/error.h"
 
+#if __has_include("calendar_identities.h")
+#include "calendar_identities.h"
+#else
+#include "calendar_identities.example.h"
+#endif
+
 namespace console_controller
 {
 
@@ -221,13 +227,43 @@ constexpr std::array<SoftKeyRoute, kPinterBrewListVisibleCount> kPinterBrewListR
     SoftKeyRoute::SelectPinterListItem5, SoftKeyRoute::SelectPinterListItem6,
     SoftKeyRoute::SelectPinterListItem7, SoftKeyRoute::SelectPinterListItem8};
 
-constexpr std::array<CalendarOwnerDefinition, 5> kCalendarOwners = {{
-    {CalendarOwner::Combined, "Combined"},
-    {CalendarOwner::Owner1, "Owner 1"},
-    {CalendarOwner::Owner2, "Owner 2"},
-    {CalendarOwner::Owner3, "Owner 3"},
-    {CalendarOwner::Owner4, "Owner 4"},
-}};
+const char* calendar_identity_label(CalendarOwner owner)
+{
+    if (owner == CalendarOwner::Combined)
+    {
+        return "Combined";
+    }
+
+    const size_t index = static_cast<size_t>(owner) - 1U;
+    if (index < kLocalCalendarIdentities.size() && kLocalCalendarIdentities[index][0] != '\0')
+    {
+        return kLocalCalendarIdentities[index];
+    }
+
+    switch (owner)
+    {
+    case CalendarOwner::Owner1:
+        return "Owner 1";
+    case CalendarOwner::Owner2:
+        return "Owner 2";
+    case CalendarOwner::Owner3:
+        return "Owner 3";
+    case CalendarOwner::Owner4:
+        return "Owner 4";
+    case CalendarOwner::Owner5:
+        return "Owner 5";
+    case CalendarOwner::Owner6:
+        return "Owner 6";
+    case CalendarOwner::Owner7:
+        return "Owner 7";
+    case CalendarOwner::Owner8:
+        return "Owner 8";
+    case CalendarOwner::Combined:
+        break;
+    }
+
+    return "Owner";
+}
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
     {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
@@ -871,15 +907,22 @@ uint32_t current_pinter_event_day()
 /// @brief Returns the static metadata for one selectable calendar owner filter.
 const CalendarOwnerDefinition& calendar_owner_definition(CalendarOwner owner)
 {
-    for (const CalendarOwnerDefinition& definition : kCalendarOwners)
+    static CalendarOwnerDefinition definitions[] = {
+        {CalendarOwner::Combined, "Combined"}, {CalendarOwner::Owner1, "Owner 1"},
+        {CalendarOwner::Owner2, "Owner 2"},     {CalendarOwner::Owner3, "Owner 3"},
+        {CalendarOwner::Owner4, "Owner 4"},     {CalendarOwner::Owner5, "Owner 5"},
+        {CalendarOwner::Owner6, "Owner 6"},     {CalendarOwner::Owner7, "Owner 7"},
+        {CalendarOwner::Owner8, "Owner 8"},
+    };
+
+    const size_t index = static_cast<size_t>(owner);
+    if (index < (sizeof(definitions) / sizeof(definitions[0])))
     {
-        if (definition.owner == owner)
-        {
-            return definition;
-        }
+        definitions[index].selection_label = calendar_identity_label(owner);
+        return definitions[index];
     }
 
-    return kCalendarOwners[0];
+    return definitions[0];
 }
 
 /// @brief Returns the ordered array index for the currently selected time zone.
@@ -2679,6 +2722,14 @@ CalendarOwner next_calendar_owner(CalendarOwner owner)
     case CalendarOwner::Owner3:
         return CalendarOwner::Owner4;
     case CalendarOwner::Owner4:
+        return CalendarOwner::Owner5;
+    case CalendarOwner::Owner5:
+        return CalendarOwner::Owner6;
+    case CalendarOwner::Owner6:
+        return CalendarOwner::Owner7;
+    case CalendarOwner::Owner7:
+        return CalendarOwner::Owner8;
+    case CalendarOwner::Owner8:
         return CalendarOwner::Combined;
     }
 

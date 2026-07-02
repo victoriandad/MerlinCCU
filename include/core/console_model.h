@@ -404,6 +404,10 @@ enum class CalendarOwner : uint8_t
     Owner2,
     Owner3,
     Owner4,
+    Owner5,
+    Owner6,
+    Owner7,
+    Owner8,
 };
 
 /// @brief Selectable screen-saver modes exposed by the current UI.

@@ -17,6 +17,7 @@ build*/
 /config/weather_display_config.h
 /config/keypad_matrix_config.h
 /config/environment_sensor_config.h
+/config/calendar_identities.h
 
 # Python tooling cache
 __pycache__/
