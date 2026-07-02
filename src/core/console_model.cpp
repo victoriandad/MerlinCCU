@@ -284,49 +284,49 @@ ConsoleState make_default_console_state()
         return false;
     };
 
-    add_calendar_event(CalendarOwner::Sean, 0, "08:30", "09:00", "Work standup", "Teams",
+    add_calendar_event(CalendarOwner::Owner1, 0, "08:30", "09:00", "Work standup", "Teams",
                        "10 min popup", "Project team", "Daily status call.");
-    add_calendar_event(CalendarOwner::Luigina, 0, "09:15", "09:45", "School admin", "School office",
+    add_calendar_event(CalendarOwner::Owner2, 0, "09:15", "09:45", "School admin", "School office",
                        "30 min email", "School office", "Forms and term dates.");
-    add_calendar_event(CalendarOwner::Loris, 0, "15:40", "17:00", "Football", "Sports ground",
+    add_calendar_event(CalendarOwner::Owner3, 0, "15:40", "17:00", "Football", "Sports ground",
                        "1 hour popup", "Coach, team", "Training kit needed.");
-    add_calendar_event(CalendarOwner::Luca, 0, "16:30", "17:15", "Swimming", "Leisure centre",
+    add_calendar_event(CalendarOwner::Owner4, 0, "16:30", "17:15", "Swimming", "Leisure centre",
                        "45 min popup", "Instructor", "Take towel and goggles.");
-    add_calendar_event(CalendarOwner::Sean, 0, "19:00", "20:00", "Dinner prep", "Home", "None",
+    add_calendar_event(CalendarOwner::Owner1, 0, "19:00", "20:00", "Dinner prep", "Home", "None",
                        "Family", "Start dinner before clubs end.");
-    add_calendar_event(CalendarOwner::Luigina, 1, "10:00", "10:30", "Appointment", "Clinic",
+    add_calendar_event(CalendarOwner::Owner2, 1, "10:00", "10:30", "Appointment", "Clinic",
                        "1 day email", "Clinic", "Check appointment notes.");
-    add_calendar_event(CalendarOwner::Loris, 1, "13:30", "15:30", "School trip", "Museum",
+    add_calendar_event(CalendarOwner::Owner3, 1, "13:30", "15:30", "School trip", "Museum",
                        "1 day popup", "Class", "Packed lunch required.");
-    add_calendar_event(CalendarOwner::Luca, 1, "17:15", "18:30", "Play date", "Friend's house",
+    add_calendar_event(CalendarOwner::Owner4, 1, "17:15", "18:30", "Play date", "Friend's house",
                        "30 min popup", "Parent", "Pickup confirmed by text.");
-    add_calendar_event(CalendarOwner::Sean, 2, "08:45", "17:00", "Office", "London", "None", "Work",
+    add_calendar_event(CalendarOwner::Owner1, 2, "08:45", "17:00", "Office", "London", "None", "Work",
                        "Office day.");
-    add_calendar_event(CalendarOwner::Luigina, 2, "18:00", "19:00", "Pilates", "Studio",
+    add_calendar_event(CalendarOwner::Owner2, 2, "18:00", "19:00", "Pilates", "Studio",
                        "1 hour popup", "Class", "Bring mat.");
-    add_calendar_event(CalendarOwner::Loris, 3, "11:00", "11:30", "Dentist", "Dental surgery",
+    add_calendar_event(CalendarOwner::Owner3, 3, "11:00", "11:30", "Dentist", "Dental surgery",
                        "1 day email", "Dentist", "Routine check-up.");
-    add_calendar_event(CalendarOwner::Luca, 3, "14:00", "16:00", "Party", "Soft play",
+    add_calendar_event(CalendarOwner::Owner4, 3, "14:00", "16:00", "Party", "Soft play",
                        "2 hours popup", "Class friends", "Birthday party.");
-    add_calendar_event(CalendarOwner::Sean, -1, "12:30", "13:00", "Lunch call", "Office",
+    add_calendar_event(CalendarOwner::Owner1, -1, "12:30", "13:00", "Lunch call", "Office",
                        "10 min popup", "Supplier", "Review quote.");
-    add_calendar_event(CalendarOwner::Luigina, -1, "18:30", "19:30", "Parents group", "School hall",
+    add_calendar_event(CalendarOwner::Owner2, -1, "18:30", "19:30", "Parents group", "School hall",
                        "30 min popup", "Parents", "Planning meeting.");
-    add_calendar_event(CalendarOwner::Sean, 4, "09:30", "10:15", "Service slot", "Garage",
+    add_calendar_event(CalendarOwner::Owner1, 4, "09:30", "10:15", "Service slot", "Garage",
                        "1 day email", "Garage", "Car service booking.");
-    add_calendar_event(CalendarOwner::Loris, 5, "16:00", "17:30", "Match", "Away pitch",
+    add_calendar_event(CalendarOwner::Owner3, 5, "16:00", "17:30", "Match", "Away pitch",
                        "2 hours popup", "Coach, team", "Bring boots.");
-    add_calendar_event(CalendarOwner::Luca, 6, "10:30", "12:00", "Library", "Town library",
+    add_calendar_event(CalendarOwner::Owner4, 6, "10:30", "12:00", "Library", "Town library",
                        "1 hour popup", "Family", "Return books.");
-    add_calendar_event(CalendarOwner::Luigina, 7, "15:00", "16:00", "Coffee", "High street",
+    add_calendar_event(CalendarOwner::Owner2, 7, "15:00", "16:00", "Coffee", "High street",
                        "30 min popup", "Friend", "Catch-up.");
-    add_calendar_event(CalendarOwner::Sean, -14, "08:00", "08:30", "Old rota", "Home", "None",
+    add_calendar_event(CalendarOwner::Owner1, -14, "08:00", "08:30", "Old rota", "Home", "None",
                        "Work", "Historic sample event.");
-    add_calendar_event(CalendarOwner::Luigina, -7, "11:00", "11:45", "School call", "Phone",
+    add_calendar_event(CalendarOwner::Owner2, -7, "11:00", "11:45", "School call", "Phone",
                        "15 min popup", "School office", "Historic weekly sample.");
-    add_calendar_event(CalendarOwner::Sean, 14, "09:00", "09:30", "Budget check", "Home office",
+    add_calendar_event(CalendarOwner::Owner1, 14, "09:00", "09:30", "Budget check", "Home office",
                        "1 day email", "Accounts", "Two-week sample event.");
-    add_calendar_event(CalendarOwner::Luca, 13, "16:00", "17:00", "Club signup", "Community hall",
+    add_calendar_event(CalendarOwner::Owner4, 13, "16:00", "17:00", "Club signup", "Community hall",
                        "1 day popup", "Club leader", "Next fortnight sample.");
 
     // Fill every empty day in the navigation test window so arrow-key day
@@ -340,10 +340,10 @@ ConsoleState make_default_console_state()
         const char* attendee;
     };
     constexpr SampleOwner kSampleOwners[] = {
-        {CalendarOwner::Sean, "Sean sample", "Sean"},
-        {CalendarOwner::Luigina, "Luigina sample", "Luigina"},
-        {CalendarOwner::Loris, "Loris sample", "Loris"},
-        {CalendarOwner::Luca, "Luca sample", "Luca"},
+        {CalendarOwner::Owner1, "Owner 1 sample", "Owner 1"},
+        {CalendarOwner::Owner2, "Owner 2 sample", "Owner 2"},
+        {CalendarOwner::Owner3, "Owner 3 sample", "Owner 3"},
+        {CalendarOwner::Owner4, "Owner 4 sample", "Owner 4"},
     };
     for (int day = kCalendarMinDayOffset; day <= kCalendarMaxDayOffset; ++day)
     {

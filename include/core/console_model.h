@@ -400,10 +400,10 @@ enum class SharePeriod : uint8_t
 enum class CalendarOwner : uint8_t
 {
     Combined = 0,
-    Sean,
-    Luigina,
-    Loris,
-    Luca,
+    Owner1,
+    Owner2,
+    Owner3,
+    Owner4,
 };
 
 /// @brief Selectable screen-saver modes exposed by the current UI.

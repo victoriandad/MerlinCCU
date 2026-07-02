@@ -1655,14 +1655,14 @@ const char* calendar_owner_text(CalendarOwner owner)
     {
     case CalendarOwner::Combined:
         return "Combined";
-    case CalendarOwner::Sean:
-        return "Sean";
-    case CalendarOwner::Luigina:
-        return "Luigina";
-    case CalendarOwner::Loris:
-        return "Loris";
-    case CalendarOwner::Luca:
-        return "Luca";
+    case CalendarOwner::Owner1:
+        return "Owner 1";
+    case CalendarOwner::Owner2:
+        return "Owner 2";
+    case CalendarOwner::Owner3:
+        return "Owner 3";
+    case CalendarOwner::Owner4:
+        return "Owner 4";
     }
 
     return "Combined";

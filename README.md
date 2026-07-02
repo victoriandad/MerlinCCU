@@ -33,7 +33,7 @@ Working now:
 - Hourly, Next 24 Hours, and Next 7 Days weather period views.
 - MQTT discovery/state publishing for Home Assistant diagnostic sensors.
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
-- Calendar UI scaffold with Combined/Sean/Luigina/Loris/Luca filtering, relative-day footer, and softkey event-detail pages.
+- Calendar UI scaffold with owner filtering, relative-day footer, and softkey event-detail pages.
 - Share page and share detail graph for BAE Systems using Yahoo Finance chart data.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
 - Provisional keypad matrix monitor/decoder for all confirmed front-panel keys.

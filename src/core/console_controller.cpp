@@ -223,10 +223,10 @@ constexpr std::array<SoftKeyRoute, kPinterBrewListVisibleCount> kPinterBrewListR
 
 constexpr std::array<CalendarOwnerDefinition, 5> kCalendarOwners = {{
     {CalendarOwner::Combined, "Combined"},
-    {CalendarOwner::Sean, "Sean"},
-    {CalendarOwner::Luigina, "Luigina"},
-    {CalendarOwner::Loris, "Loris"},
-    {CalendarOwner::Luca, "Luca"},
+    {CalendarOwner::Owner1, "Owner 1"},
+    {CalendarOwner::Owner2, "Owner 2"},
+    {CalendarOwner::Owner3, "Owner 3"},
+    {CalendarOwner::Owner4, "Owner 4"},
 }};
 
 constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
@@ -2671,14 +2671,14 @@ CalendarOwner next_calendar_owner(CalendarOwner owner)
     switch (owner)
     {
     case CalendarOwner::Combined:
-        return CalendarOwner::Sean;
-    case CalendarOwner::Sean:
-        return CalendarOwner::Luigina;
-    case CalendarOwner::Luigina:
-        return CalendarOwner::Loris;
-    case CalendarOwner::Loris:
-        return CalendarOwner::Luca;
-    case CalendarOwner::Luca:
+        return CalendarOwner::Owner1;
+    case CalendarOwner::Owner1:
+        return CalendarOwner::Owner2;
+    case CalendarOwner::Owner2:
+        return CalendarOwner::Owner3;
+    case CalendarOwner::Owner3:
+        return CalendarOwner::Owner4;
+    case CalendarOwner::Owner4:
         return CalendarOwner::Combined;
     }
 
