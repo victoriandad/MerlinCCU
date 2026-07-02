@@ -3325,6 +3325,8 @@ void update_softkeys_from_state()
             SoftKeyRoute::CycleSharePeriod,
             true,
         };
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"SHARES", SoftKeyRoute::GoShares, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
         break;
     case MenuPage::Status:
         softkeys[softkey_index(SoftKeyId::Left1)] = {"OVERVIEW", SoftKeyRoute::GoStatusOverview, true};

@@ -2418,6 +2418,20 @@ void format_share_graph_value(uint16_t value, char* output, size_t output_size)
     std::snprintf(output, output_size, "%u", static_cast<unsigned>(value));
 }
 
+/// @brief Returns true when a share row has enough history to draw a useful graph.
+bool share_history_has_values(const ShareWatchEntry& share)
+{
+    for (uint16_t value : share.history_points)
+    {
+        if (value > 0U)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// @brief Draws one full-width share history graph in the centre detail region.
 void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
 {
@@ -2425,10 +2439,16 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     constexpr int kGraphY = 44;
     const int kGraphWidth = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 120;
-    constexpr int kPointCount = 24;
     constexpr int kGraphMinLabelGapY = 8;
     constexpr int kGraphPlotLeftInset = 1;
     constexpr int kGraphPlotRightInset = 1;
+    const int point_count = static_cast<int>(share.history_points.size());
+    if (point_count < 2 || !share_history_has_values(share))
+    {
+        draw_centered_text(fb, kUiWidth / 2, 106, "NO PRICE HISTORY", true,
+                           fonts::FontFace::Font8x12, 1);
+        return;
+    }
 
     uint16_t min_value = share.history_points[0];
     uint16_t max_value = share.history_points[0];
@@ -2442,12 +2462,12 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
     int previous_x = kGraphX + kGraphPlotLeftInset;
     int previous_y = kGraphY + kGraphHeight - 1;
-    for (int i = 0; i < kPointCount; ++i)
+    for (int i = 0; i < point_count; ++i)
     {
         const uint16_t value = share.history_points[static_cast<size_t>(i)];
         const int x = kGraphX + kGraphPlotLeftInset +
                       ((kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1) * i) /
-                          (kPointCount - 1);
+                          (point_count - 1);
         const int normalised =
             ((static_cast<int>(value - min_value)) * (kGraphHeight - 1)) / static_cast<int>(range);
         const int y = kGraphY + kGraphHeight - 1 - normalised;
