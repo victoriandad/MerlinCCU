@@ -2340,6 +2340,12 @@ MenuPage parent_page(MenuPage page)
         return MenuPage::PinterToBeBrewed;
     case MenuPage::PinterStartTiming:
         return MenuPage::PinterStartBrew;
+    case MenuPage::StatusOverview:
+    case MenuPage::StatusConnectivity:
+    case MenuPage::StatusResources:
+    case MenuPage::StatusSensors:
+    case MenuPage::StatusIntegrations:
+        return MenuPage::Status;
     case MenuPage::DeviceSettings:
     case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
@@ -3321,7 +3327,25 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::Status:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {"OVERVIEW", SoftKeyRoute::GoStatusOverview, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"CONNECT", SoftKeyRoute::GoStatusConnectivity, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESOURCES", SoftKeyRoute::GoStatusResources, true};
+        softkeys[softkey_index(SoftKeyId::Left4)] = {"SENSORS", SoftKeyRoute::GoStatusSensors, true};
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            "INTEGR.", SoftKeyRoute::GoStatusIntegrations, true};
         softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
+        break;
+    case MenuPage::StatusOverview:
+    case MenuPage::StatusConnectivity:
+    case MenuPage::StatusResources:
+    case MenuPage::StatusSensors:
+    case MenuPage::StatusIntegrations:
+        if (g_console_state.active_page == MenuPage::StatusSensors)
+        {
+            softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
+        }
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"STATUS", SoftKeyRoute::GoStatus, true};
         break;
     case MenuPage::LocalConditions:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
@@ -4065,6 +4089,26 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoStatus:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Status;
+        return true;
+    case SoftKeyRoute::GoStatusOverview:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::StatusOverview;
+        return true;
+    case SoftKeyRoute::GoStatusConnectivity:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::StatusConnectivity;
+        return true;
+    case SoftKeyRoute::GoStatusResources:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::StatusResources;
+        return true;
+    case SoftKeyRoute::GoStatusSensors:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::StatusSensors;
+        return true;
+    case SoftKeyRoute::GoStatusIntegrations:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::StatusIntegrations;
         return true;
     case SoftKeyRoute::GoLocalConditions:
         stop_screen_saver_timeout_editing();
