@@ -402,6 +402,15 @@ void update_ip_address()
     cyw43_arch_lwip_end();
 }
 
+/// @brief Prints the current station IP address to the serial console.
+/// @details Headless setups rely on the console log to discover the web UI
+/// address when no display is attached.
+void log_ip_address()
+{
+    std::printf("WiFi IP address: %s\n", g_status.ip_address[0] ? g_status.ip_address.data()
+                                                                : "(none)");
+}
+
 /// @brief Returns whether the default netif currently has a usable IPv4 address.
 bool has_ipv4_address()
 {
@@ -786,6 +795,7 @@ bool attempt_connect()
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;
         start_sntp_if_needed();
+        log_ip_address();
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
         reset_internet_probe_failures();
@@ -801,6 +811,7 @@ bool attempt_connect()
         {
             g_status.state = WifiConnectionState::Connected;
             start_sntp_if_needed();
+            log_ip_address();
             g_next_retry = nil_time;
             g_wait_for_ip_deadline = nil_time;
             reset_internet_probe_failures();
@@ -976,6 +987,7 @@ bool update()
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;
         start_sntp_if_needed();
+        log_ip_address();
         g_next_retry = nil_time;
         g_wait_for_ip_deadline = nil_time;
         reset_internet_probe_failures();

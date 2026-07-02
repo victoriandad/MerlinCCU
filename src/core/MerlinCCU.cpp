@@ -199,10 +199,12 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 /// - keep updating the active mode in the main loop
 int main()
 {
+    constexpr uint32_t kBootConsoleDelayMs = 10000U;
+
     // Bring up stdio first so any early hardware or config failures are visible
     // on the debug console before the display path is running.
     stdio_init_all();
-    sleep_ms(2000);
+    sleep_ms(kBootConsoleDelayMs);
 
     std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d hblank=(%d,%d)\n", kPanel.clkdiv,
                 kPanel.native_row_offset, kPanel.h_pre_blank, kPanel.h_post_blank);
