@@ -2435,13 +2435,15 @@ bool share_history_has_values(const ShareWatchEntry& share)
 /// @brief Draws one full-width share history graph in the centre detail region.
 void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
 {
-    constexpr int kGraphX = 12;
+    constexpr int kGraphX = 42;
     constexpr int kGraphY = 44;
     const int kGraphWidth = kUiWidth - (kGraphX * 2);
-    constexpr int kGraphHeight = 120;
-    constexpr int kGraphMinLabelGapY = 8;
+    constexpr int kGraphHeight = 94;
+    constexpr int kGraphMinLabelGapY = 6;
     constexpr int kGraphPlotLeftInset = 1;
     constexpr int kGraphPlotRightInset = 1;
+    constexpr int kGraphPlotTopInset = 1;
+    constexpr int kGraphPlotBottomInset = 1;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
@@ -2460,23 +2462,19 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
 
     const uint16_t range =
         (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
-    int previous_x = kGraphX + kGraphPlotLeftInset;
-    int previous_y = kGraphY + kGraphHeight - 1;
+    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
+    const int plot_height = kGraphHeight - kGraphPlotTopInset - kGraphPlotBottomInset - 1;
+    const int plot_width = kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1;
+    const int base_y = kGraphY + kGraphHeight - kGraphPlotBottomInset - 1;
     for (int i = 0; i < point_count; ++i)
     {
         const uint16_t value = share.history_points[static_cast<size_t>(i)];
         const int x = kGraphX + kGraphPlotLeftInset +
-                      ((kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1) * i) /
-                          (point_count - 1);
+                      (plot_width * i) / (point_count - 1);
         const int normalised =
-            ((static_cast<int>(value - min_value)) * (kGraphHeight - 1)) / static_cast<int>(range);
-        const int y = kGraphY + kGraphHeight - 1 - normalised;
-        if (i > 0)
-        {
-            framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
-        }
-        previous_x = x;
-        previous_y = y;
+            ((static_cast<int>(value - min_value)) * plot_height) / static_cast<int>(range);
+        const int y = base_y - normalised;
+        framebuffer::draw_vline(fb, x, y, base_y, true);
     }
 
     const char* period_label = "TODAY";
@@ -2527,17 +2525,15 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
     }
 
     const ShareWatchEntry& share = console_state.watched_shares[console_state.selected_share_index];
+    draw_share_history_graph(fb, share, console_state.share_period);
     const DetailRow rows[] = {
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
-        {"EXCHANGE", share.exchange.data()},
-        {"CURRENCY", share.currency.data()},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},
-        {"HISTORY", "Disabled"},
     };
 
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 42, 16);
+    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 164, 14);
 }
 
 /// @brief Draws the local environment summary page.
