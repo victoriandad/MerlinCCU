@@ -388,13 +388,12 @@ ConsoleState make_default_console_state()
     std::snprintf(bae.symbol.data(), bae.symbol.size(), "BA.L");
     std::snprintf(bae.exchange.data(), bae.exchange.size(), "LSE");
     std::snprintf(bae.currency.data(), bae.currency.size(), "GBX");
-    // Seed values keep the page useful before the live Yahoo chart fetcher is
-    // wired in. Runtime refresh should overwrite these fields in-place.
-    std::snprintf(bae.price_text.data(), bae.price_text.size(), "1,348.5");
-    std::snprintf(bae.change_text.data(), bae.change_text.size(), "+0.8%%");
-    bae.history_points = {1320U, 1324U, 1318U, 1328U, 1336U, 1332U, 1340U, 1346U,
-                          1341U, 1348U, 1352U, 1349U, 1355U, 1351U, 1344U, 1348U,
-                          1356U, 1360U, 1354U, 1358U, 1364U, 1362U, 1368U, 1372U};
+    // Seed values keep the page useful while the live Yahoo chart fetcher is disabled.
+    std::snprintf(bae.price_text.data(), bae.price_text.size(), "Demo");
+    std::snprintf(bae.change_text.data(), bae.change_text.size(), "No live");
+    bae.history_points = {1362U, 1364U, 1361U, 1365U, 1363U, 1366U, 1362U, 1367U,
+                          1365U, 1368U, 1364U, 1369U, 1367U, 1370U, 1366U, 1371U,
+                          1368U, 1372U, 1369U, 1373U, 1370U, 1374U, 1371U, 1372U};
     // Lamps and softkeys are initialized explicitly so the controller can treat
     // the whole state object as immediately usable after construction.
     state.lamps.fill(LampMode::Off);

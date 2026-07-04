@@ -2550,6 +2550,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
         {"PERIOD", share_period_text(console_state.share_period)},
+        {"DATA", console_state.share_data_valid ? "Live" : "Demo"},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},
     };

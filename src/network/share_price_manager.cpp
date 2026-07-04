@@ -78,31 +78,38 @@ void seed_placeholder_history(ShareWatchEntry& share, SharePeriod period)
     switch (period)
     {
     case SharePeriod::Today:
-        share.history_points = {1320U, 1324U, 1318U, 1328U, 1336U, 1332U, 1340U, 1346U,
-                                1341U, 1348U, 1352U, 1349U, 1355U, 1351U, 1344U, 1348U,
-                                1356U, 1360U, 1354U, 1358U, 1364U, 1362U, 1368U, 1372U};
+        share.history_points = {1362U, 1364U, 1361U, 1365U, 1363U, 1366U, 1362U, 1367U,
+                                1365U, 1368U, 1364U, 1369U, 1367U, 1370U, 1366U, 1371U,
+                                1368U, 1372U, 1369U, 1373U, 1370U, 1374U, 1371U, 1372U};
         break;
     case SharePeriod::Week:
-        share.history_points = {1288U, 1294U, 1290U, 1298U, 1305U, 1310U, 1308U, 1316U,
-                                1322U, 1320U, 1328U, 1331U, 1338U, 1342U, 1340U, 1348U,
-                                1354U, 1350U, 1358U, 1361U, 1366U, 1362U, 1369U, 1372U};
+        share.history_points = {1348U, 1320U, 1356U, 1312U, 1370U, 1296U, 1382U, 1278U,
+                                1364U, 1304U, 1392U, 1268U, 1352U, 1318U, 1376U, 1288U,
+                                1400U, 1308U, 1368U, 1326U, 1388U, 1336U, 1378U, 1372U};
         break;
     case SharePeriod::Month:
-        share.history_points = {1210U, 1224U, 1232U, 1240U, 1236U, 1252U, 1264U, 1270U,
-                                1286U, 1280U, 1298U, 1310U, 1304U, 1320U, 1332U, 1328U,
-                                1341U, 1348U, 1354U, 1347U, 1358U, 1364U, 1368U, 1372U};
+        share.history_points = {1380U, 1344U, 1292U, 1238U, 1180U, 1120U, 1066U, 1014U,
+                                970U, 1004U, 1048U, 1102U, 1160U, 1216U, 1264U, 1310U,
+                                1358U, 1394U, 1360U, 1322U, 1280U, 1318U, 1356U, 1372U};
         break;
     case SharePeriod::Year:
-        share.history_points = {980U, 1012U, 1040U, 1022U, 1084U, 1110U, 1096U, 1144U,
-                                1180U, 1168U, 1206U, 1238U, 1260U, 1244U, 1288U, 1302U,
-                                1326U, 1314U, 1348U, 1362U, 1350U, 1384U, 1368U, 1372U};
+        share.history_points = {720U, 840U, 780U, 980U, 920U, 1180U, 1040U, 1320U,
+                                1110U, 1460U, 980U, 1260U, 890U, 1510U, 1080U, 1340U,
+                                760U, 1220U, 940U, 1430U, 1160U, 1540U, 1280U, 1372U};
         break;
     case SharePeriod::AllTime:
-        share.history_points = {420U, 470U, 510U, 560U, 620U, 590U, 660U, 720U,
-                                780U, 840U, 910U, 870U, 960U, 1040U, 1100U, 1160U,
-                                1210U, 1260U, 1290U, 1320U, 1350U, 1380U, 1360U, 1372U};
+        share.history_points = {120U, 160U, 220U, 310U, 280U, 430U, 520U, 460U,
+                                640U, 760U, 690U, 880U, 1040U, 980U, 1180U, 1360U,
+                                1280U, 1480U, 1700U, 1540U, 1820U, 2060U, 1880U, 1372U};
         break;
     }
+}
+
+/// @brief Marks seeded share data as local placeholder data, not a live quote.
+void seed_placeholder_quote(ShareWatchEntry& share)
+{
+    copy_text(share.price_text, "Demo");
+    copy_text(share.change_text, "No live");
 }
 
 /// @brief Seeds the first watched row so the UI has stable labels before Wi-Fi is ready.
@@ -125,8 +132,7 @@ void seed_bae_placeholder(ShareMarketStatus& status)
     copy_text(bae.symbol, kWatchedSymbol);
     copy_text(bae.exchange, "LSE");
     copy_text(bae.currency, "GBX");
-    copy_text(bae.price_text, "1,372.0");
-    copy_text(bae.change_text, "+0.0%");
+    seed_placeholder_quote(bae);
     seed_placeholder_history(bae, status.period);
 }
 
@@ -978,8 +984,9 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
         reset_attempt_state();
         g_request_attempted = false;
         g_next_attempt = nil_time;
+        seed_placeholder_quote(g_status.watched_shares[0]);
         seed_placeholder_history(g_status.watched_shares[0], g_status.period);
-        g_status.data_valid = true;
+        g_status.data_valid = false;
         g_status.last_error = 0;
         g_status.last_http_status = 0;
         return status_changed(previous, g_status);
