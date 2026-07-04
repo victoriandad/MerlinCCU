@@ -4,12 +4,14 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
+#include "hardware/flash.h"
 #include "panel_config.h"
 #include "pico/error.h"
 #include "screen_banners.h"
@@ -33,6 +35,15 @@ namespace
 {
 
 constexpr uint8_t kSettingsPageCount = 2U;
+constexpr size_t kConfigFlashSlotCount = 2U;
+constexpr size_t kConfigFlashBytes = FLASH_SECTOR_SIZE * kConfigFlashSlotCount;
+constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kConfigFlashBytes;
+
+extern "C"
+{
+extern const uint8_t __flash_binary_start;
+extern const uint8_t __flash_binary_end;
+}
 
 /// @brief Returns the number of pages required by a softkey-driven list.
 uint8_t list_page_count(size_t item_count, size_t visible_count)
@@ -2695,6 +2706,14 @@ void build_kib_text(size_t bytes, char* out, size_t out_size)
     std::snprintf(out, out_size, "%zuK", kib);
 }
 
+/// @brief Returns the linked image footprint that occupies programme flash.
+size_t program_flash_bytes()
+{
+    const uintptr_t start = reinterpret_cast<uintptr_t>(&__flash_binary_start);
+    const uintptr_t end = reinterpret_cast<uintptr_t>(&__flash_binary_end);
+    return (end > start) ? static_cast<size_t>(end - start) : 0U;
+}
+
 /// @brief Returns the REST status label used by status subpages.
 const char* home_assistant_rest_state_text(const ConsoleState& console_state,
                                            const RuntimeConfig& config)
@@ -2792,19 +2811,34 @@ void draw_status_resources_page(uint8_t* fb)
     constexpr size_t kStaticRamBytes = kConsoleStateBytes + kUiFramebufferBytes;
     constexpr size_t kPico2WSramBytes = 520U * 1024U;
 
+    const size_t program_flash = program_flash_bytes();
+
+    char flash_value_text[24] = {};
     char ram_value_text[24] = {};
+    char program_flash_text[16] = {};
+    char flash_budget_text[16] = {};
+    char config_flash_text[16] = {};
     char static_ram_text[16] = {};
     char console_text[16] = {};
     char framebuffer_text[16] = {};
+    build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
+    build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
+    build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
     build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
     build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
     build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
+    std::snprintf(flash_value_text, sizeof(flash_value_text), "%s/%s", program_flash_text,
+                  flash_budget_text);
     std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/520K", static_ram_text);
 
-    draw_resource_bar(fb, 54, 74, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
+    draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
+                      "PROGRAM FLASH", flash_value_text);
+    draw_resource_bar(fb, 54, 96, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
                       ram_value_text);
 
     const DetailRow rows[] = {
+        {"PROG FLASH", flash_value_text},
+        {"CONFIG", config_flash_text},
         {"STATIC RAM", ram_value_text},
         {"CONSOLE", console_text},
         {"UI BUFFERS", framebuffer_text},
@@ -2812,7 +2846,7 @@ void draw_status_resources_page(uint8_t* fb)
         {"CPU LOAD", "-"},
     };
 
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 122, 13);
+    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);
 }
 
 /// @brief Draws local sensor health and readings.

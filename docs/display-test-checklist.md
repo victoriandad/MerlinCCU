@@ -26,6 +26,15 @@ quickly without relying only on photographs of the physical panel.
 - Values use mixed case consistently (for example `Disabled`, `Error`, `Up`).
 - Hostnames and IP values are fully visible.
 
+## Status Resources Page
+
+- `PROGRAM FLASH` and `STATIC RAM` bars are visible and readable.
+- Flash usage shows firmware image use against flash available after reserved
+  config sectors.
+- RAM usage still shows fixed static display/model allocation.
+- Unknown live metrics remain explicit placeholders, for example `HEAP LIVE -`
+  and `CPU LOAD -`.
+
 ## Weather Page
 
 - `PERIOD` softkey cycles `Hourly` -> `Next 24 Hours` -> `Next 7 Days` and wraps
