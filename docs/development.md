@@ -70,6 +70,19 @@ history.
   - capture or refresh affected baseline PBMs in `baselines/`
   - update `docs/display-test-checklist.md` when workflow expectations change
 
+## No-Target Checks
+
+When target hardware is unavailable, run the lightweight repository checks:
+
+```powershell
+python tools/host_checks.py
+```
+
+These checks validate data that can drift during safe documentation and
+architecture work: tracked config headers, PBM baseline integrity, and
+framebuffer regression suite metadata. They do not replace Pico builds,
+`/preview` regression checks, or physical panel validation.
+
 ## Working Notes
 
 - Keep comments focused on purpose and behaviour rather than narrating syntax
@@ -78,4 +91,3 @@ history.
   and isolated.
 - Prefer small behavioural commits. If a cleanup pass is separate from a
   functional change, keep them in separate commits where practical.
-
