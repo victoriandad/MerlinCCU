@@ -35,7 +35,8 @@ Working now:
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
 - Calendar UI scaffold with neutral owner filtering, relative-day footer, and
   softkey event-detail pages.
-- Share page and share detail graph for BAE Systems using Yahoo Finance chart data.
+- Share page and share detail graph with explicit demo data while the
+  Home Assistant/local share feed is pending.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
 - Provisional keypad matrix monitor/decoder for all confirmed front-panel keys.
 
@@ -230,7 +231,9 @@ Network/config managers:
 - `include/network/wifi_manager.h` / `src/network/wifi_manager.cpp`: Wi-Fi, DHCP/static IP, NetBIOS, SNTP, and reachability state.
 - `include/network/home_assistant_manager.h` / `src/network/home_assistant_manager.cpp`: Home Assistant and direct weather requests.
 - `include/network/mqtt_manager.h` / `src/network/mqtt_manager.cpp`: Home Assistant MQTT discovery/state publishing.
-- `include/network/share_price_manager.h` / `src/network/share_price_manager.cpp`: Yahoo Finance share data fetch and parsing.
+- `include/network/share_price_manager.h` /
+  `src/network/share_price_manager.cpp`: disabled direct-provider share fetch
+  scaffold pending the Home Assistant/local feed.
 - `include/network/web_config_server.h` / `src/network/web_config_server.cpp`: local HTTP configuration and preview server.
 
 Sensor managers:
@@ -365,7 +368,7 @@ Safety rules:
 - Common ground between panel/front-panel supplies and Pico is required for reliable logic sensing.
 - Do not treat any non-matrix pin as GPIO-safe until it has been measured.
 
-## Security And Hardening TODOs
+## Security And Hardening
 
 Network support is currently development-friendly rather than hardened. The
 remaining hardening work is tracked in GitHub Issues rather than in this file.
