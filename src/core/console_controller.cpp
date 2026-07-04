@@ -4681,6 +4681,21 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     return true;
 }
 
+/// @brief Updates foreground main-loop load telemetry shown by Resources status.
+bool set_main_loop_load_status(const MainLoopLoadStatus& status)
+{
+    if (g_console_state.main_loop_load_status.valid == status.valid &&
+        g_console_state.main_loop_load_status.load_percent == status.load_percent &&
+        g_console_state.main_loop_load_status.sample_ms == status.sample_ms)
+    {
+        return false;
+    }
+
+    g_console_state.main_loop_load_status = status;
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {

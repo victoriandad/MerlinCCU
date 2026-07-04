@@ -208,6 +208,7 @@ ConsoleState make_default_console_state()
     state.time_status.date_text.fill('\0');
     state.time_status.local_epoch_day = 0U;
     state.time_status.weekday_index = kInvalidWeekdayIndex;
+    state.main_loop_load_status = {};
 
     // The keypad debug surface is always present, so its snapshot fields start
     // cleared rather than being allocated lazily later.

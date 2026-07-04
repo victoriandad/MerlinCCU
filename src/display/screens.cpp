@@ -2803,8 +2803,8 @@ void draw_status_connectivity_page(uint8_t* fb, const ConsoleState& console_stat
     draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
 }
 
-/// @brief Draws fixed-memory resource usage.
-void draw_status_resources_page(uint8_t* fb)
+/// @brief Draws fixed-memory and foreground-loop resource usage.
+void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr size_t kConsoleStateBytes = sizeof(ConsoleState);
     constexpr size_t kUiFramebufferBytes = static_cast<size_t>(kUiFbSize) * 2U;
@@ -2821,6 +2821,8 @@ void draw_status_resources_page(uint8_t* fb)
     char static_ram_text[16] = {};
     char console_text[16] = {};
     char framebuffer_text[16] = {};
+    char loop_load_text[16] = {};
+    char loop_sample_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
     build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
@@ -2830,6 +2832,18 @@ void draw_status_resources_page(uint8_t* fb)
     std::snprintf(flash_value_text, sizeof(flash_value_text), "%s/%s", program_flash_text,
                   flash_budget_text);
     std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/520K", static_ram_text);
+    if (console_state.main_loop_load_status.valid)
+    {
+        std::snprintf(loop_load_text, sizeof(loop_load_text), "%u%%",
+                      static_cast<unsigned>(console_state.main_loop_load_status.load_percent));
+        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "%ums",
+                      static_cast<unsigned>(console_state.main_loop_load_status.sample_ms));
+    }
+    else
+    {
+        std::snprintf(loop_load_text, sizeof(loop_load_text), "-");
+        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "-");
+    }
 
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
                       "PROGRAM FLASH", flash_value_text);
@@ -2842,8 +2856,9 @@ void draw_status_resources_page(uint8_t* fb)
         {"STATIC RAM", ram_value_text},
         {"CONSOLE", console_text},
         {"UI BUFFERS", framebuffer_text},
+        {"LOOP LOAD", loop_load_text},
+        {"LOOP SAMPLE", loop_sample_text},
         {"HEAP LIVE", "-"},
-        {"CPU LOAD", "-"},
     };
 
     draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);
@@ -2963,7 +2978,7 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         draw_status_connectivity_page(fb, console_state);
         break;
     case MenuPage::StatusResources:
-        draw_status_resources_page(fb);
+        draw_status_resources_page(fb, console_state);
         break;
     case MenuPage::StatusSensors:
         draw_status_sensors_page(fb, console_state);

@@ -32,8 +32,9 @@ quickly without relying only on photographs of the physical panel.
 - Flash usage shows firmware image use against flash available after reserved
   config sectors.
 - RAM usage still shows fixed static display/model allocation.
-- Unknown live metrics remain explicit placeholders, for example `HEAP LIVE -`
-  and `CPU LOAD -`.
+- `LOOP LOAD` shows foreground main-loop active time versus intentional sleep
+  over a recent sample; it is not whole-chip CPU usage.
+- Unknown live heap telemetry remains an explicit placeholder, `HEAP LIVE -`.
 
 ## Weather Page
 

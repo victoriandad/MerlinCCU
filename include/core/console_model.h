@@ -694,6 +694,17 @@ struct KeypadDebugStatus
     std::array<char, 48> probe_hit_panel_pins;
 };
 
+/// @brief Low-overhead foreground loop telemetry shown on the Resources status page.
+/// @details This is main-loop load, not whole-chip CPU usage. It measures time
+/// spent doing foreground firmware work versus intentional foreground sleep, so
+/// DMA/PIO scanout and background Wi-Fi callbacks are not fully represented.
+struct MainLoopLoadStatus
+{
+    bool valid;
+    uint8_t load_percent;
+    uint16_t sample_ms;
+};
+
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
 struct PinterStatus
 {
@@ -757,6 +768,7 @@ struct ConsoleState
     HomeAssistantStatus home_assistant_status;
     MqttStatus mqtt_status;
     TimeStatus time_status;
+    MainLoopLoadStatus main_loop_load_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
     uint8_t alert_count;

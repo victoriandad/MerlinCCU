@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -47,6 +49,18 @@ enum class ScreenMode : uint8_t
 /// sampling short softkey presses much more reliably than the previous 100 ms.
 inline constexpr uint32_t kMenuLoopSleepMs = 20U;
 inline constexpr int64_t kMicrosecondsPerMinute = 60LL * 1000LL * 1000LL;
+inline constexpr int64_t kLoopLoadWindowUs = 1000LL * 1000LL;
+
+/// @brief Accumulates foreground loop timing for a bounded load estimate.
+/// @details This deliberately measures the MerlinCCU main loop rather than
+/// claiming full CPU usage. Background Wi-Fi callbacks and DMA/PIO scanout are
+/// outside this foreground ratio.
+struct MainLoopLoadAccumulator
+{
+    absolute_time_t window_start;
+    uint64_t active_us;
+    uint64_t sleep_us;
+};
 
 /// @brief Returns the generated PIO program symbol for the EL320 raster driver.
 /// @details Different Pico SDK/pioasm combinations generate either
@@ -221,6 +235,11 @@ int main()
     absolute_time_t last_user_activity = get_absolute_time();
     ScreenSaverSelection active_screen_saver = ScreenSaverSelection::Life;
     const float current_clkdiv = kPanel.clkdiv;
+    MainLoopLoadAccumulator loop_load = {
+        .window_start = get_absolute_time(),
+        .active_us = 0U,
+        .sleep_us = 0U,
+    };
 
     // Initialize the state-producing subsystems before the first frame is drawn
     // so the initial UI reflects real status rather than placeholder defaults.
@@ -299,6 +318,7 @@ int main()
 
     while (true)
     {
+        const absolute_time_t loop_start = get_absolute_time();
         // Poll hardware first, then let the controller translate those raw
         // events into menu/state changes before the integrations update.
         const ButtonEvent event = input::poll_buttons();
@@ -425,7 +445,12 @@ int main()
                 next_life_stats = make_timeout_time_ms(1000);
             }
 
+            const absolute_time_t sleep_start = get_absolute_time();
+            loop_load.active_us +=
+                static_cast<uint64_t>(absolute_time_diff_us(loop_start, sleep_start));
             sleep_ms(75);
+            loop_load.sleep_us +=
+                static_cast<uint64_t>(absolute_time_diff_us(sleep_start, get_absolute_time()));
         }
         else
         {
@@ -437,7 +462,43 @@ int main()
                 framebuffer::swap();
                 display::present(framebuffer::front());
             }
+            const absolute_time_t sleep_start = get_absolute_time();
+            loop_load.active_us +=
+                static_cast<uint64_t>(absolute_time_diff_us(loop_start, sleep_start));
             sleep_ms(kMenuLoopSleepMs);
+            loop_load.sleep_us +=
+                static_cast<uint64_t>(absolute_time_diff_us(sleep_start, get_absolute_time()));
+        }
+
+        const absolute_time_t loop_end = get_absolute_time();
+        const int64_t window_us = absolute_time_diff_us(loop_load.window_start, loop_end);
+        if (window_us >= kLoopLoadWindowUs)
+        {
+            const uint64_t total_us = loop_load.active_us + loop_load.sleep_us;
+            const uint8_t load_percent =
+                total_us == 0U ? 0U
+                               : static_cast<uint8_t>(
+                                     std::min<uint64_t>((loop_load.active_us * 100U) / total_us,
+                                                        100U));
+            const MainLoopLoadStatus status = {
+                .valid = total_us > 0U,
+                .load_percent = load_percent,
+                .sample_ms = static_cast<uint16_t>(
+                    std::min<int64_t>((window_us + 500LL) / 1000LL,
+                                      static_cast<int64_t>(UINT16_MAX))),
+            };
+            const bool loop_load_changed = console_controller::set_main_loop_load_status(status);
+            if (loop_load_changed &&
+                console_controller::state().active_page == MenuPage::StatusResources &&
+                active_mode != ScreenMode::LifeScreensaver)
+            {
+                console_controller::request_redraw();
+            }
+            loop_load = {
+                .window_start = loop_end,
+                .active_us = 0U,
+                .sleep_us = 0U,
+            };
         }
     }
 
