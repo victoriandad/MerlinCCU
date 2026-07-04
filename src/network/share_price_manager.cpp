@@ -72,6 +72,39 @@ void copy_text(std::array<char, N>& dst, const char* src)
     std::snprintf(dst.data(), dst.size(), "%s", src);
 }
 
+/// @brief Seeds graph history for the selected placeholder period.
+void seed_placeholder_history(ShareWatchEntry& share, SharePeriod period)
+{
+    switch (period)
+    {
+    case SharePeriod::Today:
+        share.history_points = {1320U, 1324U, 1318U, 1328U, 1336U, 1332U, 1340U, 1346U,
+                                1341U, 1348U, 1352U, 1349U, 1355U, 1351U, 1344U, 1348U,
+                                1356U, 1360U, 1354U, 1358U, 1364U, 1362U, 1368U, 1372U};
+        break;
+    case SharePeriod::Week:
+        share.history_points = {1288U, 1294U, 1290U, 1298U, 1305U, 1310U, 1308U, 1316U,
+                                1322U, 1320U, 1328U, 1331U, 1338U, 1342U, 1340U, 1348U,
+                                1354U, 1350U, 1358U, 1361U, 1366U, 1362U, 1369U, 1372U};
+        break;
+    case SharePeriod::Month:
+        share.history_points = {1210U, 1224U, 1232U, 1240U, 1236U, 1252U, 1264U, 1270U,
+                                1286U, 1280U, 1298U, 1310U, 1304U, 1320U, 1332U, 1328U,
+                                1341U, 1348U, 1354U, 1347U, 1358U, 1364U, 1368U, 1372U};
+        break;
+    case SharePeriod::Year:
+        share.history_points = {980U, 1012U, 1040U, 1022U, 1084U, 1110U, 1096U, 1144U,
+                                1180U, 1168U, 1206U, 1238U, 1260U, 1244U, 1288U, 1302U,
+                                1326U, 1314U, 1348U, 1362U, 1350U, 1384U, 1368U, 1372U};
+        break;
+    case SharePeriod::AllTime:
+        share.history_points = {420U, 470U, 510U, 560U, 620U, 590U, 660U, 720U,
+                                780U, 840U, 910U, 870U, 960U, 1040U, 1100U, 1160U,
+                                1210U, 1260U, 1290U, 1320U, 1350U, 1380U, 1360U, 1372U};
+        break;
+    }
+}
+
 /// @brief Seeds the first watched row so the UI has stable labels before Wi-Fi is ready.
 void seed_bae_placeholder(ShareMarketStatus& status)
 {
@@ -94,9 +127,7 @@ void seed_bae_placeholder(ShareMarketStatus& status)
     copy_text(bae.currency, "GBX");
     copy_text(bae.price_text, "1,372.0");
     copy_text(bae.change_text, "+0.0%");
-    bae.history_points = {1320U, 1324U, 1318U, 1328U, 1336U, 1332U, 1340U, 1346U,
-                          1341U, 1348U, 1352U, 1349U, 1355U, 1351U, 1344U, 1348U,
-                          1356U, 1360U, 1354U, 1358U, 1364U, 1362U, 1368U, 1372U};
+    seed_placeholder_history(bae, status.period);
 }
 
 /// @brief Returns Yahoo chart range/interval parameters for one CCU period.
@@ -947,6 +978,7 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
         reset_attempt_state();
         g_request_attempted = false;
         g_next_attempt = nil_time;
+        seed_placeholder_history(g_status.watched_shares[0], g_status.period);
         g_status.data_valid = true;
         g_status.last_error = 0;
         g_status.last_http_status = 0;

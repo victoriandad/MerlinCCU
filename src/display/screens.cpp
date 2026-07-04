@@ -2515,6 +2515,26 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
                            fonts::FontFace::Font5x7, 1);
 }
 
+/// @brief Returns a compact label for one share history period.
+const char* share_period_text(SharePeriod period)
+{
+    switch (period)
+    {
+    case SharePeriod::Today:
+        return "Today";
+    case SharePeriod::Week:
+        return "Week";
+    case SharePeriod::Month:
+        return "Month";
+    case SharePeriod::Year:
+        return "Year";
+    case SharePeriod::AllTime:
+        return "All-time";
+    }
+
+    return "Today";
+}
+
 /// @brief Draws one watched share's detail page.
 void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -2529,6 +2549,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
     const DetailRow rows[] = {
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
+        {"PERIOD", share_period_text(console_state.share_period)},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},
     };
