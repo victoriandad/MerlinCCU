@@ -373,6 +373,13 @@ Safety rules:
 Network support is currently development-friendly rather than hardened. The
 remaining hardening work is tracked in GitHub Issues rather than in this file.
 
+The factory-default admin password for the local web configuration page is
+`merlin`. Change it from the Security section of `/config` before relying on
+that page routinely; the web UI itself no longer prints the default value.
+Flash contents (including saved Wi-Fi/MQTT/Home Assistant credentials and the
+admin password) are stored as plaintext, so treat a device with physical or
+debug-port access as having those credentials exposed.
+
 ## Open Work
 
 Active development work is tracked in GitHub Issues. Current themes are:

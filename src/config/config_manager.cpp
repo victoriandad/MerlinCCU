@@ -424,6 +424,32 @@ bool reset_to_defaults()
     return save(make_default_settings());
 }
 
+/// @brief Compares a candidate password against the stored one in constant time.
+/// @details Always walks the full stored-password capacity regardless of where
+/// either string ends, so match/mismatch timing does not depend on how many
+/// leading characters happen to agree.
+bool constant_time_password_matches(const char* candidate, const std::array<char, 32>& stored)
+{
+    if (candidate == nullptr)
+    {
+        return false;
+    }
+
+    unsigned char diff = 0;
+    bool candidate_ended = false;
+    bool stored_ended = false;
+    for (size_t i = 0; i < stored.size(); ++i)
+    {
+        candidate_ended = candidate_ended || candidate[i] == '\0';
+        stored_ended = stored_ended || stored[i] == '\0';
+        const char candidate_byte = candidate_ended ? '\0' : candidate[i];
+        const char stored_byte = stored_ended ? '\0' : stored[i];
+        diff |= static_cast<unsigned char>(candidate_byte ^ stored_byte);
+    }
+
+    return diff == 0;
+}
+
 bool admin_password_matches(const char* password)
 {
     if (!g_settings.require_admin_password)
@@ -431,7 +457,7 @@ bool admin_password_matches(const char* password)
         return true;
     }
 
-    return password != nullptr && std::strcmp(password, g_settings.admin_password.data()) == 0;
+    return constant_time_password_matches(password, g_settings.admin_password);
 }
 
 const char* device_name()

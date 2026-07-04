@@ -537,8 +537,9 @@ void build_config_page(const char* message)
         cursor, remaining,
         "<section class=\"card\"><h2>Security</h2><label>Current admin password</label>"
         "<input name=\"admin_password_current\" type=\"password\" "
-        "autocomplete=\"current-password\"><p class=\"hint\">Factory default is merlin; "
-        "change it before using the page routinely.</p><label>New admin password</label>"
+        "autocomplete=\"current-password\"><p class=\"hint\">Uses a factory default until "
+        "you set your own here; see project documentation before relying on this page "
+        "routinely.</p><label>New admin password</label>"
         "<input name=\"admin_password_new\" type=\"password\" autocomplete=\"new-password\">"
         "<label>Repeat new admin password</label><input name=\"admin_password_repeat\" "
         "type=\"password\" autocomplete=\"new-password\">"
