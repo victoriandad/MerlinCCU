@@ -2527,13 +2527,17 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
     }
 
     const ShareWatchEntry& share = console_state.watched_shares[console_state.selected_share_index];
-    draw_share_history_graph(fb, share, console_state.share_period);
-    framebuffer::draw_text(fb, 42, 184, share.display_name.data(), true, fonts::FontFace::Font8x12,
-                           1);
-    framebuffer::draw_text(fb, 42, 210, share.symbol.data(), true, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, 86, 210, share.price_text.data(), true, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, 150, 210, share.change_text.data(), true, fonts::FontFace::Font5x7,
-                           1);
+    const DetailRow rows[] = {
+        {"NAME", share.display_name.data()},
+        {"SYMBOL", share.symbol.data()},
+        {"EXCHANGE", share.exchange.data()},
+        {"CURRENCY", share.currency.data()},
+        {"PRICE", share.price_text.data()},
+        {"CHANGE", share.change_text.data()},
+        {"HISTORY", "Disabled"},
+    };
+
+    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 42, 16);
 }
 
 /// @brief Draws the local environment summary page.
