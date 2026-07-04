@@ -92,4 +92,5 @@ Do not move work to core 1 until these are true:
 
 | Date | Decision | Reason | Follow-up |
 | --- | --- | --- | --- |
+| 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
 | YYYY-MM-DD |  |  |  |

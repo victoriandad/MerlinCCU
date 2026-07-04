@@ -23,6 +23,8 @@ namespace share_price_manager
 namespace
 {
 
+// Legacy direct provider endpoint. Keep disabled until replaced by the
+// Home Assistant/local share-feed client tracked in issue #42.
 constexpr char kProviderHost[] = "query1.finance.yahoo.com";
 constexpr uint16_t kProviderPort = 443U;
 constexpr uint32_t kResolveTimeoutMs = 4000U;
@@ -36,7 +38,7 @@ constexpr size_t kRequestBufferSize = 768U;
 constexpr size_t kResponseBufferSize = 16384U;
 constexpr size_t kMaxParsedHistoryValues = 256U;
 constexpr const char* kWatchedSymbol = "BA.L";
-/// @brief Temporary safety switch while stabilising the live share fetch path.
+/// @brief Keeps direct third-party fetching off the Pico while the local feed is designed.
 constexpr bool kEnableLiveShareFetch = false;
 
 ShareMarketStatus g_status = {};
@@ -136,7 +138,7 @@ void seed_bae_placeholder(ShareMarketStatus& status)
     seed_placeholder_history(bae, status.period);
 }
 
-/// @brief Returns Yahoo chart range/interval parameters for one CCU period.
+/// @brief Returns legacy Yahoo chart range/interval parameters for one CCU period.
 const char* period_query(SharePeriod period)
 {
     switch (period)

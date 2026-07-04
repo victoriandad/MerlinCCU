@@ -75,9 +75,11 @@ quickly without relying only on photographs of the physical panel.
 - `PERIOD` softkey at `L5` cycles `Today` -> `Week` -> `Month` -> `Year` ->
   `All-time` and wraps back to `Today`.
 - `R5=HOME` remains available from the shares pages.
-- When Wi-Fi has internet access, BAE Systems current price and graph history
-  refresh from Yahoo Finance chart JSON roughly every five minutes while share
-  pages are active, without a user account or API key.
+- Until the Home Assistant/local share feed is implemented, share detail shows
+  explicit demo data (`DATA Demo`, `PRICE Demo`, `CHANGE No live`) and period
+  cycling uses placeholder history only.
+- Future live share data should come from a bounded local feed, not direct
+  provider scraping on the Pico, and must not block navigation.
 
 ## Settings Pages
 
