@@ -33,7 +33,8 @@ Working now:
 - Hourly, Next 24 Hours, and Next 7 Days weather period views.
 - MQTT discovery/state publishing for Home Assistant diagnostic sensors.
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
-- Calendar UI scaffold with owner filtering, relative-day footer, and softkey event-detail pages.
+- Calendar UI scaffold with neutral owner filtering, relative-day footer, and
+  softkey event-detail pages.
 - Share page and share detail graph for BAE Systems using Yahoo Finance chart data.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
 - Provisional keypad matrix monitor/decoder for all confirmed front-panel keys.
@@ -43,6 +44,8 @@ Still incomplete or provisional:
 - Physical ALRT/TEST LED drive, key backlight, panel backlight, and photoresistor wiring are not final.
 - Text-entry consumers are still limited, but the confirmed front-panel keys now generate firmware events.
 - Live Home Assistant calendar ingestion is not implemented yet.
+- Real calendar participant labels belong in local `config/calendar_identities.h`,
+  which is ignored by git. Tracked demo calendar data uses synthetic examples.
 - Watched share symbols are not user-configurable from the UI or web config yet.
 - Weather iconography and warning/threshold alert rules are still planned.
 - Disabled I2C sensor-discovery scaffolding exists for the optional Waveshare

@@ -2178,7 +2178,7 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                            true, kHomeIpFont, 1);
 }
 
-/// @brief Draws the family calendar overview selected from Home.
+/// @brief Draws the shared calendar overview selected from Home.
 /// @details Event summaries live on the surrounding softkeys. The centre area
 /// deliberately stays blank so the page remains a label-driven CCU view.
 void draw_calendar_page(uint8_t* fb, const ConsoleState& console_state)
@@ -2186,7 +2186,7 @@ void draw_calendar_page(uint8_t* fb, const ConsoleState& console_state)
     draw_calendar_navigation_footer(fb, console_state);
 }
 
-/// @brief Draws detailed data for the selected family calendar event.
+/// @brief Draws detailed data for the selected shared calendar event.
 /// @details The fields mirror upstream calendar properties that are useful on
 /// a small operational display: time, owner, location, reminders, attendees,
 /// and free-form description text.

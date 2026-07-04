@@ -285,50 +285,52 @@ ConsoleState make_default_console_state()
         return false;
     };
 
-    add_calendar_event(CalendarOwner::Owner1, 0, "08:30", "09:00", "Work standup", "Teams",
-                       "10 min popup", "Project team", "Daily status call.");
-    add_calendar_event(CalendarOwner::Owner2, 0, "09:15", "09:45", "School admin", "School office",
-                       "30 min email", "School office", "Forms and term dates.");
-    add_calendar_event(CalendarOwner::Owner3, 0, "15:40", "17:00", "Football", "Sports ground",
-                       "1 hour popup", "Coach, team", "Training kit needed.");
-    add_calendar_event(CalendarOwner::Owner4, 0, "16:30", "17:15", "Swimming", "Leisure centre",
-                       "45 min popup", "Instructor", "Take towel and goggles.");
-    add_calendar_event(CalendarOwner::Owner1, 0, "19:00", "20:00", "Dinner prep", "Home", "None",
-                       "Family", "Start dinner before clubs end.");
-    add_calendar_event(CalendarOwner::Owner2, 1, "10:00", "10:30", "Appointment", "Clinic",
-                       "1 day email", "Clinic", "Check appointment notes.");
-    add_calendar_event(CalendarOwner::Owner3, 1, "13:30", "15:30", "School trip", "Museum",
-                       "1 day popup", "Class", "Packed lunch required.");
-    add_calendar_event(CalendarOwner::Owner4, 1, "17:15", "18:30", "Play date", "Friend's house",
-                       "30 min popup", "Parent", "Pickup confirmed by text.");
-    add_calendar_event(CalendarOwner::Owner1, 2, "08:45", "17:00", "Office", "London", "None", "Work",
-                       "Office day.");
-    add_calendar_event(CalendarOwner::Owner2, 2, "18:00", "19:00", "Pilates", "Studio",
-                       "1 hour popup", "Class", "Bring mat.");
-    add_calendar_event(CalendarOwner::Owner3, 3, "11:00", "11:30", "Dentist", "Dental surgery",
-                       "1 day email", "Dentist", "Routine check-up.");
-    add_calendar_event(CalendarOwner::Owner4, 3, "14:00", "16:00", "Party", "Soft play",
-                       "2 hours popup", "Class friends", "Birthday party.");
-    add_calendar_event(CalendarOwner::Owner1, -1, "12:30", "13:00", "Lunch call", "Office",
-                       "10 min popup", "Supplier", "Review quote.");
-    add_calendar_event(CalendarOwner::Owner2, -1, "18:30", "19:30", "Parents group", "School hall",
-                       "30 min popup", "Parents", "Planning meeting.");
-    add_calendar_event(CalendarOwner::Owner1, 4, "09:30", "10:15", "Service slot", "Garage",
-                       "1 day email", "Garage", "Car service booking.");
-    add_calendar_event(CalendarOwner::Owner3, 5, "16:00", "17:30", "Match", "Away pitch",
-                       "2 hours popup", "Coach, team", "Bring boots.");
-    add_calendar_event(CalendarOwner::Owner4, 6, "10:30", "12:00", "Library", "Town library",
-                       "1 hour popup", "Family", "Return books.");
-    add_calendar_event(CalendarOwner::Owner2, 7, "15:00", "16:00", "Coffee", "High street",
-                       "30 min popup", "Friend", "Catch-up.");
-    add_calendar_event(CalendarOwner::Owner1, -14, "08:00", "08:30", "Old rota", "Home", "None",
-                       "Work", "Historic sample event.");
-    add_calendar_event(CalendarOwner::Owner2, -7, "11:00", "11:45", "School call", "Phone",
-                       "15 min popup", "School office", "Historic weekly sample.");
-    add_calendar_event(CalendarOwner::Owner1, 14, "09:00", "09:30", "Budget check", "Home office",
-                       "1 day email", "Accounts", "Two-week sample event.");
-    add_calendar_event(CalendarOwner::Owner4, 13, "16:00", "17:00", "Club signup", "Community hall",
-                       "1 day popup", "Club leader", "Next fortnight sample.");
+    add_calendar_event(CalendarOwner::Owner1, 0, "08:30", "09:00", "Demo standup", "Video call",
+                       "10 min popup", "Project group", "Synthetic status sample.");
+    add_calendar_event(CalendarOwner::Owner2, 0, "09:15", "09:45", "Planning slot", "Room A",
+                       "30 min email", "Ops group", "Synthetic planning sample.");
+    add_calendar_event(CalendarOwner::Owner3, 0, "15:40", "17:00", "Training block", "Activity room",
+                       "1 hour popup", "Training lead", "Synthetic training sample.");
+    add_calendar_event(CalendarOwner::Owner4, 0, "16:30", "17:15", "Practice block", "Activity centre",
+                       "45 min popup", "Practice lead", "Synthetic practice sample.");
+    add_calendar_event(CalendarOwner::Owner1, 0, "19:00", "20:00", "Admin block", "Home base", "None",
+                       "Demo group", "End-of-day synthetic sample.");
+    add_calendar_event(CalendarOwner::Owner2, 1, "10:00", "10:30", "Check-in", "Room B",
+                       "1 day email", "Coordinator", "Synthetic check-in notes.");
+    add_calendar_event(CalendarOwner::Owner3, 1, "13:30", "15:30", "Workshop", "Lab",
+                       "1 day popup", "Demo cohort", "Synthetic workshop sample.");
+    add_calendar_event(CalendarOwner::Owner4, 1, "17:15", "18:30", "Review block", "Room C",
+                       "30 min popup", "Reviewer", "Synthetic review sample.");
+    add_calendar_event(CalendarOwner::Owner1, 2, "08:45", "17:00", "Focus day", "Remote", "None",
+                       "Project group", "Synthetic focus-day sample.");
+    add_calendar_event(CalendarOwner::Owner2, 2, "18:00", "19:00", "Exercise block", "Studio",
+                       "1 hour popup", "Class group", "Synthetic exercise sample.");
+    add_calendar_event(CalendarOwner::Owner3, 3, "11:00", "11:30", "Maintenance slot",
+                       "Service desk", "1 day email", "Service team", "Synthetic service sample.");
+    add_calendar_event(CalendarOwner::Owner4, 3, "14:00", "16:00", "Demo event", "Hall",
+                       "2 hours popup", "Demo group", "Synthetic event sample.");
+    add_calendar_event(CalendarOwner::Owner1, -1, "12:30", "13:00", "Vendor call", "Office",
+                       "10 min popup", "Supplier", "Synthetic quote review.");
+    add_calendar_event(CalendarOwner::Owner2, -1, "18:30", "19:30", "Planning forum",
+                       "Meeting room", "30 min popup", "Planning group",
+                       "Synthetic planning sample.");
+    add_calendar_event(CalendarOwner::Owner1, 4, "09:30", "10:15", "Service slot",
+                       "Service desk", "1 day email", "Service team", "Synthetic booking sample.");
+    add_calendar_event(CalendarOwner::Owner3, 5, "16:00", "17:30", "Away activity", "Field site",
+                       "2 hours popup", "Activity group", "Synthetic away sample.");
+    add_calendar_event(CalendarOwner::Owner4, 6, "10:30", "12:00", "Library block",
+                       "Resource room", "1 hour popup", "Demo group", "Synthetic library sample.");
+    add_calendar_event(CalendarOwner::Owner2, 7, "15:00", "16:00", "Review call", "Video call",
+                       "30 min popup", "Review group", "Synthetic catch-up sample.");
+    add_calendar_event(CalendarOwner::Owner1, -14, "08:00", "08:30", "Historic rota", "Demo base",
+                       "None", "Ops group", "Historic synthetic sample.");
+    add_calendar_event(CalendarOwner::Owner2, -7, "11:00", "11:45", "Historic call", "Phone",
+                       "15 min popup", "Coordinator", "Historic weekly sample.");
+    add_calendar_event(CalendarOwner::Owner1, 14, "09:00", "09:30", "Budget check",
+                       "Planning desk", "1 day email", "Accounts", "Two-week synthetic sample.");
+    add_calendar_event(CalendarOwner::Owner4, 13, "16:00", "17:00", "Signup slot",
+                       "Community room", "1 day popup", "Coordinator",
+                       "Next-fortnight synthetic sample.");
 
     // Fill every empty day in the navigation test window so arrow-key day
     // movement can be verified before live HA data exists. Keep this deliberately

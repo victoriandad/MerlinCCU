@@ -2,7 +2,7 @@
 
 /// @brief Local calendar participant labels for MerlinCCU bring-up.
 /// @details Copy this file to `config/calendar_identities.h`, fill in your
-/// household or team labels, and keep that local file out of version control.
+/// participant labels, and keep that local file out of version control.
 ///
 /// The firmware treats this as a configurable list of participant identities.
 /// Leave unused entries blank. The calendar UI can use as few as one entry or

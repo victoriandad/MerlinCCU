@@ -1101,7 +1101,7 @@ const char* share_period_selection_text(const ConsoleState& console_state)
     return share_period_definition(console_state.share_period).selection_label;
 }
 
-/// @brief Returns the currently selected family-calendar owner label.
+/// @brief Returns the currently selected shared-calendar owner label.
 const char* calendar_owner_selection_text(const ConsoleState& console_state)
 {
     return calendar_owner_definition(console_state.calendar_owner).selection_label;
@@ -2714,7 +2714,7 @@ bool cycle_weather_period()
     return true;
 }
 
-/// @brief Returns the next family member filter in the Calendar page cycle.
+/// @brief Returns the next shared-calendar owner filter in the Calendar page cycle.
 CalendarOwner next_calendar_owner(CalendarOwner owner)
 {
     switch (owner)
