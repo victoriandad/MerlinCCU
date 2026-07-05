@@ -150,6 +150,10 @@ Use this workflow for UI/layout changes:
 
 For a fuller checklist, use `docs/display-test-checklist.md`.
 
+Greyscale rendering feasibility (temporal/spatial dithering, panel timing
+limits) is written up in `docs/greyscale-investigation.md`, tracking issue
+#27.
+
 ## Build Notes
 
 This repository uses the Raspberry Pi Pico SDK with CMake.
