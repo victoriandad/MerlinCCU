@@ -34,7 +34,9 @@ RasterBuffer g_raster_b = {};
 
 RasterBuffer* g_raster_front = &g_raster_a;
 RasterBuffer* g_raster_back = &g_raster_b;
-RasterBuffer* g_raster_pending = nullptr;
+// Shared with the DMA control-channel IRQ (cleared there once adopted), so
+// this needs `volatile` for present() to see IRQ-side updates reliably.
+RasterBuffer* volatile g_raster_pending = nullptr;
 
 // The control DMA channel rewrites the data channel's read pointer from this
 // indirection slot once per frame. That lets the ISR switch buffers by updating
@@ -53,6 +55,7 @@ float g_configured_clkdiv = kPanel.clkdiv;
 // locking; at worst a reader sees a value that is one increment stale.
 volatile uint32_t g_frame_count = 0;
 volatile uint32_t g_last_rebuild_us = 0;
+volatile uint32_t g_present_skipped_count = 0;
 
 /// @brief DMA interrupt handler used to switch scanout buffers safely.
 /// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
@@ -298,8 +301,22 @@ void set_clkdiv(float clkdiv)
 /// the next frame boundary. During early startup, before DMA begins, the raster
 /// swap happens immediately. Deferring the pointer flip until the IRQ boundary
 /// is what keeps scanout atomic from the panel's point of view.
+///
+/// If a previously queued raster has not yet been adopted, this call is
+/// skipped entirely rather than rebuilding into `g_raster_back` again: that
+/// buffer is still awaiting adoption, and rebuilding it while the IRQ may be
+/// mid-swap can hand DMA a torn, half-written buffer to stream to the panel.
+/// This was never reachable before anything called `present()` faster than
+/// the panel could adopt frames; the temporal-dither test page's continuous
+/// redraw was the first caller to do that, and hit it.
 void present(const uint8_t* ui_fb)
 {
+    if (g_dma_running && g_raster_pending != nullptr)
+    {
+        ++g_present_skipped_count;
+        return;
+    }
+
     const absolute_time_t kRebuildStart = get_absolute_time();
     rebuild_raster_from_fb(ui_fb, g_raster_back->data());
     g_last_rebuild_us =
@@ -324,6 +341,16 @@ uint32_t frame_count()
 uint32_t last_rebuild_us()
 {
     return g_last_rebuild_us;
+}
+
+/// @brief Returns how many `present()` calls were skipped because a
+/// previously queued raster had not yet been adopted.
+/// @details A high count relative to `frame_count()` means callers are
+/// presenting faster than the panel can adopt frames — a direct, measured
+/// signal of real achievable frame rate, distinct from `frame_count()` alone.
+uint32_t present_skipped_count()
+{
+    return g_present_skipped_count;
 }
 
 } // namespace display

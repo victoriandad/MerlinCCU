@@ -19,7 +19,9 @@ void set_clkdiv(float clkdiv);
 /// @brief Queues one UI framebuffer for display.
 /// @details The caller supplies a portrait-oriented UI framebuffer. This module
 /// converts it into the panel's native electrical scan order and arranges for
-/// the new raster to be adopted at a safe frame boundary.
+/// the new raster to be adopted at a safe frame boundary. If a previously
+/// queued raster has not yet been adopted, this call is skipped rather than
+/// risking a torn buffer handed to DMA mid-swap — see `present_skipped_count()`.
 void present(const uint8_t* ui_fb);
 
 /// @brief Returns the number of physical frame-boundary interrupts observed.
@@ -34,5 +36,11 @@ uint32_t frame_count();
 /// estimate whether a per-frame raster regeneration scheme (temporal
 /// dithering, dirty-line redraw) could fit inside one physical frame period.
 uint32_t last_rebuild_us();
+
+/// @brief Returns how many `present()` calls were skipped because a
+/// previously queued raster had not yet been adopted.
+/// @details A high count relative to `frame_count()` means callers are
+/// presenting faster than the panel can adopt frames.
+uint32_t present_skipped_count();
 
 } // namespace display
