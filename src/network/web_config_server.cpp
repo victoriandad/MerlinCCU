@@ -16,6 +16,7 @@
 #include "lwip/tcp.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
+#include "pico/time.h"
 
 namespace web_config_server
 {
@@ -27,6 +28,17 @@ constexpr uint16_t kHttpPort = 80;
 constexpr size_t kRequestCapacity = 4096;
 constexpr size_t kResponseCapacity = 24576;
 constexpr u16_t kTcpWriteChunkMax = 1024;
+// lwIP's own TCP retransmission/error detection can take tens of seconds to
+// give up on a silently-vanished peer (a dropped Wi-Fi packet, or a browser
+// abandoning a fetch without a clean FIN/RST reaching us). Nothing else frees
+// a stuck singleton session in that case, since this server registers no
+// tcp_poll callback today. kSessionIdleTimeoutMs bounds that with an
+// app-level watchdog well below lwIP's own timeout, so one stalled preview
+// poll can't block every other request for tens of seconds.
+constexpr uint32_t kSessionIdleTimeoutMs = 3000U;
+// tcp_poll's interval is in units of lwIP's coarse TCP timer (~500 ms), not
+// milliseconds directly.
+constexpr u8_t kSessionPollInterval = 4U;
 constexpr char kHttpOkHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store, "
     "max-age=0\r\nPragma: no-cache\r\nConnection: close\r\n\r\n";
@@ -52,6 +64,9 @@ struct WebSession
     size_t response_sent;
     bool close_pending;
     bool low_priority_response;
+    // Updated on accept and on any recv/send progress; on_poll aborts the
+    // session once this is older than kSessionIdleTimeoutMs.
+    absolute_time_t last_activity;
     char request[kRequestCapacity];
 };
 
@@ -145,6 +160,8 @@ err_t send_pending_response(WebSession* session, tcp_pcb* pcb)
     {
         return ERR_ARG;
     }
+
+    session->last_activity = get_absolute_time();
 
     while (session->response_sent < session->response_len)
     {
@@ -2775,6 +2792,8 @@ err_t on_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
         return aborted ? ERR_ABRT : ERR_OK;
     }
 
+    session->last_activity = get_absolute_time();
+
     const size_t copy_len = (session->request_len + p->tot_len < sizeof(session->request) - 1)
                                 ? p->tot_len
                                 : (sizeof(session->request) - 1 - session->request_len);
@@ -2799,6 +2818,41 @@ void on_error(void* arg, err_t err)
     (void)arg;
     (void)err;
     g_session = {};
+}
+
+/// @brief Aborts a session that has made no recv/send progress for too long.
+/// @details lwIP's own TCP retransmission/error detection can take tens of
+/// seconds to notice a silently-vanished peer (a dropped Wi-Fi packet, or a
+/// browser abandoning a fetch without a clean FIN/RST reaching us). Without
+/// this, a stalled session pins the singleton `g_session` for however long
+/// that takes, rejecting every other request in the meantime.
+err_t on_poll(void* arg, tcp_pcb* pcb)
+{
+    auto* session = static_cast<WebSession*>(arg);
+    if (session == nullptr || pcb == nullptr)
+    {
+        return ERR_OK;
+    }
+
+    const int64_t idle_us = absolute_time_diff_us(session->last_activity, get_absolute_time());
+    if (idle_us < static_cast<int64_t>(kSessionIdleTimeoutMs) * 1000)
+    {
+        return ERR_OK;
+    }
+
+    PERIODIC_LOG("Web config session idle %lldms, aborting to free the singleton slot\n",
+                 static_cast<long long>(idle_us / 1000));
+    tcp_arg(pcb, nullptr);
+    tcp_recv(pcb, nullptr);
+    tcp_sent(pcb, nullptr);
+    tcp_err(pcb, nullptr);
+    tcp_poll(pcb, nullptr, 0);
+    tcp_abort(pcb);
+    if (g_session.pcb == pcb)
+    {
+        g_session = {};
+    }
+    return ERR_ABRT;
 }
 
 /// @brief Replies with a temporary busy response then closes the connection.
@@ -2845,10 +2899,12 @@ err_t on_accept(void* arg, tcp_pcb* new_pcb, err_t err)
 
     g_session = {};
     g_session.pcb = new_pcb;
+    g_session.last_activity = get_absolute_time();
     tcp_arg(new_pcb, &g_session);
     tcp_recv(new_pcb, on_recv);
     tcp_sent(new_pcb, on_sent);
     tcp_err(new_pcb, on_error);
+    tcp_poll(new_pcb, on_poll, kSessionPollInterval);
     return ERR_OK;
 }
 
