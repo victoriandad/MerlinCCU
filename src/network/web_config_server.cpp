@@ -35,10 +35,16 @@ constexpr u16_t kTcpWriteChunkMax = 1024;
 // tcp_poll callback today. kSessionIdleTimeoutMs bounds that with an
 // app-level watchdog well below lwIP's own timeout, so one stalled preview
 // poll can't block every other request for tens of seconds.
-constexpr uint32_t kSessionIdleTimeoutMs = 3000U;
+// 1.2s rather than something looser: last_activity is refreshed on every
+// real recv/send progress (see on_recv/send_pending_response), not just on
+// connect, so this only fires for a session making truly zero progress --
+// a merely slow-but-advancing transfer over Wi-Fi keeps resetting the clock
+// and is never falsely aborted.
+constexpr uint32_t kSessionIdleTimeoutMs = 1200U;
 // tcp_poll's interval is in units of lwIP's coarse TCP timer (~500 ms), not
-// milliseconds directly.
-constexpr u8_t kSessionPollInterval = 4U;
+// milliseconds directly; 1 is the finest granularity available without
+// changing lwIP's own TCP_SLOW_INTERVAL.
+constexpr u8_t kSessionPollInterval = 1U;
 constexpr char kHttpOkHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store, "
     "max-age=0\r\nPragma: no-cache\r\nConnection: close\r\n\r\n";
@@ -1513,7 +1519,7 @@ bool build_preview_page()
         "}catch(error){"
         "const text=String(error&&error.message?error.message:error);"
         "const busy=/busy|503|retry/i.test(text);"
-        "if(attempt<12&&busy){await delay(Math.min(250,45*attempt));continue;}"
+        "if(attempt<12&&busy){await delay(Math.min(250,30*attempt));continue;}"
         "setKeyState('Key send failed: '+text);"
         "return false;"
         "}"
@@ -1623,7 +1629,7 @@ bool build_preview_page()
         "}"
         "function schedule(){"
         "if(timer!==null){clearInterval(timer);timer=null;}"
-        "if(running){timer=setInterval(refresh,500);}"
+        "if(running){timer=setInterval(refresh,350);}"
         "}"
         "toggle.addEventListener('click',function(){"
         "running=!running;"
@@ -1667,7 +1673,7 @@ bool build_preview_page()
         "}"
         "}"
         "bindVirtualKeys();"
-        "setInterval(refreshPanelState,1000);"
+        "setInterval(refreshPanelState,600);"
         "refreshPanelState();"
         "schedule();"
         "refresh();"
