@@ -312,7 +312,7 @@ int main()
     absolute_time_t next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
     absolute_time_t last_user_activity = get_absolute_time();
     ScreenSaverSelection active_screen_saver = ScreenSaverSelection::Life;
-    const float current_clkdiv = kPanel.clkdiv;
+    float current_clkdiv = kPanel.clkdiv;
     MainLoopLoadAccumulator loop_load = {
         .window_start = get_absolute_time(),
         .active_us = 0U,
@@ -562,6 +562,19 @@ int main()
                               environment_sensor_manager::status()) ||
                           console_changed;
         console_changed = console_controller::consume_redraw_request() || console_changed;
+
+        // Applies live clkdiv nudges from the temporal dither test page (see
+        // panel_config.h's "divider sweeping" note). Display state changes
+        // stay funneled through this loop rather than console_controller
+        // calling display:: directly, matching how present() is already
+        // handled below.
+        const float requested_clkdiv = console_controller::state().requested_panel_clkdiv;
+        if (requested_clkdiv != current_clkdiv)
+        {
+            current_clkdiv = requested_clkdiv;
+            display::set_clkdiv(current_clkdiv);
+            std::printf("Live clkdiv=%.2f\n", current_clkdiv);
+        }
 
         const uint16_t screen_saver_timeout_minutes =
             console_controller::state().screen_saver_timeout_minutes;

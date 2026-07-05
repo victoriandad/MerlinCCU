@@ -1926,9 +1926,19 @@ void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_sta
     framebuffer::draw_text(fb, kMarginX, kStatusY + kLabelHeight + 2, rate_line, true,
                            fonts::FontFace::Font5x7);
 
-    const int kCaptionY = kStatusY + (2 * (kLabelHeight + 2)) + 4;
-    framebuffer::draw_text(fb, kMarginX, kCaptionY, "TOGGLE RATE != PANEL RATE", true,
+    char skipped_line[32] = {};
+    std::snprintf(skipped_line, sizeof(skipped_line), "SKIPPED %lu",
+                  static_cast<unsigned long>(display::present_skipped_count()));
+    framebuffer::draw_text(fb, kMarginX, kStatusY + 2 * (kLabelHeight + 2), skipped_line, true,
                            fonts::FontFace::Font5x7);
+
+    char clkdiv_line[32] = {};
+    std::snprintf(clkdiv_line, sizeof(clkdiv_line), "CLKDIV %.2f (L1- L2+)",
+                  static_cast<double>(console_state.requested_panel_clkdiv));
+    const int kCaptionY = kStatusY + (3 * (kLabelHeight + 2));
+    framebuffer::draw_text(fb, kMarginX, kCaptionY, clkdiv_line, true, fonts::FontFace::Font5x7);
+    framebuffer::draw_text(fb, kMarginX, kCaptionY + kLabelHeight + 2, "TOGGLE RATE != PANEL RATE",
+                           true, fonts::FontFace::Font5x7);
 }
 
 /// @brief Draws compact status lines for the alert-list page.

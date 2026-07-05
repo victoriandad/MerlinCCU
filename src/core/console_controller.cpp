@@ -13,6 +13,7 @@
 #include "config_persistence.h"
 #include "date_time_math.h"
 #include "debug_logging.h"
+#include "panel_config.h"
 #include "pico/error.h"
 #include "pinter_scheduling.h"
 #include "pinter_store.h"
@@ -3507,7 +3508,15 @@ void update_softkeys_from_state()
     }
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
+        break;
     case MenuPage::TemporalDitherTest:
+        // Live PIO clock-divider nudge for interactive timing sweeps (see
+        // panel_config.h's "divider sweeping" note) without a rebuild/reflash
+        // cycle per attempt.
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            "CLKDIV-", SoftKeyRoute::NudgeClkdivDown, true};
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            "CLKDIV+", SoftKeyRoute::NudgeClkdivUp, true};
         break;
     case MenuPage::GreyscaleTest:
         softkeys[softkey_index(SoftKeyId::Right1)] = {
@@ -3902,6 +3911,20 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::TemporalDitherTest;
         return true;
+    case SoftKeyRoute::NudgeClkdivDown:
+    case SoftKeyRoute::NudgeClkdivUp:
+    {
+        // Bounded to +/-0.3 around the compiled-in default so interactive
+        // sweeping can't push VCLK far outside the panel's rated range while
+        // hunting for the value that stops the roll.
+        constexpr float kClkdivStep = 0.01F;
+        constexpr float kClkdivMin = kPanel.clkdiv - 0.3F;
+        constexpr float kClkdivMax = kPanel.clkdiv + 0.3F;
+        const float kDelta = (route == SoftKeyRoute::NudgeClkdivUp) ? kClkdivStep : -kClkdivStep;
+        g_console_state.requested_panel_clkdiv = std::clamp(
+            g_console_state.requested_panel_clkdiv + kDelta, kClkdivMin, kClkdivMax);
+        return true;
+    }
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:

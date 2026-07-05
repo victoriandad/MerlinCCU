@@ -540,6 +540,8 @@ enum class SoftKeyRoute : uint8_t
     GoKeypadDebug,
     GoGreyscaleTest,
     GoTemporalDitherTest,
+    NudgeClkdivDown,
+    NudgeClkdivUp,
     ToggleRemoteConfig,
     ToggleHomeAssistantEnabled,
     ToggleMqttEnabled,
@@ -878,6 +880,14 @@ struct ConsoleState
 {
     MenuPage active_page;
     uint8_t settings_page_index;
+    /// @brief Live-adjustable PIO clock divider for interactive timing sweeps.
+    /// @details Defaults to `kPanel.clkdiv`; nudged via
+    /// `SoftKeyRoute::NudgeClkdivDown/Up` on the temporal dither test page.
+    /// `MerlinCCU.cpp`'s main loop applies changes via `display::set_clkdiv()`
+    /// — this struct only tracks the requested value, per the existing rule
+    /// that display state changes flow through the main loop, not
+    /// `console_controller` directly.
+    float requested_panel_clkdiv;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
     LocalConditionMetric local_condition_metric;

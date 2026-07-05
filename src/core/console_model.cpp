@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdio>
 
+#include "panel_config.h"
+
 namespace
 {
 
@@ -103,6 +105,7 @@ void make_default_console_state(ConsoleState& out)
     // clean navigation shell instead of a diagnostics surface.
     out.active_page = MenuPage::Home;
     out.settings_page_index = 0;
+    out.requested_panel_clkdiv = kPanel.clkdiv;
     out.weather_source = WeatherSource::HomeAssistant;
     out.weather_period = WeatherPeriod::Hourly;
     out.local_condition_metric = LocalConditionMetric::Temperature;
