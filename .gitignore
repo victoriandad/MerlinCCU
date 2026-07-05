@@ -1,6 +1,7 @@
 build/
 build*/
 .vscode/
+.claude/
 *.elf
 *.bin
 *.uf2
