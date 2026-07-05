@@ -1,7 +1,8 @@
 # Multicore Raster Regeneration Design (Gated)
 
-Design only. Not implemented. Gated on hardware measurements described below.
-Builds on `docs/greyscale-investigation.md` and `docs/greyscale-test-card-design.md`.
+Design only. Not implemented. Tracked as #56, gated on #55's hardware
+measurements. Builds on `docs/greyscale-investigation.md` and
+`docs/greyscale-test-card-design.md`.
 
 ## Why This Exists
 
@@ -124,7 +125,7 @@ the exception.
 ## Gating: What Must Be Measured Before Implementation
 
 This design is not ready to implement. Two numbers, both unmeasured until
-now, gate it:
+now, gate it — tracked as #55:
 
 1. **Actual physical frame rate.** Instrumented in this same change
    (`display::frame_count()`, sampled once per second alongside the existing
@@ -153,8 +154,6 @@ questions this document addresses.
 2. If the numbers suggest a 2-phase cycle is plausible (frame rate leaves
    real headroom above whatever flicker-safe base rate bench testing
    confirms, and rebuild time comfortably fits inside one frame period even
-   before dirty-line optimization), scope the core 1 implementation as a
-   follow-up issue.
-3. If not, this document stands as the record of why temporal dithering
-   beyond #54's spatial approach was not pursued, and spatial dithering
-   remains the answer for this panel.
+   before dirty-line optimization), implement the core 1 design in #56.
+3. If not, close #56 as not planned and record why here — spatial dithering
+   (#54) remains the answer for this panel.
