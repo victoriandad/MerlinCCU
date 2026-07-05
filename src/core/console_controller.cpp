@@ -3518,6 +3518,10 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             "CLK+", SoftKeyRoute::NudgeClkdivUp, true};
         softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetClkdiv, true};
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            "STEP-", SoftKeyRoute::DecreaseClkdivStep, true};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            "STEP+", SoftKeyRoute::IncreaseClkdivStep, true};
         break;
     case MenuPage::GreyscaleTest:
         softkeys[softkey_index(SoftKeyId::Right1)] = {
@@ -3917,13 +3921,27 @@ bool apply_softkey_route(SoftKeyRoute route)
     {
         // Bounded to +/-0.3 around the compiled-in default so interactive
         // sweeping can't push VCLK far outside the panel's rated range while
-        // hunting for the value that stops the roll.
-        constexpr float kClkdivStep = 0.01F;
+        // hunting for the value that stops the roll. Step size itself is
+        // adjustable via DecreaseClkdivStep/IncreaseClkdivStep.
         constexpr float kClkdivMin = kPanel.clkdiv - 0.3F;
         constexpr float kClkdivMax = kPanel.clkdiv + 0.3F;
-        const float kDelta = (route == SoftKeyRoute::NudgeClkdivUp) ? kClkdivStep : -kClkdivStep;
+        const float kDelta = (route == SoftKeyRoute::NudgeClkdivUp) ? g_console_state.clkdiv_step
+                                                                    : -g_console_state.clkdiv_step;
         g_console_state.requested_panel_clkdiv = std::clamp(
             g_console_state.requested_panel_clkdiv + kDelta, kClkdivMin, kClkdivMax);
+        return true;
+    }
+    case SoftKeyRoute::DecreaseClkdivStep:
+    case SoftKeyRoute::IncreaseClkdivStep:
+    {
+        // Halves/doubles per press. Floor is close to the PIO clkdiv
+        // register's own resolution (1/256 ~= 0.0039); ceiling keeps one
+        // press from skipping most of the +/-0.3 sweep range outright.
+        constexpr float kStepMin = 0.001F;
+        constexpr float kStepMax = 0.1F;
+        const float kFactor = (route == SoftKeyRoute::IncreaseClkdivStep) ? 2.0F : 0.5F;
+        g_console_state.clkdiv_step =
+            std::clamp(g_console_state.clkdiv_step * kFactor, kStepMin, kStepMax);
         return true;
     }
     case SoftKeyRoute::ResetClkdiv:

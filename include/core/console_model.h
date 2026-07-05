@@ -543,6 +543,8 @@ enum class SoftKeyRoute : uint8_t
     NudgeClkdivDown,
     NudgeClkdivUp,
     ResetClkdiv,
+    DecreaseClkdivStep,
+    IncreaseClkdivStep,
     ToggleRemoteConfig,
     ToggleHomeAssistantEnabled,
     ToggleMqttEnabled,
@@ -889,6 +891,10 @@ struct ConsoleState
     /// that display state changes flow through the main loop, not
     /// `console_controller` directly.
     float requested_panel_clkdiv;
+    /// @brief Step size used by `SoftKeyRoute::NudgeClkdivDown/Up`, adjustable
+    /// via `SoftKeyRoute::DecreaseClkdivStep/IncreaseClkdivStep` (L4/L5 on the
+    /// temporal dither test page) so a sweep can move fast or fine as needed.
+    float clkdiv_step;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
     LocalConditionMetric local_condition_metric;

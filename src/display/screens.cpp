@@ -1888,23 +1888,20 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
 /// pacing - read `FRAME RATE` alongside this page for context.
 void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    // Matches the ~46px margin draw_detail_row already uses elsewhere,
-    // specifically to clear the softkey label columns (kSoftkeyLayout:
-    // left_x=2, width=34, and the mirrored right-edge column) rather than a
-    // page-specific guess.
-    constexpr int kMarginX = 46;
-    constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
-    constexpr int kBandHeight = 28;
+    // This page now has real labels on all five left softkeys (CLK-, CLK+,
+    // RESET, STEP-, STEP+), so there is no longer a run of unlabelled rows to
+    // dodge vertically like GreyscaleTest does. Clearing horizontally instead:
+    // the widest label ("STEP-"/"STEP+"/"RESET") is 5 chars at Font8x12
+    // (~9px/char from kSoftkeyLayout.text_inset=4), reaching roughly to x=51
+    // from the left edge, so starting content at x=62 clears all five rows
+    // regardless of which one content happens to sit beside vertically.
+    constexpr int kMarginX = 62;
+    constexpr int kBandWidth = kUiWidth - kMarginX - 8;
+    constexpr int kBandHeight = 24;
     constexpr int kLabelHeight = 9;
     constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 8;
-    // This page's own CLK-/CLK+ labels use the larger Font8x12 face (see
-    // softkey_label_font) and sit in the first two softkey rows
-    // (kSoftkeyLayout.top_y=41, pitch=57, height=18: rows at y=41-59 and
-    // y=98-116). Starting content below both, rather than just narrowing the
-    // margin, avoids the row-1/row-2 vertical collision a margin fix alone
-    // doesn't touch.
-    constexpr int kStartY = 124;
+    constexpr int kEntryGap = 6;
+    constexpr int kStartY = 44;
     constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
 
     static bool toggle_phase = false;
@@ -1951,12 +1948,18 @@ void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_sta
                            fonts::FontFace::Font5x7);
 
     char clkdiv_line[32] = {};
-    std::snprintf(clkdiv_line, sizeof(clkdiv_line), "CLKDIV %.2f (L1- L2+)",
+    std::snprintf(clkdiv_line, sizeof(clkdiv_line), "CLKDIV %.3f",
                   static_cast<double>(console_state.requested_panel_clkdiv));
     const int kCaptionY = kStatusY + (3 * (kLabelHeight + 2));
     framebuffer::draw_text(fb, kMarginX, kCaptionY, clkdiv_line, true, fonts::FontFace::Font5x7);
-    framebuffer::draw_text(fb, kMarginX, kCaptionY + kLabelHeight + 2, "TOGGLE RATE != PANEL RATE",
-                           true, fonts::FontFace::Font5x7);
+
+    char step_line[32] = {};
+    std::snprintf(step_line, sizeof(step_line), "STEP %.3f",
+                  static_cast<double>(console_state.clkdiv_step));
+    framebuffer::draw_text(fb, kMarginX, kCaptionY + kLabelHeight + 2, step_line, true,
+                           fonts::FontFace::Font5x7);
+    framebuffer::draw_text(fb, kMarginX, kCaptionY + 2 * (kLabelHeight + 2),
+                           "TOGGLE RATE != PANEL RATE", true, fonts::FontFace::Font5x7);
 }
 
 /// @brief Draws compact status lines for the alert-list page.
