@@ -474,6 +474,8 @@ const char* menu_page_title(MenuPage page)
         return "ALIGN";
     case MenuPage::KeypadDebug:
         return "KEYPAD DEBUG";
+    case MenuPage::GreyscaleTest:
+        return "GREY TEST";
     case MenuPage::AlertList:
         return "ALERTS";
     case MenuPage::AlertDetail:
@@ -636,6 +638,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::StatusIntegrations:
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
+    case MenuPage::GreyscaleTest:
     case MenuPage::AlertList:
     case MenuPage::AlertDetail:
         return fonts::FontFace::Font8x12;
@@ -1824,6 +1827,42 @@ void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
+/// @brief Draws the 2x2 ordered-dither greyscale test card.
+/// @details Five bands, one per brightness level (0-4 of every 2x2 pixel
+/// block lit), exercising `framebuffer::fill_rect_dithered` end-to-end on
+/// real hardware and the browser preview. See `docs/greyscale-investigation.md`
+/// and issue #54. Labels sit above each band on the plain background rather
+/// than overlaid on the dithered fill, since this is a 1-bit framebuffer and
+/// there is no intermediate pixel colour to guarantee label contrast against
+/// every level.
+void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)console_state;
+
+    constexpr int kMarginX = 8;
+    constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
+    constexpr int kBandHeight = 30;
+    constexpr int kLabelHeight = 9;
+    constexpr int kLabelToBandGap = 2;
+    constexpr int kEntryGap = 8;
+    constexpr int kStartY = 44;
+    constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
+
+    for (int level = 0; level <= 4; ++level)
+    {
+        const int kEntryY = kStartY + (level * (kEntryHeight + kEntryGap));
+        char label[16] = {};
+        std::snprintf(label, sizeof(label), "L%d  %d/4", level, level);
+        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, fonts::FontFace::Font5x7);
+        framebuffer::fill_rect_dithered(fb, kMarginX, kEntryY + kLabelHeight + kLabelToBandGap,
+                                        kBandWidth, kBandHeight, level);
+    }
+
+    const int kCaptionY = kStartY + (5 * (kEntryHeight + kEntryGap));
+    framebuffer::draw_text(fb, kMarginX, kCaptionY, "2X2 ORDERED DITHER", true,
+                           fonts::FontFace::Font5x7);
+}
+
 /// @brief Draws compact status lines for the alert-list page.
 void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -1997,6 +2036,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::KeypadDebug:
         draw_keypad_debug_page(fb, console_state);
+        break;
+    case MenuPage::GreyscaleTest:
+        draw_greyscale_test_card(fb, console_state);
         break;
     case MenuPage::AlertList:
         draw_alert_list_page(fb, console_state);

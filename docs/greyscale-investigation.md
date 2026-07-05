@@ -26,6 +26,9 @@ down remain relevant only if a future need for finer gradients or animated
 brightness transitions revives interest in squeezing more levels out of the
 panel.
 
+Implementation design and the diagnostic test card are documented separately
+in `docs/greyscale-test-card-design.md` (issue #54).
+
 ## Source
 
 Planar EL320.256-F6 / -FD6 Operations Manual, document 020-0352-00A (June

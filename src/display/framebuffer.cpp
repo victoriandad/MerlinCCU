@@ -156,6 +156,33 @@ void fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
     }
 }
 
+/// @brief Draws a filled rectangle at a 2x2 ordered-dither brightness level.
+/// @details Uses a standard 2x2 Bayer threshold matrix so the four achievable
+/// levels (aside from 0 and 4, which are uniform) disperse evenly rather than
+/// clustering, which would read as banding instead of a brightness step.
+void fill_rect_dithered(uint8_t* fb, int x, int y, int w, int h, int level)
+{
+    if (w <= 0 || h <= 0)
+    {
+        return;
+    }
+
+    constexpr int kBayer2x2[2][2] = {
+        {0, 2},
+        {3, 1},
+    };
+    const int kClampedLevel = std::clamp(level, 0, 4);
+
+    for (int yy = y; yy < y + h; ++yy)
+    {
+        for (int xx = x; xx < x + w; ++xx)
+        {
+            const bool kLit = kBayer2x2[xx & 1][yy & 1] < kClampedLevel;
+            set_pixel(fb, xx, yy, kLit);
+        }
+    }
+}
+
 /// @brief Draws the main top-left to bottom-right diagonal.
 void draw_diag(uint8_t* fb, bool on)
 {

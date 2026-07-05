@@ -36,6 +36,13 @@ void draw_rect(uint8_t* fb, int x, int y, int w, int h, bool on);
 /// @brief Draws a filled rectangle in UI space.
 void fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on);
 
+/// @brief Draws a filled rectangle using a 2x2 ordered-dither brightness level.
+/// @details `level` is 0-4, representing how many of every 2x2 pixel block are
+/// lit (0/4 through 4/4). Intended for fills, icons, and status indicators
+/// that need a perceived brightness step; not suitable for text or
+/// single-pixel-wide lines, which a 2x2 dither will blur.
+void fill_rect_dithered(uint8_t* fb, int x, int y, int w, int h, int level);
+
 /// @brief Draws a simple diagonal test line.
 void draw_diag(uint8_t* fb, bool on);
 
