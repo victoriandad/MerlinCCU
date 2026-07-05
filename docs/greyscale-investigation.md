@@ -2,6 +2,30 @@
 
 Tracks issue #27. Investigation only; no rendering code changes here.
 
+## Practical Target: 4 Brightness Levels Via Spatial Dithering Only
+
+The sections below were written against #28's full scratch list (up to 3-bit
+/ 8-level greyscale), which is where the panel's hard 75 Hz ceiling becomes a
+real problem. The actual near-term target is more modest: even one dimmed
+level is useful, four would be great.
+
+That target does not need temporal dithering, and therefore does not need
+either of the two open hardware measurements below. A plain 2x2
+ordered/Bayer dither block already yields **5** discrete perceived levels —
+0, 1, 2, 3, or 4 of the 4 sub-pixels lit — entirely within a single frame, at
+zero frame-rate cost and no panel-timing risk. At this panel's 0.3 mm pixel
+pitch, a 2x2 block (0.6 mm) should still read as smooth dimming on
+backgrounds, icons, status fills, and a "dimmed panel" state at normal
+viewing distance; it will look blocky on single-pixel text or thin lines, so
+initial scope should exclude those.
+
+**This narrows #28 to a straightforwardly buildable first step:** an ordered
+2x2-dither greyscale layer in the rendering path, scoped to non-text UI
+elements. The temporal-dithering analysis and open hardware questions further
+down remain relevant only if a future need for finer gradients or animated
+brightness transitions revives interest in squeezing more levels out of the
+panel.
+
 ## Source
 
 Planar EL320.256-F6 / -FD6 Operations Manual, document 020-0352-00A (June
@@ -187,11 +211,17 @@ or the source tree, and should not be guessed at:
 ## Suggested Follow-Up Issues
 
 Per #27's own notes, this investigation should hand off to implementation
-issues rather than close the topic:
+issues rather than close the topic. Given the practical target above, the
+first of these is unblocked and buildable now; the rest are not required to
+reach it:
 
+- **Implement an ordered 2x2 (or 4x4, for finer gradation) spatial dithering
+  greyscale layer**, scoped to non-text UI elements (backgrounds, icons,
+  status fills, a dimmed-panel state). This alone reaches the "4 levels would
+  be great" target with no dependency on the open questions below.
 - Measure and document actual frame rate / `clk_sys` on real hardware
   (unblocks the open question above and issue #15's RAM/size budget work).
-- Implement an ordered/Bayer spatial dithering greyscale framebuffer layer,
-  scoped to icons and gradients rather than text/thin UI lines initially.
+  Only needed if temporal dithering becomes interesting later.
 - Revisit temporal dithering only after the hardware persistence measurement,
-  scoped to at most a 2-level enhancement.
+  scoped to at most a 2-level enhancement, and only if spatial dithering
+  turns out not to be enough.
