@@ -842,6 +842,19 @@ struct HeapStatus
     uint32_t arena_bytes;
 };
 
+/// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`
+/// and `display::last_rebuild_us()`.
+/// @details Exists to measure actual hardware timing before committing to any
+/// temporal-dithering or per-frame raster-regeneration design — see
+/// docs/greyscale-investigation.md and docs/multicore-raster-regen-design.md.
+/// This is diagnostic-only; nothing currently acts on these values.
+struct DisplayTimingStatus
+{
+    bool valid;
+    uint16_t frame_rate_hz;
+    uint32_t last_rebuild_us;
+};
+
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
 struct PinterStatus
 {
@@ -904,6 +917,7 @@ struct ConsoleState
     TimeStatus time_status;
     MainLoopLoadStatus main_loop_load_status;
     HeapStatus heap_status;
+    DisplayTimingStatus display_timing_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
     AirTrafficStatus air_traffic_status;

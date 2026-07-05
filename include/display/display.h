@@ -22,4 +22,17 @@ void set_clkdiv(float clkdiv);
 /// the new raster to be adopted at a safe frame boundary.
 void present(const uint8_t* ui_fb);
 
+/// @brief Returns the number of physical frame-boundary interrupts observed.
+/// @details Increments once per real panel frame, driven by the DMA control
+/// channel's IRQ. Exists to measure actual scanout frame rate on hardware
+/// rather than assume it — see docs/greyscale-investigation.md's open
+/// questions and docs/multicore-raster-regen-design.md.
+uint32_t frame_count();
+
+/// @brief Returns how long the most recent raster rebuild took, in microseconds.
+/// @details Measures `rebuild_raster_from_fb` inside `present()`. Used to
+/// estimate whether a per-frame raster regeneration scheme (temporal
+/// dithering, dirty-line redraw) could fit inside one physical frame period.
+uint32_t last_rebuild_us();
+
 } // namespace display

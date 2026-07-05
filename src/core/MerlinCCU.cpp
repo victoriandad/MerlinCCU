@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <malloc.h>
 
+#include "hardware/clocks.h"
 #include "hardware/pio.h"
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
@@ -293,6 +294,10 @@ int main()
     {
         std::printf("Last reboot was caused by a watchdog timeout (main loop hang)\n");
     }
+    // Prints the real configured system clock so panel VCLK/frame-rate
+    // assumptions in docs/greyscale-investigation.md can be checked against
+    // hardware instead of the SDK-documented default.
+    std::printf("Sys clock: %lu Hz\n", static_cast<unsigned long>(clock_get_hz(clk_sys)));
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
 
     PIO pio = pio0;
@@ -313,6 +318,7 @@ int main()
         .active_us = 0U,
         .sleep_us = 0U,
     };
+    uint32_t last_sampled_frame_count = display::frame_count();
 
     // Initialize the state-producing subsystems before the first frame is drawn
     // so the initial UI reflects real status rather than placeholder defaults.
@@ -671,6 +677,29 @@ int main()
             {
                 console_controller::request_redraw();
             }
+
+            // Measures actual panel scanout timing on hardware rather than
+            // assuming it — see docs/greyscale-investigation.md's open
+            // questions and docs/multicore-raster-regen-design.md.
+            const uint32_t current_frame_count = display::frame_count();
+            const uint32_t frame_delta = current_frame_count - last_sampled_frame_count;
+            last_sampled_frame_count = current_frame_count;
+            const DisplayTimingStatus timing_status = {
+                .valid = window_us > 0,
+                .frame_rate_hz = static_cast<uint16_t>(std::min<uint64_t>(
+                    (static_cast<uint64_t>(frame_delta) * 1000000ULL + static_cast<uint64_t>(window_us) / 2ULL) /
+                        static_cast<uint64_t>(window_us),
+                    UINT16_MAX)),
+                .last_rebuild_us = display::last_rebuild_us(),
+            };
+            const bool timing_changed = console_controller::set_display_timing_status(timing_status);
+            if (timing_changed &&
+                console_controller::state().active_page == MenuPage::StatusResources &&
+                active_mode != ScreenMode::LifeScreensaver)
+            {
+                console_controller::request_redraw();
+            }
+
             loop_load = {
                 .window_start = loop_end,
                 .active_us = 0U,

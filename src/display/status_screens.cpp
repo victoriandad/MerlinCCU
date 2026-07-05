@@ -366,6 +366,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char framebuffer_text[16] = {};
     char loop_load_text[16] = {};
     char loop_sample_text[16] = {};
+    char frame_rate_text[16] = {};
+    char rebuild_time_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
     build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
@@ -387,6 +389,18 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(loop_load_text, sizeof(loop_load_text), "-");
         std::snprintf(loop_sample_text, sizeof(loop_sample_text), "-");
     }
+    if (console_state.display_timing_status.valid)
+    {
+        std::snprintf(frame_rate_text, sizeof(frame_rate_text), "%uHz",
+                      static_cast<unsigned>(console_state.display_timing_status.frame_rate_hz));
+        std::snprintf(rebuild_time_text, sizeof(rebuild_time_text), "%luus",
+                      static_cast<unsigned long>(console_state.display_timing_status.last_rebuild_us));
+    }
+    else
+    {
+        std::snprintf(frame_rate_text, sizeof(frame_rate_text), "-");
+        std::snprintf(rebuild_time_text, sizeof(rebuild_time_text), "-");
+    }
 
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
                       "PROGRAM FLASH", flash_value_text);
@@ -401,6 +415,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         {"UI BUFFERS", framebuffer_text},
         {"LOOP LOAD", loop_load_text},
         {"LOOP SAMPLE", loop_sample_text},
+        {"FRAME RATE", frame_rate_text},
+        {"RASTER BUILD", rebuild_time_text},
         {"HEAP LIVE", "-"},
     };
 
