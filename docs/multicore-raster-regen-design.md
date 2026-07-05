@@ -163,13 +163,36 @@ diagnostic page you navigate into deliberately and back out of, not a
 pattern for general use.
 
 Important limitation, shown on the page itself: the toggle rate is paced by
-the main loop, not locked to the real physical frame boundary.
-`display::present()` only queues a raster for adoption at the next real
-frame — any extra software-side toggles beyond what DMA can adopt are
-coalesced away, not queued — so the *effective* rate actually seen on the
-panel is capped by whatever the real physical frame rate turns out to be,
-not by this loop's pacing. Read `FRAME RATE` (shown on the same page)
-alongside what you see to interpret it correctly.
+the main loop, not locked to the real physical frame boundary. `display::
+present()` only queues a raster for adoption at the next real frame, so the
+*effective* rate actually seen on the panel is capped by whatever the real
+physical frame rate turns out to be, not by this loop's pacing. Read
+`FRAME RATE` (shown on the same page) alongside what you see to interpret it
+correctly.
+
+**Bug found and fixed via this exact test.** The original assumption above
+was that excess software-side `present()` calls would be harmlessly
+"coalesced away." First real-hardware test proved that wrong: continuous
+redraw is the first caller in this firmware's history to call `present()`
+faster than the panel can adopt frames, and doing so could rebuild
+`g_raster_back` again before the DMA IRQ had adopted the previously queued
+raster — handing DMA a torn, half-written buffer mid-swap. Symptom on real
+hardware was a garbled scanning line; the web preview stayed correct
+throughout, since it mirrors the logical UI framebuffer directly and never
+touches this raster-handoff path, which is what pointed at `present()`
+specifically rather than the UI drawing logic.
+
+Fixed: `present()` now skips outright (does not rebuild) when a previous
+raster is still pending adoption, rather than racing the IRQ.
+`display::present_skipped_count()` makes this condition visible — a high
+count relative to `frame_count()` means the caller is presenting faster
+than the panel can adopt frames, which is itself a real, measured signal
+about achievable frame rate, shown on both the Resources page and this test
+page.
+
+This is directly relevant to the core 1 design below: it's a concrete,
+hardware-confirmed example of exactly the kind of producer/consumer race
+that design has to get right deliberately, not assume away.
 
 ## Next Steps
 
