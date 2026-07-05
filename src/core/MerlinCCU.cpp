@@ -211,8 +211,60 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 /// - prepare any configured keypad GPIOs
 /// - start PIO and DMA scanout
 /// - keep updating the active mode in the main loop
+namespace
+{
+
+// core0's entire stack is a fixed 2048-byte region (RP2350 default linker
+// script, .stack_dummy section) -- separate from the .bss/.data RAM region,
+// with no configured override. These bound it.
+extern "C" uint32_t __StackBottom;
+extern "C" uint32_t __StackTop;
+
+constexpr uint32_t kStackFillPattern = 0xEEEEEEEEU;
+// Bytes below the stack pointer at fill time are skipped as a safety
+// margin, so early crt0/main-prologue usage is never touched.
+constexpr uint32_t kStackFillSafetyMarginBytes = 64U;
+
+/// @brief Fills currently-unused stack with a known pattern for a later
+/// high-water-mark scan. Must run as early as possible in main(), before
+/// meaningful call depth accumulates, and never touches memory at or above
+/// the stack pointer at the time it runs.
+void fill_stack_canary()
+{
+    uint32_t sp = 0;
+    asm volatile("mov %0, sp" : "=r"(sp));
+    auto* begin = &__StackBottom;
+    auto* end = reinterpret_cast<uint32_t*>(sp - kStackFillSafetyMarginBytes);
+    for (uint32_t* p = begin; p < end; ++p)
+    {
+        *p = kStackFillPattern;
+    }
+}
+
+/// @brief Returns the fewest bytes of stack ever left untouched since boot.
+/// @details Scans from the bottom of the stack region upward for the first
+/// word that no longer holds the fill pattern -- the deepest point any call
+/// chain has reached. A small result means a real, measured near-miss, not a
+/// guess; see docs/development.md-style diagnostics elsewhere in this file.
+uint32_t stack_high_water_free_bytes()
+{
+    const auto* begin = &__StackBottom;
+    const auto* end = &__StackTop;
+    const uint32_t* p = begin;
+    while (p < end && *p == kStackFillPattern)
+    {
+        ++p;
+    }
+    return static_cast<uint32_t>(reinterpret_cast<const uint8_t*>(p) -
+                                 reinterpret_cast<const uint8_t*>(begin));
+}
+
+} // namespace
+
 int main()
 {
+    fill_stack_canary();
+
     constexpr uint32_t kBootConsoleDelayMs = 10000U;
 
     // Bring up stdio first so any early hardware or config failures are visible
@@ -474,6 +526,15 @@ int main()
         const int64_t window_us = absolute_time_diff_us(loop_load.window_start, loop_end);
         if (window_us >= kLoopLoadWindowUs)
         {
+            // Diagnostic-only, deliberately always-on (not PERIODIC_LOG,
+            // which compiles out by default): reports the worst-case stack
+            // headroom seen so far against the fixed 2048-byte core0 stack.
+            // If this heads toward zero, a hard lockup from stack overflow
+            // (as opposed to a software dead-end) is the explanation, not a
+            // guess.
+            std::printf("Stack free (worst case since boot): %lu bytes\n",
+                        static_cast<unsigned long>(stack_high_water_free_bytes()));
+
             const uint64_t total_us = loop_load.active_us + loop_load.sleep_us;
             const uint8_t load_percent =
                 total_us == 0U ? 0U
