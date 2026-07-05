@@ -542,6 +542,7 @@ enum class SoftKeyRoute : uint8_t
     GoTemporalDitherTest,
     NudgeClkdivDown,
     NudgeClkdivUp,
+    ResetClkdiv,
     ToggleRemoteConfig,
     ToggleHomeAssistantEnabled,
     ToggleMqttEnabled,

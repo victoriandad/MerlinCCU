@@ -3517,6 +3517,7 @@ void update_softkeys_from_state()
             "CLK-", SoftKeyRoute::NudgeClkdivDown, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             "CLK+", SoftKeyRoute::NudgeClkdivUp, true};
+        softkeys[softkey_index(SoftKeyId::Left3)] = {"RESET", SoftKeyRoute::ResetClkdiv, true};
         break;
     case MenuPage::GreyscaleTest:
         softkeys[softkey_index(SoftKeyId::Right1)] = {
@@ -3925,6 +3926,9 @@ bool apply_softkey_route(SoftKeyRoute route)
             g_console_state.requested_panel_clkdiv + kDelta, kClkdivMin, kClkdivMax);
         return true;
     }
+    case SoftKeyRoute::ResetClkdiv:
+        g_console_state.requested_panel_clkdiv = kPanel.clkdiv;
+        return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:
