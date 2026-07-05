@@ -4,6 +4,38 @@ Design only. Not implemented. Tracked as #56, gated on #55's hardware
 measurements. Builds on `docs/greyscale-investigation.md` and
 `docs/greyscale-test-card-design.md`.
 
+## Status: Parked — Hardware Not Currently Available
+
+Hardware testing on branch `temporal-dither-test-card` is paused: the
+physical panel is not currently connected (Pico only, no display attached).
+Findings so far, before parking:
+
+- The present() race bug (torn raster buffer from continuous redraw) is
+  fixed and confirmed — the panel showed a clean scan afterward, not the
+  original noise.
+- A separate, real issue was found and is still open: the whole screen
+  slowly rolls horizontally (a few times per second). Confirmed via live
+  clkdiv nudging that this **is** a clkdiv/timing issue, not a structural
+  pixel-count mismatch — both directions of sweep change the roll rate and
+  eventually degrade into the original line-scan noise, and values near the
+  compiled-in default (`kPanel.clkdiv = 2.51F`) give the best (not yet
+  perfect) results. This is consistent with `panel_config.h`'s own framing
+  of that value as an "empirically stable neighborhood," not an exact one.
+- Interactive tooling is in place on `MenuPage::TemporalDitherTest` for
+  whenever hardware is available again: `CLK-`/`CLK+` (nudge, step size
+  shown on screen), `RESET` (back to the compiled-in default), `STEP-`/
+  `STEP+` (halve/double the nudge step, 0.001-0.1 range) — all live, no
+  rebuild/reflash needed per attempt.
+
+**Next time hardware is available:** resume the clkdiv sweep near the
+default using a finer step (`STEP-` a few times first), find the value that
+fully stops the roll, then report it back so it can be baked into
+`panel_config.h` as the new default. `FRAME RATE` changes live as clkdiv is
+retuned (it's a direct function of PIO clock speed), so record the reading
+*at* the settled clkdiv value, not one taken mid-sweep — that final reading
+is the one #55's acceptance criteria actually needs.
+image means scanout isn't locked correctly yet.
+
 ## Why This Exists
 
 The spatial 2x2 dithering in #54 already reaches the actual near-term target
