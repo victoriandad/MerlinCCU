@@ -1842,7 +1842,11 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
 {
     (void)console_state;
 
-    constexpr int kMarginX = 8;
+    // Matches the ~46px margin draw_detail_row already uses elsewhere,
+    // specifically to clear the softkey label columns (kSoftkeyLayout:
+    // left_x=2, width=34, and the mirrored right-edge column) rather than a
+    // page-specific guess.
+    constexpr int kMarginX = 40;
     constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
     constexpr int kBandHeight = 30;
     constexpr int kLabelHeight = 9;
@@ -1880,7 +1884,11 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
 /// pacing - read `FRAME RATE` alongside this page for context.
 void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kMarginX = 8;
+    // Matches the ~46px margin draw_detail_row already uses elsewhere,
+    // specifically to clear the softkey label columns (kSoftkeyLayout:
+    // left_x=2, width=34, and the mirrored right-edge column) rather than a
+    // page-specific guess.
+    constexpr int kMarginX = 40;
     constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
     constexpr int kBandHeight = 40;
     constexpr int kLabelHeight = 9;
