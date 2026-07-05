@@ -3514,9 +3514,9 @@ void update_softkeys_from_state()
         // panel_config.h's "divider sweeping" note) without a rebuild/reflash
         // cycle per attempt.
         softkeys[softkey_index(SoftKeyId::Left1)] = {
-            "CLKDIV-", SoftKeyRoute::NudgeClkdivDown, true};
+            "CLK-", SoftKeyRoute::NudgeClkdivDown, true};
         softkeys[softkey_index(SoftKeyId::Left2)] = {
-            "CLKDIV+", SoftKeyRoute::NudgeClkdivUp, true};
+            "CLK+", SoftKeyRoute::NudgeClkdivUp, true};
         break;
     case MenuPage::GreyscaleTest:
         softkeys[softkey_index(SoftKeyId::Right1)] = {

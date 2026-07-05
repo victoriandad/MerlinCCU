@@ -1846,13 +1846,17 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
     // specifically to clear the softkey label columns (kSoftkeyLayout:
     // left_x=2, width=34, and the mirrored right-edge column) rather than a
     // page-specific guess.
-    constexpr int kMarginX = 40;
+    constexpr int kMarginX = 46;
     constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
-    constexpr int kBandHeight = 30;
+    constexpr int kBandHeight = 20;
     constexpr int kLabelHeight = 9;
     constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 8;
-    constexpr int kStartY = 44;
+    constexpr int kEntryGap = 6;
+    // This page's TEMPORAL/HOME softkey labels sit in rows 0 and 4
+    // (kSoftkeyLayout.top_y=41, pitch=57, height=18: y=41-59 and y=269-287).
+    // Starting after row 0 and finishing before row 4 avoids both, rather
+    // than relying on horizontal margin alone.
+    constexpr int kStartY = 64;
     constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
 
     for (int level = 0; level <= 4; ++level)
@@ -1888,13 +1892,19 @@ void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_sta
     // specifically to clear the softkey label columns (kSoftkeyLayout:
     // left_x=2, width=34, and the mirrored right-edge column) rather than a
     // page-specific guess.
-    constexpr int kMarginX = 40;
+    constexpr int kMarginX = 46;
     constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
-    constexpr int kBandHeight = 40;
+    constexpr int kBandHeight = 28;
     constexpr int kLabelHeight = 9;
     constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 10;
-    constexpr int kStartY = 44;
+    constexpr int kEntryGap = 8;
+    // This page's own CLK-/CLK+ labels use the larger Font8x12 face (see
+    // softkey_label_font) and sit in the first two softkey rows
+    // (kSoftkeyLayout.top_y=41, pitch=57, height=18: rows at y=41-59 and
+    // y=98-116). Starting content below both, rather than just narrowing the
+    // margin, avoids the row-1/row-2 vertical collision a margin fix alone
+    // doesn't touch.
+    constexpr int kStartY = 124;
     constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
 
     static bool toggle_phase = false;
