@@ -617,7 +617,15 @@ int main()
         {
             // The menu path only redraws on observable state changes to avoid
             // unnecessary raster rebuilds while the screen is otherwise static.
-            if (console_changed)
+            // The temporal-dither test page is a deliberate, narrow exception:
+            // it needs continuous redraws to alternate its test band at all,
+            // so it forces a redraw every loop iteration while active. This is
+            // an empirical visual check (see docs/multicore-raster-regen-design.md),
+            // not the eventual per-frame regeneration design, and is expected
+            // to measurably raise LOOP LOAD while this one page is open.
+            const bool force_continuous_redraw =
+                console_controller::state().active_page == MenuPage::TemporalDitherTest;
+            if (console_changed || force_continuous_redraw)
             {
                 screens::draw_menu_screen(framebuffer::back(), console_controller::state());
                 framebuffer::swap();

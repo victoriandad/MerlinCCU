@@ -146,14 +146,40 @@ persistence is unpublished and unmeasured, and affects how forgiving the
 panel actually is toward any temporal toggling, independent of the RAM/CPU
 questions this document addresses.
 
+## Empirical Visual Check (No Core 1 Required)
+
+Alongside the numeric instrumentation, `MenuPage::TemporalDitherTest`
+(reachable via `Status → GREYSCL → TEMPORAL`) gives a direct visual answer
+to the persistence question, without building any core 1 code: it shows a
+static 50% spatial-dither band next to a band that toggles fully on/off
+every redraw, for a side-by-side look at whether alternating content reads
+as flicker or as dimming on the real panel.
+
+This deliberately does not use core 1 or dirty-line tracking — it forces
+continuous redraw on the existing single core while this one page is open
+(see `force_continuous_redraw` in `MerlinCCU.cpp`), which is expected to
+raise `LOOP LOAD` measurably. That's an acceptable, bounded cost for a
+diagnostic page you navigate into deliberately and back out of, not a
+pattern for general use.
+
+Important limitation, shown on the page itself: the toggle rate is paced by
+the main loop, not locked to the real physical frame boundary.
+`display::present()` only queues a raster for adoption at the next real
+frame — any extra software-side toggles beyond what DMA can adopt are
+coalesced away, not queued — so the *effective* rate actually seen on the
+panel is capped by whatever the real physical frame rate turns out to be,
+not by this loop's pacing. Read `FRAME RATE` (shown on the same page)
+alongside what you see to interpret it correctly.
+
 ## Next Steps
 
-1. Flash the measurement instrumentation (this change) and read `FRAME RATE`
-   and `RASTER BUILD` off the Resources status page (or the boot-time serial
-   log, which now also prints the real `clk_sys` frequency).
-2. If the numbers suggest a 2-phase cycle is plausible (frame rate leaves
-   real headroom above whatever flicker-safe base rate bench testing
-   confirms, and rebuild time comfortably fits inside one frame period even
-   before dirty-line optimization), implement the core 1 design in #56.
-3. If not, close #56 as not planned and record why here — spatial dithering
+1. Flash this branch and read `FRAME RATE` / `RASTER BUILD` off the
+   Resources status page (or the boot-time serial log, which now also
+   prints the real `clk_sys` frequency) — #55.
+2. Also check `Status → GREYSCL → TEMPORAL` and judge by eye whether the
+   toggling band looks like flicker or like dimming at whatever the real
+   frame rate turns out to be.
+3. If both the numbers and the visual check suggest a 2-phase cycle is
+   plausible, implement the core 1 design in #56.
+4. If not, close #56 as not planned and record why here — spatial dithering
    (#54) remains the answer for this panel.

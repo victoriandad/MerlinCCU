@@ -477,6 +477,8 @@ const char* menu_page_title(MenuPage page)
         return "KEYPAD DEBUG";
     case MenuPage::GreyscaleTest:
         return "GREY TEST";
+    case MenuPage::TemporalDitherTest:
+        return "TEMPORAL TEST";
     case MenuPage::AlertList:
         return "ALERTS";
     case MenuPage::AlertDetail:
@@ -640,6 +642,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
     case MenuPage::GreyscaleTest:
+    case MenuPage::TemporalDitherTest:
     case MenuPage::AlertList:
     case MenuPage::AlertDetail:
         return fonts::FontFace::Font8x12;
@@ -1863,6 +1866,71 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
                            fonts::FontFace::Font5x7);
 }
 
+/// @brief Draws a single-core, best-effort temporal-dither visual test.
+/// @details This is a cheap empirical check, not the multicore design in
+/// `docs/multicore-raster-regen-design.md`. `MerlinCCU.cpp` forces continuous
+/// redraw while this page is active (see `force_continuous_redraw` there),
+/// so this function is called roughly once per main-loop iteration and flips
+/// a local toggle each time. The actual rate the panel shows is not locked to
+/// this loop: `display::present()` only queues a raster for adoption at the
+/// next real frame boundary, so any extra software-side toggles beyond what
+/// DMA can adopt are naturally coalesced away, not queued up. That makes this
+/// safe to run continuously, but it also means the effective toggle rate seen
+/// on screen is capped by the real physical frame rate, not this loop's
+/// pacing - read `FRAME RATE` alongside this page for context.
+void draw_temporal_dither_test_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kMarginX = 8;
+    constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
+    constexpr int kBandHeight = 40;
+    constexpr int kLabelHeight = 9;
+    constexpr int kLabelToBandGap = 2;
+    constexpr int kEntryGap = 10;
+    constexpr int kStartY = 44;
+    constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
+
+    static bool toggle_phase = false;
+    static uint32_t redraw_count = 0;
+    toggle_phase = !toggle_phase;
+    ++redraw_count;
+
+    const int kReferenceY = kStartY;
+    framebuffer::draw_text(fb, kMarginX, kReferenceY, "SPATIAL 50% (STATIC)", true,
+                           fonts::FontFace::Font5x7);
+    framebuffer::fill_rect_dithered(fb, kMarginX, kReferenceY + kLabelHeight + kLabelToBandGap,
+                                    kBandWidth, kBandHeight, 2);
+
+    const int kToggleY = kStartY + kEntryHeight + kEntryGap;
+    framebuffer::draw_text(fb, kMarginX, kToggleY, "TEMPORAL 50% (TOGGLING)", true,
+                           fonts::FontFace::Font5x7);
+    framebuffer::fill_rect(fb, kMarginX, kToggleY + kLabelHeight + kLabelToBandGap, kBandWidth,
+                           kBandHeight, toggle_phase);
+
+    char status_line[32] = {};
+    std::snprintf(status_line, sizeof(status_line), "REDRAWS %lu  PHASE %s",
+                  static_cast<unsigned long>(redraw_count), toggle_phase ? "ON" : "OFF");
+    const int kStatusY = kStartY + (2 * (kEntryHeight + kEntryGap));
+    framebuffer::draw_text(fb, kMarginX, kStatusY, status_line, true, fonts::FontFace::Font5x7);
+
+    char rate_line[32] = {};
+    if (console_state.display_timing_status.valid)
+    {
+        std::snprintf(rate_line, sizeof(rate_line), "PANEL %uHz  BUILD %luus",
+                      static_cast<unsigned>(console_state.display_timing_status.frame_rate_hz),
+                      static_cast<unsigned long>(console_state.display_timing_status.last_rebuild_us));
+    }
+    else
+    {
+        std::snprintf(rate_line, sizeof(rate_line), "PANEL -Hz  BUILD -us");
+    }
+    framebuffer::draw_text(fb, kMarginX, kStatusY + kLabelHeight + 2, rate_line, true,
+                           fonts::FontFace::Font5x7);
+
+    const int kCaptionY = kStatusY + (2 * (kLabelHeight + 2)) + 4;
+    framebuffer::draw_text(fb, kMarginX, kCaptionY, "TOGGLE RATE != PANEL RATE", true,
+                           fonts::FontFace::Font5x7);
+}
+
 /// @brief Draws compact status lines for the alert-list page.
 void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -2039,6 +2107,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::GreyscaleTest:
         draw_greyscale_test_card(fb, console_state);
+        break;
+    case MenuPage::TemporalDitherTest:
+        draw_temporal_dither_test_page(fb, console_state);
         break;
     case MenuPage::AlertList:
         draw_alert_list_page(fb, console_state);

@@ -2171,6 +2171,8 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::KeypadDebug:
     case MenuPage::GreyscaleTest:
         return MenuPage::Settings;
+    case MenuPage::TemporalDitherTest:
+        return MenuPage::GreyscaleTest;
     case MenuPage::AlertList:
         return g_console_state.alert_parent_page;
     case MenuPage::AlertDetail:
@@ -3505,7 +3507,12 @@ void update_softkeys_from_state()
     }
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
+    case MenuPage::TemporalDitherTest:
+        break;
     case MenuPage::GreyscaleTest:
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            "TEMPORAL", SoftKeyRoute::GoTemporalDitherTest, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
         break;
     case MenuPage::AlertList:
     {
@@ -3890,6 +3897,10 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoGreyscaleTest:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::GreyscaleTest;
+        return true;
+    case SoftKeyRoute::GoTemporalDitherTest:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::TemporalDitherTest;
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
