@@ -402,14 +402,39 @@ int main()
     while (true)
     {
         watchdog_update();
+
+        // Below, every potentially slow per-iteration call is individually
+        // timed and logged if it runs long: any one of these blocking for
+        // even a couple hundred ms delays everything after it in this same
+        // iteration, including web_config_server's handling of an
+        // already-pending web-preview request -- exactly the kind of
+        // multi-second UI stall that is otherwise very hard to pin down
+        // after the fact without a timestamp trail.
+        constexpr int64_t kSlowUpdateThresholdUs = 100000; // 100ms
+        const auto log_if_slow = [](const char* name, absolute_time_t start)
+        {
+            const int64_t elapsed_us = absolute_time_diff_us(start, get_absolute_time());
+            if (elapsed_us >= kSlowUpdateThresholdUs)
+            {
+                std::printf("Slow update: %s took %lldus (possible UI stall cause)\n", name,
+                            static_cast<long long>(elapsed_us));
+            }
+        };
+
         // Flush any deferred flash saves (settings, Pinter state) queued by
         // the previous iteration here, at the top of the loop and outside any
         // network call stack: the write disables all interrupts for its
         // duration, and a full sleep has already elapsed since
         // web_config_server::update() last ran, so there is no in-flight
         // request or response this could stall.
+        absolute_time_t update_start = get_absolute_time();
         config_manager::flush_pending_save();
+        log_if_slow("config_manager::flush_pending_save", update_start);
+
+        update_start = get_absolute_time();
         console_controller::flush_pending_pinter_save();
+        log_if_slow("console_controller::flush_pending_pinter_save", update_start);
+
         const absolute_time_t loop_start = get_absolute_time();
         // Poll hardware first, then let the controller translate those raw
         // events into menu/state changes before the integrations update.
@@ -447,13 +472,25 @@ int main()
 
         // Keep the integration stack advancing every loop so network-driven UI
         // state stays fresh even when the user is not pressing keys.
+        update_start = get_absolute_time();
         console_changed = wifi_manager::update() || console_changed;
+        log_if_slow("wifi_manager::update", update_start);
+
+        update_start = get_absolute_time();
         console_changed = time_manager::update() || console_changed;
+        log_if_slow("time_manager::update", update_start);
+
+        update_start = get_absolute_time();
         console_changed = home_assistant_manager::update(wifi_manager::status()) || console_changed;
+        log_if_slow("home_assistant_manager::update", update_start);
+
+        update_start = get_absolute_time();
         console_changed =
             mqtt_manager::update(wifi_manager::status(), home_assistant_manager::status(),
                                  time_manager::status()) ||
             console_changed;
+        log_if_slow("mqtt_manager::update", update_start);
+
         const ConsoleState& console_state = console_controller::state();
         const bool on_shares_landing = console_state.active_page == MenuPage::Shares;
         const bool on_share_detail = console_state.active_page == MenuPage::ShareDetail;
@@ -465,12 +502,20 @@ int main()
             on_shares_landing ? SharePeriod::Today : console_state.share_period;
         // Local web control should stay responsive even when share data refresh
         // is active, so service the web server before optional market fetches.
+        update_start = get_absolute_time();
         console_changed = web_config_server::update(wifi_manager::status()) || console_changed;
+        log_if_slow("web_config_server::update", update_start);
+
+        update_start = get_absolute_time();
         console_changed =
             share_price_manager::update(wifi_manager::status(), share_fetch_period,
                                         share_fetch_enabled) ||
             console_changed;
+        log_if_slow("share_price_manager::update", update_start);
+
+        update_start = get_absolute_time();
         environment_sensor_manager::update();
+        log_if_slow("environment_sensor_manager::update", update_start);
 
         // Mirror subsystem status back into the console model only after the
         // managers have had a chance to update this iteration.
