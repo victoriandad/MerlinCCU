@@ -20,9 +20,11 @@ add_executable(host_tests
     test_keypad_matrix_decode.cpp
     test_config_persistence.cpp
     test_date_time_math.cpp
+    test_pinter_scheduling.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
     ${MERLIN_ROOT}/src/config/config_persistence.cpp
     ${MERLIN_ROOT}/src/network/date_time_math.cpp
+    ${MERLIN_ROOT}/src/core/pinter_scheduling.cpp
 )
 
 target_include_directories(host_tests PRIVATE

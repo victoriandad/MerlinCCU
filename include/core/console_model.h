@@ -756,6 +756,10 @@ struct ConsoleState
     uint8_t pinter_pending_brewing_days;
     uint8_t pinter_pending_cold_crash_days;
     uint8_t pinter_pending_conditioning_days;
+    /// @brief Human-readable reason the primary Pinter action is blocked, or
+    /// empty when it isn't. Exists so a capacity block (fridge/dock full) is an
+    /// unmissable on-screen message rather than only a two-line softkey hint.
+    std::array<char, 40> pinter_block_reason;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

@@ -130,6 +130,7 @@ ConsoleState make_default_console_state()
     state.pinter_pending_brewing_days = 0U;
     state.pinter_pending_cold_crash_days = 0U;
     state.pinter_pending_conditioning_days = 0U;
+    state.pinter_block_reason.fill('\0');
     state.screen_saver_selection = ScreenSaverSelection::Life;
     state.time_zone = TimeZoneSelection::EuropeLondon;
     state.screen_saver_timeout_minutes = 5;

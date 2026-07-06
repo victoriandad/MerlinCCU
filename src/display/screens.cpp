@@ -2384,6 +2384,17 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
                                         page_count);
         return;
     }
+    case MenuPage::Pinter:
+        // Centre data is otherwise intentionally blank on this page -- status is
+        // carried by the softkey labels -- except for this one case: when the
+        // primary action is blocked by a capacity limit, that reason goes here
+        // too, since a two-line softkey hint is easy to press right past.
+        if (console_state.pinter_block_reason[0] != '\0')
+        {
+            draw_centered_text(fb, kUiWidth / 2, 150, console_state.pinter_block_reason.data(),
+                               true, fonts::FontFace::Font5x7, 1);
+        }
+        return;
     default:
         break;
     }
