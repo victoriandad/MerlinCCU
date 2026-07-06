@@ -1,0 +1,76 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+#include "console_model.h"
+
+/// @brief Pure Pinter brew-scheduling rules shared between the firmware and
+/// host tests (issue #48). Covers dock/fridge capacity accounting and the
+/// per-vessel stage-transition rules that gate the CCU's context-sensitive
+/// "primary action" softkey. Deliberately excludes the Idle -> Brewing start
+/// transition and brew-pack catalogue/inventory management, both of which
+/// depend on the shared selected-brew queue in ConsoleState rather than being
+/// a pure function of one vessel's own state -- those stay in
+/// console_controller.cpp.
+namespace pinter_scheduling
+{
+
+/// @brief Counts vessels currently occupying a brew dock slot (Brewing only).
+uint8_t brew_dock_count(const std::array<PinterStatus, kPinterCount>& pinters);
+
+/// @brief Returns whether a state occupies one of the shared fridge slots.
+bool uses_fridge(PinterState state);
+
+/// @brief Counts vessels currently occupying fridge space (Conditioning/Ready).
+uint8_t fridge_count(const std::array<PinterStatus, kPinterCount>& pinters);
+
+/// @brief Returns whether this vessel still has a planned cold-crash step pending.
+bool has_pending_cold_crash(const PinterStatus& pinter);
+
+/// @brief Returns true when a vessel can start brewing now.
+/// @details Cold-crash does not occupy either the dock or the fridge in this
+/// model -- a vessel frees its dock slot the moment it leaves Brewing.
+bool can_start(uint8_t selected_brew_count, uint8_t dock_count);
+
+/// @brief Returns true when a vessel can move into fridge space now.
+bool can_enter_fridge(const PinterStatus& pinter, uint8_t fridge_count);
+
+/// @brief Returns whether the context-sensitive primary action is currently allowed.
+/// @details This is the single source of truth for why the CCU's one Pinter
+/// action button is enabled or blocked; the UI is responsible for explaining
+/// *why* when this returns false rather than silently doing nothing.
+bool primary_action_enabled(const PinterStatus& pinter, uint8_t selected_brew_count,
+                            uint8_t dock_count, uint8_t fridge_count);
+
+/// @brief Summarised Pinter workflow bucket counts used on the Home page.
+struct SummaryCounts
+{
+    uint8_t waiting;
+    uint8_t brewing;
+    uint8_t conditioning;
+    uint8_t ready;
+};
+
+/// @brief Counts the user-facing Pinter workflow buckets used on Home.
+/// @details Waiting means brew packs that have not yet been started. Any
+/// pre-conditioning hold state remains grouped with brewing for this summary.
+SummaryCounts summarize(const std::array<PinterStatus, kPinterCount>& pinters,
+                        uint8_t selected_brew_count);
+
+/// @brief Advances one non-Idle vessel to its next real-world stage in place.
+/// @details Does not handle the Idle -> Brewing transition (see the header
+/// note above). Returns false without modifying `pinter` if the vessel is
+/// Idle or the action is currently blocked by dock/fridge capacity -- callers
+/// should check `primary_action_enabled` first if they need to distinguish
+/// "blocked" from "nothing to do" for user-facing messaging.
+bool advance_non_idle(PinterStatus& pinter, uint32_t today_epoch_day, uint8_t fridge_count);
+
+/// @brief Clears a vessel back to Idle after a mistaken manual event.
+/// @details `default_brew_index` seeds the vessel's next brew selection (the
+/// catalogue index the Home page was last cycled to) so the next start
+/// doesn't default back to catalogue entry zero. Returns false (no-op) if the
+/// vessel is already Idle with no cold-crash history to clear.
+bool reset(PinterStatus& pinter, uint8_t default_brew_index);
+
+} // namespace pinter_scheduling

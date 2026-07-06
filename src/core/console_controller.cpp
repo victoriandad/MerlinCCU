@@ -11,6 +11,7 @@
 #include "config_persistence.h"
 #include "debug_logging.h"
 #include "pico/error.h"
+#include "pinter_scheduling.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -130,13 +131,7 @@ struct SharePeriodDefinition
     const char* selection_label;
 };
 
-struct PinterSummaryCounts
-{
-    uint8_t waiting;
-    uint8_t brewing;
-    uint8_t conditioning;
-    uint8_t ready;
-};
+using PinterSummaryCounts = pinter_scheduling::SummaryCounts;
 
 struct CalendarOwnerDefinition
 {
@@ -786,9 +781,7 @@ uint8_t pinter_queued_brew_index(uint8_t queue_index)
 /// @brief Returns whether the selected Pinter still has a planned cold crash transition.
 bool selected_pinter_has_pending_cold_crash()
 {
-    const PinterStatus& pinter = selected_pinter_const();
-    return pinter.state == PinterState::Brewing && pinter.planned_cold_crash_days > 0U &&
-           !pinter.cold_crash_used;
+    return pinter_scheduling::has_pending_cold_crash(selected_pinter_const());
 }
 
 /// @brief Returns a concise state label for Pinter softkeys.
@@ -816,65 +809,25 @@ const char* pinter_state_selection_text(PinterState state)
 /// @brief Counts Pinters currently occupying a brew dock.
 uint8_t pinter_brew_dock_count()
 {
-    uint8_t count = 0U;
-    for (const PinterStatus& pinter : g_console_state.pinters)
-    {
-        if (pinter.state == PinterState::Brewing)
-        {
-            ++count;
-        }
-    }
-    return count;
+    return pinter_scheduling::brew_dock_count(g_console_state.pinters);
 }
 
 /// @brief Returns true when a state occupies one of the two fridge slots.
 bool pinter_uses_fridge(PinterState state)
 {
-    return state == PinterState::Conditioning || state == PinterState::Ready;
+    return pinter_scheduling::uses_fridge(state);
 }
 
 /// @brief Counts Pinters currently occupying fridge space.
 uint8_t pinter_fridge_count()
 {
-    uint8_t count = 0U;
-    for (const PinterStatus& pinter : g_console_state.pinters)
-    {
-        if (pinter_uses_fridge(pinter.state))
-        {
-            ++count;
-        }
-    }
-    return count;
+    return pinter_scheduling::fridge_count(g_console_state.pinters);
 }
 
 /// @brief Counts the user-facing Pinter workflow buckets used on Home.
-/// @details Waiting means brew packs that have not yet been started. Any
-/// pre-conditioning hold state remains grouped with brewing for this summary.
 PinterSummaryCounts pinter_summary_counts()
 {
-    PinterSummaryCounts counts = {pinter_selected_brew_count(), 0U, 0U, 0U};
-
-    for (const PinterStatus& pinter : g_console_state.pinters)
-    {
-        switch (pinter.state)
-        {
-        case PinterState::Brewing:
-        case PinterState::ColdCrash:
-            ++counts.brewing;
-            break;
-        case PinterState::Conditioning:
-            ++counts.conditioning;
-            break;
-        case PinterState::Ready:
-            ++counts.ready;
-            break;
-        case PinterState::Idle:
-        case PinterState::Consumed:
-            break;
-        }
-    }
-
-    return counts;
+    return pinter_scheduling::summarize(g_console_state.pinters, pinter_selected_brew_count());
 }
 
 /// @brief Returns the currently selected Pinter record.
@@ -1897,49 +1850,23 @@ const char* build_pinter_days_label(SoftKeyId key, const char* title, uint8_t da
 bool selected_pinter_can_start()
 {
     const PinterStatus& pinter = selected_pinter_const();
-    return pinter.state == PinterState::Idle && pinter_selected_brew_count() > 0U &&
-           pinter_brew_dock_count() < kPinterBrewDockCapacity;
+    return pinter.state == PinterState::Idle &&
+           pinter_scheduling::can_start(pinter_selected_brew_count(), pinter_brew_dock_count());
 }
 
 /// @brief Returns true when the selected Pinter can enter the fridge now.
 bool selected_pinter_can_enter_fridge()
 {
-    const PinterStatus& pinter = selected_pinter_const();
-    if (pinter.state == PinterState::Brewing && selected_pinter_has_pending_cold_crash())
-    {
-        return true;
-    }
-    if (pinter.state != PinterState::Brewing && pinter.state != PinterState::ColdCrash)
-    {
-        return false;
-    }
-
-    return pinter_fridge_count() < kPinterFridgeCapacity;
+    return pinter_scheduling::can_enter_fridge(selected_pinter_const(), pinter_fridge_count());
 }
 
 /// @brief Returns whether the context-sensitive Pinter action can be applied.
 bool pinter_primary_action_enabled()
 {
-    const PinterStatus& pinter = selected_pinter_const();
-    switch (pinter.state)
-    {
-    case PinterState::Idle:
-        return selected_pinter_can_start();
-    case PinterState::Brewing:
-        if (selected_pinter_has_pending_cold_crash())
-        {
-            return true;
-        }
-        return selected_pinter_can_enter_fridge();
-    case PinterState::ColdCrash:
-        return selected_pinter_can_enter_fridge();
-    case PinterState::Conditioning:
-    case PinterState::Ready:
-    case PinterState::Consumed:
-        return true;
-    }
-
-    return false;
+    return pinter_scheduling::primary_action_enabled(selected_pinter_const(),
+                                                     pinter_selected_brew_count(),
+                                                     pinter_brew_dock_count(),
+                                                     pinter_fridge_count());
 }
 
 /// @brief Formats the context-sensitive Pinter event action and any block reason.
@@ -1997,6 +1924,53 @@ const char* build_pinter_primary_action_label(SoftKeyId key)
 
     std::snprintf(buffer.data(), buffer.size(), "-");
     return buffer.data();
+}
+
+/// @brief Updates the on-screen reason the Pinter primary action is blocked, if any.
+/// @details The R1 softkey label only has room for a two-line hint (e.g.
+/// "FRIDGE\n[FULL]"), which is easy to press past without registering why
+/// nothing happened. This puts the same reason somewhere unmissable: the
+/// page's own centre body, which is otherwise blank on the main Pinter page.
+void update_pinter_block_reason()
+{
+    auto& reason = g_console_state.pinter_block_reason;
+    reason.fill('\0');
+
+    const PinterStatus& pinter = selected_pinter_const();
+    const uint8_t dock_count = pinter_brew_dock_count();
+    const uint8_t fridge_count = pinter_fridge_count();
+
+    switch (pinter.state)
+    {
+    case PinterState::Idle:
+        if (dock_count >= kPinterBrewDockCapacity)
+        {
+            std::snprintf(reason.data(), reason.size(), "DOCK FULL (%u/%u) - FREE A SLOT TO START",
+                          static_cast<unsigned>(dock_count),
+                          static_cast<unsigned>(kPinterBrewDockCapacity));
+        }
+        break;
+    case PinterState::Brewing:
+        if (!selected_pinter_has_pending_cold_crash() && fridge_count >= kPinterFridgeCapacity)
+        {
+            std::snprintf(reason.data(), reason.size(), "FRIDGE FULL (%u/%u) - FREE A SLOT",
+                          static_cast<unsigned>(fridge_count),
+                          static_cast<unsigned>(kPinterFridgeCapacity));
+        }
+        break;
+    case PinterState::ColdCrash:
+        if (fridge_count >= kPinterFridgeCapacity)
+        {
+            std::snprintf(reason.data(), reason.size(), "FRIDGE FULL (%u/%u) - FREE A SLOT",
+                          static_cast<unsigned>(fridge_count),
+                          static_cast<unsigned>(kPinterFridgeCapacity));
+        }
+        break;
+    case PinterState::Conditioning:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        break;
+    }
 }
 
 /// @brief Selects one physical Pinter vessel for subsequent event actions.
@@ -2234,9 +2208,8 @@ bool apply_pinter_primary_action()
         return false;
     }
 
-    switch (pinter.state)
+    if (pinter.state == PinterState::Idle)
     {
-    case PinterState::Idle:
         if (!prepare_pinter_start_from_queue(0U))
         {
             return false;
@@ -2247,65 +2220,19 @@ bool apply_pinter_primary_action()
         }
         g_console_state.active_page = MenuPage::Pinter;
         return true;
-    case PinterState::Brewing:
-        if (pinter.planned_cold_crash_days > 0U && !pinter.cold_crash_used)
-        {
-            pinter.state = PinterState::ColdCrash;
-            pinter.cold_crash_start_day = current_pinter_event_day();
-            pinter.cold_crash_used = true;
-            return true;
-        }
-        pinter.state = PinterState::Conditioning;
-        pinter.conditioning_start_day = current_pinter_event_day();
-        return true;
-    case PinterState::ColdCrash:
-        pinter.state = PinterState::Conditioning;
-        pinter.conditioning_start_day = current_pinter_event_day();
-        return true;
-    case PinterState::Conditioning:
-        pinter.state = PinterState::Ready;
-        pinter.ready_day = current_pinter_event_day();
-        return true;
-    case PinterState::Ready:
-        pinter.state = PinterState::Consumed;
-        return true;
-    case PinterState::Consumed:
-        pinter.state = PinterState::Idle;
-        pinter.brew_start_day = 0U;
-        pinter.cold_crash_start_day = 0U;
-        pinter.conditioning_start_day = 0U;
-        pinter.ready_day = 0U;
-        pinter.planned_brewing_days = 0U;
-        pinter.planned_cold_crash_days = 0U;
-        pinter.planned_conditioning_days = 0U;
-        pinter.cold_crash_used = false;
-        return true;
     }
 
-    return false;
+    return pinter_scheduling::advance_non_idle(pinter, current_pinter_event_day(),
+                                               pinter_fridge_count());
 }
 
 /// @brief Clears the selected Pinter back to idle after a mistaken manual event.
 bool reset_selected_pinter()
 {
     PinterStatus& pinter = selected_pinter();
-    if (pinter.state == PinterState::Idle && !pinter.cold_crash_used)
-    {
-        return false;
-    }
-
-    pinter.state = PinterState::Idle;
-    pinter.brew_index = static_cast<uint8_t>(
-        pinter_brew_catalogue_index(g_console_state.pinter_selected_brew_index));
-    pinter.brew_start_day = 0U;
-    pinter.cold_crash_start_day = 0U;
-    pinter.conditioning_start_day = 0U;
-    pinter.ready_day = 0U;
-    pinter.planned_brewing_days = 0U;
-    pinter.planned_cold_crash_days = 0U;
-    pinter.planned_conditioning_days = 0U;
-    pinter.cold_crash_used = false;
-    return true;
+    return pinter_scheduling::reset(
+        pinter, static_cast<uint8_t>(
+                    pinter_brew_catalogue_index(g_console_state.pinter_selected_brew_index)));
 }
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
@@ -3127,6 +3054,7 @@ void update_softkeys_from_state()
             selected_pinter_idle ? pinter_brew_dock_count() < kPinterBrewDockCapacity
                                  : pinter_primary_action_enabled(),
         };
+        update_pinter_block_reason();
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_pinter_pack_count_softkey_label(SoftKeyId::Right2, "TO BREW"),
             SoftKeyRoute::GoPinterToBeBrewed,

@@ -40,6 +40,7 @@ add_executable(MerlinCCU
     src/core/console_controller.cpp
     src/core/console_model.cpp
     src/core/input.cpp
+    src/core/pinter_scheduling.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/display/display.cpp
