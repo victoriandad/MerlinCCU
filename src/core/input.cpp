@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdio>
 
+#include "keypad_matrix_decode.h"
 #include "pico/stdlib.h"
 
 #if __has_include("keypad_matrix_config.h")
@@ -75,14 +76,9 @@ struct ProbeHits
 
 /// @brief Matrix closure definition for one logical front-panel button.
 /// @details The panel-pin pairs come from the confirmed bench matrix map in
-/// `README.md`, which lets the firmware emit real button events before any
-/// dedicated per-button GPIO wiring exists.
-struct MatrixButtonConfig
-{
-    ButtonId id;
-    uint8_t panel_pin_a;
-    uint8_t panel_pin_b;
-};
+/// `README.md`. The table itself lives in keypad_matrix_decode.h so it can be
+/// exercised by host tests independent of GPIO/debounce/timing (issue #14).
+using keypad_matrix_decode::MatrixButtonConfig;
 
 constexpr int kButtonDebounceMs = 25;
 constexpr int64_t kButtonDebounceUs = static_cast<int64_t>(kButtonDebounceMs) * 1000;
@@ -147,61 +143,8 @@ constexpr std::array<ButtonConfig, kButtonCount> kButtons = {{
 }};
 
 /// @brief Confirmed matrix closures for every decoded front-panel button.
-/// @details The table follows the measured ribbon-pin map in README.md so the
-/// full keypad can generate the same logical button events as the browser
-/// preview before the final hardware harness is frozen.
-constexpr std::array<MatrixButtonConfig, kButtonCount> kMatrixButtons = {{
-    {ButtonId::LeftTop, 7, 22},
-    {ButtonId::LeftUpper, 8, 22},
-    {ButtonId::LeftMiddle, 9, 22},
-    {ButtonId::LeftLower, 10, 22},
-    {ButtonId::LeftBottom, 11, 22},
-    {ButtonId::RightTop, 7, 15},
-    {ButtonId::RightUpper, 8, 15},
-    {ButtonId::RightMiddle, 9, 15},
-    {ButtonId::RightLower, 10, 15},
-    {ButtonId::RightBottom, 11, 15},
-    {ButtonId::Alert, 5, 20},
-    {ButtonId::Test, 5, 17},
-    {ButtonId::Brt, 5, 16},
-    {ButtonId::Dim, 5, 15},
-    {ButtonId::Ltrs, 6, 21},
-    {ButtonId::BackStep, 6, 20},
-    {ButtonId::CursorLeft, 6, 19},
-    {ButtonId::CursorRight, 6, 18},
-    {ButtonId::Slash, 6, 17},
-    {ButtonId::Clr, 6, 16},
-    {ButtonId::AlphaA, 7, 21},
-    {ButtonId::AlphaB, 7, 20},
-    {ButtonId::AlphaC, 7, 19},
-    {ButtonId::AlphaD, 7, 18},
-    {ButtonId::AlphaE, 7, 17},
-    {ButtonId::AlphaF, 7, 16},
-    {ButtonId::AlphaG, 8, 21},
-    {ButtonId::AlphaH, 8, 20},
-    {ButtonId::AlphaI, 8, 19},
-    {ButtonId::AlphaJ, 8, 18},
-    {ButtonId::AlphaK, 8, 17},
-    {ButtonId::AlphaL, 8, 16},
-    {ButtonId::AlphaM, 9, 21},
-    {ButtonId::AlphaN, 9, 20},
-    {ButtonId::AlphaO, 9, 19},
-    {ButtonId::AlphaP, 9, 18},
-    {ButtonId::AlphaQ, 9, 17},
-    {ButtonId::AlphaR, 9, 16},
-    {ButtonId::AlphaS, 10, 21},
-    {ButtonId::AlphaT, 10, 20},
-    {ButtonId::AlphaU, 10, 19},
-    {ButtonId::AlphaV, 10, 18},
-    {ButtonId::AlphaW, 10, 17},
-    {ButtonId::AlphaX, 10, 16},
-    {ButtonId::AlphaY, 11, 21},
-    {ButtonId::AlphaZ, 11, 20},
-    {ButtonId::TFunc, 11, 19},
-    {ButtonId::Dot, 11, 18},
-    {ButtonId::Zero, 11, 17},
-    {ButtonId::Spc, 11, 16},
-}};
+/// @details See keypad_matrix_decode::kMatrixButtons for the actual table.
+using keypad_matrix_decode::kMatrixButtons;
 
 /// @brief Ribbon-pin to Pico-GPIO mapping for the keypad matrix probe logic.
 /// @details The panel pin numbers intentionally match the bench spreadsheet so probe logs
@@ -224,6 +167,26 @@ constexpr std::array<ObservedLineConfig, kKeypadObservedLineCount> kObservedLine
     {21, kKeypadPanelPin21Gpio, true},
     {22, kKeypadPanelPin22Gpio, true},
 }};
+
+/// @brief Confirms kObservedLines' pin order matches keypad_matrix_decode::kObservedPanelPins.
+/// @details The two tables must stay index-aligned: a hit-mask bit position means
+/// nothing without a fixed pin order, and that order is duplicated here (with GPIO
+/// assignment attached) and in the hardware-independent decode header (without it,
+/// so it can be host-tested). A silent reorder of either table would desync the
+/// two without this check.
+constexpr bool observed_panel_pins_match_decode_table()
+{
+    for (size_t i = 0; i < kObservedLines.size(); ++i)
+    {
+        if (kObservedLines[i].panel_pin != keypad_matrix_decode::kObservedPanelPins[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(observed_panel_pins_match_decode_table(),
+             "kObservedLines panel-pin order must match keypad_matrix_decode::kObservedPanelPins");
 
 std::array<ButtonState, kButtonCount> g_button_states = {};
 KeypadMonitorStatus g_keypad_monitor_status = {};
@@ -252,25 +215,16 @@ constexpr size_t button_index(ButtonId id)
     return static_cast<size_t>(id);
 }
 
-/// @brief Looks up the observed-line slot for one panel pin number.
-size_t observed_line_index_for_panel_pin(uint8_t panel_pin)
-{
-    for (size_t i = 0; i < kObservedLines.size(); ++i)
-    {
-        if (kObservedLines[i].panel_pin == panel_pin)
-        {
-            return i;
-        }
-    }
-
-    return kObservedLines.size();
-}
-
 /// @brief Returns whether the current scan shows a closure between two panel pins.
+/// @details The GPIO-configured check stays local to input.cpp since it depends on
+/// per-board wiring; the actual hit-mask bit test is shared with host tests via
+/// keypad_matrix_decode::hit_mask_shows_closure (kObservedLines and
+/// keypad_matrix_decode::kObservedPanelPins are index-aligned by construction, see
+/// the static_assert above).
 bool panel_pins_are_closed(uint8_t panel_pin_a, uint8_t panel_pin_b)
 {
-    const size_t kIndexA = observed_line_index_for_panel_pin(panel_pin_a);
-    const size_t kIndexB = observed_line_index_for_panel_pin(panel_pin_b);
+    const size_t kIndexA = keypad_matrix_decode::observed_line_index_for_panel_pin(panel_pin_a);
+    const size_t kIndexB = keypad_matrix_decode::observed_line_index_for_panel_pin(panel_pin_b);
     if (kIndexA >= kObservedLines.size() || kIndexB >= kObservedLines.size())
     {
         return false;
@@ -283,10 +237,8 @@ bool panel_pins_are_closed(uint8_t panel_pin_a, uint8_t panel_pin_b)
         return false;
     }
 
-    const uint16_t kBitA = observed_line_hit_bit(kIndexA);
-    const uint16_t kBitB = observed_line_hit_bit(kIndexB);
-    return ((g_probe_hits_by_drive[kIndexA] & kBitB) != 0) ||
-           ((g_probe_hits_by_drive[kIndexB] & kBitA) != 0);
+    return keypad_matrix_decode::hit_mask_shows_closure(g_probe_hits_by_drive, panel_pin_a,
+                                                        panel_pin_b);
 }
 
 /// @brief Returns true when the configured matrix closure for one button is active.

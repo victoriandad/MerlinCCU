@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "alert_ordering.h"
 #include "debug_logging.h"
 #include "pico/error.h"
 
@@ -1219,28 +1220,12 @@ uint8_t alert_page_count()
 }
 
 /// @brief Sorts active alerts from newest to oldest for list-page mapping.
-void build_alert_display_indices(std::array<uint8_t, 24>& out_indices, uint8_t* out_count)
+void build_alert_display_indices(std::array<uint8_t, kActiveAlertCapacity>& out_indices,
+                                 uint8_t* out_count)
 {
-    uint8_t count = 0U;
-    for (uint8_t i = 0U; i < g_console_state.alert_count && i < out_indices.size(); ++i)
-    {
-        out_indices[count++] = i;
-    }
-
-    for (uint8_t i = 0U; i < count; ++i)
-    {
-        for (uint8_t j = static_cast<uint8_t>(i + 1U); j < count; ++j)
-        {
-            if (g_console_state.active_alerts[out_indices[j]].sequence >
-                g_console_state.active_alerts[out_indices[i]].sequence)
-            {
-                const uint8_t tmp = out_indices[i];
-                out_indices[i] = out_indices[j];
-                out_indices[j] = tmp;
-            }
-        }
-    }
-
+    const uint8_t count =
+        std::min(g_console_state.alert_count, static_cast<uint8_t>(out_indices.size()));
+    alert_ordering::sort_display_indices(g_console_state.active_alerts, count, out_indices);
     *out_count = count;
 }
 
@@ -3762,7 +3747,7 @@ void update_softkeys_from_state()
         break;
     case MenuPage::AlertList:
     {
-        std::array<uint8_t, 24> alert_indices = {};
+        std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
         uint8_t sorted_count = 0U;
         build_alert_display_indices(alert_indices, &sorted_count);
         constexpr uint8_t kAlertsPerPage = 9U;
@@ -3858,22 +3843,12 @@ void update_lamps_from_state()
 
     // Alert and test lamps mirror the current logical state so the front panel
     // behaves like annunciators rather than generic status LEDs.
-    AlertSeverity highest_severity = AlertSeverity::None;
-    uint32_t newest_sequence = 0U;
-    for (uint8_t i = 0U; i < g_console_state.alert_count; ++i)
-    {
-        const AlertSeverity severity = g_console_state.active_alerts[i].severity;
-        if (static_cast<uint8_t>(severity) > static_cast<uint8_t>(highest_severity))
-        {
-            highest_severity = severity;
-        }
-        newest_sequence = std::max(newest_sequence, g_console_state.active_alerts[i].sequence);
-    }
+    const alert_ordering::AnnunciationSummary annunciation = alert_ordering::summarize(
+        g_console_state.active_alerts, g_console_state.alert_count, g_alert_acknowledged_sequence);
+    const AlertSeverity highest_severity = annunciation.highest_severity;
     g_console_state.alert_severity = highest_severity;
 
-    const bool alert_annunciation_suppressed =
-        g_console_state.alert_count > 0U && newest_sequence <= g_alert_acknowledged_sequence;
-    if (alert_annunciation_suppressed)
+    if (annunciation.suppressed)
     {
         g_console_state.lamps[lamp_index(LampId::AlertLamp)] = LampMode::Off;
     }
@@ -3924,12 +3899,9 @@ void update_lamps_from_state()
 bool open_alert_list_page()
 {
     sync_system_alerts();
-    uint32_t newest_sequence = 0U;
-    for (uint8_t i = 0U; i < g_console_state.alert_count; ++i)
-    {
-        newest_sequence = std::max(newest_sequence, g_console_state.active_alerts[i].sequence);
-    }
-    g_alert_acknowledged_sequence = newest_sequence;
+    const alert_ordering::AnnunciationSummary annunciation = alert_ordering::summarize(
+        g_console_state.active_alerts, g_console_state.alert_count, g_alert_acknowledged_sequence);
+    g_alert_acknowledged_sequence = annunciation.newest_sequence;
     if (g_console_state.active_page != MenuPage::AlertList &&
         g_console_state.active_page != MenuPage::AlertDetail)
     {
@@ -3942,7 +3914,7 @@ bool open_alert_list_page()
 /// @brief Opens one alert-detail page from the currently visible list page slot.
 bool open_alert_detail_from_slot(uint8_t page_slot)
 {
-    std::array<uint8_t, 24> alert_indices = {};
+    std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
     uint8_t sorted_count = 0U;
     build_alert_display_indices(alert_indices, &sorted_count);
     constexpr uint8_t kAlertsPerPage = 9U;
