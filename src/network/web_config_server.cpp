@@ -143,6 +143,17 @@ err_t close_session(WebSession* session, tcp_pcb* pcb)
     const err_t rc = tcp_close(pcb);
     if (rc == ERR_OK)
     {
+        // Disarm callbacks now rather than leaving them wired: tcp_close can
+        // leave the pcb lingering in FIN_WAIT/TIME_WAIT with tcp_err/tcp_poll
+        // still armed. If the singleton slot gets reused for a new session
+        // before this pcb is fully gone, a late callback firing on the old
+        // pcb would otherwise still see arg == &g_session and could clobber
+        // the new session's state.
+        tcp_arg(pcb, nullptr);
+        tcp_recv(pcb, nullptr);
+        tcp_sent(pcb, nullptr);
+        tcp_err(pcb, nullptr);
+        tcp_poll(pcb, nullptr, 0);
         if (g_session.pcb == pcb)
         {
             g_session = {};
@@ -150,7 +161,13 @@ err_t close_session(WebSession* session, tcp_pcb* pcb)
     }
     else
     {
+        // tcp_close can reject while send buffers are still tight; on_sent
+        // retries once ACKs free space. Refresh last_activity here so the
+        // idle-timeout poll doesn't mistake a legitimate close-retry wait for
+        // a stalled connection and abort it (which would surface to the
+        // browser as an RST instead of a clean close).
         session->close_pending = true;
+        session->last_activity = get_absolute_time();
     }
 
     return rc;
@@ -167,7 +184,7 @@ err_t send_pending_response(WebSession* session, tcp_pcb* pcb)
         return ERR_ARG;
     }
 
-    session->last_activity = get_absolute_time();
+    bool wrote_any = false;
 
     while (session->response_sent < session->response_len)
     {
@@ -203,6 +220,17 @@ err_t send_pending_response(WebSession* session, tcp_pcb* pcb)
         }
 
         session->response_sent += chunk;
+        wrote_any = true;
+    }
+
+    // Only refresh last_activity when bytes actually moved. This is called
+    // once per main-loop tick from update() whenever a response is still
+    // pending, not just from real lwIP send events; stamping unconditionally
+    // would mask a genuinely stalled send (tcp_sndbuf staying at 0) from the
+    // idle-timeout poll, reintroducing the hang this fix was meant to catch.
+    if (wrote_any)
+    {
+        session->last_activity = get_absolute_time();
     }
 
     (void)tcp_output(pcb);
@@ -1524,7 +1552,8 @@ bool build_preview_page()
         "if(timeoutId){clearTimeout(timeoutId);}"
         "const text=String(error&&error.message?error.message:error);"
         "const timedOut=error&&error.name==='AbortError';"
-        "const busy=timedOut||/busy|503|retry/i.test(text);"
+        "const networkError=error instanceof TypeError;"
+        "const busy=timedOut||networkError||/busy|503|retry/i.test(text);"
         "if(attempt<12&&busy){await delay(Math.min(250,30*attempt));continue;}"
         "setKeyState('Key send failed: '+(timedOut?'timed out':text));"
         "return false;"
@@ -2999,13 +3028,18 @@ bool update(const WifiStatus& wifi_status)
                             wifi_status.state == WifiConnectionState::Connected &&
                             wifi_status.ip_address[0] != '\0';
 
+    // g_session is shared with lwIP callbacks running in the cyw43 background
+    // context, so the pending-response check itself must be inside the lock,
+    // not just the call that follows it — otherwise the foreground loop can
+    // race a background callback (e.g. close_session resetting g_session) on
+    // this very check.
+    cyw43_arch_lwip_begin();
     if (g_session.pcb != nullptr && g_session.response_len > 0 &&
         g_session.response_sent < g_session.response_len)
     {
-        cyw43_arch_lwip_begin();
         (void)send_pending_response(&g_session, g_session.pcb);
-        cyw43_arch_lwip_end();
     }
+    cyw43_arch_lwip_end();
 
     if (should_run && g_listener == nullptr)
     {
