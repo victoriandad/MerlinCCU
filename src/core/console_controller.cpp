@@ -13,6 +13,7 @@
 #include "debug_logging.h"
 #include "pico/error.h"
 #include "pinter_scheduling.h"
+#include "pinter_store.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -2086,6 +2087,7 @@ bool confirm_pinter_start()
     pinter.cold_crash_used = false;
 
     g_console_state.active_page = MenuPage::Pinter;
+    pinter_store::save(g_console_state.pinters);
     return true;
 }
 
@@ -2101,14 +2103,24 @@ bool apply_pinter_primary_action()
         return false;
     }
 
-    return pinter_scheduling::advance_non_idle(pinter, current_pinter_event_day(),
-                                               pinter_fridge_count());
+    const bool advanced =
+        pinter_scheduling::advance_non_idle(pinter, current_pinter_event_day(), pinter_fridge_count());
+    if (advanced)
+    {
+        pinter_store::save(g_console_state.pinters);
+    }
+    return advanced;
 }
 
 /// @brief Clears the selected Pinter back to idle after a mistaken manual event.
 bool reset_selected_pinter()
 {
-    return pinter_scheduling::reset(selected_pinter(), kDefaultPinterBrewIndex);
+    const bool did_reset = pinter_scheduling::reset(selected_pinter(), kDefaultPinterBrewIndex);
+    if (did_reset)
+    {
+        pinter_store::save(g_console_state.pinters);
+    }
+    return did_reset;
 }
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
@@ -4134,6 +4146,12 @@ bool apply_runtime_config(const RuntimeConfig& settings)
     update_softkeys_from_state();
     update_lamps_from_state();
     return true;
+}
+
+/// @brief Overwrites Pinter vessel state with previously persisted data.
+void apply_persisted_pinters(const std::array<PinterStatus, kPinterCount>& pinters)
+{
+    g_console_state.pinters = pinters;
 }
 
 /// @brief Updates the cached Wi-Fi snapshot in the console model.

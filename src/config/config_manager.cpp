@@ -25,6 +25,8 @@ constexpr uint32_t kSlot0Offset = kConfigStorageOffset;
 constexpr uint32_t kSlot1Offset = kConfigStorageOffset + FLASH_SECTOR_SIZE;
 
 static_assert(sizeof(ConfigSlot) <= FLASH_SECTOR_SIZE, "Config slot must fit in one flash sector");
+static_assert(kConfigStorageBytes == config_manager::kReservedFlashBytes,
+              "config_manager::kReservedFlashBytes must track this store's real reservation");
 
 RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;

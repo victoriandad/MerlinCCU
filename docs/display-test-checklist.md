@@ -30,7 +30,7 @@ quickly without relying only on photographs of the physical panel.
 
 - `PROGRAM FLASH` and `STATIC RAM` bars are visible and readable.
 - Flash usage shows firmware image use against flash available after reserved
-  config sectors.
+  sectors (`RESERVED` row) -- settings plus Pinter tracking state.
 - RAM usage still shows fixed static display/model allocation.
 - `LOOP LOAD` shows foreground main-loop active time versus intentional sleep
   over a recent sample; it is not whole-chip CPU usage.
@@ -76,6 +76,10 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Moving to the fridge is blocked once two Pinters are conditioning or ready;
   cold crash is exempt from the fridge-capacity check.
 - `R3=RESET` clears the selected Pinter back to idle after a mistaken event.
+- Vessel state survives a power cycle: start a brew, advance a stage, or reset
+  a vessel, then power-cycle the board -- the vessel should come back showing
+  the same state, recipe, and days rather than resetting to `Idle`. Each of
+  those three actions saves to flash immediately.
 - Recipe catalogue (`SELECT BREW`) page:
   - Softkeys list up to 8 recipes per page (35 total), each showing the name
     plus recommended/minimum total days, for example `Public House / R12 M7`.

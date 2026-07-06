@@ -49,6 +49,14 @@ struct RuntimeConfig
 namespace config_manager
 {
 
+/// @brief Total bytes reserved at the tail of flash for the settings store.
+/// @details Other flash-backed persistence (e.g. Pinter tracking state in
+/// pinter_store.cpp) derives its own storage offset from this so reserved
+/// regions can never overlap, even if this store's slot count changes later.
+/// config_manager.cpp statically asserts this matches its real,
+/// hardware-derived reservation.
+inline constexpr uint32_t kReservedFlashBytes = 4096U * 2U;
+
 /// @brief Loads persistent configuration from flash or creates defaults.
 void init();
 

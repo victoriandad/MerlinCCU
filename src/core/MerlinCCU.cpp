@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -18,6 +19,7 @@
 #include "input.h"
 #include "mqtt_manager.h"
 #include "panel_config.h"
+#include "pinter_store.h"
 #include "screens.h"
 #include "screensaver_clock.h"
 #include "screensaver_life.h"
@@ -313,6 +315,13 @@ int main()
     config_manager::init();
     console_controller::init();
     console_controller::apply_runtime_config(config_manager::settings());
+
+    std::array<PinterStatus, kPinterCount> persisted_pinters = {};
+    if (pinter_store::load(&persisted_pinters))
+    {
+        console_controller::apply_persisted_pinters(persisted_pinters);
+    }
+
     time_manager::init();
     wifi_manager::init();
     home_assistant_manager::init();

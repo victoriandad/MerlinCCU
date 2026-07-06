@@ -14,6 +14,7 @@
 #include "hardware/flash.h"
 #include "panel_config.h"
 #include "pico/error.h"
+#include "pinter_store.h"
 #include "screen_banners.h"
 
 #if __has_include("calendar_identities.h")
@@ -35,9 +36,9 @@ namespace
 {
 
 constexpr uint8_t kSettingsPageCount = 2U;
-constexpr size_t kConfigFlashSlotCount = 2U;
-constexpr size_t kConfigFlashBytes = FLASH_SECTOR_SIZE * kConfigFlashSlotCount;
-constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kConfigFlashBytes;
+constexpr size_t kReservedFlashBytes =
+    config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes;
+constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kReservedFlashBytes;
 
 extern "C"
 {
@@ -2803,7 +2804,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char ram_value_text[24] = {};
     char program_flash_text[16] = {};
     char flash_budget_text[16] = {};
-    char config_flash_text[16] = {};
+    char reserved_flash_text[16] = {};
     char static_ram_text[16] = {};
     char console_text[16] = {};
     char framebuffer_text[16] = {};
@@ -2811,7 +2812,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char loop_sample_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
-    build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
+    build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
     build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
     build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
     build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
@@ -2838,7 +2839,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 
     const DetailRow rows[] = {
         {"PROG FLASH", flash_value_text},
-        {"CONFIG", config_flash_text},
+        {"RESERVED", reserved_flash_text},
         {"STATIC RAM", ram_value_text},
         {"CONSOLE", console_text},
         {"UI BUFFERS", framebuffer_text},
