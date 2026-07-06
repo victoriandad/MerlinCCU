@@ -33,6 +33,15 @@ namespace
 ConsoleState g_console_state = make_default_console_state();
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
+// Set by Pinter mutations, consumed by flush_pending_pinter_save(). The
+// actual flash write is deferred out of the button-event call chain: that
+// chain can be reached synchronously from the web preview's HTTP request
+// handling (web_config_server.cpp's handle_button_post()), and a flash
+// erase/program disables all interrupts for its duration -- doing that while
+// still nested inside a live network request has caused visible multi-second
+// stalls (and possibly Wi-Fi reassociation) in practice. See MerlinCCU.cpp's
+// main loop for where this is actually flushed, well outside that call stack.
+bool g_pinter_save_pending = false;
 // Sized for the longest three-line Pinter slot label: title + "[state name]"
 // (recipe names run up to ~42 characters) + "[Nd - rdy dd mon]".
 constexpr size_t kSoftkeyLabelCapacity = 96;
@@ -2087,7 +2096,7 @@ bool confirm_pinter_start()
     pinter.cold_crash_used = false;
 
     g_console_state.active_page = MenuPage::Pinter;
-    pinter_store::save(g_console_state.pinters);
+    g_pinter_save_pending = true;
     return true;
 }
 
@@ -2107,7 +2116,7 @@ bool apply_pinter_primary_action()
         pinter_scheduling::advance_non_idle(pinter, current_pinter_event_day(), pinter_fridge_count());
     if (advanced)
     {
-        pinter_store::save(g_console_state.pinters);
+        g_pinter_save_pending = true;
     }
     return advanced;
 }
@@ -2118,7 +2127,7 @@ bool reset_selected_pinter()
     const bool did_reset = pinter_scheduling::reset(selected_pinter(), kDefaultPinterBrewIndex);
     if (did_reset)
     {
-        pinter_store::save(g_console_state.pinters);
+        g_pinter_save_pending = true;
     }
     return did_reset;
 }
@@ -4152,6 +4161,20 @@ bool apply_runtime_config(const RuntimeConfig& settings)
 void apply_persisted_pinters(const std::array<PinterStatus, kPinterCount>& pinters)
 {
     g_console_state.pinters = pinters;
+}
+
+/// @brief Writes any pending Pinter state to flash, if a save is due.
+/// @details Callers must invoke this from a point that is not nested inside
+/// network request handling -- see the flag's declaration for why.
+bool flush_pending_pinter_save()
+{
+    if (!g_pinter_save_pending)
+    {
+        return false;
+    }
+
+    g_pinter_save_pending = false;
+    return pinter_store::save(g_console_state.pinters);
 }
 
 /// @brief Updates the cached Wi-Fi snapshot in the console model.

@@ -402,6 +402,12 @@ int main()
     while (true)
     {
         watchdog_update();
+        // Flush any Pinter flash save queued by the previous iteration here,
+        // at the top of the loop and outside any network call stack: the
+        // write disables all interrupts for its duration, and a full sleep
+        // has already elapsed since web_config_server::update() last ran, so
+        // there is no in-flight request or response this could stall.
+        console_controller::flush_pending_pinter_save();
         const absolute_time_t loop_start = get_absolute_time();
         // Poll hardware first, then let the controller translate those raw
         // events into menu/state changes before the integrations update.
