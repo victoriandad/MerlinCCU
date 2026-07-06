@@ -743,20 +743,7 @@ uint8_t pinter_list_page_count(size_t item_count)
         (item_count + (kPinterBrewListVisibleCount - 1U)) / kPinterBrewListVisibleCount);
 }
 
-/// @brief Returns the bounded number of queued brew packs selected by the user.
-uint8_t pinter_selected_brew_count()
-{
-    return std::min(g_console_state.pinter_selected_brew_count,
-                    static_cast<uint8_t>(g_console_state.pinter_selected_brews.size()));
-}
-
-/// @brief Keeps the legacy pack-count field aligned with the typed brew queue.
-void sync_pinter_pack_count()
-{
-    g_console_state.pinter_brew_pack_count = pinter_selected_brew_count();
-}
-
-/// @brief Clamps a Pinter list page index after queue changes.
+/// @brief Clamps a Pinter list page index after the catalogue page size changes.
 void clamp_pinter_list_page(uint8_t& page_index, size_t item_count)
 {
     const uint8_t page_count = pinter_list_page_count(item_count);
@@ -764,18 +751,6 @@ void clamp_pinter_list_page(uint8_t& page_index, size_t item_count)
     {
         page_index = static_cast<uint8_t>(page_count - 1U);
     }
-}
-
-/// @brief Returns the selected brew-pack index for one queue slot.
-uint8_t pinter_queued_brew_index(uint8_t queue_index)
-{
-    if (queue_index >= pinter_selected_brew_count())
-    {
-        return kDefaultPinterBrewIndex;
-    }
-
-    return static_cast<uint8_t>(
-        pinter_brew_catalogue_index(g_console_state.pinter_selected_brews[queue_index]));
 }
 
 /// @brief Returns whether the selected Pinter still has a planned cold crash transition.
@@ -827,7 +802,7 @@ uint8_t pinter_fridge_count()
 /// @brief Counts the user-facing Pinter workflow buckets used on Home.
 PinterSummaryCounts pinter_summary_counts()
 {
-    return pinter_scheduling::summarize(g_console_state.pinters, pinter_selected_brew_count());
+    return pinter_scheduling::summarize(g_console_state.pinters);
 }
 
 /// @brief Returns the currently selected Pinter record.
@@ -1795,44 +1770,23 @@ const char* build_pinter_slot_softkey_label(SoftKeyId key, const PinterStatus& p
     return build_selection_softkey_label(key, pinter.label.data(), value);
 }
 
-/// @brief Formats the Home-page Pinter summary as waiting/brewing/conditioning/ready.
+/// @brief Formats the Home-page Pinter summary as brewing/conditioning/ready.
 const char* build_pinter_home_softkey_label(SoftKeyId key)
 {
     auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
     const PinterSummaryCounts counts = pinter_summary_counts();
-    std::snprintf(buffer.data(), buffer.size(), "PINTER\n[%uW, %uB, %uC, %uR]",
-                  static_cast<unsigned>(counts.waiting), static_cast<unsigned>(counts.brewing),
-                  static_cast<unsigned>(counts.conditioning),
+    std::snprintf(buffer.data(), buffer.size(), "PINTER\n[%uB, %uC, %uR]",
+                  static_cast<unsigned>(counts.brewing), static_cast<unsigned>(counts.conditioning),
                   static_cast<unsigned>(counts.ready));
     return buffer.data();
-}
-
-/// @brief Formats a Pinter pack-management softkey with the current pack count.
-const char* build_pinter_pack_count_softkey_label(SoftKeyId key, const char* title)
-{
-    char count_text[8] = {};
-    std::snprintf(count_text, sizeof(count_text), "%u",
-                  static_cast<unsigned>(pinter_selected_brew_count()));
-    return build_selection_softkey_label(key, title, count_text);
 }
 
 /// @brief Formats one catalogue brew item with recommended and minimum totals.
 const char* build_pinter_catalogue_item_label(SoftKeyId key, uint8_t brew_index)
 {
     const PinterBrewTiming& brew = pinter_brew_definition(brew_index);
-    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
-    std::snprintf(buffer.data(), buffer.size(), "%s", brew.name);
-    return buffer.data();
-}
-
-/// @brief Formats one user-selected brew queue item.
-const char* build_pinter_queued_item_label(SoftKeyId key, uint8_t queue_index)
-{
-    const uint8_t brew_index = pinter_queued_brew_index(queue_index);
-    const PinterBrewTiming& brew = pinter_brew_definition(brew_index);
     char timing_text[16] = {};
-    std::snprintf(timing_text, sizeof(timing_text), "#%u R%u M%u",
-                  static_cast<unsigned>(queue_index + 1U),
+    std::snprintf(timing_text, sizeof(timing_text), "R%u M%u",
                   static_cast<unsigned>(pinter_recommended_total_days(brew)),
                   static_cast<unsigned>(pinter_minimum_total_days(brew)));
     return build_selection_softkey_label(key, brew.name, timing_text);
@@ -1850,8 +1804,7 @@ const char* build_pinter_days_label(SoftKeyId key, const char* title, uint8_t da
 bool selected_pinter_can_start()
 {
     const PinterStatus& pinter = selected_pinter_const();
-    return pinter.state == PinterState::Idle &&
-           pinter_scheduling::can_start(pinter_selected_brew_count(), pinter_brew_dock_count());
+    return pinter.state == PinterState::Idle && pinter_scheduling::can_start(pinter_brew_dock_count());
 }
 
 /// @brief Returns true when the selected Pinter can enter the fridge now.
@@ -1864,7 +1817,6 @@ bool selected_pinter_can_enter_fridge()
 bool pinter_primary_action_enabled()
 {
     return pinter_scheduling::primary_action_enabled(selected_pinter_const(),
-                                                     pinter_selected_brew_count(),
                                                      pinter_brew_dock_count(),
                                                      pinter_fridge_count());
 }
@@ -1878,11 +1830,6 @@ const char* build_pinter_primary_action_label(SoftKeyId key)
     switch (pinter.state)
     {
     case PinterState::Idle:
-        if (pinter_selected_brew_count() == 0U)
-        {
-            std::snprintf(buffer.data(), buffer.size(), "START\n[NO BREWS]");
-            return buffer.data();
-        }
         if (pinter_brew_dock_count() >= kPinterBrewDockCapacity)
         {
             std::snprintf(buffer.data(), buffer.size(), "START\n[NO DOCK]");
@@ -1990,114 +1937,37 @@ bool select_pinter_slot(uint8_t index)
     return true;
 }
 
-/// @brief Cycles the brew pack used when the next Pinter is started.
-bool cycle_pinter_brew()
-{
-    const size_t next_index =
-        pinter_brew_catalogue_index(g_console_state.pinter_selected_brew_index) + 1U;
-    g_console_state.pinter_selected_brew_index =
-        static_cast<uint8_t>(next_index % kPinterBrewCatalogue.size());
-    return true;
-}
-
-/// @brief Adds one selected brew type to the typed Pinter queue.
-bool add_pinter_selected_brew(uint8_t brew_index)
-{
-    const uint8_t count = pinter_selected_brew_count();
-    if (count >= g_console_state.pinter_selected_brews.size())
-    {
-        return false;
-    }
-
-    g_console_state.pinter_selected_brews[count] =
-        static_cast<uint8_t>(pinter_brew_catalogue_index(brew_index));
-    g_console_state.pinter_selected_brew_count = static_cast<uint8_t>(count + 1U);
-    sync_pinter_pack_count();
-    return true;
-}
-
-/// @brief Removes one queued brew after it has been assigned to a Pinter.
-bool remove_pinter_selected_brew(uint8_t queue_index)
-{
-    const uint8_t count = pinter_selected_brew_count();
-    if (queue_index >= count)
-    {
-        return false;
-    }
-
-    for (uint8_t i = queue_index; i + 1U < count; ++i)
-    {
-        g_console_state.pinter_selected_brews[i] = g_console_state.pinter_selected_brews[i + 1U];
-    }
-    g_console_state.pinter_selected_brews[count - 1U] = kInvalidPinterBrewSelection;
-    g_console_state.pinter_selected_brew_count = static_cast<uint8_t>(count - 1U);
-    sync_pinter_pack_count();
-    clamp_pinter_list_page(g_console_state.pinter_selected_brews_page_index,
-                           pinter_selected_brew_count());
-    clamp_pinter_list_page(g_console_state.pinter_start_brews_page_index,
-                           pinter_selected_brew_count());
-    return true;
-}
-
-/// @brief Records receipt of one additional brew pack.
-bool add_pinter_brew_pack()
-{
-    return add_pinter_selected_brew(g_console_state.pinter_selected_brew_index);
-}
-
-/// @brief Removes one brew pack from inventory to correct manual counts.
-bool remove_pinter_brew_pack()
-{
-    const uint8_t count = pinter_selected_brew_count();
-    return count > 0U ? remove_pinter_selected_brew(static_cast<uint8_t>(count - 1U)) : false;
-}
-
-/// @brief Changes the current page for whichever Pinter list is visible.
+/// @brief Changes the current page of the Pinter recipe catalogue.
 bool change_pinter_list_page(int direction)
 {
-    uint8_t* page_index = nullptr;
-    size_t item_count = 0U;
-
-    switch (g_console_state.active_page)
+    if (g_console_state.active_page != MenuPage::PinterSelectBrew)
     {
-    case MenuPage::PinterSelectBrew:
-        page_index = &g_console_state.pinter_catalogue_page_index;
-        item_count = kPinterBrewCatalogue.size();
-        break;
-    case MenuPage::PinterSelectedBrews:
-        page_index = &g_console_state.pinter_selected_brews_page_index;
-        item_count = pinter_selected_brew_count();
-        break;
-    case MenuPage::PinterStartBrew:
-        page_index = &g_console_state.pinter_start_brews_page_index;
-        item_count = pinter_selected_brew_count();
-        break;
-    default:
         return false;
     }
 
-    const uint8_t page_count = pinter_list_page_count(item_count);
-    const int next_page = static_cast<int>(*page_index) + direction;
+    const uint8_t page_count = pinter_list_page_count(kPinterBrewCatalogue.size());
+    const int next_page = static_cast<int>(g_console_state.pinter_catalogue_page_index) + direction;
     if (next_page < 0 || next_page >= static_cast<int>(page_count))
     {
         return false;
     }
 
-    *page_index = static_cast<uint8_t>(next_page);
+    g_console_state.pinter_catalogue_page_index = static_cast<uint8_t>(next_page);
     return true;
 }
 
-/// @brief Loads default recommended timing values for a queued brew selection.
-bool prepare_pinter_start_from_queue(uint8_t queue_index)
+/// @brief Loads default recommended timing values for starting the selected Pinter.
+/// @details Picking is on the fly: whatever recipe you have a pack for in hand
+/// right now, chosen from the full catalogue, with no pre-planned reservation
+/// step in between.
+bool prepare_pinter_start(uint8_t brew_index)
 {
-    if (queue_index >= pinter_selected_brew_count())
+    if (!selected_pinter_can_start() || brew_index >= kPinterBrewCatalogue.size())
     {
         return false;
     }
 
-    const uint8_t brew_index = pinter_queued_brew_index(queue_index);
     const PinterBrewTiming& brew = pinter_brew_definition(brew_index);
-    g_console_state.pinter_pending_inventory_index = queue_index;
     g_console_state.pinter_pending_brew_index = brew_index;
     g_console_state.pinter_pending_brewing_days = brew.recommended_brewing_days;
     g_console_state.pinter_pending_cold_crash_days = 0U;
@@ -2106,43 +1976,24 @@ bool prepare_pinter_start_from_queue(uint8_t queue_index)
     return true;
 }
 
-/// @brief Handles one visible softkey item on the current Pinter list page.
+/// @brief Handles picking one recipe from the catalogue to start the selected Pinter.
 bool select_pinter_list_item(uint8_t visible_index)
 {
-    if (visible_index >= kPinterBrewListVisibleCount)
+    if (visible_index >= kPinterBrewListVisibleCount ||
+        g_console_state.active_page != MenuPage::PinterSelectBrew)
     {
         return false;
     }
 
-    switch (g_console_state.active_page)
+    const size_t brew_index = (static_cast<size_t>(g_console_state.pinter_catalogue_page_index) *
+                               kPinterBrewListVisibleCount) +
+                              visible_index;
+    if (brew_index >= kPinterBrewCatalogue.size())
     {
-    case MenuPage::PinterSelectBrew:
-    {
-        const size_t brew_index =
-            (static_cast<size_t>(g_console_state.pinter_catalogue_page_index) *
-             kPinterBrewListVisibleCount) +
-            visible_index;
-        if (brew_index >= kPinterBrewCatalogue.size())
-        {
-            return false;
-        }
-        if (!add_pinter_selected_brew(static_cast<uint8_t>(brew_index)))
-        {
-            return false;
-        }
-        g_console_state.active_page = MenuPage::PinterSelectedBrews;
-        return true;
-    }
-    case MenuPage::PinterStartBrew:
-    {
-        const uint8_t queue_index = static_cast<uint8_t>(
-            (g_console_state.pinter_start_brews_page_index * kPinterBrewListVisibleCount) +
-            visible_index);
-        return prepare_pinter_start_from_queue(queue_index);
-    }
-    default:
         return false;
     }
+
+    return prepare_pinter_start(static_cast<uint8_t>(brew_index));
 }
 
 /// @brief Sets pending start timings from one of the catalogue-provided presets.
@@ -2175,15 +2026,9 @@ bool confirm_pinter_start()
         return false;
     }
 
-    const uint8_t queue_index = g_console_state.pinter_pending_inventory_index;
-    if (queue_index >= pinter_selected_brew_count())
-    {
-        return false;
-    }
-
     PinterStatus& pinter = selected_pinter();
     pinter.state = PinterState::Brewing;
-    pinter.brew_index = pinter_queued_brew_index(queue_index);
+    pinter.brew_index = pinter_brew_catalogue_index(g_console_state.pinter_pending_brew_index);
     pinter.brew_start_day = current_pinter_event_day();
     pinter.cold_crash_start_day = 0U;
     pinter.conditioning_start_day = 0U;
@@ -2193,33 +2038,20 @@ bool confirm_pinter_start()
     pinter.planned_conditioning_days = g_console_state.pinter_pending_conditioning_days;
     pinter.cold_crash_used = false;
 
-    const bool removed = remove_pinter_selected_brew(queue_index);
-    g_console_state.pinter_pending_inventory_index = kInvalidPinterBrewSelection;
     g_console_state.active_page = MenuPage::Pinter;
-    return removed;
+    return true;
 }
 
 /// @brief Applies the normal next real-world event for the selected Pinter.
+/// @details Idle is not handled here: R1 navigates straight to the recipe
+/// catalogue (SoftKeyRoute::GoPinterSelectBrew) instead of calling this,
+/// since starting needs a recipe choice made on the fly first.
 bool apply_pinter_primary_action()
 {
     PinterStatus& pinter = selected_pinter();
-    if (!pinter_primary_action_enabled())
+    if (pinter.state == PinterState::Idle || !pinter_primary_action_enabled())
     {
         return false;
-    }
-
-    if (pinter.state == PinterState::Idle)
-    {
-        if (!prepare_pinter_start_from_queue(0U))
-        {
-            return false;
-        }
-        if (!confirm_pinter_start())
-        {
-            return false;
-        }
-        g_console_state.active_page = MenuPage::Pinter;
-        return true;
     }
 
     return pinter_scheduling::advance_non_idle(pinter, current_pinter_event_day(),
@@ -2229,10 +2061,7 @@ bool apply_pinter_primary_action()
 /// @brief Clears the selected Pinter back to idle after a mistaken manual event.
 bool reset_selected_pinter()
 {
-    PinterStatus& pinter = selected_pinter();
-    return pinter_scheduling::reset(
-        pinter, static_cast<uint8_t>(
-                    pinter_brew_catalogue_index(g_console_state.pinter_selected_brew_index)));
+    return pinter_scheduling::reset(selected_pinter(), kDefaultPinterBrewIndex);
 }
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
@@ -2250,15 +2079,10 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Pinter:
     case MenuPage::Shares:
         return MenuPage::Home;
-    case MenuPage::PinterPacks:
-    case MenuPage::PinterToBeBrewed:
-    case MenuPage::PinterStartBrew:
-        return MenuPage::Pinter;
     case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterSelectedBrews:
-        return MenuPage::PinterToBeBrewed;
+        return MenuPage::Pinter;
     case MenuPage::PinterStartTiming:
-        return MenuPage::PinterStartBrew;
+        return MenuPage::PinterSelectBrew;
     case MenuPage::StatusOverview:
     case MenuPage::StatusConnectivity:
     case MenuPage::StatusResources:
@@ -3049,17 +2873,12 @@ void update_softkeys_from_state()
         const bool selected_pinter_idle = selected_pinter_const().state == PinterState::Idle;
         softkeys[softkey_index(SoftKeyId::Right1)] = {
             build_pinter_primary_action_label(SoftKeyId::Right1),
-            selected_pinter_idle ? SoftKeyRoute::GoPinterStartBrew
+            selected_pinter_idle ? SoftKeyRoute::GoPinterSelectBrew
                                  : SoftKeyRoute::ApplyPinterPrimaryAction,
             selected_pinter_idle ? pinter_brew_dock_count() < kPinterBrewDockCapacity
                                  : pinter_primary_action_enabled(),
         };
         update_pinter_block_reason();
-        softkeys[softkey_index(SoftKeyId::Right2)] = {
-            build_pinter_pack_count_softkey_label(SoftKeyId::Right2, "TO BREW"),
-            SoftKeyRoute::GoPinterToBeBrewed,
-            true,
-        };
         softkeys[softkey_index(SoftKeyId::Right3)] = {
             "RESET",
             SoftKeyRoute::ResetSelectedPinter,
@@ -3067,23 +2886,10 @@ void update_softkeys_from_state()
         };
         break;
     }
-    case MenuPage::PinterPacks:
-    case MenuPage::PinterToBeBrewed:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {
-            "SELECT\nBREW",
-            SoftKeyRoute::GoPinterSelectBrew,
-            true,
-        };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {
-            build_pinter_pack_count_softkey_label(SoftKeyId::Left2, "SELECTED"),
-            SoftKeyRoute::GoPinterSelectedBrews,
-            true,
-        };
-        softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
-        break;
     case MenuPage::PinterSelectBrew:
     {
+        // On-the-fly recipe pick: whichever pack you have in hand right now,
+        // straight from the full catalogue -- no pre-planned reservation step.
         const size_t base_index = static_cast<size_t>(g_console_state.pinter_catalogue_page_index) *
                                   kPinterBrewListVisibleCount;
         for (uint8_t i = 0U; i < kPinterBrewListVisibleCount; ++i)
@@ -3097,79 +2903,11 @@ void update_softkeys_from_state()
             softkeys[softkey_index(key)] = {
                 build_pinter_catalogue_item_label(key, static_cast<uint8_t>(brew_index)),
                 kPinterBrewListRoutes[i],
-                pinter_selected_brew_count() < g_console_state.pinter_selected_brews.size(),
-            };
-        }
-        break;
-    }
-    case MenuPage::PinterSelectedBrews:
-    {
-        const uint8_t selected_count = pinter_selected_brew_count();
-        const uint8_t base_index = static_cast<uint8_t>(
-            g_console_state.pinter_selected_brews_page_index * kPinterBrewListVisibleCount);
-        if (selected_count == 0U)
-        {
-            softkeys[softkey_index(SoftKeyId::Left1)] = {"NO BREWS\n[ADD FIRST]",
-                                                         SoftKeyRoute::None, false};
-        }
-        for (uint8_t i = 0U; i < kPinterBrewListVisibleCount; ++i)
-        {
-            const uint8_t queue_index = static_cast<uint8_t>(base_index + i);
-            if (queue_index >= selected_count)
-            {
-                break;
-            }
-            const SoftKeyId key = kPinterBrewListSoftkeys[i];
-            softkeys[softkey_index(key)] = {
-                build_pinter_queued_item_label(key, queue_index),
-                SoftKeyRoute::None,
-                false,
-            };
-        }
-        break;
-    }
-    case MenuPage::PinterStartBrew:
-    {
-        const uint8_t selected_count = pinter_selected_brew_count();
-        if (selected_pinter_const().state != PinterState::Idle)
-        {
-            softkeys[softkey_index(SoftKeyId::Left1)] = {"NOT IDLE", SoftKeyRoute::None, false};
-            softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
-            break;
-        }
-        if (pinter_brew_dock_count() >= kPinterBrewDockCapacity)
-        {
-            softkeys[softkey_index(SoftKeyId::Left1)] = {"NO DOCK\n[WAIT]",
-                                                         SoftKeyRoute::None, false};
-            softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
-            break;
-        }
-        if (selected_count == 0U)
-        {
-            softkeys[softkey_index(SoftKeyId::Left1)] = {"NO BREWS\n[ADD FIRST]",
-                                                         SoftKeyRoute::None, false};
-            softkeys[softkey_index(SoftKeyId::Right1)] = {
-                "TO BE\nBREWED", SoftKeyRoute::GoPinterToBeBrewed, true};
-            softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
-            break;
-        }
-
-        const uint8_t base_index = static_cast<uint8_t>(
-            g_console_state.pinter_start_brews_page_index * kPinterBrewListVisibleCount);
-        for (uint8_t i = 0U; i < kPinterBrewListVisibleCount; ++i)
-        {
-            const uint8_t queue_index = static_cast<uint8_t>(base_index + i);
-            if (queue_index >= selected_count)
-            {
-                break;
-            }
-            const SoftKeyId key = kPinterBrewListSoftkeys[i];
-            softkeys[softkey_index(key)] = {
-                build_pinter_queued_item_label(key, queue_index),
-                kPinterBrewListRoutes[i],
                 true,
             };
         }
+        softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
+        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
         break;
     }
     case MenuPage::PinterStartTiming:
@@ -3225,7 +2963,7 @@ void update_softkeys_from_state()
         };
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "BREW", brew.name),
-            SoftKeyRoute::GoPinterStartBrew,
+            SoftKeyRoute::GoPinterSelectBrew,
             true,
         };
         break;
@@ -3910,31 +3648,11 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Pinter;
         return true;
-    case SoftKeyRoute::GoPinterPacks:
-        stop_screen_saver_timeout_editing();
-        g_console_state.active_page = MenuPage::PinterPacks;
-        return true;
-    case SoftKeyRoute::GoPinterToBeBrewed:
-        stop_screen_saver_timeout_editing();
-        g_console_state.active_page = MenuPage::PinterToBeBrewed;
-        return true;
     case SoftKeyRoute::GoPinterSelectBrew:
         stop_screen_saver_timeout_editing();
         clamp_pinter_list_page(g_console_state.pinter_catalogue_page_index,
                                kPinterBrewCatalogue.size());
         g_console_state.active_page = MenuPage::PinterSelectBrew;
-        return true;
-    case SoftKeyRoute::GoPinterSelectedBrews:
-        stop_screen_saver_timeout_editing();
-        clamp_pinter_list_page(g_console_state.pinter_selected_brews_page_index,
-                               pinter_selected_brew_count());
-        g_console_state.active_page = MenuPage::PinterSelectedBrews;
-        return true;
-    case SoftKeyRoute::GoPinterStartBrew:
-        stop_screen_saver_timeout_editing();
-        clamp_pinter_list_page(g_console_state.pinter_start_brews_page_index,
-                               pinter_selected_brew_count());
-        g_console_state.active_page = MenuPage::PinterStartBrew;
         return true;
     case SoftKeyRoute::SelectPinterSlot1:
         return select_pinter_slot(0U);
@@ -3944,12 +3662,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_pinter_slot(2U);
     case SoftKeyRoute::SelectPinterSlot4:
         return select_pinter_slot(3U);
-    case SoftKeyRoute::CyclePinterBrew:
-        return cycle_pinter_brew();
-    case SoftKeyRoute::AddPinterBrewPack:
-        return add_pinter_brew_pack();
-    case SoftKeyRoute::RemovePinterBrewPack:
-        return remove_pinter_brew_pack();
     case SoftKeyRoute::ApplyPinterPrimaryAction:
         return apply_pinter_primary_action();
     case SoftKeyRoute::ResetSelectedPinter:
@@ -4847,9 +4559,7 @@ bool handle_button_event(const ButtonEvent& event)
                 changed = true;
             }
         }
-        else if (g_console_state.active_page == MenuPage::PinterSelectBrew ||
-                 g_console_state.active_page == MenuPage::PinterSelectedBrews ||
-                 g_console_state.active_page == MenuPage::PinterStartBrew)
+        else if (g_console_state.active_page == MenuPage::PinterSelectBrew)
         {
             changed = change_pinter_list_page(direction);
         }

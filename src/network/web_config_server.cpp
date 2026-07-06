@@ -1186,7 +1186,7 @@ bool build_pinter_activity_page()
         "border-radius:999px;padding:9px 13px;color:var(--text);text-decoration:none;"
         "background:#0b1512;font-weight:700;font-size:12px;text-transform:uppercase;"
         "letter-spacing:.05em}"
-        ".summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
+        ".summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
         "gap:10px;margin:0 0 16px}.tile{border:1px solid var(--line);border-radius:8px;"
         "background:#0d1815;padding:12px}.tile strong{display:block;font-size:22px;color:"
         "var(--accent)}.tile span{color:var(--muted);text-transform:uppercase;font-size:11px;"
@@ -1227,14 +1227,14 @@ bool build_pinter_activity_page()
     ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::PinterActivity);
     ok = ok && append(
                    cursor, remaining,
-                   "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>Waiting "
-                   "packs</span></div><div class=\"tile\"><strong>%u</strong><span>Brewing</span></div><div "
+                   "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>"
+                   "Brewing</span></div><div "
                    "class=\"tile\"><strong>%u</strong><span>Conditioning</span></div><div class=\"tile\">"
                    "<strong>%u</strong><span>Ready</span></div></section><section class=\"timeline\">"
                    "<div class=\"axis\"><div></div><div class=\"scale\"><span style=\"left:0%%\">%s</span>"
                    "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
                    "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
-                   static_cast<unsigned>(state.pinter_selected_brew_count), brewing, conditioning,
+                   brewing, conditioning,
                    ready, axis_0, axis_7, axis_14, axis_21, axis_28);
 
     if (ok && today_visible)

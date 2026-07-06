@@ -118,14 +118,7 @@ ConsoleState make_default_console_state()
     state.share_count = 1U;
     state.selected_share_index = 0U;
     state.selected_pinter_index = 0U;
-    state.pinter_brew_pack_count = 0U;
-    state.pinter_selected_brew_index = kDefaultPinterBrewIndex;
-    state.pinter_selected_brew_count = 0U;
-    state.pinter_selected_brews.fill(kInvalidPinterBrewSelection);
     state.pinter_catalogue_page_index = 0U;
-    state.pinter_selected_brews_page_index = 0U;
-    state.pinter_start_brews_page_index = 0U;
-    state.pinter_pending_inventory_index = kInvalidPinterBrewSelection;
     state.pinter_pending_brew_index = kDefaultPinterBrewIndex;
     state.pinter_pending_brewing_days = 0U;
     state.pinter_pending_cold_crash_days = 0U;

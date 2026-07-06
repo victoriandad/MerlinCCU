@@ -53,12 +53,11 @@ HOST_TEST(has_pending_cold_crash_requires_brewing_days_and_not_yet_used)
         pinter_scheduling::has_pending_cold_crash(make_pinter(PinterState::ColdCrash, 3U, false)));
 }
 
-HOST_TEST(can_start_requires_a_queued_brew_and_dock_space)
+HOST_TEST(can_start_requires_dock_space)
 {
-    EXPECT_TRUE(pinter_scheduling::can_start(1U, 0U));
-    EXPECT_TRUE(pinter_scheduling::can_start(1U, kPinterBrewDockCapacity - 1U));
-    EXPECT_FALSE(pinter_scheduling::can_start(0U, 0U));                      // no packs queued
-    EXPECT_FALSE(pinter_scheduling::can_start(1U, kPinterBrewDockCapacity)); // dock full
+    EXPECT_TRUE(pinter_scheduling::can_start(0U));
+    EXPECT_TRUE(pinter_scheduling::can_start(kPinterBrewDockCapacity - 1U));
+    EXPECT_FALSE(pinter_scheduling::can_start(kPinterBrewDockCapacity)); // dock full
 }
 
 HOST_TEST(can_enter_fridge_pending_cold_crash_bypasses_fridge_capacity)
@@ -89,43 +88,40 @@ HOST_TEST(can_enter_fridge_is_false_for_states_that_never_move_to_the_fridge)
     EXPECT_FALSE(pinter_scheduling::can_enter_fridge(make_pinter(PinterState::Consumed), 0U));
 }
 
-HOST_TEST(primary_action_enabled_blocks_start_with_no_packs_or_no_dock_space)
+HOST_TEST(primary_action_enabled_blocks_start_with_no_dock_space)
 {
     const PinterStatus idle = make_pinter(PinterState::Idle);
-    EXPECT_FALSE(pinter_scheduling::primary_action_enabled(idle, 0U, 0U, 0U));
-    EXPECT_FALSE(
-        pinter_scheduling::primary_action_enabled(idle, 1U, kPinterBrewDockCapacity, 0U));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(idle, 1U, 0U, 0U));
+    EXPECT_FALSE(pinter_scheduling::primary_action_enabled(idle, kPinterBrewDockCapacity, 0U));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(idle, 0U, 0U));
 }
 
 HOST_TEST(primary_action_enabled_blocks_fridge_entry_when_full_but_not_cold_crash_entry)
 {
     const PinterStatus pending_crash = make_pinter(PinterState::Brewing, 3U, false);
     EXPECT_TRUE(
-        pinter_scheduling::primary_action_enabled(pending_crash, 0U, 0U, kPinterFridgeCapacity));
+        pinter_scheduling::primary_action_enabled(pending_crash, 0U, kPinterFridgeCapacity));
 
     const PinterStatus done_crashing = make_pinter(PinterState::Brewing, 0U, false);
     EXPECT_FALSE(
-        pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U, kPinterFridgeCapacity));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U, 0U));
+        pinter_scheduling::primary_action_enabled(done_crashing, 0U, kPinterFridgeCapacity));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U));
 }
 
 HOST_TEST(primary_action_enabled_is_always_true_past_the_fridge_stage)
 {
     EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Conditioning),
-                                                          0U, 0U, kPinterFridgeCapacity));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Ready), 0U, 0U,
+                                                          0U, kPinterFridgeCapacity));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Ready), 0U,
                                                           kPinterFridgeCapacity));
     EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Consumed), 0U,
-                                                          0U, kPinterFridgeCapacity));
+                                                          kPinterFridgeCapacity));
 }
 
 HOST_TEST(summarize_groups_cold_crash_with_brewing_and_excludes_idle_and_consumed)
 {
     const auto fleet = make_fleet(PinterState::Brewing, PinterState::ColdCrash,
                                   PinterState::Conditioning, PinterState::Ready);
-    const pinter_scheduling::SummaryCounts counts = pinter_scheduling::summarize(fleet, 5U);
-    EXPECT_EQ(counts.waiting, 5U);
+    const pinter_scheduling::SummaryCounts counts = pinter_scheduling::summarize(fleet);
     EXPECT_EQ(counts.brewing, 2U);
     EXPECT_EQ(counts.conditioning, 1U);
     EXPECT_EQ(counts.ready, 1U);

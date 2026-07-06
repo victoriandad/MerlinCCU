@@ -40,9 +40,9 @@ bool has_pending_cold_crash(const PinterStatus& pinter)
            !pinter.cold_crash_used;
 }
 
-bool can_start(uint8_t selected_brew_count, uint8_t dock_count)
+bool can_start(uint8_t dock_count)
 {
-    return selected_brew_count > 0U && dock_count < kPinterBrewDockCapacity;
+    return dock_count < kPinterBrewDockCapacity;
 }
 
 bool can_enter_fridge(const PinterStatus& pinter, uint8_t fridge_count)
@@ -59,13 +59,12 @@ bool can_enter_fridge(const PinterStatus& pinter, uint8_t fridge_count)
     return fridge_count < kPinterFridgeCapacity;
 }
 
-bool primary_action_enabled(const PinterStatus& pinter, uint8_t selected_brew_count,
-                            uint8_t dock_count, uint8_t fridge_count)
+bool primary_action_enabled(const PinterStatus& pinter, uint8_t dock_count, uint8_t fridge_count)
 {
     switch (pinter.state)
     {
     case PinterState::Idle:
-        return can_start(selected_brew_count, dock_count);
+        return can_start(dock_count);
     case PinterState::Brewing:
         if (has_pending_cold_crash(pinter))
         {
@@ -83,10 +82,9 @@ bool primary_action_enabled(const PinterStatus& pinter, uint8_t selected_brew_co
     return false;
 }
 
-SummaryCounts summarize(const std::array<PinterStatus, kPinterCount>& pinters,
-                        uint8_t selected_brew_count)
+SummaryCounts summarize(const std::array<PinterStatus, kPinterCount>& pinters)
 {
-    SummaryCounts counts = {selected_brew_count, 0U, 0U, 0U};
+    SummaryCounts counts = {0U, 0U, 0U};
 
     for (const PinterStatus& pinter : pinters)
     {

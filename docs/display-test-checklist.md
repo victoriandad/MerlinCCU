@@ -51,26 +51,45 @@ quickly without relying only on photographs of the physical panel.
 
 ## Pinter Page
 
-- Home `L4` shows the Pinter summary as `[nW, nB, nC, nR]` and opens the
-  Pinter scheduler page. `W` is waiting brew packs.
+Recipe selection is on-the-fly: there is no pre-planned brew queue or pack
+inventory. Starting an idle vessel goes straight to picking a recipe from the
+full 35-item catalogue, right when you actually have a pack in hand.
+
+- Home `L4` shows the Pinter summary as `[nB, nC, nR]` (brewing, conditioning,
+  ready) and opens the Pinter scheduler page.
 - `L1` to `L4` select `P1`, `P3 A`, `P3 B`, and `P3 C`; the selected Pinter is
   inverted on the softkey.
-- `L5=BREW` cycles the Pinter brew-pack catalogue and shows recommended/minimum
-  total days before the beer name, for example `12/7d Public House`.
-- `R1` applies the normal next event: start, move to fridge, ready, drink, or
-  clean, depending on the selected Pinter state.
-- `R2=PACKS` opens the Pinter Packs page and shows the current pack count.
-- Pinter centre data is intentionally blank; status is carried by the softkey
-  labels.
-- Starting is blocked when there are no packs or no brew dock capacity.
-- Moving to the fridge is blocked once two Pinters are conditioning or ready.
+- `R1` is context-sensitive:
+  - Selected Pinter `Idle`: labelled `START`, opens the recipe catalogue
+    (`SELECT BREW` page). Shows `START\n[NO DOCK]` and is disabled when the
+    brew dock is full (3 vessels already `Brewing`).
+  - Selected Pinter not idle: applies the normal next event (move to cold
+    crash or fridge, ready, drink, or clean), depending on state.
+- Pinter centre data is intentionally blank, except a block-reason message
+  (for example dock/fridge full) appears when `R1` is disabled.
+- Moving to the fridge is blocked once two Pinters are conditioning or ready;
+  cold crash is exempt from the fridge-capacity check.
 - `R3=RESET` clears the selected Pinter back to idle after a mistaken event.
-- Pinter Packs `L1=ADD PACK` increments brew-pack inventory; `R1=DROP PACK`
-  decrements it, and `R4=PINTER` returns to the main Pinter page.
-- `R5=HOME` returns from Pinter pages to Home.
+- Recipe catalogue (`SELECT BREW`) page:
+  - Softkeys list up to 8 recipes per page (35 total), each showing the name
+    plus recommended/minimum total days, for example `Public House / R12 M7`.
+  - `<`/`>` cursor keys page through the catalogue; page arrows only show
+    when there is a previous/next page.
+  - `R4=PINTER` returns to the main Pinter page; `R5=HOME` returns to Home.
+  - Picking a recipe opens the `BREW TIMING` page.
+- `BREW TIMING` page:
+  - `L1=MINIMUM` / `L2=RECOMM` snap brewing/cold-crash/conditioning days to
+    the recipe's minimum or recommended totals.
+  - `L3`/`R3` adjust brew days down/up; `L4`/`R4` adjust conditioning days
+    down/up; `L5`/`R5` adjust cold-crash days down/up (0 by default, since
+    cold crash is optional).
+  - `R1=START` confirms and starts the vessel brewing now; disabled if the
+    dock filled up while adjusting timing.
+  - `R2=BREW` returns to the recipe catalogue to pick a different recipe.
 - `http://merlinccu/pinter` shows one row per Pinter, real date ticks, and a
-  vertical today marker. Starting, moving to fridge, and marking ready stamp
-  event dates from the CCU clock.
+  vertical today marker, plus summary tiles for brewing/conditioning/ready
+  counts. Starting, moving to fridge, and marking ready stamp event dates
+  from the CCU clock.
 
 ## Shares Pages
 

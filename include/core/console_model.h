@@ -153,11 +153,7 @@ enum class MenuPage : uint8_t
     AlertList,
     AlertDetail,
     Pinter,
-    PinterPacks,
-    PinterToBeBrewed,
     PinterSelectBrew,
-    PinterSelectedBrews,
-    PinterStartBrew,
     PinterStartTiming,
     Shares,
     ShareDetail,
@@ -468,8 +464,6 @@ inline constexpr uint8_t kDefaultPinterBrewIndex = 0U;
 inline constexpr uint8_t kPinterBrewDockCapacity = 3U;
 inline constexpr uint8_t kPinterFridgeCapacity = 2U;
 inline constexpr size_t kPinterBrewListVisibleCount = 8;
-inline constexpr size_t kPinterSelectedBrewCapacity = 24;
-inline constexpr uint8_t kInvalidPinterBrewSelection = 255U;
 
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
@@ -542,20 +536,13 @@ enum class SoftKeyRoute : uint8_t
     AlertAccept,
     AlertIgnore,
     GoPinter,
-    GoPinterPacks,
     SelectPinterSlot1,
     SelectPinterSlot2,
     SelectPinterSlot3,
     SelectPinterSlot4,
-    CyclePinterBrew,
-    AddPinterBrewPack,
-    RemovePinterBrewPack,
     ApplyPinterPrimaryAction,
     ResetSelectedPinter,
-    GoPinterToBeBrewed,
     GoPinterSelectBrew,
-    GoPinterSelectedBrews,
-    GoPinterStartBrew,
     SelectPinterListItem1,
     SelectPinterListItem2,
     SelectPinterListItem3,
@@ -744,14 +731,7 @@ struct ConsoleState
     uint8_t share_count;
     uint8_t selected_share_index;
     uint8_t selected_pinter_index;
-    uint8_t pinter_brew_pack_count;
-    uint8_t pinter_selected_brew_index;
-    uint8_t pinter_selected_brew_count;
-    std::array<uint8_t, kPinterSelectedBrewCapacity> pinter_selected_brews;
     uint8_t pinter_catalogue_page_index;
-    uint8_t pinter_selected_brews_page_index;
-    uint8_t pinter_start_brews_page_index;
-    uint8_t pinter_pending_inventory_index;
     uint8_t pinter_pending_brew_index;
     uint8_t pinter_pending_brewing_days;
     uint8_t pinter_pending_cold_crash_days;
