@@ -2631,7 +2631,30 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
     return false;
 }
 
+/// @brief Returns a short, stable page-name token for automated test scripts.
+/// @details Deliberately separate from screens.cpp's human-facing page
+/// titles -- this only needs to distinguish the handful of pages a test
+/// script might assert against, not read well on the physical display.
+const char* debug_active_page_token(MenuPage page)
+{
+    switch (page)
+    {
+    case MenuPage::Pinter:
+        return "Pinter";
+    case MenuPage::PinterSelectBrew:
+        return "PinterSelectBrew";
+    case MenuPage::PinterStartTiming:
+        return "PinterStartTiming";
+    default:
+        return "Other";
+    }
+}
+
 /// @brief Writes one plain-text panel state snapshot for web preview polling.
+/// @details Also carries a few Pinter pending-timing fields purely so
+/// automated click/latency test scripts can assert the resulting state
+/// matches the number of clicks sent, rather than only measuring response
+/// time -- see tools/button_stress_test.py.
 void build_panel_state_text(char* message, size_t message_size)
 {
     if (message == nullptr || message_size == 0)
@@ -2642,8 +2665,13 @@ void build_panel_state_text(char* message, size_t message_size)
     const ConsoleState& state = console_controller::state();
     const LampMode alert_mode = state.lamps[kAlertLampIndex];
     const LampMode test_mode = state.lamps[kTestLampIndex];
-    std::snprintf(message, message_size, "alert=%s\ntest=%s\n", lamp_mode_text_token(alert_mode),
-                  lamp_mode_text_token(test_mode));
+    std::snprintf(message, message_size,
+                  "alert=%s\ntest=%s\npage=%s\nbrew_days=%u\ncond_days=%u\ncrash_days=%u\n",
+                  lamp_mode_text_token(alert_mode), lamp_mode_text_token(test_mode),
+                  debug_active_page_token(state.active_page),
+                  static_cast<unsigned>(state.pinter_pending_brewing_days),
+                  static_cast<unsigned>(state.pinter_pending_conditioning_days),
+                  static_cast<unsigned>(state.pinter_pending_cold_crash_days));
 }
 
 /// @brief Starts sending prepared response bytes for this session.
@@ -2717,7 +2745,7 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     }
     else if (matches_get_path(request, "/api/panel-state"))
     {
-        char panel_state[64] = {};
+        char panel_state[128] = {};
         build_panel_state_text(panel_state, sizeof(panel_state));
         std::snprintf(g_response, sizeof(g_response), "%s%s", kHttpTextHeader, panel_state);
         send_response(session, pcb, g_response);
