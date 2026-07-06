@@ -59,6 +59,12 @@ full 35-item catalogue, right when you actually have a pack in hand.
   ready) and opens the Pinter scheduler page.
 - `L1` to `L4` select `P1`, `P3 A`, `P3 B`, and `P3 C`; the selected Pinter is
   inverted on the softkey.
+- Each vessel slot key shows a third line once it's Brewing, Cold Crashing, or
+  Conditioning: a countdown plus the target date for that stage, for example
+  `3D - RDY 12 JUL`. This is advisory only -- stages only actually advance when
+  `R1` is pressed, so an overdue stage just shows `0D` rather than going
+  negative. The line is absent for `Idle`/`Ready`/`Consumed` vessels, or if the
+  clock isn't synced yet.
 - `R1` is context-sensitive:
   - Selected Pinter `Idle`: labelled `START`, opens the recipe catalogue
     (`SELECT BREW` page). Shows `START\n[NO DOCK]` and is disabled when the

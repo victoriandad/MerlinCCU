@@ -30,6 +30,12 @@ DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
     return parts;
 }
 
+DateTimeParts civil_from_epoch_day(uint32_t epoch_day)
+{
+    constexpr uint32_t kSecondsPerDay = 24U * 60U * 60U;
+    return unix_time_to_utc(epoch_day * kSecondsPerDay);
+}
+
 int32_t days_from_civil(int year, unsigned month, unsigned day)
 {
     year -= month <= 2U ? 1 : 0;

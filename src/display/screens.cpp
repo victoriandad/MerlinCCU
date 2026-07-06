@@ -869,6 +869,15 @@ fonts::FontFace softkey_label_font(MenuPage page)
     return fonts::FontFace::Font5x7;
 }
 
+/// @brief Returns how many lines one softkey label may wrap onto for a page.
+/// @details Most pages cap this at two lines so long labels degrade
+/// gracefully; the Pinter page opts into a third line so each vessel's slot
+/// key can carry a stage countdown alongside its state and recipe name.
+constexpr int softkey_label_max_lines(MenuPage page)
+{
+    return page == MenuPage::Pinter ? 3 : 2;
+}
+
 /// @brief Returns the maximum drawable width for one softkey label line.
 constexpr int softkey_label_max_width()
 {
@@ -903,6 +912,7 @@ struct WrappedSoftkeyLabel
 {
     char line_one[48];
     char line_two[48];
+    char line_three[48];
     int line_count;
 };
 
@@ -985,75 +995,66 @@ size_t skip_wrapped_label_breaks(const char* text, size_t start)
     return start;
 }
 
-/// @brief Wraps one softkey label into at most two renderable lines.
-/// @details Softkeys are deliberately limited to two lines so long labels
-/// degrade gracefully without taking over the rest of the screen layout.
-WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+/// @brief Wraps one softkey label into at most `max_lines` renderable lines.
+/// @details Softkeys are deliberately capped (two lines for most pages, three
+/// where a page opts in) so long labels degrade gracefully without taking
+/// over the rest of the screen layout. Each line greedily fits as much text
+/// as the width allows, preferring to break on whitespace.
+WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
+                                     int max_lines)
 {
     WrappedSoftkeyLabel wrapped = {};
     wrapped.line_count = 0;
 
-    if (label == nullptr || label[0] == '\0')
+    if (label == nullptr || label[0] == '\0' || max_lines <= 0)
     {
         return wrapped;
     }
 
-    const size_t kFirstFitLength = fit_wrapped_label_prefix(label, font, max_width);
-    if (kFirstFitLength == 0)
-    {
-        return wrapped;
-    }
+    char* const line_buffers[3] = {wrapped.line_one, wrapped.line_two, wrapped.line_three};
+    const int kEffectiveMaxLines = (max_lines > 3) ? 3 : max_lines;
+    const char* cursor = label;
 
-    size_t first_length = find_wrapped_label_split(label, kFirstFitLength);
-    while (first_length > 0 && label[first_length - 1] == ' ')
+    for (int line_index = 0; line_index < kEffectiveMaxLines; ++line_index)
     {
-        --first_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_one, sizeof(wrapped.line_one), label, first_length);
-    wrapped.line_count = 1;
-
-    size_t second_start = skip_wrapped_label_breaks(label, first_length);
-    if (label[second_start] == '\0')
-    {
-        return wrapped;
-    }
-
-    const size_t kSecondFitLength = fit_wrapped_label_prefix(label + second_start, font, max_width);
-    if (kSecondFitLength == 0)
-    {
-        return wrapped;
-    }
-
-    size_t second_length = kSecondFitLength;
-    if (label[second_start + kSecondFitLength] != '\0' &&
-        label[second_start + kSecondFitLength] != '\n')
-    {
-        const size_t kSecondSplit =
-            find_wrapped_label_split(label + second_start, kSecondFitLength);
-        if (kSecondSplit > 0)
+        if (cursor[0] == '\0')
         {
-            second_length = kSecondSplit;
+            break;
         }
+
+        const size_t kFitLength = fit_wrapped_label_prefix(cursor, font, max_width);
+        if (kFitLength == 0)
+        {
+            break;
+        }
+
+        size_t length = find_wrapped_label_split(cursor, kFitLength);
+        while (length > 0 && cursor[length - 1] == ' ')
+        {
+            --length;
+        }
+
+        copy_softkey_label_slice(line_buffers[line_index], 48, cursor, length);
+        wrapped.line_count = line_index + 1;
+        cursor += skip_wrapped_label_breaks(cursor, length);
     }
 
-    while (second_length > 0 && label[second_start + second_length - 1] == ' ')
-    {
-        --second_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_two, sizeof(wrapped.line_two), label + second_start,
-                             second_length);
-    wrapped.line_count = 2;
     return wrapped;
 }
 
-/// @brief Applies the current softkey width policy to one label string.
+/// @brief Wraps one softkey label into at most two renderable lines.
+WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+{
+    return wrap_label_lines(label, font, max_width, 2);
+}
+
+/// @brief Applies the current softkey width and line-count policy for a page
+/// to one label string.
 /// @details This keeps callers from hard-coding layout limits in multiple places
 /// when the bezel or font rules change.
-WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font)
+WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font, int max_lines)
 {
-    return wrap_label_two_lines(label, font, softkey_label_max_width());
+    return wrap_label_lines(label, font, softkey_label_max_width(), max_lines);
 }
 
 /// @brief Draws one aligned detail row for information-oriented pages.
@@ -1491,14 +1492,14 @@ void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool
 /// @details The label is vertically centred within the physical key slot so
 /// wrapped text still reads like it belongs to one button location.
 void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
-                        fonts::FontFace font)
+                        fonts::FontFace font, int max_lines)
 {
     if (action.label == nullptr || action.label[0] == '\0')
     {
         return;
     }
 
-    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font);
+    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font, max_lines);
     const int kLineHeight = framebuffer::font_height(font);
     const int kBlockHeight =
         (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
@@ -1557,6 +1558,10 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
     if (kWrapped.line_count > 1)
     {
         draw_line(kWrapped.line_two, 1);
+    }
+    if (kWrapped.line_count > 2)
+    {
+        draw_line(kWrapped.line_three, 2);
     }
 }
 
@@ -1632,12 +1637,14 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
     const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
+    const int kMaxLines = softkey_label_max_lines(console_state.active_page);
 
     for (int i = 0; i < 5; ++i)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont);
+        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont,
+                           kMaxLines);
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           kLabelFont);
+                           kLabelFont, kMaxLines);
     }
 }
 

@@ -10,6 +10,7 @@
 
 #include "config_manager.h"
 #include "console_controller.h"
+#include "date_time_math.h"
 #include "debug_logging.h"
 #include "framebuffer.h"
 #include "lwip/pbuf.h"
@@ -835,34 +836,6 @@ const char* pinter_stage_tone(PinterState state, PinterTimelineStage stage)
     return "future";
 }
 
-struct WebDateParts
-{
-    int year;
-    int month;
-    int day;
-};
-
-/// @brief Converts a Unix epoch day into Gregorian fields for web labels.
-WebDateParts epoch_day_to_date(uint32_t epoch_day)
-{
-    int z = static_cast<int>(epoch_day) + 719468;
-    const int era = (z >= 0 ? z : z - 146096) / 146097;
-    const unsigned doe = static_cast<unsigned>(z - era * 146097);
-    const unsigned yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
-    int year = static_cast<int>(yoe) + era * 400;
-    const unsigned doy = doe - ((365U * yoe) + (yoe / 4U) - (yoe / 100U));
-    const unsigned mp = ((5U * doy) + 2U) / 153U;
-    const unsigned day = doy - (((153U * mp) + 2U) / 5U) + 1U;
-    const int month = static_cast<int>(mp) + (mp < 10U ? 3 : -9);
-    year += month <= 2 ? 1 : 0;
-
-    WebDateParts parts = {};
-    parts.year = year;
-    parts.month = month;
-    parts.day = static_cast<int>(day);
-    return parts;
-}
-
 /// @brief Formats an epoch day for compact timeline axis labels.
 void format_epoch_day_label(uint32_t epoch_day, char* out, size_t out_size)
 {
@@ -871,19 +844,15 @@ void format_epoch_day_label(uint32_t epoch_day, char* out, size_t out_size)
         return;
     }
 
-    static constexpr std::array<const char*, 12> kMonthNames = {
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    };
     if (epoch_day == 0U)
     {
         std::snprintf(out, out_size, "-");
         return;
     }
 
-    const WebDateParts parts = epoch_day_to_date(epoch_day);
+    const date_time_math::DateTimeParts parts = date_time_math::civil_from_epoch_day(epoch_day);
     const char* month = (parts.month >= 1 && parts.month <= 12)
-                            ? kMonthNames[static_cast<size_t>(parts.month - 1)]
+                            ? date_time_math::kMonthAbbreviations[static_cast<size_t>(parts.month - 1)]
                             : "---";
     std::snprintf(out, out_size, "%02d %s", parts.day, month);
 }

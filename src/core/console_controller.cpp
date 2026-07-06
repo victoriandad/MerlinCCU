@@ -9,6 +9,7 @@
 
 #include "alert_ordering.h"
 #include "config_persistence.h"
+#include "date_time_math.h"
 #include "debug_logging.h"
 #include "pico/error.h"
 #include "pinter_scheduling.h"
@@ -31,7 +32,9 @@ namespace
 ConsoleState g_console_state = make_default_console_state();
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
-constexpr size_t kSoftkeyLabelCapacity = 48;
+// Sized for the longest three-line Pinter slot label: title + "[state name]"
+// (recipe names run up to ~42 characters) + "[Nd - rdy dd mon]".
+constexpr size_t kSoftkeyLabelCapacity = 96;
 // Shared with config_manager.cpp's save-time clamp so the two can't drift.
 using config_persistence::kMaxScreenSaverTimeoutMinutes;
 constexpr uint8_t kSettingsPageCount = 2U;
@@ -1755,6 +1758,37 @@ const char* build_calendar_event_softkey_label(SoftKeyId key, const CalendarEven
     return build_selection_softkey_label(key, event.title.data(), value);
 }
 
+/// @brief Formats a "days remaining - target date" countdown for the vessel's
+/// current timed stage, or an empty string when there is nothing to count
+/// down to (Idle/Ready/Consumed, or the clock isn't synced yet).
+/// @details Stage advancement is a manual event the user triggers, not
+/// something the firmware does automatically at the target day -- this is
+/// advisory anticipation for the user, not a deadline being enforced, so an
+/// overdue stage just clamps to "0d" rather than showing a negative count.
+void format_pinter_countdown_text(const PinterStatus& pinter, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+    out[0] = '\0';
+
+    const uint32_t today = current_pinter_event_day();
+    const uint32_t target_day = pinter_scheduling::current_stage_target_day(pinter);
+    if (today == 0U || target_day == 0U)
+    {
+        return;
+    }
+
+    const uint32_t days_remaining = (target_day > today) ? (target_day - today) : 0U;
+    const date_time_math::DateTimeParts target = date_time_math::civil_from_epoch_day(target_day);
+    const char* month = (target.month >= 1 && target.month <= 12)
+                            ? date_time_math::kMonthAbbreviations[static_cast<size_t>(target.month - 1)]
+                            : "---";
+    std::snprintf(out, out_size, "%uD - RDY %02d %s", static_cast<unsigned>(days_remaining),
+                  target.day, month);
+}
+
 /// @brief Formats one Pinter selector softkey using the current lifecycle state.
 const char* build_pinter_slot_softkey_label(SoftKeyId key, const PinterStatus& pinter)
 {
@@ -1767,7 +1801,20 @@ const char* build_pinter_slot_softkey_label(SoftKeyId key, const PinterStatus& p
     const PinterBrewTiming& brew = pinter_brew_definition(pinter.brew_index);
     char value[40] = {};
     std::snprintf(value, sizeof(value), "%s %s", state_text, brew.name);
-    return build_selection_softkey_label(key, pinter.label.data(), value);
+
+    char countdown_text[24] = {};
+    format_pinter_countdown_text(pinter, countdown_text, sizeof(countdown_text));
+    if (countdown_text[0] == '\0')
+    {
+        return build_selection_softkey_label(key, pinter.label.data(), value);
+    }
+
+    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
+    char title_upper[24] = {};
+    build_uppercase_title(pinter.label.data(), title_upper, sizeof(title_upper));
+    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]\n[%s]", title_upper, value,
+                  countdown_text);
+    return buffer.data();
 }
 
 /// @brief Formats the Home-page Pinter summary as brewing/conditioning/ready.

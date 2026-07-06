@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -35,6 +36,18 @@ struct ParsedIsoDateTime
 
 /// @brief Converts a Unix UTC epoch into broken-down UTC calendar fields.
 DateTimeParts unix_time_to_utc(uint32_t epoch_seconds);
+
+/// @brief Converts a day count since the Unix epoch into UTC calendar fields.
+/// @details `local_epoch_day` and Pinter event-day stamps are day counts, not
+/// second-precision timestamps; this is the inverse-friendly counterpart to
+/// `days_from_civil()` for that representation, built on `unix_time_to_utc()`
+/// so there is one Howard civil-from-days implementation, not two.
+DateTimeParts civil_from_epoch_day(uint32_t epoch_day);
+
+/// @brief Three-letter month abbreviations, indexed 0 = January.
+inline constexpr std::array<const char*, 12> kMonthAbbreviations = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+};
 
 /// @brief Converts Gregorian date fields to days since the Unix epoch.
 /// @details This is the inverse of `unix_time_to_utc()` and lets offset-bearing

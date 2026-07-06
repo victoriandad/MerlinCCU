@@ -181,4 +181,23 @@ bool reset(PinterStatus& pinter, uint8_t default_brew_index)
     return true;
 }
 
+uint32_t current_stage_target_day(const PinterStatus& pinter)
+{
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        return pinter.brew_start_day + pinter.planned_brewing_days;
+    case PinterState::ColdCrash:
+        return pinter.cold_crash_start_day + pinter.planned_cold_crash_days;
+    case PinterState::Conditioning:
+        return pinter.conditioning_start_day + pinter.planned_conditioning_days;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return 0U;
+    }
+
+    return 0U;
+}
+
 } // namespace pinter_scheduling

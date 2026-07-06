@@ -69,4 +69,12 @@ bool advance_non_idle(PinterStatus& pinter, uint32_t today_epoch_day, uint8_t fr
 /// vessel is already Idle with no cold-crash history to clear.
 bool reset(PinterStatus& pinter, uint8_t default_brew_index);
 
+/// @brief Returns the epoch day the vessel's current timed stage is aiming to
+/// finish (Brewing, ColdCrash, or Conditioning), or 0 when the state has no
+/// such target (Idle, Ready, Consumed).
+/// @details Stage advancement is a manual event, not automatic on this day --
+/// this is advisory information for the UI, not a scheduling deadline the
+/// firmware enforces.
+uint32_t current_stage_target_day(const PinterStatus& pinter);
+
 } // namespace pinter_scheduling
