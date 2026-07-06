@@ -57,6 +57,9 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status);
 /// @brief Copies foreground main-loop load telemetry into the UI state.
 bool set_main_loop_load_status(const MainLoopLoadStatus& status);
 
+/// @brief Copies live newlib heap usage telemetry into the UI state.
+bool set_heap_status(const HeapStatus& status);
+
 /// @brief Overrides the displayed text for one softkey using controller-owned storage.
 /// @details Pass `nullptr` or an empty string to clear the override and restore
 /// the page-default label. Rendering will wrap to two lines when needed and

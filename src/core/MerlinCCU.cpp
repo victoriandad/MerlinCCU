@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <malloc.h>
 
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
@@ -488,7 +489,14 @@ int main()
                                       static_cast<int64_t>(UINT16_MAX))),
             };
             const bool loop_load_changed = console_controller::set_main_loop_load_status(status);
-            if (loop_load_changed &&
+            const struct mallinfo heap_info = mallinfo();
+            const HeapStatus heap_status = {
+                .valid = true,
+                .used_bytes = static_cast<uint32_t>(heap_info.uordblks),
+                .arena_bytes = static_cast<uint32_t>(heap_info.arena),
+            };
+            const bool heap_status_changed = console_controller::set_heap_status(heap_status);
+            if ((loop_load_changed || heap_status_changed) &&
                 console_controller::state().active_page == MenuPage::StatusResources &&
                 active_mode != ScreenMode::LifeScreensaver)
             {

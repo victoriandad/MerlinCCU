@@ -2823,6 +2823,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char framebuffer_text[16] = {};
     char loop_load_text[16] = {};
     char loop_sample_text[16] = {};
+    char heap_value_text[24] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
     build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
@@ -2845,6 +2846,22 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(loop_sample_text, sizeof(loop_sample_text), "-");
     }
 
+    if (console_state.heap_status.valid)
+    {
+        char heap_used_text[16] = {};
+        char heap_arena_text[16] = {};
+        build_kib_text(console_state.heap_status.used_bytes, heap_used_text,
+                      sizeof(heap_used_text));
+        build_kib_text(console_state.heap_status.arena_bytes, heap_arena_text,
+                      sizeof(heap_arena_text));
+        std::snprintf(heap_value_text, sizeof(heap_value_text), "%s/%s", heap_used_text,
+                      heap_arena_text);
+    }
+    else
+    {
+        std::snprintf(heap_value_text, sizeof(heap_value_text), "-");
+    }
+
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
                       "PROGRAM FLASH", flash_value_text);
     draw_resource_bar(fb, 54, 96, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
@@ -2858,7 +2875,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         {"UI BUFFERS", framebuffer_text},
         {"LOOP LOAD", loop_load_text},
         {"LOOP SAMPLE", loop_sample_text},
-        {"HEAP LIVE", "-"},
+        {"HEAP LIVE", heap_value_text},
     };
 
     draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);
