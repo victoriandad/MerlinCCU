@@ -475,6 +475,39 @@ bool append_option(char*& cursor, size_t& remaining, const char* value, const ch
                   std::strcmp(value, selected) == 0 ? " selected" : "", label);
 }
 
+/// @brief Identifies which of the CCU's web pages is currently being rendered.
+enum class ConfigWebPage : uint8_t
+{
+    Config,
+    PinterActivity,
+    Preview,
+};
+
+/// @brief Emits a consistent top navigation bar linking between the CCU's web pages.
+/// @details Only links to the other pages, not back to the current one, so the
+/// same three pages stay reachable from every page without an inconsistent mix
+/// of nav placement/styling per page (previously each page reinvented its own
+/// subset of cross-links).
+bool append_page_nav(char*& cursor, size_t& remaining, ConfigWebPage current_page)
+{
+    bool ok = append(cursor, remaining, "<nav class=\"tools\">");
+    if (current_page != ConfigWebPage::Config)
+    {
+        ok = ok && append(cursor, remaining, "<a class=\"ghost\" href=\"/config\">Config</a>");
+    }
+    if (current_page != ConfigWebPage::PinterActivity)
+    {
+        ok = ok &&
+             append(cursor, remaining, "<a class=\"ghost\" href=\"/pinter\">Pinter Activity</a>");
+    }
+    if (current_page != ConfigWebPage::Preview)
+    {
+        ok = ok &&
+             append(cursor, remaining, "<a class=\"ghost\" href=\"/preview\">Display Preview</a>");
+    }
+    return ok && append(cursor, remaining, "</nav>");
+}
+
 /// @brief Builds the professional single-page configuration UI.
 void build_config_page(const char* message)
 {
@@ -527,6 +560,7 @@ void build_config_page(const char* message)
         "font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
         ".wrap{max-width:1080px;margin:0 auto;padding:32px 18px 48px}.hero{display:flex;"
         "justify-content:space-between;gap:18px;align-items:flex-end;margin-bottom:22px}"
+        ".hero-tools{display:flex;flex-direction:column;gap:10px;align-items:flex-end}"
         "h1{font-size:34px;margin:0;letter-spacing:.04em}.tag{color:var(--accent);"
         "font-weight:700;text-transform:uppercase;font-size:12px;letter-spacing:.18em}"
         ".sub{color:var(--muted);max-width:620px}.pill{border:1px solid var(--line);"
@@ -563,8 +597,11 @@ void build_config_page(const char* message)
         "flash sectors, not RAM, and loaded at boot. Display settings apply immediately; "
         "Wi-Fi, Home Assistant and MQTT changes take effect after reboot. A full flash erase "
         "or firmware image that overwrites the reserved area will remove saved settings.</p></div>"
-        "<div class=\"pill\">Local intranet configuration</div></div>",
+        "<div class=\"hero-tools\">",
         kHttpOkHeader, device_label[0] ? device_label : device_name);
+    (void)append_page_nav(cursor, remaining, ConfigWebPage::Config);
+    (void)append(cursor, remaining,
+                "<div class=\"pill\">Local intranet configuration</div></div></div>");
 
     if (escaped_message[0] != '\0')
     {
@@ -656,16 +693,19 @@ void build_config_page(const char* message)
     const char* selected_weather = weather_token(cfg.weather_source);
     (void)append_option(cursor, remaining, "home_assistant", "Home Assistant", selected_weather);
     (void)append_option(cursor, remaining, "open_meteo", "Open-Meteo", selected_weather);
+    const bool weather_is_home_assistant = cfg.weather_source == WeatherSource::HomeAssistant;
     (void)append(
         cursor, remaining,
-        "</select><fieldset id=\"weather_entity_fields\"><div class=\"row\"><div><label>"
+        "</select><fieldset id=\"weather_ha_fields\" class=\"%s\"><div class=\"row\"><div><label>"
         "Home Assistant weather entity</label><input name=\"weather_entity\" maxlength=\"63\" "
         "value=\"%s\"></div><div><label>Home Assistant sun entity</label><input "
-        "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div><label>Direct "
+        "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div></fieldset>"
+        "<fieldset id=\"weather_direct_fields\" class=\"%s\"><label>Direct "
         "weather coordinates</label><input name=\"weather_coordinates\" maxlength=\"63\" "
         "value=\"%s\"><p class=\"hint\">Direct weather sources use this "
         "latitude,longitude value independently of Home Assistant.</p></fieldset></section>",
-        weather_entity, sun_entity, weather_coordinates);
+        weather_is_home_assistant ? "" : "disabled", weather_entity, sun_entity,
+        weather_is_home_assistant ? "disabled" : "", weather_coordinates);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
@@ -700,11 +740,8 @@ void build_config_page(const char* message)
         "type=\"number\" min=\"0\" max=\"120\" inputmode=\"numeric\" value=\"%u\">"
         "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
         "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved "
-        "locally "
-        "on this CCU.</span><div class=\"tools\"><a class=\"ghost\" href=\"/pinter\" "
-        "id=\"open_pinter\">Pinter activity</a><a class=\"ghost\" href=\"/preview\" "
-        "id=\"open_preview\">Display preview</a>"
-        "<button type=\"submit\">Save Configuration</button></div></div></form>"
+        "locally on this CCU.</span>"
+        "<button type=\"submit\">Save Configuration</button></div></form>"
         "<script>"
         "function byId(id){return document.getElementById(id)}"
         "function setDisabled(fs,off){if(!fs)return;var els=fs.querySelectorAll('input,select');"
@@ -713,10 +750,12 @@ void build_config_page(const char* message)
         "var toggles=document.querySelectorAll('input[data-controls]');"
         "for(var i=0;i<toggles.length;i++){(function(box){box.onchange=function(){syncCheck(box)};"
         "syncCheck(box)})(toggles[i])}"
-        "var weather=byId('weather_source_select'),weatherFields=byId('weather_entity_fields');"
-        "function syncWeather(){setDisabled(weatherFields,false)}"
+        "var weather=byId('weather_source_select'),weatherHaFields=byId('weather_ha_fields'),"
+        "weatherDirectFields=byId('weather_direct_fields');"
+        "function syncWeather(){var isHa=weather.value==='home_assistant';"
+        "setDisabled(weatherHaFields,!isHa);setDisabled(weatherDirectFields,isHa)}"
         "if(weather){weather.onchange=syncWeather;syncWeather()}"
-        "var preview=byId('open_preview');"
+        "var preview=document.querySelector('nav.tools a[href=\"/preview\"]');"
         "if(preview){preview.addEventListener('click',function(event){"
         "if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){return;}"
         "event.preventDefault();"
@@ -1146,7 +1185,8 @@ bool build_pinter_activity_page()
         ".tools{display:flex;gap:10px;flex-wrap:wrap}.ghost{border:1px solid var(--line);"
         "border-radius:999px;padding:9px 13px;color:var(--text);text-decoration:none;"
         "background:#0b1512;font-weight:700;font-size:12px;text-transform:uppercase;"
-        "letter-spacing:.05em}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
+        "letter-spacing:.05em}"
+        ".summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
         "gap:10px;margin:0 0 16px}.tile{border:1px solid var(--line);border-radius:8px;"
         "background:#0d1815;padding:12px}.tile strong{display:block;font-size:22px;color:"
         "var(--accent)}.tile span{color:var(--muted);text-transform:uppercase;font-size:11px;"
@@ -1182,17 +1222,20 @@ bool build_pinter_activity_page()
         ".pinter-row{grid-template-columns:130px 620px 100px}}</style></head><body><main "
         "class=\"wrap\"><div class=\"top\"><div><h1>Pinter Activity</h1><p class=\"sub\">"
         "Each Pinter has its own row. Time runs left to right using real dates; today's date is "
-        "shown by the vertical green indicator.</p></div><nav class=\"tools\"><a class=\"ghost\" "
-        "href=\"/config\">Config</a><a class=\"ghost\" href=\"/preview\">Display preview</a></nav>"
-        "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>Waiting "
-        "packs</span></div><div class=\"tile\"><strong>%u</strong><span>Brewing</span></div><div "
-        "class=\"tile\"><strong>%u</strong><span>Conditioning</span></div><div class=\"tile\">"
-        "<strong>%u</strong><span>Ready</span></div></section><section class=\"timeline\">"
-        "<div class=\"axis\"><div></div><div class=\"scale\"><span style=\"left:0%%\">%s</span>"
-        "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
-        "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
-        kHttpOkHeader, static_cast<unsigned>(state.pinter_selected_brew_count), brewing,
-        conditioning, ready, axis_0, axis_7, axis_14, axis_21, axis_28);
+        "shown by the vertical green indicator.</p></div>",
+        kHttpOkHeader);
+    ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::PinterActivity);
+    ok = ok && append(
+                   cursor, remaining,
+                   "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>Waiting "
+                   "packs</span></div><div class=\"tile\"><strong>%u</strong><span>Brewing</span></div><div "
+                   "class=\"tile\"><strong>%u</strong><span>Conditioning</span></div><div class=\"tile\">"
+                   "<strong>%u</strong><span>Ready</span></div></section><section class=\"timeline\">"
+                   "<div class=\"axis\"><div></div><div class=\"scale\"><span style=\"left:0%%\">%s</span>"
+                   "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
+                   "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
+                   static_cast<unsigned>(state.pinter_selected_brew_count), brewing, conditioning,
+                   ready, axis_0, axis_7, axis_14, axis_21, axis_28);
 
     if (ok && today_visible)
     {
@@ -1237,7 +1280,7 @@ bool build_preview_page()
     char* cursor = g_response;
     size_t remaining = sizeof(g_response);
 
-    const bool ok = append(
+    bool ok = append(
         cursor, remaining,
         "%s"
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
@@ -1262,6 +1305,12 @@ bool build_preview_page()
         "button,a{border:1px solid "
         "var(--line);background:#0a1411;color:var(--text);border-radius:10px;"
         "padding:8px 11px;text-decoration:none;cursor:pointer}"
+        ".intro{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;"
+        "flex-wrap:wrap;margin-bottom:14px}"
+        ".tools{display:flex;gap:10px;flex-wrap:wrap}"
+        ".ghost{border:1px solid var(--line);border-radius:999px;padding:9px 13px;color:"
+        "var(--text);text-decoration:none;background:#0a1411;font-weight:700;font-size:12px;"
+        "text-transform:uppercase;letter-spacing:.05em}"
         ".state{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;min-width:"
         "88px;white-space:nowrap}"
         ".ccu-fixed{width:560px;min-width:560px;max-width:560px;margin:0 auto}"
@@ -1364,10 +1413,15 @@ bool build_preview_page()
         ".wrap{padding:12px 8px 18px}.ccu:before{inset:8px}.top-row,.nav-row,.keypad{gap:8px}}"
         "</style></head><body><main class=\"wrap\"><header class=\"intro\"><h1>Display Preview</h1>"
         "<p>Live framebuffer mirror plus a browser keypad so the CCU can be driven from your "
-        "laptop.</p></header>"
+        "laptop.</p>",
+        kHttpOkHeader);
+    ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Preview);
+    ok = ok && append(
+        cursor, remaining,
+        "</header>"
         "<section class=\"card\"><div class=\"meta\"><span class=\"badge\">%d x %d</span>"
         "<button id=\"toggle\" type=\"button\">Pause</button><button id=\"open_popup\" "
-        "type=\"button\">Pop-out</button><a href=\"/config\">Back to config</a>"
+        "type=\"button\">Pop-out</button>"
         "<span id=\"state\" class=\"state\">Starting...</span></div>"
         "<div class=\"ccu-fixed\"><div class=\"ccu\" aria-label=\"Virtual CCU keypad\">"
         "<div class=\"row top-row\">"
@@ -1714,7 +1768,7 @@ bool build_preview_page()
         "refresh();"
         "})();"
         "</script></main></body></html>",
-        kHttpOkHeader, kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiStride);
+        kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiWidth, kUiHeight, kUiStride);
     if (!ok)
     {
         std::snprintf(g_response, sizeof(g_response),
