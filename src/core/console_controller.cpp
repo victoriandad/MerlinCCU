@@ -1641,29 +1641,35 @@ void sync_system_alerts()
         weather_alert_data_current && have_temperature_range &&
         (min_temperature_celsius <= kFreezingTemperatureAlertCelsius ||
          max_temperature_celsius >= kHighTemperatureAlertCelsius);
-    char temperature_alert_detail[sizeof(ActiveAlert::detail)] = {};
+    // Reused for each alert's detail text below rather than one 320-byte
+    // buffer per alert: every use is built then immediately consumed by
+    // set_alert_condition (which copies it into ActiveAlert), so lifetimes
+    // never overlap. This function runs twice per keypress (from
+    // update_softkeys_from_state and update_lamps_from_state), so trimming
+    // its stack footprint matters on a memory-constrained MCU with no
+    // configured stack guard.
+    char alert_detail_scratch[sizeof(ActiveAlert::detail)] = {};
     if (temperature_warning)
     {
         build_weather_temperature_alert_detail(min_temperature_celsius, max_temperature_celsius,
-                                               temperature_alert_detail,
-                                               sizeof(temperature_alert_detail));
+                                               alert_detail_scratch,
+                                               sizeof(alert_detail_scratch));
     }
     set_alert_condition(AlertCode::WeatherTemperatureWarning, temperature_warning,
                         AlertSeverity::Warning, "WX TEMP",
-                        temperature_warning ? temperature_alert_detail : "");
+                        temperature_warning ? alert_detail_scratch : "");
 
     float max_wind_mph = 0.0F;
     const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
     const bool wind_warning =
         weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
-    char wind_alert_detail[sizeof(ActiveAlert::detail)] = {};
     if (wind_warning)
     {
-        build_weather_wind_alert_detail(max_wind_mph, wind_alert_detail,
-                                        sizeof(wind_alert_detail));
+        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch,
+                                        sizeof(alert_detail_scratch));
     }
     set_alert_condition(AlertCode::WeatherWindWarning, wind_warning, AlertSeverity::Warning,
-                        "WX WIND", wind_warning ? wind_alert_detail : "");
+                        "WX WIND", wind_warning ? alert_detail_scratch : "");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = g_console_state.mqtt_status.state;
@@ -1729,12 +1735,11 @@ void sync_system_alerts()
         "Environment sensor board is not fully detected.\nCheck I2C pins, power, and address "
         "jumpers.\nStatus page shows the detected addresses and read errors.");
 
-    char local_pressure_alert_detail[sizeof(ActiveAlert::detail)] = {};
     const bool pressure_storm_warning = local_pressure_storm_warning(
-        environment_status, local_pressure_alert_detail, sizeof(local_pressure_alert_detail));
+        environment_status, alert_detail_scratch, sizeof(alert_detail_scratch));
     set_alert_condition(AlertCode::LocalPressureStormWarning, pressure_storm_warning,
                         AlertSeverity::Warning, "STORM WARN",
-                        pressure_storm_warning ? local_pressure_alert_detail : "");
+                        pressure_storm_warning ? alert_detail_scratch : "");
 
     // Placeholder: enable this once render/frame timing counters are exposed to console state.
     const bool display_pipeline_lag = false;

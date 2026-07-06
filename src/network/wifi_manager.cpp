@@ -105,6 +105,12 @@ bool g_cyw43_initialized = false;
 int g_last_observed_link_status = CYW43_LINK_DOWN;
 absolute_time_t g_next_retry = nil_time;
 absolute_time_t g_wait_for_ip_deadline = nil_time;
+// Guards the async join request itself: if cyw43_wifi_link_status() never
+// leaves its pre-connect value (a silent radio-level failure), this is the
+// only thing that notices and moves on to the next credential/retry. Once
+// any link-status change is observed, update() clears this and the existing
+// WaitingForIp/DHCP deadline takes over.
+absolute_time_t g_connect_deadline = nil_time;
 absolute_time_t g_next_probe = nil_time;
 absolute_time_t g_probe_started_at = nil_time;
 absolute_time_t g_probe_deadline = nil_time;
@@ -542,6 +548,8 @@ void schedule_credential_cycle_retry()
 /// @brief Moves to the next configured credential, or delays before restarting the list.
 void schedule_next_credential_or_retry(size_t current_index)
 {
+    g_connect_deadline = nil_time;
+
     if (current_index == kNoWifiCredentialIndex)
     {
         schedule_credential_cycle_retry();
@@ -778,79 +786,37 @@ bool attempt_connect()
     std::printf("WiFi connecting to SSID '%s' auth=%s timeout=%lums\n", credential->ssid,
                 auth_mode_text(kAuthMode), static_cast<unsigned long>(kConnectTimeoutMs));
 
-    const int kRc = cyw43_arch_wifi_connect_timeout_ms(
-        credential->ssid, credential_password(*credential), kAuthMode, kConnectTimeoutMs);
-
-    const int kLinkStatus = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
-    g_last_observed_link_status = kLinkStatus;
-    g_status.link_status = kLinkStatus;
-    g_status.last_error = kRc;
-    const bool kIpReady = has_ipv4_address();
-
-    // lwIP can already have an address by the time the link result is checked,
-    // so either signal is enough to treat the connection as usable here.
-    if (kRc == PICO_OK && (kLinkStatus == CYW43_LINK_UP || kIpReady))
+    // This only starts the join; it must not block. The main loop's update()
+    // already polls cyw43_wifi_link_status() every iteration and drives the
+    // Connecting -> WaitingForIp/Connected/failed transitions from there (see
+    // the kLinkStatus != g_last_observed_link_status branch below). Blocking
+    // here for up to kConnectTimeoutMs previously starved the whole main loop
+    // -- including input handling and any future watchdog pet -- for as long
+    // as 30 seconds on every reconnect.
+    const int kRc =
+        cyw43_arch_wifi_connect_async(credential->ssid, credential_password(*credential), kAuthMode);
+    if (kRc != 0)
     {
-        apply_static_ip_config();
-        update_ip_address();
-        g_status.state = WifiConnectionState::Connected;
-        start_sntp_if_needed();
-        log_ip_address();
-        g_next_retry = nil_time;
-        g_wait_for_ip_deadline = nil_time;
-        reset_internet_probe_failures();
-        g_next_probe = get_absolute_time();
-        PERIODIC_LOG("WiFi connected to '%s' ip=%s\n", credential->ssid,
-                     g_status.ip_address[0] ? g_status.ip_address.data() : "-");
-        return true;
-    }
-
-    if (kRc == PICO_OK && (kLinkStatus == CYW43_LINK_JOIN || kLinkStatus == CYW43_LINK_NOIP))
-    {
-        if (kUseStaticIp && apply_static_ip_config())
-        {
-            g_status.state = WifiConnectionState::Connected;
-            start_sntp_if_needed();
-            log_ip_address();
-            g_next_retry = nil_time;
-            g_wait_for_ip_deadline = nil_time;
-            reset_internet_probe_failures();
-            g_next_probe = get_absolute_time();
-            PERIODIC_LOG("WiFi treating joined link as up after static IP assignment\n");
-            return true;
-        }
-        g_status.state = WifiConnectionState::WaitingForIp;
-        g_next_retry = nil_time;
-        schedule_wait_for_ip_deadline();
-        PERIODIC_LOG("WiFi joined '%s'; waiting for DHCP (link=%d)\n", credential->ssid,
-                     kLinkStatus);
-        return true;
-    }
-
-    if (kRc == PICO_ERROR_BADAUTH)
-    {
-        g_status.state = WifiConnectionState::AuthFailed;
-    }
-    else if (kRc == PICO_ERROR_TIMEOUT && kLinkStatus == CYW43_LINK_NONET)
-    {
-        g_status.state = WifiConnectionState::NoNetwork;
-    }
-    else if (kRc == PICO_ERROR_TIMEOUT || kRc == PICO_ERROR_CONNECT_FAILED)
-    {
+        // The driver refused to even start the join (e.g. busy). Fail this
+        // attempt immediately rather than leaving the state machine parked in
+        // Connecting with nothing to ever move it forward.
+        g_status.last_error = kRc;
         g_status.state = WifiConnectionState::ConnectFailed;
-    }
-    else
-    {
-        g_status.state = state_from_link_status(kLinkStatus);
+        std::printf("WiFi connect request failed to start for '%s' rc=%d\n", credential->ssid,
+                    kRc);
+        g_connect_deadline = nil_time;
+        g_wait_for_ip_deadline = nil_time;
+        reset_internet_probe_status();
+        reset_internet_probe_timers();
+        stop_sntp_if_started();
+        schedule_next_credential_or_retry(credential_index);
+        return true;
     }
 
-    std::printf("WiFi connect failed for '%s' rc=%d link=%d auth=%s\n", credential->ssid, kRc,
-                kLinkStatus, auth_mode_text(kAuthMode));
-    g_wait_for_ip_deadline = nil_time;
-    reset_internet_probe_status();
-    reset_internet_probe_timers();
-    stop_sntp_if_started();
-    schedule_next_credential_or_retry(credential_index);
+    // Arm a deadline for the join itself: if cyw43_wifi_link_status() never
+    // reports any change (a silent radio-level failure), update()'s top-level
+    // deadline check is the only thing that notices and moves on.
+    g_connect_deadline = make_timeout_time_ms(kConnectTimeoutMs);
     return true;
 }
 
@@ -935,6 +901,7 @@ bool update()
         // deciding whether the firmware is truly connected.
         if (kLinkStatus == CYW43_LINK_UP || kIpReady)
         {
+            g_connect_deadline = nil_time;
             apply_static_ip_config();
             update_ip_address();
             g_status.state = WifiConnectionState::Connected;
@@ -946,6 +913,7 @@ bool update()
         }
         else if (kLinkStatus == CYW43_LINK_JOIN || kLinkStatus == CYW43_LINK_NOIP)
         {
+            g_connect_deadline = nil_time;
             if (kUseStaticIp && apply_static_ip_config())
             {
                 g_status.state = WifiConnectionState::Connected;
@@ -992,6 +960,18 @@ bool update()
         g_wait_for_ip_deadline = nil_time;
         reset_internet_probe_failures();
         g_next_probe = get_absolute_time();
+        changed = true;
+    }
+
+    if (!is_nil_time(g_connect_deadline) &&
+        absolute_time_diff_us(get_absolute_time(), g_connect_deadline) <= 0)
+    {
+        // cyw43_wifi_link_status() never moved off its pre-connect value for
+        // this whole window -- a silent radio-level failure the change-based
+        // branch above cannot see because there was never a change to detect.
+        PERIODIC_LOG("WiFi connect attempt timed out with no link-status change; retrying\n");
+        g_connect_deadline = nil_time;
+        schedule_next_credential_or_retry(g_next_credential_index);
         changed = true;
     }
 
