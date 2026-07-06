@@ -113,10 +113,29 @@ Do not move work to core 1 until these are true:
 - lwIP/CYW43 calls remain on their current owner unless explicit locking and
   callback-context rules have been reviewed.
 
+## Host-Testable Logic
+
+Some pure, data-only logic is deliberately factored into small headers/TUs
+that pull in no Pico SDK headers, so `tests/host/` can exercise it with a
+native compiler instead of requiring hardware:
+
+- `include/core/alert_ordering.h` — alert list sort order and
+  annunciation/acknowledgement rules, extracted from `console_controller.cpp`.
+- `include/core/keypad_matrix_decode.h` — the ribbon-pin-pair-to-button
+  table and hit-mask closure test, extracted from `input.cpp`. GPIO wiring
+  and the "is this line configured" guard stay in `input.cpp`, since that
+  depends on per-board config; `input.cpp` static_asserts that its
+  hardware-facing `kObservedLines` pin order matches this header's
+  `kObservedPanelPins` so the two tables cannot silently desync.
+
+When adding new pure logic to `console_controller.cpp` or `input.cpp`, prefer
+extracting it the same way over adding to files that already require Pico
+hardware headers to compile.
+
 ## Decision Log
 
 | Date | Decision | Reason | Follow-up |
 | --- | --- | --- | --- |
 | 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
-| 2026-07-06 | Add live heap tracking (`mallinfo()`) to the Resources status page alongside the existing program-flash/static-RAM/loop-load telemetry. | Closes the remaining gap in issue #15; most memory use here is static, but lwIP/mbedtls do allocate from the heap and that was previously invisible. | Fold the stack-headroom high-water-mark (issue #58) into this same page once that branch merges. |
+| 2026-07-06 | Add `tests/host/`, a native-compiler CMake project covering keypad matrix decode and alert ordering/acknowledgement, extracted into hardware-independent headers. | Closes issue #14; both areas were previously only reachable through hand testing on real hardware. | Extend the same pattern to other pure logic (e.g. Pinter scheduling, #48) as it's identified. |
 | YYYY-MM-DD |  |  |  |

@@ -595,6 +595,9 @@ enum class SoftKeyRoute : uint8_t
     KeysDimmer,
 };
 
+/// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
+inline constexpr size_t kActiveAlertCapacity = 24;
+
 /// @brief One active alert surfaced by the CCU alert workflow.
 struct ActiveAlert
 {
@@ -789,7 +792,7 @@ struct ConsoleState
     uint8_t alert_detail_index;
     uint8_t alert_detail_scroll_line;
     MenuPage alert_parent_page;
-    std::array<ActiveAlert, 24> active_alerts;
+    std::array<ActiveAlert, kActiveAlertCapacity> active_alerts;
     std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
     std::array<PinterStatus, kPinterCount> pinters;
     std::array<ShareWatchEntry, 6> watched_shares;

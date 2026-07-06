@@ -36,6 +36,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 add_executable(MerlinCCU
     src/core/MerlinCCU.cpp
+    src/core/alert_ordering.cpp
     src/core/console_controller.cpp
     src/core/console_model.cpp
     src/core/input.cpp
@@ -101,6 +102,7 @@ set_source_files_properties(
 # Add any user requested libraries
 target_link_libraries(MerlinCCU
 pico_stdlib
+    hardware_watchdog
     pico_cyw43_arch_lwip_threadsafe_background
     pico_lwip_mqtt
     pico_lwip_mbedtls

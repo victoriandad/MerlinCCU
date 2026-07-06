@@ -174,6 +174,20 @@ Known build compatibility note:
   symbol names (`kEl320RasterProgram` and `el320_raster_program`). This keeps
   clean and cached builds consistent across Pico SDK/pioasm combinations.
 
+### Host Tests
+
+`tests/host/` is a separate, non-cross-compiling CMake project covering
+keypad matrix decode logic and alert ordering/acknowledgement rules with the
+machine's native compiler -- no Pico SDK or ARM toolchain required (issue
+#14). Run it independently of the firmware build:
+
+```
+cd tests/host
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
 ## Configuration
 
 Runtime settings are primarily persisted in Pico flash and can be edited from the local web configuration page when remote configuration is enabled.
