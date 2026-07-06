@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "alert_ordering.h"
+#include "config_persistence.h"
 #include "debug_logging.h"
 #include "pico/error.h"
 
@@ -30,7 +31,8 @@ ConsoleState g_console_state = make_default_console_state();
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
 constexpr size_t kSoftkeyLabelCapacity = 48;
-constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
+// Shared with config_manager.cpp's save-time clamp so the two can't drift.
+using config_persistence::kMaxScreenSaverTimeoutMinutes;
 constexpr uint8_t kSettingsPageCount = 2U;
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_labels = {};
 std::array<std::array<char, 16>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_values = {};

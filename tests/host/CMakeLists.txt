@@ -18,13 +18,19 @@ add_executable(host_tests
     main.cpp
     test_alert_ordering.cpp
     test_keypad_matrix_decode.cpp
+    test_config_persistence.cpp
+    test_date_time_math.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
+    ${MERLIN_ROOT}/src/config/config_persistence.cpp
+    ${MERLIN_ROOT}/src/network/date_time_math.cpp
 )
 
 target_include_directories(host_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MERLIN_ROOT}/include/core
     ${MERLIN_ROOT}/include/sensors
+    ${MERLIN_ROOT}/include/config
+    ${MERLIN_ROOT}/include/network
 )
 
 enable_testing()

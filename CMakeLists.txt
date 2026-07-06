@@ -41,6 +41,7 @@ add_executable(MerlinCCU
     src/core/console_model.cpp
     src/core/input.cpp
     src/config/config_manager.cpp
+    src/config/config_persistence.cpp
     src/display/display.cpp
     src/display/framebuffer.cpp
     src/display/screen_banners.cpp
@@ -52,6 +53,7 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_rain.cpp
     src/display/screensavers/screensaver_starfield.cpp
     src/display/screensavers/screensaver_worms.cpp
+    src/network/date_time_math.cpp
     src/network/home_assistant_manager.cpp
     src/network/mqtt_manager.cpp
     src/network/share_price_manager.cpp
