@@ -1324,20 +1324,25 @@ bool build_preview_page()
         ".display-bay{margin-top:10px;padding:8px 7px "
         "6px;border-radius:22px;background:linear-gradient(170deg,#1e2429,#0c1013);"
         "box-shadow:inset 0 1px 0 #6c758042,inset 0 -1px 0 #050709}"
-        ".display-shell{display:grid;grid-template-columns:68px 358px "
+        // Canvas is sized 1:1 with the native kUiWidth x kUiHeight bitmap
+        // (substituted in below) -- no CSS scaling, so glyphs render
+        // pixel-for-pixel instead of through a mismatched fractional stretch
+        // (issue #79). The surrounding bezel/softkey-row geometry is scaled
+        // down proportionally from its previous 340x432 tuning to match.
+        ".display-shell{display:grid;grid-template-columns:68px 270px "
         "68px;gap:10px;align-items:start}"
-        ".screen-wrap{width:358px;height:450px;border:2px solid "
+        ".screen-wrap{width:270px;height:338px;border:2px solid "
         "#5a6268;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,#1a2126,#"
         "0a0e11);"
         "padding:7px;position:relative;box-shadow:inset 0 2px 3px #ffffff1f,inset 0 -2px 4px "
         "#000a,0 1px 0 #000}"
         ".screen-wrap "
-        "canvas{display:block;width:340px;height:432px;image-rendering:pixelated;image-rendering:"
+        "canvas{display:block;width:%dpx;height:%dpx;image-rendering:pixelated;image-rendering:"
         "crisp-edges;background:#070d0a}"
-        ".soft-column{position:relative;height:450px}"
+        ".soft-column{position:relative;height:338px}"
         ".soft-cell{position:absolute;left:0;right:0;display:grid;align-items:center}"
-        ".soft-cell.r0{top:44px}.soft-cell.r1{top:122px}.soft-cell.r2{top:200px}.soft-cell.r3{top:"
-        "278px}.soft-cell.r4{top:356px}"
+        ".soft-cell.r0{top:33px}.soft-cell.r1{top:90px}.soft-cell.r2{top:148px}.soft-cell.r3{top:"
+        "206px}.soft-cell.r4{top:264px}"
         ".left-soft .soft-cell{grid-template-columns:auto 14px;column-gap:4px}"
         ".right-soft .soft-cell{grid-template-columns:14px auto;column-gap:4px}"
         ".soft-cell .tick{height:2px;background:#d9ddd7;border-radius:2px;opacity:.9;box-shadow:0 "
@@ -1386,7 +1391,7 @@ bool build_preview_page()
         "</style></head><body><main class=\"wrap\"><header class=\"intro\"><h1>Display Preview</h1>"
         "<p>Live framebuffer mirror plus a browser keypad so the CCU can be driven from your "
         "laptop.</p>",
-        kHttpOkHeader);
+        kHttpOkHeader, kUiWidth, kUiHeight);
     ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Preview);
     ok = ok && append(
         cursor, remaining,
