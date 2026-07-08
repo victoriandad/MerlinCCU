@@ -22,15 +22,18 @@ README history, chat context, or incidental source-code discovery.
 - `src/core/console_controller.cpp`: UI state, softkey routing, alert state,
   runtime config application.
 - `src/display/screens.cpp`: shared drawing primitives (detail rows, centred
-  text, graph plotting), the `draw_menu_screen()` dispatch, and page families
-  not yet split out (issue #45, staged: Status is split into
-  `status_screens.cpp`; Weather/Calendar/Shares/Pinter/Settings/Alerts remain
-  in `screens.cpp` pending the same treatment).
+  text, label wrapping, graph plotting), the `draw_menu_screen()` dispatch,
+  and page families not yet split out (issue #45, staged: Status and Weather
+  are split into their own files; Calendar/Shares/Pinter/Settings/Alerts
+  remain in `screens.cpp` pending the same treatment).
 - `src/display/status_screens.cpp`: Status root/overview/connectivity/
   resources/sensors/integrations pages.
+- `src/display/weather_screens.cpp`: the live Weather page, its Hourly/Next
+  24 Hours/Next 7 Days forecast periods, and forecast-timeline reconstruction.
 - `include/display/screens_shared.h`: primitives split-out page-family files
-  need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`, a few
-  state-label lookups) that aren't part of the public `screens.h` API.
+  need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`,
+  `draw_centered_text`, `text_width`, `WrappedSoftkeyLabel`/`wrap_label_lines`,
+  a few state-label lookups) that aren't part of the public `screens.h` API.
 - `src/display/display.cpp`: framebuffer-to-panel raster composition and DMA/PIO
   presentation.
 - `src/core/input.cpp`: physical/provisional keypad polling and logical button
@@ -164,4 +167,5 @@ hardware headers to compile.
 | 2026-07-08 | Extract Calendar owner-filter/day-navigation/slot-selection logic into `calendar_navigation.h`, following the #48 Pinter-scheduling split. | Closes issue #49; keeps this logic reviewable and host-testable ahead of the #8/#33/#34 Home Assistant calendar ingestion work landing in the same area. | Split `console_controller.cpp` further per #44 (softkey label construction, status ingestion remain inline). |
 | 2026-07-08 | Split the Status page family (root/overview/connectivity/resources/sensors/integrations) out of `screens.cpp` into `status_screens.cpp`, with cross-family primitives promoted into `screens_shared.h`. | Progresses issue #45 as a staged refactor (per the #3 housekeeping notes) rather than one large rewrite; `screens.cpp` dropped from 3319 to 2817 lines with no rendering change. | Repeat the same split for Weather, Calendar, Shares, Pinter, Settings, and Alerts page families. |
 | 2026-07-08 | Simplified `set_home_assistant_status`/`set_mqtt_status` in `console_controller.cpp` to use the `operator!=` added for issue #67, instead of re-deriving the same field-by-field comparison inline; did not further split `console_controller.cpp` (#44) beyond this. | The remaining candidates (softkey label construction, status-snapshot ingestion, settings routing) all read/write `g_console_state` directly (463 references in the file) and call private helpers like `update_softkeys_from_state()` -- unlike the #48/#49 splits, which extracted logic that already took explicit parameters instead of touching the global, these would need to either accept a much bigger `ConsoleState&`-threading refactor or expose more of the controller's private surface across a TU boundary. Neither is a small staged step. | Revisit #44 only alongside a deliberate decision on whether `ConsoleState` should be passed explicitly through more of the call chain -- forcing a module split before that decision would just relocate tightly-coupled code, not separate concerns. |
+| 2026-07-09 | Split the Weather page family (live weather page, forecast periods, forecast-timeline reconstruction) out of `screens.cpp` into `weather_screens.cpp`; promoted `text_width`, `draw_centered_text`, `WrappedSoftkeyLabel`/`wrap_label_lines`, and `draw_info_page_rows` into `screens_shared.h` since Weather needed them too. | Continues issue #45's staged split. `screens.cpp` dropped from 2817 to 2052 lines with no rendering change (verified via clean firmware rebuild). | Repeat the same split for Calendar, Shares, Pinter, Settings, and Alerts page families. |
 | YYYY-MM-DD |  |  |  |
