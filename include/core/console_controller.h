@@ -16,6 +16,19 @@ const ConsoleState& state();
 /// @brief Applies persisted runtime preferences to the visible console state.
 bool apply_runtime_config(const RuntimeConfig& settings);
 
+/// @brief Overwrites Pinter vessel state with previously persisted data.
+/// @details Meant to be called once during startup, before the first frame is
+/// drawn, so unlike apply_runtime_config() there is no redraw signalling here.
+void apply_persisted_pinters(const std::array<PinterStatus, kPinterCount>& pinters);
+
+/// @brief Persists Pinter state to flash if a Pinter event since the last
+/// call left a save pending.
+/// @details Must be called from a point in the main loop that is not nested
+/// inside network request handling: the underlying flash write disables all
+/// interrupts for its duration, and doing that while a web request is still
+/// on the call stack has caused visible multi-second UI stalls in practice.
+bool flush_pending_pinter_save();
+
 /// @brief Requests a menu redraw after an out-of-band state change.
 /// @details This is used by flows such as the embedded web server where the
 /// shared configuration can change outside the button-driven menu loop.

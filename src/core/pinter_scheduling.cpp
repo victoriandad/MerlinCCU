@@ -1,5 +1,7 @@
 #include "pinter_scheduling.h"
 
+#include <limits>
+
 namespace pinter_scheduling
 {
 
@@ -40,9 +42,9 @@ bool has_pending_cold_crash(const PinterStatus& pinter)
            !pinter.cold_crash_used;
 }
 
-bool can_start(uint8_t selected_brew_count, uint8_t dock_count)
+bool can_start(uint8_t dock_count)
 {
-    return selected_brew_count > 0U && dock_count < kPinterBrewDockCapacity;
+    return dock_count < kPinterBrewDockCapacity;
 }
 
 bool can_enter_fridge(const PinterStatus& pinter, uint8_t fridge_count)
@@ -59,13 +61,12 @@ bool can_enter_fridge(const PinterStatus& pinter, uint8_t fridge_count)
     return fridge_count < kPinterFridgeCapacity;
 }
 
-bool primary_action_enabled(const PinterStatus& pinter, uint8_t selected_brew_count,
-                            uint8_t dock_count, uint8_t fridge_count)
+bool primary_action_enabled(const PinterStatus& pinter, uint8_t dock_count, uint8_t fridge_count)
 {
     switch (pinter.state)
     {
     case PinterState::Idle:
-        return can_start(selected_brew_count, dock_count);
+        return can_start(dock_count);
     case PinterState::Brewing:
         if (has_pending_cold_crash(pinter))
         {
@@ -83,10 +84,9 @@ bool primary_action_enabled(const PinterStatus& pinter, uint8_t selected_brew_co
     return false;
 }
 
-SummaryCounts summarize(const std::array<PinterStatus, kPinterCount>& pinters,
-                        uint8_t selected_brew_count)
+SummaryCounts summarize(const std::array<PinterStatus, kPinterCount>& pinters)
 {
-    SummaryCounts counts = {selected_brew_count, 0U, 0U, 0U};
+    SummaryCounts counts = {0U, 0U, 0U};
 
     for (const PinterStatus& pinter : pinters)
     {
@@ -180,6 +180,74 @@ bool reset(PinterStatus& pinter, uint8_t default_brew_index)
     pinter.planned_cold_crash_days = 0U;
     pinter.planned_conditioning_days = 0U;
     pinter.cold_crash_used = false;
+    return true;
+}
+
+uint32_t current_stage_target_day(const PinterStatus& pinter)
+{
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        return pinter.brew_start_day + pinter.planned_brewing_days;
+    case PinterState::ColdCrash:
+        return pinter.cold_crash_start_day + pinter.planned_cold_crash_days;
+    case PinterState::Conditioning:
+        return pinter.conditioning_start_day + pinter.planned_conditioning_days;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return 0U;
+    }
+
+    return 0U;
+}
+
+uint8_t current_stage_planned_days(const PinterStatus& pinter)
+{
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        return pinter.planned_brewing_days;
+    case PinterState::ColdCrash:
+        return pinter.planned_cold_crash_days;
+    case PinterState::Conditioning:
+        return pinter.planned_conditioning_days;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return 0U;
+    }
+
+    return 0U;
+}
+
+bool nudge_current_stage_days(PinterStatus& pinter, int delta)
+{
+    uint8_t* planned_days = nullptr;
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        planned_days = &pinter.planned_brewing_days;
+        break;
+    case PinterState::ColdCrash:
+        planned_days = &pinter.planned_cold_crash_days;
+        break;
+    case PinterState::Conditioning:
+        planned_days = &pinter.planned_conditioning_days;
+        break;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return false;
+    }
+
+    const int next_value = static_cast<int>(*planned_days) + delta;
+    if (next_value < 1 || next_value > static_cast<int>(std::numeric_limits<uint8_t>::max()))
+    {
+        return false;
+    }
+
+    *planned_days = static_cast<uint8_t>(next_value);
     return true;
 }
 

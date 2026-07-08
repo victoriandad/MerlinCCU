@@ -25,9 +25,12 @@ constexpr uint32_t kSlot0Offset = kConfigStorageOffset;
 constexpr uint32_t kSlot1Offset = kConfigStorageOffset + FLASH_SECTOR_SIZE;
 
 static_assert(sizeof(ConfigSlot) <= FLASH_SECTOR_SIZE, "Config slot must fit in one flash sector");
+static_assert(kConfigStorageBytes == config_manager::kReservedFlashBytes,
+              "config_manager::kReservedFlashBytes must track this store's real reservation");
 
 RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;
+bool g_save_pending = false;
 
 /// @brief Returns a const pointer to one flash slot.
 const ConfigSlot* flash_slot(uint32_t offset)
@@ -145,7 +148,10 @@ void init()
     std::printf("Config flash empty or invalid; writing defaults\n");
     g_settings = config_persistence::make_default_settings();
     g_sequence = 0;
+    // Safe to write synchronously here: this runs before wifi_manager::init(),
+    // so there is no network stack yet for a flash write to disrupt.
     (void)save(g_settings);
+    (void)flush_pending_save();
 }
 
 const RuntimeConfig& settings()
@@ -155,16 +161,26 @@ const RuntimeConfig& settings()
 
 bool save(const RuntimeConfig& settings)
 {
-    const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
+    g_settings = config_persistence::sanitize_settings(settings);
+    g_save_pending = true;
+    return true;
+}
+
+bool flush_pending_save()
+{
+    if (!g_save_pending)
+    {
+        return false;
+    }
+    g_save_pending = false;
 
     const uint32_t next_sequence = g_sequence + 1U;
-    if (!write_slot(next_save_slot_offset(), sanitized, next_sequence))
+    if (!write_slot(next_save_slot_offset(), g_settings, next_sequence))
     {
-        std::printf("Config save failed before active settings were updated\n");
+        std::printf("Config save failed\n");
         return false;
     }
 
-    g_settings = sanitized;
     g_sequence = next_sequence;
     std::printf("Config save complete: sequence %lu device='%s' label='%s'\n",
                 static_cast<unsigned long>(g_sequence), g_settings.device_name.data(),

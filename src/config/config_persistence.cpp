@@ -3,23 +3,15 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "text_utils.h"
+
 namespace config_persistence
 {
 
 namespace
 {
 
-/// @brief Copies a C string into one fixed-size config field.
-template <size_t N> void copy_text(std::array<char, N>& dest, const char* src)
-{
-    dest.fill('\0');
-    if (src == nullptr)
-    {
-        return;
-    }
-
-    std::snprintf(dest.data(), dest.size(), "%s", src);
-}
+using text_utils::copy_text;
 
 } // namespace
 

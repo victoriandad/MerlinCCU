@@ -30,12 +30,18 @@ DateTimeParts unix_time_to_utc(uint32_t epoch_seconds)
     return parts;
 }
 
+DateTimeParts civil_from_epoch_day(uint32_t epoch_day)
+{
+    constexpr uint32_t kSecondsPerDay = 24U * 60U * 60U;
+    return unix_time_to_utc(epoch_day * kSecondsPerDay);
+}
+
 int32_t days_from_civil(int year, unsigned month, unsigned day)
 {
     year -= month <= 2U ? 1 : 0;
     const int era = (year >= 0 ? year : year - 399) / 400;
     const unsigned yoe = static_cast<unsigned>(year - (era * 400));
-    const unsigned adjusted_month = month + (month > 2U ? -3U : 9U);
+    const unsigned adjusted_month = month > 2U ? month - 3U : month + 9U;
     const unsigned doy = ((153U * adjusted_month) + 2U) / 5U + day - 1U;
     const unsigned doe = (yoe * 365U) + (yoe / 4U) - (yoe / 100U) + doy;
     return (era * 146097) + static_cast<int32_t>(doe) - 719468;

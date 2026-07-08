@@ -40,7 +40,9 @@ add_executable(MerlinCCU
     src/core/console_controller.cpp
     src/core/console_model.cpp
     src/core/input.cpp
+    src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp
+    src/core/pinter_store.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/display/display.cpp
@@ -82,6 +84,20 @@ pico_enable_stdio_usb(MerlinCCU 1)
 target_link_libraries(MerlinCCU
     pico_stdlib
 )
+
+# -Wall -Wextra (issue #69) plus a hard failure specifically for an
+# incomplete MenuPage switch (issue #63): the title/font/dispatch lookups in
+# screens.cpp are already written exhaustively with no `default:` label, so a
+# case missed when a new MenuPage value is added shows up as a build failure
+# instead of a blank/stale page discovered by hand.
+#
+# -Wformat-truncation is suppressed: the remaining sites are softkey/status
+# labels snprintf'd into fixed-size display buffers where truncating long
+# input text is the deliberate, correct behaviour (there is no wider buffer to
+# grow into on a 320-pixel-wide panel), not a bug to fix. GCC's static bound
+# (based on the source type's range, e.g. any uint8_t up to 255) can't see
+# that the real runtime values are always small.
+target_compile_options(MerlinCCU PRIVATE -Wall -Wextra -Werror=switch -Wno-format-truncation)
 
 # Add the standard include files to the build
 target_include_directories(MerlinCCU PRIVATE

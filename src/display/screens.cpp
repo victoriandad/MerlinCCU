@@ -14,6 +14,7 @@
 #include "hardware/flash.h"
 #include "panel_config.h"
 #include "pico/error.h"
+#include "pinter_store.h"
 #include "screen_banners.h"
 
 #if __has_include("calendar_identities.h")
@@ -35,9 +36,9 @@ namespace
 {
 
 constexpr uint8_t kSettingsPageCount = 2U;
-constexpr size_t kConfigFlashSlotCount = 2U;
-constexpr size_t kConfigFlashBytes = FLASH_SECTOR_SIZE * kConfigFlashSlotCount;
-constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kConfigFlashBytes;
+constexpr size_t kReservedFlashBytes =
+    config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes;
+constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kReservedFlashBytes;
 
 extern "C"
 {
@@ -83,40 +84,6 @@ void build_uppercase_label(const char* input, char* output, size_t output_size)
     output[write_index] = '\0';
 }
 
-/// @brief Returns the compact label used for the letter annunciator mode.
-const char* letter_mode_text(LetterMode mode)
-{
-    switch (mode)
-    {
-    case LetterMode::UpperCase:
-        return "ABC";
-    case LetterMode::LowerCase:
-        return "abc";
-    case LetterMode::Numbers:
-        return "123";
-    }
-
-    return "ABC";
-}
-
-/// @brief Returns the shortened alert label used on the constrained settings UI.
-const char* alert_severity_text(AlertSeverity severity)
-{
-    switch (severity)
-    {
-    case AlertSeverity::None:
-        return "NONE";
-    case AlertSeverity::Message:
-        return "MSG";
-    case AlertSeverity::Warning:
-        return "WARN";
-    case AlertSeverity::Alert:
-        return "ALERT";
-    }
-
-    return "?";
-}
-
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)
 {
@@ -130,48 +97,6 @@ const char* test_state_text(SystemTestState state)
         return "PASS";
     case SystemTestState::Failed:
         return "FAIL";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the fixed-width brightness label used by menu pages.
-const char* brightness_text(BrightnessLevel level)
-{
-    switch (level)
-    {
-    case BrightnessLevel::Off:
-        return "OFF";
-    case BrightnessLevel::Low:
-        return "LOW";
-    case BrightnessLevel::Medium:
-        return "MED";
-    case BrightnessLevel::High:
-        return "HIGH";
-    }
-
-    return "?";
-}
-
-/// @brief Returns a consistent yes/no style label for config booleans.
-const char* enabled_text(bool enabled)
-{
-    return enabled ? "Enabled" : "Disabled";
-}
-
-/// @brief Returns the abbreviated lamp-mode label used in compact layouts.
-const char* lamp_mode_text(LampMode mode)
-{
-    switch (mode)
-    {
-    case LampMode::Off:
-        return "OFF";
-    case LampMode::On:
-        return "ON";
-    case LampMode::FlashSlow:
-        return "F-SLOW";
-    case LampMode::FlashFast:
-        return "F-FAST";
     }
 
     return "?";
@@ -571,6 +496,45 @@ void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
                            true, kAxisFont, 1);
 }
 
+/// @brief Bordered graph plot rect shared by the shares and local-conditions
+/// history graphs, with a symmetric one-pixel inset on all four sides.
+struct GraphPlotArea
+{
+    int x;
+    int y;
+    int width;
+    int height;
+    int inset;
+};
+
+/// @brief Draws a graph plot area's border rect.
+void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
+{
+    framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
+}
+
+/// @brief Maps a 0-based point index across `point_count` evenly spaced points
+/// to an x pixel coordinate within the inset plot area.
+int graph_plot_x(const GraphPlotArea& area, int index, int point_count)
+{
+    const int plot_width = area.width - (area.inset * 2) - 1;
+    return area.x + area.inset + (plot_width * index) / (point_count - 1);
+}
+
+/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
+/// coordinate within the inset plot area, zero at the bottom.
+/// @details `value` is clamped to the given range first, so callers whose data
+/// can exceed the display scale (e.g. local-condition history against its
+/// fixed axis range) do not need to clamp separately.
+int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value)
+{
+    const int64_t range = (max_value > min_value) ? (max_value - min_value) : 1;
+    const int plot_height = area.height - (area.inset * 2) - 1;
+    const int64_t clamped = std::clamp(value, min_value, max_value);
+    const int normalised = static_cast<int>(((clamped - min_value) * plot_height) / range);
+    return area.y + area.height - 1 - area.inset - normalised;
+}
+
 /// @brief Formats one local-condition value according to its stored fixed-point unit.
 void build_local_condition_value_text(
     LocalConditionMetric metric,
@@ -726,16 +690,8 @@ const char* menu_page_title(MenuPage page)
         return "ALERT";
     case MenuPage::Pinter:
         return "PINTER";
-    case MenuPage::PinterPacks:
-        return "PINTER PACKS";
-    case MenuPage::PinterToBeBrewed:
-        return "TO BE BREWED";
     case MenuPage::PinterSelectBrew:
         return "SELECT BREW";
-    case MenuPage::PinterSelectedBrews:
-        return "SELECTED BREWS";
-    case MenuPage::PinterStartBrew:
-        return "START PINTER";
     case MenuPage::PinterStartTiming:
         return "BREW TIMING";
     case MenuPage::Shares:
@@ -853,11 +809,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::Pinter:
-    case MenuPage::PinterPacks:
-    case MenuPage::PinterToBeBrewed:
     case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterSelectedBrews:
-    case MenuPage::PinterStartBrew:
     case MenuPage::PinterStartTiming:
     case MenuPage::Shares:
     case MenuPage::ShareDetail:
@@ -879,6 +831,15 @@ fonts::FontFace softkey_label_font(MenuPage page)
     }
 
     return fonts::FontFace::Font5x7;
+}
+
+/// @brief Returns how many lines one softkey label may wrap onto for a page.
+/// @details Most pages cap this at two lines so long labels degrade
+/// gracefully; the Pinter page opts into a third line so each vessel's slot
+/// key can carry a stage countdown alongside its state and recipe name.
+constexpr int softkey_label_max_lines(MenuPage page)
+{
+    return page == MenuPage::Pinter ? 3 : 2;
 }
 
 /// @brief Returns the maximum drawable width for one softkey label line.
@@ -915,6 +876,7 @@ struct WrappedSoftkeyLabel
 {
     char line_one[48];
     char line_two[48];
+    char line_three[48];
     int line_count;
 };
 
@@ -997,75 +959,66 @@ size_t skip_wrapped_label_breaks(const char* text, size_t start)
     return start;
 }
 
-/// @brief Wraps one softkey label into at most two renderable lines.
-/// @details Softkeys are deliberately limited to two lines so long labels
-/// degrade gracefully without taking over the rest of the screen layout.
-WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+/// @brief Wraps one softkey label into at most `max_lines` renderable lines.
+/// @details Softkeys are deliberately capped (two lines for most pages, three
+/// where a page opts in) so long labels degrade gracefully without taking
+/// over the rest of the screen layout. Each line greedily fits as much text
+/// as the width allows, preferring to break on whitespace.
+WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
+                                     int max_lines)
 {
     WrappedSoftkeyLabel wrapped = {};
     wrapped.line_count = 0;
 
-    if (label == nullptr || label[0] == '\0')
+    if (label == nullptr || label[0] == '\0' || max_lines <= 0)
     {
         return wrapped;
     }
 
-    const size_t kFirstFitLength = fit_wrapped_label_prefix(label, font, max_width);
-    if (kFirstFitLength == 0)
-    {
-        return wrapped;
-    }
+    char* const line_buffers[3] = {wrapped.line_one, wrapped.line_two, wrapped.line_three};
+    const int kEffectiveMaxLines = (max_lines > 3) ? 3 : max_lines;
+    const char* cursor = label;
 
-    size_t first_length = find_wrapped_label_split(label, kFirstFitLength);
-    while (first_length > 0 && label[first_length - 1] == ' ')
+    for (int line_index = 0; line_index < kEffectiveMaxLines; ++line_index)
     {
-        --first_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_one, sizeof(wrapped.line_one), label, first_length);
-    wrapped.line_count = 1;
-
-    size_t second_start = skip_wrapped_label_breaks(label, first_length);
-    if (label[second_start] == '\0')
-    {
-        return wrapped;
-    }
-
-    const size_t kSecondFitLength = fit_wrapped_label_prefix(label + second_start, font, max_width);
-    if (kSecondFitLength == 0)
-    {
-        return wrapped;
-    }
-
-    size_t second_length = kSecondFitLength;
-    if (label[second_start + kSecondFitLength] != '\0' &&
-        label[second_start + kSecondFitLength] != '\n')
-    {
-        const size_t kSecondSplit =
-            find_wrapped_label_split(label + second_start, kSecondFitLength);
-        if (kSecondSplit > 0)
+        if (cursor[0] == '\0')
         {
-            second_length = kSecondSplit;
+            break;
         }
+
+        const size_t kFitLength = fit_wrapped_label_prefix(cursor, font, max_width);
+        if (kFitLength == 0)
+        {
+            break;
+        }
+
+        size_t length = find_wrapped_label_split(cursor, kFitLength);
+        while (length > 0 && cursor[length - 1] == ' ')
+        {
+            --length;
+        }
+
+        copy_softkey_label_slice(line_buffers[line_index], 48, cursor, length);
+        wrapped.line_count = line_index + 1;
+        cursor += skip_wrapped_label_breaks(cursor, length);
     }
 
-    while (second_length > 0 && label[second_start + second_length - 1] == ' ')
-    {
-        --second_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_two, sizeof(wrapped.line_two), label + second_start,
-                             second_length);
-    wrapped.line_count = 2;
     return wrapped;
 }
 
-/// @brief Applies the current softkey width policy to one label string.
+/// @brief Wraps one softkey label into at most two renderable lines.
+WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+{
+    return wrap_label_lines(label, font, max_width, 2);
+}
+
+/// @brief Applies the current softkey width and line-count policy for a page
+/// to one label string.
 /// @details This keeps callers from hard-coding layout limits in multiple places
 /// when the bezel or font rules change.
-WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font)
+WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font, int max_lines)
 {
-    return wrap_label_two_lines(label, font, softkey_label_max_width());
+    return wrap_label_lines(label, font, softkey_label_max_width(), max_lines);
 }
 
 /// @brief Draws one aligned detail row for information-oriented pages.
@@ -1503,14 +1456,14 @@ void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool
 /// @details The label is vertically centred within the physical key slot so
 /// wrapped text still reads like it belongs to one button location.
 void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
-                        fonts::FontFace font)
+                        fonts::FontFace font, int max_lines)
 {
     if (action.label == nullptr || action.label[0] == '\0')
     {
         return;
     }
 
-    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font);
+    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font, max_lines);
     const int kLineHeight = framebuffer::font_height(font);
     const int kBlockHeight =
         (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
@@ -1569,6 +1522,10 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
     if (kWrapped.line_count > 1)
     {
         draw_line(kWrapped.line_two, 1);
+    }
+    if (kWrapped.line_count > 2)
+    {
+        draw_line(kWrapped.line_three, 2);
     }
 }
 
@@ -1644,12 +1601,14 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
     const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
+    const int kMaxLines = softkey_label_max_lines(console_state.active_page);
 
     for (int i = 0; i < 5; ++i)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont);
+        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont,
+                           kMaxLines);
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           kLabelFont);
+                           kLabelFont, kMaxLines);
     }
 }
 
@@ -2364,26 +2323,6 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
                                         page_count);
         return;
     }
-    case MenuPage::PinterSelectedBrews:
-    {
-        const uint8_t page_count =
-            list_page_count(console_state.pinter_selected_brew_count,
-                            kPinterBrewListVisibleCount);
-        draw_page_navigation_arrows(fb, console_state.pinter_selected_brews_page_index > 0U,
-                                    (console_state.pinter_selected_brews_page_index + 1U) <
-                                        page_count);
-        return;
-    }
-    case MenuPage::PinterStartBrew:
-    {
-        const uint8_t page_count =
-            list_page_count(console_state.pinter_selected_brew_count,
-                            kPinterBrewListVisibleCount);
-        draw_page_navigation_arrows(fb, console_state.pinter_start_brews_page_index > 0U,
-                                    (console_state.pinter_start_brews_page_index + 1U) <
-                                        page_count);
-        return;
-    }
     case MenuPage::Pinter:
         // Centre data is otherwise intentionally blank on this page -- status is
         // carried by the softkey labels -- except for this one case: when the
@@ -2462,10 +2401,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     const int kGraphWidth = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 94;
     constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotLeftInset = 1;
-    constexpr int kGraphPlotRightInset = 1;
-    constexpr int kGraphPlotTopInset = 1;
-    constexpr int kGraphPlotBottomInset = 1;
+    constexpr int kGraphPlotInset = 1;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
@@ -2482,20 +2418,14 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const uint16_t range =
-        (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
-    const int plot_height = kGraphHeight - kGraphPlotTopInset - kGraphPlotBottomInset - 1;
-    const int plot_width = kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1;
-    const int base_y = kGraphY + kGraphHeight - kGraphPlotBottomInset - 1;
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kGraphPlotInset};
+    draw_graph_plot_border(fb, plot_area);
+    const int base_y = graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
     {
         const uint16_t value = share.history_points[static_cast<size_t>(i)];
-        const int x = kGraphX + kGraphPlotLeftInset +
-                      (plot_width * i) / (point_count - 1);
-        const int normalised =
-            ((static_cast<int>(value - min_value)) * plot_height) / static_cast<int>(range);
-        const int y = base_y - normalised;
+        const int x = graph_plot_x(plot_area, i, point_count);
+        const int y = graph_plot_y(plot_area, value, min_value, max_value);
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
 
@@ -2621,8 +2551,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         return;
     }
 
-    const int32_t range = scale.maximum - scale.minimum;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
+    draw_graph_plot_border(fb, plot_area);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
                     scale.middle_label);
@@ -2633,15 +2563,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
     for (std::size_t i = 0U; i < count; ++i)
     {
-        const int x = kGraphX + kPlotInset +
-                      ((kGraphWidth - (kPlotInset * 2) - 1) * static_cast<int>(i)) /
-                          static_cast<int>(count - 1U);
-        const int32_t clamped_value = std::clamp(values[i], scale.minimum, scale.maximum);
-        const int normalised = static_cast<int>(
-            (static_cast<int64_t>(clamped_value - scale.minimum) *
-             (kGraphHeight - (kPlotInset * 2) - 1)) /
-            range);
-        const int y = kGraphY + kGraphHeight - 1 - kPlotInset - normalised;
+        const int x = graph_plot_x(plot_area, static_cast<int>(i), static_cast<int>(count));
+        const int y = graph_plot_y(plot_area, values[i], scale.minimum, scale.maximum);
         if (i > 0U)
         {
             framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
@@ -2828,7 +2751,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char ram_value_text[24] = {};
     char program_flash_text[16] = {};
     char flash_budget_text[16] = {};
-    char config_flash_text[16] = {};
+    char reserved_flash_text[16] = {};
     char static_ram_text[16] = {};
     char console_text[16] = {};
     char framebuffer_text[16] = {};
@@ -2836,7 +2759,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char loop_sample_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
-    build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
+    build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
     build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
     build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
     build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
@@ -2863,7 +2786,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 
     const DetailRow rows[] = {
         {"PROG FLASH", flash_value_text},
-        {"CONFIG", config_flash_text},
+        {"RESERVED", reserved_flash_text},
         {"STATIC RAM", ram_value_text},
         {"CONSOLE", console_text},
         {"UI BUFFERS", framebuffer_text},
@@ -3263,15 +3186,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         draw_weather_page(fb, console_state);
         break;
     case MenuPage::Pinter:
-    case MenuPage::PinterToBeBrewed:
     case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterSelectedBrews:
-    case MenuPage::PinterStartBrew:
     case MenuPage::PinterStartTiming:
         draw_pinter_page(fb, console_state);
-        break;
-    case MenuPage::PinterPacks:
-        draw_blank_menu_page(fb, console_state);
         break;
     case MenuPage::Shares:
         draw_shares_page(fb, console_state);

@@ -53,12 +53,11 @@ HOST_TEST(has_pending_cold_crash_requires_brewing_days_and_not_yet_used)
         pinter_scheduling::has_pending_cold_crash(make_pinter(PinterState::ColdCrash, 3U, false)));
 }
 
-HOST_TEST(can_start_requires_a_queued_brew_and_dock_space)
+HOST_TEST(can_start_requires_dock_space)
 {
-    EXPECT_TRUE(pinter_scheduling::can_start(1U, 0U));
-    EXPECT_TRUE(pinter_scheduling::can_start(1U, kPinterBrewDockCapacity - 1U));
-    EXPECT_FALSE(pinter_scheduling::can_start(0U, 0U));                      // no packs queued
-    EXPECT_FALSE(pinter_scheduling::can_start(1U, kPinterBrewDockCapacity)); // dock full
+    EXPECT_TRUE(pinter_scheduling::can_start(0U));
+    EXPECT_TRUE(pinter_scheduling::can_start(kPinterBrewDockCapacity - 1U));
+    EXPECT_FALSE(pinter_scheduling::can_start(kPinterBrewDockCapacity)); // dock full
 }
 
 HOST_TEST(can_enter_fridge_pending_cold_crash_bypasses_fridge_capacity)
@@ -89,43 +88,40 @@ HOST_TEST(can_enter_fridge_is_false_for_states_that_never_move_to_the_fridge)
     EXPECT_FALSE(pinter_scheduling::can_enter_fridge(make_pinter(PinterState::Consumed), 0U));
 }
 
-HOST_TEST(primary_action_enabled_blocks_start_with_no_packs_or_no_dock_space)
+HOST_TEST(primary_action_enabled_blocks_start_with_no_dock_space)
 {
     const PinterStatus idle = make_pinter(PinterState::Idle);
-    EXPECT_FALSE(pinter_scheduling::primary_action_enabled(idle, 0U, 0U, 0U));
-    EXPECT_FALSE(
-        pinter_scheduling::primary_action_enabled(idle, 1U, kPinterBrewDockCapacity, 0U));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(idle, 1U, 0U, 0U));
+    EXPECT_FALSE(pinter_scheduling::primary_action_enabled(idle, kPinterBrewDockCapacity, 0U));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(idle, 0U, 0U));
 }
 
 HOST_TEST(primary_action_enabled_blocks_fridge_entry_when_full_but_not_cold_crash_entry)
 {
     const PinterStatus pending_crash = make_pinter(PinterState::Brewing, 3U, false);
     EXPECT_TRUE(
-        pinter_scheduling::primary_action_enabled(pending_crash, 0U, 0U, kPinterFridgeCapacity));
+        pinter_scheduling::primary_action_enabled(pending_crash, 0U, kPinterFridgeCapacity));
 
     const PinterStatus done_crashing = make_pinter(PinterState::Brewing, 0U, false);
     EXPECT_FALSE(
-        pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U, kPinterFridgeCapacity));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U, 0U));
+        pinter_scheduling::primary_action_enabled(done_crashing, 0U, kPinterFridgeCapacity));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(done_crashing, 0U, 0U));
 }
 
 HOST_TEST(primary_action_enabled_is_always_true_past_the_fridge_stage)
 {
     EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Conditioning),
-                                                          0U, 0U, kPinterFridgeCapacity));
-    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Ready), 0U, 0U,
+                                                          0U, kPinterFridgeCapacity));
+    EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Ready), 0U,
                                                           kPinterFridgeCapacity));
     EXPECT_TRUE(pinter_scheduling::primary_action_enabled(make_pinter(PinterState::Consumed), 0U,
-                                                          0U, kPinterFridgeCapacity));
+                                                          kPinterFridgeCapacity));
 }
 
 HOST_TEST(summarize_groups_cold_crash_with_brewing_and_excludes_idle_and_consumed)
 {
     const auto fleet = make_fleet(PinterState::Brewing, PinterState::ColdCrash,
                                   PinterState::Conditioning, PinterState::Ready);
-    const pinter_scheduling::SummaryCounts counts = pinter_scheduling::summarize(fleet, 5U);
-    EXPECT_EQ(counts.waiting, 5U);
+    const pinter_scheduling::SummaryCounts counts = pinter_scheduling::summarize(fleet);
     EXPECT_EQ(counts.brewing, 2U);
     EXPECT_EQ(counts.conditioning, 1U);
     EXPECT_EQ(counts.ready, 1U);
@@ -198,6 +194,30 @@ HOST_TEST(reset_clears_an_idle_vessel_that_still_has_cold_crash_history)
     EXPECT_FALSE(pinter.cold_crash_used);
 }
 
+HOST_TEST(current_stage_target_day_is_zero_for_states_with_no_timed_target)
+{
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(make_pinter(PinterState::Idle)), 0U);
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(make_pinter(PinterState::Ready)), 0U);
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(make_pinter(PinterState::Consumed)), 0U);
+}
+
+HOST_TEST(current_stage_target_day_sums_stage_start_and_planned_days)
+{
+    PinterStatus brewing = make_pinter(PinterState::Brewing);
+    brewing.brew_start_day = 100U;
+    brewing.planned_brewing_days = 7U;
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(brewing), 107U);
+
+    PinterStatus crashing = make_pinter(PinterState::ColdCrash, 3U, true);
+    crashing.cold_crash_start_day = 200U;
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(crashing), 203U);
+
+    PinterStatus conditioning = make_pinter(PinterState::Conditioning);
+    conditioning.conditioning_start_day = 300U;
+    conditioning.planned_conditioning_days = 14U;
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(conditioning), 314U);
+}
+
 HOST_TEST(reset_clears_an_in_progress_vessel_back_to_idle_with_the_given_default_brew)
 {
     PinterStatus pinter = make_pinter(PinterState::Conditioning, 3U, true);
@@ -213,4 +233,73 @@ HOST_TEST(reset_clears_an_in_progress_vessel_back_to_idle_with_the_given_default
     EXPECT_EQ(pinter.conditioning_start_day, 0U);
     EXPECT_EQ(pinter.planned_brewing_days, 0U);
     EXPECT_FALSE(pinter.cold_crash_used);
+}
+
+HOST_TEST(current_stage_planned_days_is_zero_for_states_with_no_timed_stage)
+{
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(make_pinter(PinterState::Idle)), 0U);
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(make_pinter(PinterState::Ready)), 0U);
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(make_pinter(PinterState::Consumed)),
+             0U);
+}
+
+HOST_TEST(current_stage_planned_days_reads_the_field_matching_the_active_stage)
+{
+    PinterStatus brewing = make_pinter(PinterState::Brewing);
+    brewing.planned_brewing_days = 7U;
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(brewing), 7U);
+
+    PinterStatus crashing = make_pinter(PinterState::ColdCrash, 3U, true);
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(crashing), 3U);
+
+    PinterStatus conditioning = make_pinter(PinterState::Conditioning);
+    conditioning.planned_conditioning_days = 14U;
+    EXPECT_EQ(pinter_scheduling::current_stage_planned_days(conditioning), 14U);
+}
+
+HOST_TEST(nudge_current_stage_days_is_a_no_op_for_states_with_no_timed_stage)
+{
+    PinterStatus idle = make_pinter(PinterState::Idle);
+    EXPECT_FALSE(pinter_scheduling::nudge_current_stage_days(idle, 1));
+
+    PinterStatus ready = make_pinter(PinterState::Ready);
+    EXPECT_FALSE(pinter_scheduling::nudge_current_stage_days(ready, 1));
+
+    PinterStatus consumed = make_pinter(PinterState::Consumed);
+    EXPECT_FALSE(pinter_scheduling::nudge_current_stage_days(consumed, -1));
+}
+
+HOST_TEST(nudge_current_stage_days_adjusts_the_field_matching_the_active_stage)
+{
+    PinterStatus brewing = make_pinter(PinterState::Brewing);
+    brewing.brew_start_day = 100U;
+    brewing.planned_brewing_days = 7U;
+    EXPECT_TRUE(pinter_scheduling::nudge_current_stage_days(brewing, 1));
+    EXPECT_EQ(brewing.planned_brewing_days, 8U);
+    EXPECT_EQ(pinter_scheduling::current_stage_target_day(brewing), 108U);
+
+    PinterStatus crashing = make_pinter(PinterState::ColdCrash, 3U, true);
+    EXPECT_TRUE(pinter_scheduling::nudge_current_stage_days(crashing, -1));
+    EXPECT_EQ(crashing.planned_cold_crash_days, 2U);
+
+    PinterStatus conditioning = make_pinter(PinterState::Conditioning);
+    conditioning.planned_conditioning_days = 14U;
+    EXPECT_TRUE(pinter_scheduling::nudge_current_stage_days(conditioning, -1));
+    EXPECT_EQ(conditioning.planned_conditioning_days, 13U);
+}
+
+HOST_TEST(nudge_current_stage_days_will_not_take_the_planned_duration_below_one)
+{
+    PinterStatus brewing = make_pinter(PinterState::Brewing);
+    brewing.planned_brewing_days = 1U;
+    EXPECT_FALSE(pinter_scheduling::nudge_current_stage_days(brewing, -1));
+    EXPECT_EQ(brewing.planned_brewing_days, 1U);
+}
+
+HOST_TEST(nudge_current_stage_days_will_not_overflow_the_uint8_storage_range)
+{
+    PinterStatus brewing = make_pinter(PinterState::Brewing);
+    brewing.planned_brewing_days = 255U;
+    EXPECT_FALSE(pinter_scheduling::nudge_current_stage_days(brewing, 1));
+    EXPECT_EQ(brewing.planned_brewing_days, 255U);
 }

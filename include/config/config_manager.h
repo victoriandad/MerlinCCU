@@ -49,17 +49,41 @@ struct RuntimeConfig
 namespace config_manager
 {
 
+/// @brief Total bytes reserved at the tail of flash for the settings store.
+/// @details Other flash-backed persistence (e.g. Pinter tracking state in
+/// pinter_store.cpp) derives its own storage offset from this so reserved
+/// regions can never overlap, even if this store's slot count changes later.
+/// config_manager.cpp statically asserts this matches its real,
+/// hardware-derived reservation.
+inline constexpr uint32_t kReservedFlashBytes = 4096U * 2U;
+
 /// @brief Loads persistent configuration from flash or creates defaults.
 void init();
 
 /// @brief Returns the active runtime configuration.
 const RuntimeConfig& settings();
 
-/// @brief Updates the active configuration and persists it to flash.
+/// @brief Updates the active configuration immediately and queues it to be
+/// written to flash.
+/// @details The new settings are visible via settings() right away; the
+/// actual flash write is deferred to flush_pending_save(). Both save() and
+/// reset_to_defaults() are reachable synchronously from web request handling
+/// (a settings-page button press or the web config form's Save action), and
+/// a flash erase/program disables all interrupts for its duration -- doing
+/// that while still nested inside a network request has caused visible
+/// multi-second UI stalls in practice (see the same issue with Pinter
+/// persistence). Always returns true; the underlying flash write is no
+/// longer synchronous, so a real write failure can only be caught (and
+/// logged) later, inside flush_pending_save().
 bool save(const RuntimeConfig& settings);
 
-/// @brief Restores factory defaults and persists them to flash.
+/// @brief Restores factory defaults and queues them to be written to flash.
 bool reset_to_defaults();
+
+/// @brief Writes any pending settings save to flash, if one is due.
+/// @details Must be called from a point in the main loop that is not nested
+/// inside network request handling -- see save()'s docs for why.
+bool flush_pending_save();
 
 /// @brief Returns whether a password satisfies the current web-admin policy.
 bool admin_password_matches(const char* password);

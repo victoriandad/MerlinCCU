@@ -32,6 +32,23 @@ HOST_TEST(unix_time_to_utc_and_utc_parts_to_epoch_round_trip)
     }
 }
 
+HOST_TEST(civil_from_epoch_day_matches_days_from_civil_round_trip)
+{
+    const DateTimeParts epoch_zero = date_time_math::civil_from_epoch_day(0U);
+    EXPECT_EQ(epoch_zero.year, 1970);
+    EXPECT_EQ(epoch_zero.month, 1);
+    EXPECT_EQ(epoch_zero.day, 1);
+
+    const uint32_t sample_days[] = {1U, 30U, 365U, 366U, 20000U};
+    for (uint32_t day : sample_days)
+    {
+        const DateTimeParts parts = date_time_math::civil_from_epoch_day(day);
+        const int32_t round_tripped = date_time_math::days_from_civil(
+            parts.year, static_cast<unsigned>(parts.month), static_cast<unsigned>(parts.day));
+        EXPECT_EQ(round_tripped, static_cast<int32_t>(day));
+    }
+}
+
 HOST_TEST(days_in_month_handles_leap_year_rules_correctly)
 {
     // Divisible by 4 -> leap, except centuries, except divisible by 400.

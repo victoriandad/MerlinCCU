@@ -12,6 +12,7 @@
 #include "lwip/ip_addr.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "text_utils.h"
 
 namespace
 {
@@ -41,7 +42,6 @@ inline constexpr char kMqttBaseTopic[] = "merlinccu";
 /// provides local defaults so runtime constants read consistently throughout the implementation.
 constexpr bool kMqttRuntimeEnabled = true;
 constexpr uint32_t kResolveTimeoutMs = 4000;
-constexpr unsigned long kMaxTcpPortValue = std::numeric_limits<uint16_t>::max();
 constexpr char kMqttSchemePrefix[] = "mqtt://";
 constexpr size_t kMqttSchemePrefixLength = sizeof(kMqttSchemePrefix) - 1;
 constexpr char kTcpSchemePrefix[] = "tcp://";
@@ -121,18 +121,7 @@ constexpr size_t sensor_index(SensorId id)
     return static_cast<size_t>(id);
 }
 
-template <size_t N>
-/// @brief Copies text into a fixed-size MQTT status buffer.
-void copy_text(std::array<char, N>& dst, const char* src)
-{
-    dst.fill('\0');
-    if (src == nullptr)
-    {
-        return;
-    }
-
-    std::snprintf(dst.data(), dst.size(), "%s", src);
-}
+using text_utils::copy_text;
 
 /// @brief Copies a C string into a bounded destination buffer.
 void copy_cstr(char* dst, size_t dst_size, const char* src)
@@ -149,37 +138,6 @@ void copy_cstr(char* dst, size_t dst_size, const char* src)
     }
 
     std::snprintf(dst, dst_size, "%s", src);
-}
-
-/// @brief Parses a decimal TCP port string.
-bool parse_port(const char* text, uint16_t* out_port)
-{
-    if (text == nullptr || *text == '\0' || out_port == nullptr)
-    {
-        return false;
-    }
-
-    unsigned long value = 0;
-    for (const char* p = text; *p != '\0'; ++p)
-    {
-        if (*p < '0' || *p > '9')
-        {
-            return false;
-        }
-        value = (value * 10U) + static_cast<unsigned long>(*p - '0');
-        if (value > kMaxTcpPortValue)
-        {
-            return false;
-        }
-    }
-
-    if (value == 0U)
-    {
-        return false;
-    }
-
-    *out_port = static_cast<uint16_t>(value);
-    return true;
 }
 
 /// @brief Returns whether a character is a hexadecimal digit.
@@ -388,46 +346,11 @@ bool parse_mqtt_endpoint()
         host_start += kTcpSchemePrefixLength;
     }
 
-    const char* host_end = host_start;
-    while (*host_end != '\0' && *host_end != ':' && *host_end != '/')
+    if (!text_utils::parse_host_and_optional_port(host_start, g_broker_host, sizeof(g_broker_host),
+                                                   &g_broker_port))
     {
-        ++host_end;
-    }
-
-    const size_t kHostLen = static_cast<size_t>(host_end - host_start);
-    if (kHostLen == 0 || kHostLen >= sizeof(g_broker_host))
-    {
-        std::printf("MQTT config host is empty or too long\n");
+        std::printf("MQTT config host/port is invalid: %s\n", host_start);
         return false;
-    }
-
-    std::memcpy(g_broker_host, host_start, kHostLen);
-    g_broker_host[kHostLen] = '\0';
-
-    if (*host_end == ':')
-    {
-        const char* port_start = host_end + 1;
-        const char* port_end = port_start;
-        while (*port_end != '\0' && *port_end != '/')
-        {
-            ++port_end;
-        }
-
-        char port_text[8] = {};
-        const size_t kPortLen = static_cast<size_t>(port_end - port_start);
-        if (kPortLen == 0 || kPortLen >= sizeof(port_text))
-        {
-            std::printf("MQTT config port is invalid\n");
-            return false;
-        }
-
-        std::memcpy(port_text, port_start, kPortLen);
-        port_text[kPortLen] = '\0';
-        if (!parse_port(port_text, &g_broker_port))
-        {
-            std::printf("MQTT config port is invalid: %s\n", port_text);
-            return false;
-        }
     }
 
     return true;
@@ -996,7 +919,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     if (!g_status.configured)
     {
         g_status.state = MqttConnectionState::Unconfigured;
-        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
+        return kPrevious != g_status;
     }
 
     if (!kMqttRuntimeEnabled)
@@ -1004,7 +927,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         g_status.state = MqttConnectionState::Disabled;
         g_status.last_error = 0;
         reset_runtime(true);
-        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
+        return kPrevious != g_status;
     }
 
     const bool kWifiReady = wifi_status.ip_address[0] != '\0';
@@ -1013,7 +936,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         reset_runtime(true);
         g_status.state = MqttConnectionState::WaitingForWifi;
         g_status.last_error = 0;
-        return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
+        return kPrevious != g_status;
     }
 
     configure_identity_and_topics(wifi_status);
@@ -1047,7 +970,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         start_next_publish();
     }
 
-    return std::memcmp(&kPrevious, &g_status, sizeof(g_status)) != 0;
+    return kPrevious != g_status;
 }
 
 const MqttStatus& status()

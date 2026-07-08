@@ -118,14 +118,7 @@ ConsoleState make_default_console_state()
     state.share_count = 1U;
     state.selected_share_index = 0U;
     state.selected_pinter_index = 0U;
-    state.pinter_brew_pack_count = 0U;
-    state.pinter_selected_brew_index = kDefaultPinterBrewIndex;
-    state.pinter_selected_brew_count = 0U;
-    state.pinter_selected_brews.fill(kInvalidPinterBrewSelection);
     state.pinter_catalogue_page_index = 0U;
-    state.pinter_selected_brews_page_index = 0U;
-    state.pinter_start_brews_page_index = 0U;
-    state.pinter_pending_inventory_index = kInvalidPinterBrewSelection;
     state.pinter_pending_brew_index = kDefaultPinterBrewIndex;
     state.pinter_pending_brewing_days = 0U;
     state.pinter_pending_cold_crash_days = 0U;
@@ -228,10 +221,10 @@ ConsoleState make_default_console_state()
     state.alert_detail_scroll_line = 0U;
     state.alert_parent_page = MenuPage::Home;
 
-    set_pinter(state.pinters[0], "P1");
-    set_pinter(state.pinters[1], "P3 A");
-    set_pinter(state.pinters[2], "P3 B");
-    set_pinter(state.pinters[3], "P3 C");
+    set_pinter(state.pinters[0], "Pinter 1 (Original)");
+    set_pinter(state.pinters[1], "Pinter3 #1");
+    set_pinter(state.pinters[2], "Pinter3 #2");
+    set_pinter(state.pinters[3], "Pinter3 #3");
 
     for (auto& alert : state.active_alerts)
     {

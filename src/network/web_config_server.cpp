@@ -10,6 +10,7 @@
 
 #include "config_manager.h"
 #include "console_controller.h"
+#include "date_time_math.h"
 #include "debug_logging.h"
 #include "framebuffer.h"
 #include "lwip/pbuf.h"
@@ -17,6 +18,7 @@
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
+#include "text_utils.h"
 
 namespace web_config_server
 {
@@ -279,17 +281,7 @@ void abort_active_session()
     g_session = {};
 }
 
-/// @brief Copies a C string into one fixed-size configuration field.
-template <size_t N> void copy_text(std::array<char, N>& dest, const char* src)
-{
-    dest.fill('\0');
-    if (src == nullptr)
-    {
-        return;
-    }
-
-    std::snprintf(dest.data(), dest.size(), "%s", src);
-}
+using text_utils::copy_text;
 
 /// @brief Returns a lower-case hexadecimal value or -1 for non-hex characters.
 int hex_value(char c)
@@ -835,34 +827,6 @@ const char* pinter_stage_tone(PinterState state, PinterTimelineStage stage)
     return "future";
 }
 
-struct WebDateParts
-{
-    int year;
-    int month;
-    int day;
-};
-
-/// @brief Converts a Unix epoch day into Gregorian fields for web labels.
-WebDateParts epoch_day_to_date(uint32_t epoch_day)
-{
-    int z = static_cast<int>(epoch_day) + 719468;
-    const int era = (z >= 0 ? z : z - 146096) / 146097;
-    const unsigned doe = static_cast<unsigned>(z - era * 146097);
-    const unsigned yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
-    int year = static_cast<int>(yoe) + era * 400;
-    const unsigned doy = doe - ((365U * yoe) + (yoe / 4U) - (yoe / 100U));
-    const unsigned mp = ((5U * doy) + 2U) / 153U;
-    const unsigned day = doy - (((153U * mp) + 2U) / 5U) + 1U;
-    const int month = static_cast<int>(mp) + (mp < 10U ? 3 : -9);
-    year += month <= 2 ? 1 : 0;
-
-    WebDateParts parts = {};
-    parts.year = year;
-    parts.month = month;
-    parts.day = static_cast<int>(day);
-    return parts;
-}
-
 /// @brief Formats an epoch day for compact timeline axis labels.
 void format_epoch_day_label(uint32_t epoch_day, char* out, size_t out_size)
 {
@@ -871,19 +835,15 @@ void format_epoch_day_label(uint32_t epoch_day, char* out, size_t out_size)
         return;
     }
 
-    static constexpr std::array<const char*, 12> kMonthNames = {
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    };
     if (epoch_day == 0U)
     {
         std::snprintf(out, out_size, "-");
         return;
     }
 
-    const WebDateParts parts = epoch_day_to_date(epoch_day);
+    const date_time_math::DateTimeParts parts = date_time_math::civil_from_epoch_day(epoch_day);
     const char* month = (parts.month >= 1 && parts.month <= 12)
-                            ? kMonthNames[static_cast<size_t>(parts.month - 1)]
+                            ? date_time_math::kMonthAbbreviations[static_cast<size_t>(parts.month - 1)]
                             : "---";
     std::snprintf(out, out_size, "%02d %s", parts.day, month);
 }
@@ -1131,7 +1091,7 @@ bool build_pinter_activity_page()
     char axis_14[16] = {};
     char axis_21[16] = {};
     char axis_28[16] = {};
-    char today_label[24] = {};
+    char today_label[32] = {};
     const bool has_real_dates = today_day != 0U || real_start_seen;
     if (has_real_dates)
     {
@@ -1186,7 +1146,7 @@ bool build_pinter_activity_page()
         "border-radius:999px;padding:9px 13px;color:var(--text);text-decoration:none;"
         "background:#0b1512;font-weight:700;font-size:12px;text-transform:uppercase;"
         "letter-spacing:.05em}"
-        ".summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
+        ".summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
         "gap:10px;margin:0 0 16px}.tile{border:1px solid var(--line);border-radius:8px;"
         "background:#0d1815;padding:12px}.tile strong{display:block;font-size:22px;color:"
         "var(--accent)}.tile span{color:var(--muted);text-transform:uppercase;font-size:11px;"
@@ -1227,14 +1187,14 @@ bool build_pinter_activity_page()
     ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::PinterActivity);
     ok = ok && append(
                    cursor, remaining,
-                   "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>Waiting "
-                   "packs</span></div><div class=\"tile\"><strong>%u</strong><span>Brewing</span></div><div "
+                   "</div><section class=\"summary\"><div class=\"tile\"><strong>%u</strong><span>"
+                   "Brewing</span></div><div "
                    "class=\"tile\"><strong>%u</strong><span>Conditioning</span></div><div class=\"tile\">"
                    "<strong>%u</strong><span>Ready</span></div></section><section class=\"timeline\">"
                    "<div class=\"axis\"><div></div><div class=\"scale\"><span style=\"left:0%%\">%s</span>"
                    "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
                    "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
-                   static_cast<unsigned>(state.pinter_selected_brew_count), brewing, conditioning,
+                   brewing, conditioning,
                    ready, axis_0, axis_7, axis_14, axis_21, axis_28);
 
     if (ok && today_visible)
@@ -2662,7 +2622,30 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
     return false;
 }
 
+/// @brief Returns a short, stable page-name token for automated test scripts.
+/// @details Deliberately separate from screens.cpp's human-facing page
+/// titles -- this only needs to distinguish the handful of pages a test
+/// script might assert against, not read well on the physical display.
+const char* debug_active_page_token(MenuPage page)
+{
+    switch (page)
+    {
+    case MenuPage::Pinter:
+        return "Pinter";
+    case MenuPage::PinterSelectBrew:
+        return "PinterSelectBrew";
+    case MenuPage::PinterStartTiming:
+        return "PinterStartTiming";
+    default:
+        return "Other";
+    }
+}
+
 /// @brief Writes one plain-text panel state snapshot for web preview polling.
+/// @details Also carries a few Pinter pending-timing fields purely so
+/// automated click/latency test scripts can assert the resulting state
+/// matches the number of clicks sent, rather than only measuring response
+/// time -- see tools/button_stress_test.py.
 void build_panel_state_text(char* message, size_t message_size)
 {
     if (message == nullptr || message_size == 0)
@@ -2673,8 +2656,13 @@ void build_panel_state_text(char* message, size_t message_size)
     const ConsoleState& state = console_controller::state();
     const LampMode alert_mode = state.lamps[kAlertLampIndex];
     const LampMode test_mode = state.lamps[kTestLampIndex];
-    std::snprintf(message, message_size, "alert=%s\ntest=%s\n", lamp_mode_text_token(alert_mode),
-                  lamp_mode_text_token(test_mode));
+    std::snprintf(message, message_size,
+                  "alert=%s\ntest=%s\npage=%s\nbrew_days=%u\ncond_days=%u\ncrash_days=%u\n",
+                  lamp_mode_text_token(alert_mode), lamp_mode_text_token(test_mode),
+                  debug_active_page_token(state.active_page),
+                  static_cast<unsigned>(state.pinter_pending_brewing_days),
+                  static_cast<unsigned>(state.pinter_pending_conditioning_days),
+                  static_cast<unsigned>(state.pinter_pending_cold_crash_days));
 }
 
 /// @brief Starts sending prepared response bytes for this session.
@@ -2748,7 +2736,7 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     }
     else if (matches_get_path(request, "/api/panel-state"))
     {
-        char panel_state[64] = {};
+        char panel_state[128] = {};
         build_panel_state_text(panel_state, sizeof(panel_state));
         std::snprintf(g_response, sizeof(g_response), "%s%s", kHttpTextHeader, panel_state);
         send_response(session, pcb, g_response);
