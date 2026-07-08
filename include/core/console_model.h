@@ -742,6 +742,18 @@ struct MainLoopLoadStatus
     uint16_t sample_ms;
 };
 
+/// @brief Live newlib heap usage shown on the Resources status page.
+/// @details Sourced from mallinfo(): arena_bytes is how far the heap has grown
+/// from the system (via sbrk), used_bytes is how much of that growth is
+/// currently allocated. Static buffers (ConsoleState, framebuffers) are
+/// tracked separately since they never touch the heap.
+struct HeapStatus
+{
+    bool valid;
+    uint32_t used_bytes;
+    uint32_t arena_bytes;
+};
+
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
 struct PinterStatus
 {
@@ -803,6 +815,7 @@ struct ConsoleState
     MqttStatus mqtt_status;
     TimeStatus time_status;
     MainLoopLoadStatus main_loop_load_status;
+    HeapStatus heap_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
     uint8_t alert_count;

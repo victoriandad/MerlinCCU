@@ -4284,6 +4284,21 @@ bool set_main_loop_load_status(const MainLoopLoadStatus& status)
     return true;
 }
 
+/// @brief Updates live heap usage telemetry shown by Resources status.
+bool set_heap_status(const HeapStatus& status)
+{
+    if (g_console_state.heap_status.valid == status.valid &&
+        g_console_state.heap_status.used_bytes == status.used_bytes &&
+        g_console_state.heap_status.arena_bytes == status.arena_bytes)
+    {
+        return false;
+    }
+
+    g_console_state.heap_status = status;
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {

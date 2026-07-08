@@ -57,6 +57,31 @@ README history, chat context, or incidental source-code discovery.
 - Sequence or reuse large network buffers before adding new static storage.
 - Document new timing assumptions, interrupt/DMA expectations, and flash-write
   constraints.
+- Any new large static buffer (roughly 1KB+) is a deliberate review point, not
+  a drive-by addition: check it against the Resources status page's tracked
+  totals (program flash, static RAM, live heap) before merging.
+
+### Memory budget tracking
+
+The Resources status page (`MenuPage::StatusResources`) is the live source of
+truth for size/RAM budget, not this document:
+
+- **Program flash** — linked binary size against `kProgramFlashBudgetBytes`.
+- **Static RAM** — `sizeof(ConsoleState)` plus the double UI framebuffer,
+  against the 520KB Pico 2 W SRAM total. This is the dominant static
+  allocation; anything added to `ConsoleState` shows up here directly.
+- **Live heap** — `mallinfo()`'s `uordblks`/`arena`, sampled once a second in
+  the main loop alongside the loop-load telemetry (`MerlinCCU.cpp`). Most of
+  the firmware avoids the heap deliberately (static arrays throughout), so
+  this mainly reflects lwIP/mbedtls allocations from Wi-Fi, MQTT, and the
+  (currently disabled) TLS share fetch.
+- **Stack headroom** — a canary-filled high-water-mark check, printed once a
+  second over serial (see the stack-pressure work from issue #58); not yet
+  folded into this status page.
+
+Numbers are load-bearing, not aspirational: check this page (or the serial
+stack print) after any change that adds meaningful static or dynamic memory,
+rather than assuming headroom exists.
 
 ## Multicore Notes
 
