@@ -4157,47 +4157,7 @@ bool set_time_status(const TimeStatus& time_status)
 /// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
-    const bool kChanged =
-        g_console_state.home_assistant_status.state != home_assistant_status.state ||
-        g_console_state.home_assistant_status.configured != home_assistant_status.configured ||
-        g_console_state.home_assistant_status.self_entity_published !=
-            home_assistant_status.self_entity_published ||
-        g_console_state.home_assistant_status.last_error != home_assistant_status.last_error ||
-        g_console_state.home_assistant_status.last_http_status !=
-            home_assistant_status.last_http_status ||
-        g_console_state.home_assistant_status.host != home_assistant_status.host ||
-        g_console_state.home_assistant_status.tracked_entity_id !=
-            home_assistant_status.tracked_entity_id ||
-        g_console_state.home_assistant_status.tracked_entity_state !=
-            home_assistant_status.tracked_entity_state ||
-        g_console_state.home_assistant_status.weather_entity_id !=
-            home_assistant_status.weather_entity_id ||
-        g_console_state.home_assistant_status.weather_source_hint !=
-            home_assistant_status.weather_source_hint ||
-        g_console_state.home_assistant_status.weather_condition !=
-            home_assistant_status.weather_condition ||
-        g_console_state.home_assistant_status.weather_temperature !=
-            home_assistant_status.weather_temperature ||
-        g_console_state.home_assistant_status.weather_wind_unit !=
-            home_assistant_status.weather_wind_unit ||
-        g_console_state.home_assistant_status.sunrise_text != home_assistant_status.sunrise_text ||
-        g_console_state.home_assistant_status.sunset_text != home_assistant_status.sunset_text ||
-        g_console_state.home_assistant_status.weather_forecast_count !=
-            home_assistant_status.weather_forecast_count ||
-        g_console_state.home_assistant_status.weather_forecast !=
-            home_assistant_status.weather_forecast ||
-        g_console_state.home_assistant_status.weather_daily_forecast_count !=
-            home_assistant_status.weather_daily_forecast_count ||
-        g_console_state.home_assistant_status.weather_daily_forecast !=
-            home_assistant_status.weather_daily_forecast ||
-        g_console_state.home_assistant_status.weather_metrics !=
-            home_assistant_status.weather_metrics ||
-        g_console_state.home_assistant_status.weather_alert_status !=
-            home_assistant_status.weather_alert_status ||
-        g_console_state.home_assistant_status.self_entity_id !=
-            home_assistant_status.self_entity_id;
-
-    if (!kChanged)
+    if (g_console_state.home_assistant_status == home_assistant_status)
     {
         return false;
     }
@@ -4210,15 +4170,7 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
-    const bool kChanged =
-        g_console_state.mqtt_status.state != mqtt_status.state ||
-        g_console_state.mqtt_status.configured != mqtt_status.configured ||
-        g_console_state.mqtt_status.discovery_published != mqtt_status.discovery_published ||
-        g_console_state.mqtt_status.last_error != mqtt_status.last_error ||
-        g_console_state.mqtt_status.broker != mqtt_status.broker ||
-        g_console_state.mqtt_status.device_id != mqtt_status.device_id;
-
-    if (!kChanged)
+    if (g_console_state.mqtt_status == mqtt_status)
     {
         return false;
     }
