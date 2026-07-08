@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "test_framework.h"
+#include "text_utils.h"
 
 using config_persistence::ConfigCandidate;
 using config_persistence::ConfigSlot;
@@ -111,9 +112,9 @@ HOST_TEST(choose_newest_candidate_returns_null_when_neither_slot_is_valid)
 HOST_TEST(migrate_legacy_settings_carries_every_field_forward)
 {
     LegacyRuntimeConfigV1 legacy = {};
-    std::strncpy(legacy.device_name.data(), "OldName", legacy.device_name.size() - 1);
-    std::strncpy(legacy.wifi_ssid.data(), "OldWifi", legacy.wifi_ssid.size() - 1);
-    std::strncpy(legacy.home_assistant_host.data(), "ha.local", legacy.home_assistant_host.size() - 1);
+    text_utils::copy_text(legacy.device_name, "OldName");
+    text_utils::copy_text(legacy.wifi_ssid, "OldWifi");
+    text_utils::copy_text(legacy.home_assistant_host, "ha.local");
     legacy.home_assistant_port = 9123;
     legacy.mqtt_port = 1884;
     legacy.mqtt_enabled = true;
@@ -178,12 +179,9 @@ HOST_TEST(sanitize_settings_repairs_partially_saved_home_assistant_state)
     // host/token/entity fields intact.
     RuntimeConfig settings = config_persistence::make_default_settings();
     settings.home_assistant_enabled = false;
-    std::strncpy(settings.home_assistant_host.data(), "ha.local",
-                settings.home_assistant_host.size() - 1);
-    std::strncpy(settings.home_assistant_token.data(), "token123",
-                settings.home_assistant_token.size() - 1);
-    std::strncpy(settings.home_assistant_entity_id.data(), "sensor.x",
-                settings.home_assistant_entity_id.size() - 1);
+    text_utils::copy_text(settings.home_assistant_host, "ha.local");
+    text_utils::copy_text(settings.home_assistant_token, "token123");
+    text_utils::copy_text(settings.home_assistant_entity_id, "sensor.x");
 
     const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
 
@@ -196,16 +194,13 @@ HOST_TEST(should_auto_enable_home_assistant_requires_all_three_fields)
     settings.home_assistant_enabled = false;
     EXPECT_FALSE(config_persistence::should_auto_enable_home_assistant(settings));
 
-    std::strncpy(settings.home_assistant_host.data(), "ha.local",
-                settings.home_assistant_host.size() - 1);
+    text_utils::copy_text(settings.home_assistant_host, "ha.local");
     EXPECT_FALSE(config_persistence::should_auto_enable_home_assistant(settings));
 
-    std::strncpy(settings.home_assistant_token.data(), "token123",
-                settings.home_assistant_token.size() - 1);
+    text_utils::copy_text(settings.home_assistant_token, "token123");
     EXPECT_FALSE(config_persistence::should_auto_enable_home_assistant(settings));
 
-    std::strncpy(settings.home_assistant_entity_id.data(), "sensor.x",
-                settings.home_assistant_entity_id.size() - 1);
+    text_utils::copy_text(settings.home_assistant_entity_id, "sensor.x");
     EXPECT_TRUE(config_persistence::should_auto_enable_home_assistant(settings));
 
     // Already-enabled should not be reported as "needs auto-enable".
@@ -216,26 +211,26 @@ HOST_TEST(should_auto_enable_home_assistant_requires_all_three_fields)
 HOST_TEST(constant_time_password_matches_functional_correctness)
 {
     std::array<char, 32> stored = {};
-    std::strncpy(stored.data(), "merlin", stored.size() - 1);
+    text_utils::copy_text(stored, "merlin");
 
     // Real call sites always pass an oversized, zero-initialized buffer (see
     // web_config_server.cpp's `char current_password[40] = {}`), so tests use
     // the same shape rather than a bare string literal.
-    char correct[40] = {};
-    std::strncpy(correct, "merlin", sizeof(correct) - 1);
-    EXPECT_TRUE(config_persistence::constant_time_password_matches(correct, stored));
+    std::array<char, 40> correct = {};
+    text_utils::copy_text(correct, "merlin");
+    EXPECT_TRUE(config_persistence::constant_time_password_matches(correct.data(), stored));
 
-    char wrong[40] = {};
-    std::strncpy(wrong, "wrong-password", sizeof(wrong) - 1);
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(wrong, stored));
+    std::array<char, 40> wrong = {};
+    text_utils::copy_text(wrong, "wrong-password");
+    EXPECT_FALSE(config_persistence::constant_time_password_matches(wrong.data(), stored));
 
-    char shorter[40] = {};
-    std::strncpy(shorter, "merli", sizeof(shorter) - 1);
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(shorter, stored));
+    std::array<char, 40> shorter = {};
+    text_utils::copy_text(shorter, "merli");
+    EXPECT_FALSE(config_persistence::constant_time_password_matches(shorter.data(), stored));
 
-    char longer[40] = {};
-    std::strncpy(longer, "merlin2", sizeof(longer) - 1);
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(longer, stored));
+    std::array<char, 40> longer = {};
+    text_utils::copy_text(longer, "merlin2");
+    EXPECT_FALSE(config_persistence::constant_time_password_matches(longer.data(), stored));
 
     EXPECT_FALSE(config_persistence::constant_time_password_matches(nullptr, stored));
 }

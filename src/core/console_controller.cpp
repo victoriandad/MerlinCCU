@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "alert_ordering.h"
 #include "config_persistence.h"
@@ -188,41 +189,41 @@ constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
 // The runtime catalogue stores only scheduling data for actual brew packs.
 // Shop-only fields and glass/bundle products are deliberately omitted here.
 constexpr std::array<PinterBrewTiming, kPinterBrewCatalogueCount> kPinterBrewCatalogue = {{
-    {"Adnams Ghost Ship Remixed", 8U, 5U, 6U, 3U},
-    {"After Midnight", 10U, 7U, 7U, 3U},
-    {"Ancestor's", 8U, 5U, 6U, 3U},
-    {"Appalachian Mountain Brewery", 9U, 5U, 7U, 3U},
-    {"Black Magic Hour", 8U, 7U, 7U, 5U},
-    {"BrewDog Elvis Juice Remixed", 9U, 5U, 7U, 3U},
-    {"BrewDog Hazy Jane Remixed", 9U, 5U, 7U, 3U},
-    {"BrewDog Punk IPA Remixed", 9U, 5U, 7U, 3U},
-    {"Brewgooder Hazy IPA Remixed", 7U, 5U, 6U, 3U},
-    {"Dark Matter", 5U, 7U, 4U, 3U},
-    {"Deep Shade", 13U, 9U, 11U, 7U},
-    {"En Casa", 10U, 10U, 7U, 5U},
-    {"En Casa Lime", 10U, 10U, 7U, 5U},
-    {"Fourpure Citrus IPA Remixed", 8U, 6U, 6U, 4U},
-    {"Golden Grove", 5U, 7U, 4U, 3U},
-    {"Great Lakes Burning River Remixed", 9U, 5U, 7U, 3U},
-    {"Guinness 'Dublin Porter, Brewers Edition'", 6U, 4U, 4U, 3U},
-    {"Hopewell", 10U, 10U, 8U, 7U},
-    {"Inner Circle", 7U, 7U, 5U, 3U},
-    {"Iron Maiden's Trooper Remixed", 7U, 5U, 5U, 3U},
-    {"Lagunitas Sumpin' Easy Remixed", 9U, 7U, 8U, 5U},
-    {"Lemon & Lime Hard Seltzer", 7U, 7U, 5U, 5U},
-    {"Pear With Me", 9U, 5U, 7U, 3U},
-    {"Public House", 5U, 7U, 4U, 3U},
-    {"Razz", 7U, 5U, 5U, 3U},
-    {"Shadow & Cream", 5U, 7U, 4U, 3U},
-    {"Snap", 10U, 10U, 8U, 4U},
-    {"Space Hopper", 7U, 7U, 5U, 3U},
-    {"Space Hopper West Coast Edition", 7U, 7U, 5U, 3U},
-    {"Stars & Stripes", 5U, 7U, 4U, 3U},
-    {"Summer Haze", 9U, 5U, 7U, 3U},
-    {"Sunlit", 10U, 15U, 8U, 4U},
-    {"Waltham Forest", 8U, 3U, 6U, 2U},
-    {"Whole Nine Yards", 8U, 3U, 6U, 2U},
-    {"Yeastie Boys Bigmouth Remixed", 7U, 5U, 6U, 3U},
+    {"Adnams Ghost Ship Remixed", 8U, 5U, 6U, 3U, 0U},
+    {"After Midnight", 10U, 7U, 7U, 3U, 0U},
+    {"Ancestor's", 8U, 5U, 6U, 3U, 0U},
+    {"Appalachian Mountain Brewery", 9U, 5U, 7U, 3U, 0U},
+    {"Black Magic Hour", 8U, 7U, 7U, 5U, 0U},
+    {"BrewDog Elvis Juice Remixed", 9U, 5U, 7U, 3U, 0U},
+    {"BrewDog Hazy Jane Remixed", 9U, 5U, 7U, 3U, 0U},
+    {"BrewDog Punk IPA Remixed", 9U, 5U, 7U, 3U, 0U},
+    {"Brewgooder Hazy IPA Remixed", 7U, 5U, 6U, 3U, 0U},
+    {"Dark Matter", 5U, 7U, 4U, 3U, 0U},
+    {"Deep Shade", 13U, 9U, 11U, 7U, 0U},
+    {"En Casa", 10U, 10U, 7U, 5U, 0U},
+    {"En Casa Lime", 10U, 10U, 7U, 5U, 0U},
+    {"Fourpure Citrus IPA Remixed", 8U, 6U, 6U, 4U, 0U},
+    {"Golden Grove", 5U, 7U, 4U, 3U, 0U},
+    {"Great Lakes Burning River Remixed", 9U, 5U, 7U, 3U, 0U},
+    {"Guinness 'Dublin Porter, Brewers Edition'", 6U, 4U, 4U, 3U, 0U},
+    {"Hopewell", 10U, 10U, 8U, 7U, 0U},
+    {"Inner Circle", 7U, 7U, 5U, 3U, 0U},
+    {"Iron Maiden's Trooper Remixed", 7U, 5U, 5U, 3U, 0U},
+    {"Lagunitas Sumpin' Easy Remixed", 9U, 7U, 8U, 5U, 0U},
+    {"Lemon & Lime Hard Seltzer", 7U, 7U, 5U, 5U, 0U},
+    {"Pear With Me", 9U, 5U, 7U, 3U, 0U},
+    {"Public House", 5U, 7U, 4U, 3U, 0U},
+    {"Razz", 7U, 5U, 5U, 3U, 0U},
+    {"Shadow & Cream", 5U, 7U, 4U, 3U, 0U},
+    {"Snap", 10U, 10U, 8U, 4U, 0U},
+    {"Space Hopper", 7U, 7U, 5U, 3U, 0U},
+    {"Space Hopper West Coast Edition", 7U, 7U, 5U, 3U, 0U},
+    {"Stars & Stripes", 5U, 7U, 4U, 3U, 0U},
+    {"Summer Haze", 9U, 5U, 7U, 3U, 0U},
+    {"Sunlit", 10U, 15U, 8U, 4U, 0U},
+    {"Waltham Forest", 8U, 3U, 6U, 2U, 0U},
+    {"Whole Nine Yards", 8U, 3U, 6U, 2U, 0U},
+    {"Yeastie Boys Bigmouth Remixed", 7U, 5U, 6U, 3U, 0U},
 }};
 
 static_assert(kPinterBrewCatalogue.size() <= 255U,
@@ -800,12 +801,6 @@ uint8_t pinter_brew_dock_count()
     return pinter_scheduling::brew_dock_count(g_console_state.pinters);
 }
 
-/// @brief Returns true when a state occupies one of the two fridge slots.
-bool pinter_uses_fridge(PinterState state)
-{
-    return pinter_scheduling::uses_fridge(state);
-}
-
 /// @brief Counts Pinters currently occupying fridge space.
 uint8_t pinter_fridge_count()
 {
@@ -1208,7 +1203,6 @@ void set_alert_condition(AlertCode code, bool active, AlertSeverity severity, co
                          const char* detail)
 {
     const size_t code_idx = alert_code_index(code);
-    const bool was_active = g_alert_was_active[code_idx];
     if (!active)
     {
         g_alert_was_active[code_idx] = false;
@@ -1760,7 +1754,6 @@ bool calendar_event_matches_filter(const CalendarEvent& event)
 /// Combined view remains useful without needing a wider centre table.
 const char* build_calendar_event_softkey_label(SoftKeyId key, const CalendarEvent& event)
 {
-    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
     const char* owner_text = calendar_owner_definition(event.owner).selection_label;
     char value[24] = {};
     std::snprintf(value, sizeof(value), "%s %s",
@@ -1862,12 +1855,6 @@ bool selected_pinter_can_start()
 {
     const PinterStatus& pinter = selected_pinter_const();
     return pinter.state == PinterState::Idle && pinter_scheduling::can_start(pinter_brew_dock_count());
-}
-
-/// @brief Returns true when the selected Pinter can enter the fridge now.
-bool selected_pinter_can_enter_fridge()
-{
-    return pinter_scheduling::can_enter_fridge(selected_pinter_const(), pinter_fridge_count());
 }
 
 /// @brief Returns whether the context-sensitive Pinter action can be applied.
@@ -2132,6 +2119,17 @@ bool reset_selected_pinter()
     return did_reset;
 }
 
+/// @brief Nudges the selected Pinter's current stage target date by one day.
+bool nudge_selected_pinter_day(int delta)
+{
+    const bool nudged = pinter_scheduling::nudge_current_stage_days(selected_pinter(), delta);
+    if (nudged)
+    {
+        g_pinter_save_pending = true;
+    }
+    return nudged;
+}
+
 /// @brief Returns the parent page for one menu route in the current hierarchy.
 MenuPage parent_page(MenuPage page)
 {
@@ -2222,23 +2220,6 @@ bool start_screen_saver_timeout_editing()
     g_console_state.screen_saver_timeout_edit_minutes =
         g_console_state.screen_saver_timeout_minutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = true;
-    return true;
-}
-
-/// @brief Stores a new screen-saver timeout, clamped to the supported range.
-bool set_screen_saver_timeout_minutes(uint16_t minutes)
-{
-    if (minutes > kMaxScreenSaverTimeoutMinutes)
-    {
-        return false;
-    }
-
-    if (g_console_state.screen_saver_timeout_minutes == minutes)
-    {
-        return false;
-    }
-
-    g_console_state.screen_saver_timeout_minutes = minutes;
     return true;
 }
 
@@ -2952,6 +2933,21 @@ void update_softkeys_from_state()
             SoftKeyRoute::ResetSelectedPinter,
             selected_pinter_const().state != PinterState::Idle,
         };
+        {
+            const uint8_t selected_stage_days =
+                pinter_scheduling::current_stage_planned_days(selected_pinter_const());
+            softkeys[softkey_index(SoftKeyId::Right2)] = {
+                "-1 DAY",
+                SoftKeyRoute::DecreaseSelectedPinterDay,
+                selected_stage_days > 1U,
+            };
+            softkeys[softkey_index(SoftKeyId::Right4)] = {
+                "+1 DAY",
+                SoftKeyRoute::IncreaseSelectedPinterDay,
+                selected_stage_days > 0U &&
+                    selected_stage_days < std::numeric_limits<uint8_t>::max(),
+            };
+        }
         break;
     }
     case MenuPage::PinterSelectBrew:
@@ -3541,24 +3537,6 @@ void update_softkeys_from_state()
     g_console_state.softkeys = softkeys;
 }
 
-/// @brief Advances the alert annunciator through its test cycle.
-AlertSeverity next_alert_severity(AlertSeverity severity)
-{
-    switch (severity)
-    {
-    case AlertSeverity::None:
-        return AlertSeverity::Message;
-    case AlertSeverity::Message:
-        return AlertSeverity::Warning;
-    case AlertSeverity::Warning:
-        return AlertSeverity::Alert;
-    case AlertSeverity::Alert:
-        return AlertSeverity::None;
-    }
-
-    return AlertSeverity::None;
-}
-
 /// @brief Advances the test annunciator through its demo states.
 SystemTestState next_test_state(SystemTestState state)
 {
@@ -3734,6 +3712,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         return apply_pinter_primary_action();
     case SoftKeyRoute::ResetSelectedPinter:
         return reset_selected_pinter();
+    case SoftKeyRoute::DecreaseSelectedPinterDay:
+        return nudge_selected_pinter_day(-1);
+    case SoftKeyRoute::IncreaseSelectedPinterDay:
+        return nudge_selected_pinter_day(1);
     case SoftKeyRoute::SelectPinterListItem1:
         return select_pinter_list_item(0U);
     case SoftKeyRoute::SelectPinterListItem2:

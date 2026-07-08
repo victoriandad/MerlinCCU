@@ -84,40 +84,6 @@ void build_uppercase_label(const char* input, char* output, size_t output_size)
     output[write_index] = '\0';
 }
 
-/// @brief Returns the compact label used for the letter annunciator mode.
-const char* letter_mode_text(LetterMode mode)
-{
-    switch (mode)
-    {
-    case LetterMode::UpperCase:
-        return "ABC";
-    case LetterMode::LowerCase:
-        return "abc";
-    case LetterMode::Numbers:
-        return "123";
-    }
-
-    return "ABC";
-}
-
-/// @brief Returns the shortened alert label used on the constrained settings UI.
-const char* alert_severity_text(AlertSeverity severity)
-{
-    switch (severity)
-    {
-    case AlertSeverity::None:
-        return "NONE";
-    case AlertSeverity::Message:
-        return "MSG";
-    case AlertSeverity::Warning:
-        return "WARN";
-    case AlertSeverity::Alert:
-        return "ALERT";
-    }
-
-    return "?";
-}
-
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)
 {
@@ -131,48 +97,6 @@ const char* test_state_text(SystemTestState state)
         return "PASS";
     case SystemTestState::Failed:
         return "FAIL";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the fixed-width brightness label used by menu pages.
-const char* brightness_text(BrightnessLevel level)
-{
-    switch (level)
-    {
-    case BrightnessLevel::Off:
-        return "OFF";
-    case BrightnessLevel::Low:
-        return "LOW";
-    case BrightnessLevel::Medium:
-        return "MED";
-    case BrightnessLevel::High:
-        return "HIGH";
-    }
-
-    return "?";
-}
-
-/// @brief Returns a consistent yes/no style label for config booleans.
-const char* enabled_text(bool enabled)
-{
-    return enabled ? "Enabled" : "Disabled";
-}
-
-/// @brief Returns the abbreviated lamp-mode label used in compact layouts.
-const char* lamp_mode_text(LampMode mode)
-{
-    switch (mode)
-    {
-    case LampMode::Off:
-        return "OFF";
-    case LampMode::On:
-        return "ON";
-    case LampMode::FlashSlow:
-        return "F-SLOW";
-    case LampMode::FlashFast:
-        return "F-FAST";
     }
 
     return "?";
@@ -570,6 +494,45 @@ void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
     constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
     framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
                            true, kAxisFont, 1);
+}
+
+/// @brief Bordered graph plot rect shared by the shares and local-conditions
+/// history graphs, with a symmetric one-pixel inset on all four sides.
+struct GraphPlotArea
+{
+    int x;
+    int y;
+    int width;
+    int height;
+    int inset;
+};
+
+/// @brief Draws a graph plot area's border rect.
+void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
+{
+    framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
+}
+
+/// @brief Maps a 0-based point index across `point_count` evenly spaced points
+/// to an x pixel coordinate within the inset plot area.
+int graph_plot_x(const GraphPlotArea& area, int index, int point_count)
+{
+    const int plot_width = area.width - (area.inset * 2) - 1;
+    return area.x + area.inset + (plot_width * index) / (point_count - 1);
+}
+
+/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
+/// coordinate within the inset plot area, zero at the bottom.
+/// @details `value` is clamped to the given range first, so callers whose data
+/// can exceed the display scale (e.g. local-condition history against its
+/// fixed axis range) do not need to clamp separately.
+int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value)
+{
+    const int64_t range = (max_value > min_value) ? (max_value - min_value) : 1;
+    const int plot_height = area.height - (area.inset * 2) - 1;
+    const int64_t clamped = std::clamp(value, min_value, max_value);
+    const int normalised = static_cast<int>(((clamped - min_value) * plot_height) / range);
+    return area.y + area.height - 1 - area.inset - normalised;
 }
 
 /// @brief Formats one local-condition value according to its stored fixed-point unit.
@@ -2438,10 +2401,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     const int kGraphWidth = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 94;
     constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotLeftInset = 1;
-    constexpr int kGraphPlotRightInset = 1;
-    constexpr int kGraphPlotTopInset = 1;
-    constexpr int kGraphPlotBottomInset = 1;
+    constexpr int kGraphPlotInset = 1;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
@@ -2458,20 +2418,14 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const uint16_t range =
-        (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
-    const int plot_height = kGraphHeight - kGraphPlotTopInset - kGraphPlotBottomInset - 1;
-    const int plot_width = kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1;
-    const int base_y = kGraphY + kGraphHeight - kGraphPlotBottomInset - 1;
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kGraphPlotInset};
+    draw_graph_plot_border(fb, plot_area);
+    const int base_y = graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
     {
         const uint16_t value = share.history_points[static_cast<size_t>(i)];
-        const int x = kGraphX + kGraphPlotLeftInset +
-                      (plot_width * i) / (point_count - 1);
-        const int normalised =
-            ((static_cast<int>(value - min_value)) * plot_height) / static_cast<int>(range);
-        const int y = base_y - normalised;
+        const int x = graph_plot_x(plot_area, i, point_count);
+        const int y = graph_plot_y(plot_area, value, min_value, max_value);
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
 
@@ -2597,8 +2551,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         return;
     }
 
-    const int32_t range = scale.maximum - scale.minimum;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
+    draw_graph_plot_border(fb, plot_area);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
                     scale.middle_label);
@@ -2609,15 +2563,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
     for (std::size_t i = 0U; i < count; ++i)
     {
-        const int x = kGraphX + kPlotInset +
-                      ((kGraphWidth - (kPlotInset * 2) - 1) * static_cast<int>(i)) /
-                          static_cast<int>(count - 1U);
-        const int32_t clamped_value = std::clamp(values[i], scale.minimum, scale.maximum);
-        const int normalised = static_cast<int>(
-            (static_cast<int64_t>(clamped_value - scale.minimum) *
-             (kGraphHeight - (kPlotInset * 2) - 1)) /
-            range);
-        const int y = kGraphY + kGraphHeight - 1 - kPlotInset - normalised;
+        const int x = graph_plot_x(plot_area, static_cast<int>(i), static_cast<int>(count));
+        const int y = graph_plot_y(plot_area, values[i], scale.minimum, scale.maximum);
         if (i > 0U)
         {
             framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);

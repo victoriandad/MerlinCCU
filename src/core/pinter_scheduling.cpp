@@ -1,5 +1,7 @@
 #include "pinter_scheduling.h"
 
+#include <limits>
+
 namespace pinter_scheduling
 {
 
@@ -198,6 +200,55 @@ uint32_t current_stage_target_day(const PinterStatus& pinter)
     }
 
     return 0U;
+}
+
+uint8_t current_stage_planned_days(const PinterStatus& pinter)
+{
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        return pinter.planned_brewing_days;
+    case PinterState::ColdCrash:
+        return pinter.planned_cold_crash_days;
+    case PinterState::Conditioning:
+        return pinter.planned_conditioning_days;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return 0U;
+    }
+
+    return 0U;
+}
+
+bool nudge_current_stage_days(PinterStatus& pinter, int delta)
+{
+    uint8_t* planned_days = nullptr;
+    switch (pinter.state)
+    {
+    case PinterState::Brewing:
+        planned_days = &pinter.planned_brewing_days;
+        break;
+    case PinterState::ColdCrash:
+        planned_days = &pinter.planned_cold_crash_days;
+        break;
+    case PinterState::Conditioning:
+        planned_days = &pinter.planned_conditioning_days;
+        break;
+    case PinterState::Idle:
+    case PinterState::Ready:
+    case PinterState::Consumed:
+        return false;
+    }
+
+    const int next_value = static_cast<int>(*planned_days) + delta;
+    if (next_value < 1 || next_value > static_cast<int>(std::numeric_limits<uint8_t>::max()))
+    {
+        return false;
+    }
+
+    *planned_days = static_cast<uint8_t>(next_value);
+    return true;
 }
 
 } // namespace pinter_scheduling

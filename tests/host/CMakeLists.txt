@@ -37,5 +37,14 @@ target_include_directories(host_tests PRIVATE
     ${MERLIN_ROOT}/include/network
 )
 
+# Issue #69: the only static-analysis net for this native build was previously
+# .clang-tidy, which needs a manual/IDE invocation rather than running on
+# every build. MSVC's /W4 and GCC/Clang's -Wall -Wextra are each the closest
+# native equivalent for whichever compiler configures this project.
+target_compile_options(host_tests PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>
+)
+
 enable_testing()
 add_test(NAME host_tests COMMAND host_tests)

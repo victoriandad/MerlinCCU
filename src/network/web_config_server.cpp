@@ -18,6 +18,7 @@
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
+#include "text_utils.h"
 
 namespace web_config_server
 {
@@ -280,17 +281,7 @@ void abort_active_session()
     g_session = {};
 }
 
-/// @brief Copies a C string into one fixed-size configuration field.
-template <size_t N> void copy_text(std::array<char, N>& dest, const char* src)
-{
-    dest.fill('\0');
-    if (src == nullptr)
-    {
-        return;
-    }
-
-    std::snprintf(dest.data(), dest.size(), "%s", src);
-}
+using text_utils::copy_text;
 
 /// @brief Returns a lower-case hexadecimal value or -1 for non-hex characters.
 int hex_value(char c)
@@ -1100,7 +1091,7 @@ bool build_pinter_activity_page()
     char axis_14[16] = {};
     char axis_21[16] = {};
     char axis_28[16] = {};
-    char today_label[24] = {};
+    char today_label[32] = {};
     const bool has_real_dates = today_day != 0U || real_start_seen;
     if (has_real_dates)
     {

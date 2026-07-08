@@ -77,4 +77,16 @@ bool reset(PinterStatus& pinter, uint8_t default_brew_index);
 /// firmware enforces.
 uint32_t current_stage_target_day(const PinterStatus& pinter);
 
+/// @brief Returns the current timed stage's planned duration in days (Brewing,
+/// ColdCrash, or Conditioning), or 0 when the state has no timed stage.
+uint8_t current_stage_planned_days(const PinterStatus& pinter);
+
+/// @brief Nudges the current timed stage's planned duration by `delta` days,
+/// pushing its target/ready date later or earlier without altering when the
+/// stage actually began.
+/// @details A no-op (returns false, `pinter` unchanged) when the state has no
+/// timed stage (Idle, Ready, Consumed), or when applying `delta` would take
+/// the planned duration below 1 day or above the `uint8_t` storage range.
+bool nudge_current_stage_days(PinterStatus& pinter, int delta);
+
 } // namespace pinter_scheduling

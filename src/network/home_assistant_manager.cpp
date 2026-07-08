@@ -21,6 +21,7 @@
 #include "mbedtls/ssl.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "text_utils.h"
 #include "time_manager.h"
 
 namespace
@@ -66,7 +67,6 @@ constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
 constexpr uint32_t kRefreshIntervalMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
-constexpr unsigned long kMaxTcpPortValue = std::numeric_limits<uint16_t>::max();
 constexpr size_t kHttpTargetBufferSize = 640;
 constexpr char kHttpSchemePrefix[] = "http://";
 constexpr size_t kHttpSchemePrefixLength = sizeof(kHttpSchemePrefix) - 1;
@@ -324,49 +324,7 @@ uint32_t active_failure_retry_ms()
                                                                    : kDirectWeatherRetryDelayMs;
 }
 
-template <size_t N>
-/// @brief Copies text into a fixed-size Home Assistant status buffer.
-void copy_text(std::array<char, N>& dst, const char* src)
-{
-    dst.fill('\0');
-    if (!src)
-    {
-        return;
-    }
-
-    std::snprintf(dst.data(), dst.size(), "%s", src);
-}
-
-/// @brief Parses a decimal TCP port string.
-bool parse_port(const char* text, uint16_t* out_port)
-{
-    if (text == nullptr || *text == '\0' || out_port == nullptr)
-    {
-        return false;
-    }
-
-    unsigned long value = 0;
-    for (const char* p = text; *p != '\0'; ++p)
-    {
-        if (*p < '0' || *p > '9')
-        {
-            return false;
-        }
-        value = (value * 10U) + static_cast<unsigned long>(*p - '0');
-        if (value > kMaxTcpPortValue)
-        {
-            return false;
-        }
-    }
-
-    if (value == 0U)
-    {
-        return false;
-    }
-
-    *out_port = static_cast<uint16_t>(value);
-    return true;
-}
+using text_utils::copy_text;
 
 /// @brief Returns the log-friendly name for one request kind.
 const char* request_kind_name(RequestKind kind)
@@ -2542,48 +2500,13 @@ bool parse_home_assistant_endpoint()
         g_request_uses_tls = true;
     }
 
-    const char* host_end = host_start;
-    while (*host_end != '\0' && *host_end != ':' && *host_end != '/')
+    const char* host_end = nullptr;
+    if (!text_utils::parse_host_and_optional_port(host_start, g_configured_host,
+                                                   sizeof(g_configured_host), &g_configured_port,
+                                                   &host_end))
     {
-        ++host_end;
-    }
-
-    const size_t host_len = static_cast<size_t>(host_end - host_start);
-    if (host_len == 0 || host_len >= sizeof(g_configured_host))
-    {
-        std::printf("HA config host is empty or too long\n");
+        std::printf("HA config host/port is invalid: %s\n", host_start);
         return false;
-    }
-
-    std::memcpy(g_configured_host, host_start, host_len);
-    g_configured_host[host_len] = '\0';
-
-    if (*host_end == ':')
-    {
-        const char* port_start = host_end + 1;
-        const char* port_end = port_start;
-        while (*port_end != '\0' && *port_end != '/')
-        {
-            ++port_end;
-        }
-
-        char port_text[8] = {};
-        const size_t port_len = static_cast<size_t>(port_end - port_start);
-        if (port_len == 0 || port_len >= sizeof(port_text))
-        {
-            std::printf("HA config port is invalid\n");
-            return false;
-        }
-
-        std::memcpy(port_text, port_start, port_len);
-        port_text[port_len] = '\0';
-        if (!parse_port(port_text, &g_configured_port))
-        {
-            std::printf("HA config port is invalid: %s\n", port_text);
-            return false;
-        }
-
-        host_end = port_end;
     }
 
     if (*host_end == '/' && std::strcmp(host_end, "/") != 0)
@@ -2592,12 +2515,6 @@ bool parse_home_assistant_endpoint()
     }
 
     return true;
-}
-
-/// @brief Schedules the next Home Assistant attempt after a delay.
-void schedule_retry(uint32_t delay_ms)
-{
-    g_next_attempt = make_timeout_time_ms(delay_ms);
 }
 
 /// @brief Updates the public Home Assistant status snapshot.
@@ -3770,7 +3687,7 @@ bool update(const WifiStatus& wifi_status)
     if (runtime_weather_config_changed())
     {
         init();
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return previous != g_status;
     }
 
     // Handle disabled and unconfigured cases first so the remaining logic can
@@ -3794,7 +3711,7 @@ bool update(const WifiStatus& wifi_status)
         g_request_kind = (g_active_weather_source == WeatherSource::HomeAssistant)
                              ? RequestKind::ProbeApi
                              : RequestKind::FetchWeatherEntity;
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return previous != g_status;
     }
 
     const bool wifi_ready = wifi_status.ip_address[0] != '\0';
@@ -3811,7 +3728,7 @@ bool update(const WifiStatus& wifi_status)
         g_request_kind = (g_active_weather_source == WeatherSource::HomeAssistant)
                              ? RequestKind::ProbeApi
                              : RequestKind::FetchWeatherEntity;
-        return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+        return previous != g_status;
     }
 
     // Resolver and socket operations are asynchronous, so deadlines are checked
@@ -3861,7 +3778,7 @@ bool update(const WifiStatus& wifi_status)
         start_probe();
     }
 
-    return std::memcmp(&previous, &g_status, sizeof(g_status)) != 0;
+    return previous != g_status;
 }
 
 const HomeAssistantStatus& status()

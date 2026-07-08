@@ -359,6 +359,37 @@ struct HomeAssistantStatus
     std::array<char, 48> self_entity_id;
 };
 
+/// @brief Compares two Home Assistant status snapshots field-by-field.
+/// @details Used to detect whether `update()` produced a UI-visible change
+/// without relying on `memcmp` over the whole struct, which is not immune to
+/// padding bytes.
+inline bool operator==(const HomeAssistantStatus& lhs, const HomeAssistantStatus& rhs)
+{
+    return lhs.state == rhs.state && lhs.configured == rhs.configured &&
+           lhs.self_entity_published == rhs.self_entity_published &&
+           lhs.last_error == rhs.last_error && lhs.last_http_status == rhs.last_http_status &&
+           lhs.host == rhs.host && lhs.tracked_entity_id == rhs.tracked_entity_id &&
+           lhs.tracked_entity_state == rhs.tracked_entity_state &&
+           lhs.weather_entity_id == rhs.weather_entity_id &&
+           lhs.weather_source_hint == rhs.weather_source_hint &&
+           lhs.weather_condition == rhs.weather_condition &&
+           lhs.weather_temperature == rhs.weather_temperature &&
+           lhs.weather_wind_unit == rhs.weather_wind_unit &&
+           lhs.sunrise_text == rhs.sunrise_text && lhs.sunset_text == rhs.sunset_text &&
+           lhs.weather_forecast_count == rhs.weather_forecast_count &&
+           lhs.weather_forecast == rhs.weather_forecast &&
+           lhs.weather_daily_forecast_count == rhs.weather_daily_forecast_count &&
+           lhs.weather_daily_forecast == rhs.weather_daily_forecast &&
+           lhs.weather_metrics == rhs.weather_metrics &&
+           lhs.weather_alert_status == rhs.weather_alert_status &&
+           lhs.self_entity_id == rhs.self_entity_id;
+}
+
+inline bool operator!=(const HomeAssistantStatus& lhs, const HomeAssistantStatus& rhs)
+{
+    return !(lhs == rhs);
+}
+
 /// @brief Snapshot of MQTT discovery state suitable for UI and controller use.
 struct MqttStatus
 {
@@ -369,6 +400,20 @@ struct MqttStatus
     std::array<char, 48> broker;
     std::array<char, 32> device_id;
 };
+
+/// @brief Compares two MQTT status snapshots field-by-field.
+inline bool operator==(const MqttStatus& lhs, const MqttStatus& rhs)
+{
+    return lhs.state == rhs.state && lhs.configured == rhs.configured &&
+           lhs.discovery_published == rhs.discovery_published &&
+           lhs.last_error == rhs.last_error && lhs.broker == rhs.broker &&
+           lhs.device_id == rhs.device_id;
+}
+
+inline bool operator!=(const MqttStatus& lhs, const MqttStatus& rhs)
+{
+    return !(lhs == rhs);
+}
 
 /// @brief Weather backends stored in flash and exposed to the CCU UI.
 enum class WeatherSource : uint8_t
@@ -542,6 +587,8 @@ enum class SoftKeyRoute : uint8_t
     SelectPinterSlot4,
     ApplyPinterPrimaryAction,
     ResetSelectedPinter,
+    DecreaseSelectedPinterDay,
+    IncreaseSelectedPinterDay,
     GoPinterSelectBrew,
     SelectPinterListItem1,
     SelectPinterListItem2,
@@ -698,7 +745,7 @@ struct MainLoopLoadStatus
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
 struct PinterStatus
 {
-    std::array<char, 8> label;
+    std::array<char, 24> label;
     PinterState state;
     uint8_t brew_index;
     uint32_t brew_start_day;
