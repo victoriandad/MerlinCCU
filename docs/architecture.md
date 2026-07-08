@@ -21,7 +21,16 @@ README history, chat context, or incidental source-code discovery.
   present scheduling.
 - `src/core/console_controller.cpp`: UI state, softkey routing, alert state,
   runtime config application.
-- `src/display/screens.cpp`: page rendering into the logical framebuffer.
+- `src/display/screens.cpp`: shared drawing primitives (detail rows, centred
+  text, graph plotting), the `draw_menu_screen()` dispatch, and page families
+  not yet split out (issue #45, staged: Status is split into
+  `status_screens.cpp`; Weather/Calendar/Shares/Pinter/Settings/Alerts remain
+  in `screens.cpp` pending the same treatment).
+- `src/display/status_screens.cpp`: Status root/overview/connectivity/
+  resources/sensors/integrations pages.
+- `include/display/screens_shared.h`: primitives split-out page-family files
+  need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`, a few
+  state-label lookups) that aren't part of the public `screens.h` API.
 - `src/display/display.cpp`: framebuffer-to-panel raster composition and DMA/PIO
   presentation.
 - `src/core/input.cpp`: physical/provisional keypad polling and logical button
@@ -102,6 +111,20 @@ native compiler instead of requiring hardware:
   depends on per-board config; `input.cpp` static_asserts that its
   hardware-facing `kObservedLines` pin order matches this header's
   `kObservedPanelPins` so the two tables cannot silently desync.
+- `include/core/pinter_scheduling.h` — Pinter brew-pack dock/fridge capacity
+  accounting and stage-transition rules, extracted from
+  `console_controller.cpp` (#48). `console_controller.cpp` still owns the live
+  `PinterStatus` array, softkey labels, and routing; this header only decides
+  whether a transition is currently allowed and what it changes.
+- `include/core/calendar_navigation.h` — Calendar owner-filter cycling,
+  day-offset bounds, and visible-softkey-slot-to-event-index lookup, extracted
+  from `console_controller.cpp` (#49). Calendar identity labels
+  (`calendar_identity_label`/`calendar_owner_definition`) stay in
+  `console_controller.cpp` since they're a configuration concern (reading the
+  optional `calendar_identities.h`), not navigation logic. Live Home Assistant
+  calendar ingestion (#8, blocked on #33/#34) is out of scope here and will
+  feed `ConsoleState.calendar_events` the same way the current seed data does,
+  without needing to change this header.
 
 When adding new pure logic to `console_controller.cpp` or `input.cpp`, prefer
 extracting it the same way over adding to files that already require Pico
@@ -113,4 +136,7 @@ hardware headers to compile.
 | --- | --- | --- | --- |
 | 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
 | 2026-07-06 | Add `tests/host/`, a native-compiler CMake project covering keypad matrix decode and alert ordering/acknowledgement, extracted into hardware-independent headers. | Closes issue #14; both areas were previously only reachable through hand testing on real hardware. | Extend the same pattern to other pure logic (e.g. Pinter scheduling, #48) as it's identified. |
+| 2026-07-08 | Extract Calendar owner-filter/day-navigation/slot-selection logic into `calendar_navigation.h`, following the #48 Pinter-scheduling split. | Closes issue #49; keeps this logic reviewable and host-testable ahead of the #8/#33/#34 Home Assistant calendar ingestion work landing in the same area. | Split `console_controller.cpp` further per #44 (softkey label construction, status ingestion remain inline). |
+| 2026-07-08 | Split the Status page family (root/overview/connectivity/resources/sensors/integrations) out of `screens.cpp` into `status_screens.cpp`, with cross-family primitives promoted into `screens_shared.h`. | Progresses issue #45 as a staged refactor (per the #3 housekeeping notes) rather than one large rewrite; `screens.cpp` dropped from 3319 to 2817 lines with no rendering change. | Repeat the same split for Weather, Calendar, Shares, Pinter, Settings, and Alerts page families. |
+| 2026-07-08 | Simplified `set_home_assistant_status`/`set_mqtt_status` in `console_controller.cpp` to use the `operator!=` added for issue #67, instead of re-deriving the same field-by-field comparison inline; did not further split `console_controller.cpp` (#44) beyond this. | The remaining candidates (softkey label construction, status-snapshot ingestion, settings routing) all read/write `g_console_state` directly (463 references in the file) and call private helpers like `update_softkeys_from_state()` -- unlike the #48/#49 splits, which extracted logic that already took explicit parameters instead of touching the global, these would need to either accept a much bigger `ConsoleState&`-threading refactor or expose more of the controller's private surface across a TU boundary. Neither is a small staged step. | Revisit #44 only alongside a deliberate decision on whether `ConsoleState` should be passed explicitly through more of the call chain -- forcing a module split before that decision would just relocate tightly-coupled code, not separate concerns. |
 | YYYY-MM-DD |  |  |  |

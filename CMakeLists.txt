@@ -37,6 +37,7 @@ pico_sdk_init()
 add_executable(MerlinCCU
     src/core/MerlinCCU.cpp
     src/core/alert_ordering.cpp
+    src/core/calendar_navigation.cpp
     src/core/console_controller.cpp
     src/core/console_model.cpp
     src/core/input.cpp
@@ -49,6 +50,7 @@ add_executable(MerlinCCU
     src/display/framebuffer.cpp
     src/display/screen_banners.cpp
     src/display/screens.cpp
+    src/display/status_screens.cpp
     src/display/screensavers/screensaver_clock.cpp
     src/display/screensavers/screensaver_life.cpp
     src/display/screensavers/screensaver_matrix.cpp
