@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "alert_ordering.h"
+#include "calendar_navigation.h"
 #include "config_persistence.h"
 #include "date_time_math.h"
 #include "debug_logging.h"
@@ -1740,13 +1741,8 @@ const char* build_alert_softkey_label(SoftKeyId key, const ActiveAlert& alert)
 /// @brief Returns whether one event belongs in the active Calendar page filter.
 bool calendar_event_matches_filter(const CalendarEvent& event)
 {
-    if (event.title[0] == '\0' || event.day_offset != g_console_state.calendar_day_offset)
-    {
-        return false;
-    }
-
-    return g_console_state.calendar_owner == CalendarOwner::Combined ||
-           event.owner == g_console_state.calendar_owner;
+    return calendar_navigation::event_matches_filter(event, g_console_state.calendar_owner,
+                                                      g_console_state.calendar_day_offset);
 }
 
 /// @brief Formats one calendar event for the surrounding softkey labels.
@@ -2506,38 +2502,10 @@ bool cycle_weather_period()
     return true;
 }
 
-/// @brief Returns the next shared-calendar owner filter in the Calendar page cycle.
-CalendarOwner next_calendar_owner(CalendarOwner owner)
-{
-    switch (owner)
-    {
-    case CalendarOwner::Combined:
-        return CalendarOwner::Owner1;
-    case CalendarOwner::Owner1:
-        return CalendarOwner::Owner2;
-    case CalendarOwner::Owner2:
-        return CalendarOwner::Owner3;
-    case CalendarOwner::Owner3:
-        return CalendarOwner::Owner4;
-    case CalendarOwner::Owner4:
-        return CalendarOwner::Owner5;
-    case CalendarOwner::Owner5:
-        return CalendarOwner::Owner6;
-    case CalendarOwner::Owner6:
-        return CalendarOwner::Owner7;
-    case CalendarOwner::Owner7:
-        return CalendarOwner::Owner8;
-    case CalendarOwner::Owner8:
-        return CalendarOwner::Combined;
-    }
-
-    return CalendarOwner::Combined;
-}
-
 /// @brief Advances the Calendar owner filter without touching persisted config.
 bool cycle_calendar_owner()
 {
-    const CalendarOwner next = next_calendar_owner(g_console_state.calendar_owner);
+    const CalendarOwner next = calendar_navigation::next_owner(g_console_state.calendar_owner);
     if (next == g_console_state.calendar_owner)
     {
         return false;
@@ -2550,8 +2518,8 @@ bool cycle_calendar_owner()
 /// @brief Returns whether the Calendar filters are showing the default view.
 bool calendar_filters_are_default()
 {
-    return g_console_state.calendar_owner == CalendarOwner::Combined &&
-           g_console_state.calendar_day_offset == 0;
+    return calendar_navigation::filters_are_default(g_console_state.calendar_owner,
+                                                     g_console_state.calendar_day_offset);
 }
 
 /// @brief Restores the Calendar page to the default combined-today view.
@@ -2572,19 +2540,13 @@ bool reset_calendar_filters()
 /// model can be filled by Home Assistant calendar data later.
 bool change_calendar_day(int direction)
 {
-    if (g_console_state.active_page != MenuPage::Calendar || direction == 0)
+    if (g_console_state.active_page != MenuPage::Calendar)
     {
         return false;
     }
 
-    const int target = static_cast<int>(g_console_state.calendar_day_offset) + direction;
-    if (target < kCalendarMinDayOffset || target > kCalendarMaxDayOffset)
-    {
-        return false;
-    }
-
-    g_console_state.calendar_day_offset = static_cast<int8_t>(target);
-    return true;
+    return calendar_navigation::step_day_offset(direction, g_console_state.calendar_day_offset,
+                                                g_console_state.calendar_day_offset);
 }
 
 /// @brief Returns the backing event index for one visible Calendar softkey slot.
@@ -2592,24 +2554,9 @@ bool change_calendar_day(int direction)
 /// Assistant data can replace the sample rows without duplicate indices.
 uint8_t calendar_event_index_for_visible_slot(uint8_t visible_slot)
 {
-    uint8_t visible_index = 0U;
-    const uint8_t event_count =
-        std::min(g_console_state.calendar_event_count,
-                 static_cast<uint8_t>(g_console_state.calendar_events.size()));
-    for (uint8_t i = 0U; i < event_count; ++i)
-    {
-        if (!calendar_event_matches_filter(g_console_state.calendar_events[i]))
-        {
-            continue;
-        }
-        if (visible_index == visible_slot)
-        {
-            return i;
-        }
-        ++visible_index;
-    }
-
-    return static_cast<uint8_t>(g_console_state.calendar_events.size());
+    return calendar_navigation::event_index_for_visible_slot(
+        g_console_state.calendar_events, g_console_state.calendar_event_count,
+        g_console_state.calendar_owner, g_console_state.calendar_day_offset, visible_slot);
 }
 
 /// @brief Opens the detail page for one visible calendar event slot.

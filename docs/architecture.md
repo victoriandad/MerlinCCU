@@ -102,6 +102,20 @@ native compiler instead of requiring hardware:
   depends on per-board config; `input.cpp` static_asserts that its
   hardware-facing `kObservedLines` pin order matches this header's
   `kObservedPanelPins` so the two tables cannot silently desync.
+- `include/core/pinter_scheduling.h` — Pinter brew-pack dock/fridge capacity
+  accounting and stage-transition rules, extracted from
+  `console_controller.cpp` (#48). `console_controller.cpp` still owns the live
+  `PinterStatus` array, softkey labels, and routing; this header only decides
+  whether a transition is currently allowed and what it changes.
+- `include/core/calendar_navigation.h` — Calendar owner-filter cycling,
+  day-offset bounds, and visible-softkey-slot-to-event-index lookup, extracted
+  from `console_controller.cpp` (#49). Calendar identity labels
+  (`calendar_identity_label`/`calendar_owner_definition`) stay in
+  `console_controller.cpp` since they're a configuration concern (reading the
+  optional `calendar_identities.h`), not navigation logic. Live Home Assistant
+  calendar ingestion (#8, blocked on #33/#34) is out of scope here and will
+  feed `ConsoleState.calendar_events` the same way the current seed data does,
+  without needing to change this header.
 
 When adding new pure logic to `console_controller.cpp` or `input.cpp`, prefer
 extracting it the same way over adding to files that already require Pico
@@ -113,4 +127,5 @@ hardware headers to compile.
 | --- | --- | --- | --- |
 | 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
 | 2026-07-06 | Add `tests/host/`, a native-compiler CMake project covering keypad matrix decode and alert ordering/acknowledgement, extracted into hardware-independent headers. | Closes issue #14; both areas were previously only reachable through hand testing on real hardware. | Extend the same pattern to other pure logic (e.g. Pinter scheduling, #48) as it's identified. |
+| 2026-07-08 | Extract Calendar owner-filter/day-navigation/slot-selection logic into `calendar_navigation.h`, following the #48 Pinter-scheduling split. | Closes issue #49; keeps this logic reviewable and host-testable ahead of the #8/#33/#34 Home Assistant calendar ingestion work landing in the same area. | Split `console_controller.cpp` further per #44 (softkey label construction, status ingestion remain inline). |
 | YYYY-MM-DD |  |  |  |
