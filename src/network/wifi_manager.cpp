@@ -12,6 +12,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/error.h"
 #include "pico/stdlib.h"
+#include "text_utils.h"
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -263,19 +264,9 @@ const char* credential_password(const WifiCredential& credential)
     return (credential.password && credential.password[0] != '\0') ? credential.password : nullptr;
 }
 
-/// @brief Copies text into a fixed-size status buffer.
-void copy_text(std::array<char, 33>& dst, const char* src)
-{
-    // The UI model stores fixed-size text snapshots so screen rendering never
-    // depends on borrowed pointers into lwIP or temporary parse buffers.
-    dst.fill('\0');
-    if (!src)
-    {
-        return;
-    }
-
-    std::snprintf(dst.data(), dst.size(), "%s", src);
-}
+// The UI model stores fixed-size text snapshots so screen rendering never
+// depends on borrowed pointers into lwIP or temporary parse buffers.
+using text_utils::copy_text;
 
 /// @brief Copies an IPv4 string into the fixed-size status buffer.
 void copy_ip_text(std::array<char, 16>& dst, const char* src)

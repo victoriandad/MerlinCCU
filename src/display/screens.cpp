@@ -11,10 +11,11 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
-#include "hardware/flash.h"
 #include "panel_config.h"
 #include "pico/error.h"
 #include "screen_banners.h"
+#include "screens_shared.h"
+#include "status_screens.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -35,15 +36,6 @@ namespace
 {
 
 constexpr uint8_t kSettingsPageCount = 2U;
-constexpr size_t kConfigFlashSlotCount = 2U;
-constexpr size_t kConfigFlashBytes = FLASH_SECTOR_SIZE * kConfigFlashSlotCount;
-constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kConfigFlashBytes;
-
-extern "C"
-{
-extern const uint8_t __flash_binary_start;
-extern const uint8_t __flash_binary_end;
-}
 
 /// @brief Returns the number of pages required by a softkey-driven list.
 uint8_t list_page_count(size_t item_count, size_t visible_count)
@@ -81,132 +73,6 @@ void build_uppercase_label(const char* input, char* output, size_t output_size)
     }
 
     output[write_index] = '\0';
-}
-
-/// @brief Returns the compact label used for the letter annunciator mode.
-const char* letter_mode_text(LetterMode mode)
-{
-    switch (mode)
-    {
-    case LetterMode::UpperCase:
-        return "ABC";
-    case LetterMode::LowerCase:
-        return "abc";
-    case LetterMode::Numbers:
-        return "123";
-    }
-
-    return "ABC";
-}
-
-/// @brief Returns the shortened alert label used on the constrained settings UI.
-const char* alert_severity_text(AlertSeverity severity)
-{
-    switch (severity)
-    {
-    case AlertSeverity::None:
-        return "NONE";
-    case AlertSeverity::Message:
-        return "MSG";
-    case AlertSeverity::Warning:
-        return "WARN";
-    case AlertSeverity::Alert:
-        return "ALERT";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the terse test-state label shown on status-oriented screens.
-const char* test_state_text(SystemTestState state)
-{
-    switch (state)
-    {
-    case SystemTestState::Idle:
-        return "IDLE";
-    case SystemTestState::Running:
-        return "RUN";
-    case SystemTestState::Passed:
-        return "PASS";
-    case SystemTestState::Failed:
-        return "FAIL";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the fixed-width brightness label used by menu pages.
-const char* brightness_text(BrightnessLevel level)
-{
-    switch (level)
-    {
-    case BrightnessLevel::Off:
-        return "OFF";
-    case BrightnessLevel::Low:
-        return "LOW";
-    case BrightnessLevel::Medium:
-        return "MED";
-    case BrightnessLevel::High:
-        return "HIGH";
-    }
-
-    return "?";
-}
-
-/// @brief Returns a consistent yes/no style label for config booleans.
-const char* enabled_text(bool enabled)
-{
-    return enabled ? "Enabled" : "Disabled";
-}
-
-/// @brief Returns the abbreviated lamp-mode label used in compact layouts.
-const char* lamp_mode_text(LampMode mode)
-{
-    switch (mode)
-    {
-    case LampMode::Off:
-        return "OFF";
-    case LampMode::On:
-        return "ON";
-    case LampMode::FlashSlow:
-        return "F-SLOW";
-    case LampMode::FlashFast:
-        return "F-FAST";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the Wi-Fi state label sized to fit the one-line status panel.
-const char* wifi_state_text(WifiConnectionState state)
-{
-    switch (state)
-    {
-    case WifiConnectionState::Disabled:
-        return "Disabled";
-    case WifiConnectionState::Unconfigured:
-        return "Unconfig";
-    case WifiConnectionState::Initializing:
-        return "Init";
-    case WifiConnectionState::Scanning:
-        return "Scan";
-    case WifiConnectionState::Connecting:
-        return "Connect";
-    case WifiConnectionState::WaitingForIp:
-        return "DHCP";
-    case WifiConnectionState::Connected:
-        return "Up";
-    case WifiConnectionState::AuthFailed:
-        return "Bad auth";
-    case WifiConnectionState::NoNetwork:
-        return "No net";
-    case WifiConnectionState::ConnectFailed:
-        return "Fail";
-    case WifiConnectionState::Error:
-        return "Error";
-    }
-
-    return "?";
 }
 
 /// @brief Returns the Home-page network footer text.
@@ -251,7 +117,11 @@ const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t b
     return "NO IP ADDRESS";
 }
 
+} // namespace
+
 /// @brief Returns the Home Assistant state label used on diagnostics screens.
+/// @details Declared in screens_shared.h so status_screens.cpp (and other
+/// split-out page families) can call it without duplicating the switch.
 const char* home_assistant_state_text(HomeAssistantConnectionState state)
 {
     switch (state)
@@ -280,6 +150,8 @@ const char* home_assistant_state_text(HomeAssistantConnectionState state)
 }
 
 /// @brief Returns a provider-neutral weather fetch state label.
+/// @details Declared in screens_shared.h so status_screens.cpp (and other
+/// split-out page families) can call it without duplicating the switch.
 const char* weather_fetch_state_text(HomeAssistantConnectionState state)
 {
     switch (state)
@@ -307,145 +179,9 @@ const char* weather_fetch_state_text(HomeAssistantConnectionState state)
     return "?";
 }
 
-/// @brief Returns the MQTT state label used on the condensed status page.
-const char* mqtt_state_text(MqttConnectionState state)
-{
-    switch (state)
-    {
-    case MqttConnectionState::Disabled:
-        return "Disabled";
-    case MqttConnectionState::Unconfigured:
-        return "Unconfig";
-    case MqttConnectionState::WaitingForWifi:
-        return "Wait wifi";
-    case MqttConnectionState::Resolving:
-        return "Resolve";
-    case MqttConnectionState::Connecting:
-        return "Connect";
-    case MqttConnectionState::Connected:
-        return "Up";
-    case MqttConnectionState::AuthFailed:
-        return "Auth";
-    case MqttConnectionState::Error:
-        return "Error";
-    }
-
-    return "?";
-}
-
-/// @brief Returns the optional environment-board health label for diagnostics.
-const char* environment_sensor_health_text(
-    environment_sensor_manager::EnvironmentSensorHealth health)
-{
-    switch (health)
-    {
-    case environment_sensor_manager::EnvironmentSensorHealth::Disabled:
-        return "Disabled";
-    case environment_sensor_manager::EnvironmentSensorHealth::BusReady:
-        return "Bus ready";
-    case environment_sensor_manager::EnvironmentSensorHealth::BoardMissing:
-        return "Missing";
-    case environment_sensor_manager::EnvironmentSensorHealth::Partial:
-        return "Partial";
-    case environment_sensor_manager::EnvironmentSensorHealth::BoardDetected:
-        return "Detected";
-    case environment_sensor_manager::EnvironmentSensorHealth::Fault:
-        return "Fault";
-    }
-
-    return "?";
-}
-
-/// @brief Formats configured I2C pins into one compact status-page value.
-void build_environment_bus_text(const environment_sensor_manager::EnvironmentSensorStatus& status,
-                                char* out, size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    if (!status.enabled)
-    {
-        std::snprintf(out, out_size, "-");
-        return;
-    }
-
-    std::snprintf(out, out_size, "I2C%d SDA%d SCL%d", static_cast<int>(status.i2c_bus),
-                  static_cast<int>(status.sda_gpio), static_cast<int>(status.scl_gpio));
-}
-
-/// @brief Formats the detected Waveshare device addresses without overflowing the row.
-void build_environment_address_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    out[0] = '\0';
-    if (!status.enabled || status.detected_device_count == 0U)
-    {
-        std::snprintf(out, out_size, "-");
-        return;
-    }
-
-    size_t used = 0U;
-    for (const environment_sensor_manager::EnvironmentSensorPresence& presence : status.devices)
-    {
-        if (!presence.detected)
-        {
-            continue;
-        }
-
-        const int written =
-            std::snprintf(out + used, out_size - used, "%s%s%02X", used == 0U ? "" : ",",
-                          used == 0U ? "0x" : "", static_cast<unsigned>(presence.i2c_address));
-        if (written <= 0)
-        {
-            break;
-        }
-
-        const size_t write_size = static_cast<size_t>(written);
-        if (write_size >= (out_size - used))
-        {
-            out[out_size - 1U] = '\0';
-            break;
-        }
-        used += write_size;
-    }
-}
-
-/// @brief Returns the detected BME pressure-sensor variant for the status page.
-const char* environment_bme_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status)
-{
-    if (!status.enabled)
-    {
-        return "-";
-    }
-
-    switch (status.bme_variant)
-    {
-    case environment_sensor_manager::EnvironmentBmeVariant::NotChecked:
-        return "UNKNOWN";
-    case environment_sensor_manager::EnvironmentBmeVariant::Missing:
-        return "MISSING";
-    case environment_sensor_manager::EnvironmentBmeVariant::Bme280:
-        return "BME280";
-    case environment_sensor_manager::EnvironmentBmeVariant::Bme680:
-        return "BME680";
-    case environment_sensor_manager::EnvironmentBmeVariant::Unknown:
-        return "UNKNOWN";
-    case environment_sensor_manager::EnvironmentBmeVariant::Fault:
-        return "FAULT";
-    }
-
-    return "UNKNOWN";
-}
-
 /// @brief Formats a fixed-point centi-Celsius temperature for the Status page.
+/// @details Declared in screens_shared.h -- shared between the Status Sensors
+/// page and the Local Conditions history graph.
 void build_environment_temperature_text(
     const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
     size_t out_size)
@@ -514,6 +250,9 @@ void build_environment_pressure_text(
                   static_cast<unsigned long>(tenths_hpa % 10U));
 }
 
+namespace
+{
+
 /// @brief Returns the display label for one local condition metric.
 const char* local_condition_metric_text(LocalConditionMetric metric)
 {
@@ -569,6 +308,45 @@ void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
     constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
     framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
                            true, kAxisFont, 1);
+}
+
+/// @brief Bordered graph plot rect shared by the shares and local-conditions
+/// history graphs, with a symmetric one-pixel inset on all four sides.
+struct GraphPlotArea
+{
+    int x;
+    int y;
+    int width;
+    int height;
+    int inset;
+};
+
+/// @brief Draws a graph plot area's border rect.
+void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
+{
+    framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
+}
+
+/// @brief Maps a 0-based point index across `point_count` evenly spaced points
+/// to an x pixel coordinate within the inset plot area.
+int graph_plot_x(const GraphPlotArea& area, int index, int point_count)
+{
+    const int plot_width = area.width - (area.inset * 2) - 1;
+    return area.x + area.inset + (plot_width * index) / (point_count - 1);
+}
+
+/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
+/// coordinate within the inset plot area, zero at the bottom.
+/// @details `value` is clamped to the given range first, so callers whose data
+/// can exceed the display scale (e.g. local-condition history against its
+/// fixed axis range) do not need to clamp separately.
+int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value)
+{
+    const int64_t range = (max_value > min_value) ? (max_value - min_value) : 1;
+    const int plot_height = area.height - (area.inset * 2) - 1;
+    const int64_t clamped = std::clamp(value, min_value, max_value);
+    const int normalised = static_cast<int>(((clamped - min_value) * plot_height) / range);
+    return area.y + area.height - 1 - area.inset - normalised;
 }
 
 /// @brief Formats one local-condition value according to its stored fixed-point unit.
@@ -726,16 +504,8 @@ const char* menu_page_title(MenuPage page)
         return "ALERT";
     case MenuPage::Pinter:
         return "PINTER";
-    case MenuPage::PinterPacks:
-        return "PINTER PACKS";
-    case MenuPage::PinterToBeBrewed:
-        return "TO BE BREWED";
     case MenuPage::PinterSelectBrew:
         return "SELECT BREW";
-    case MenuPage::PinterSelectedBrews:
-        return "SELECTED BREWS";
-    case MenuPage::PinterStartBrew:
-        return "START PINTER";
     case MenuPage::PinterStartTiming:
         return "BREW TIMING";
     case MenuPage::Shares:
@@ -853,11 +623,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::Pinter:
-    case MenuPage::PinterPacks:
-    case MenuPage::PinterToBeBrewed:
     case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterSelectedBrews:
-    case MenuPage::PinterStartBrew:
     case MenuPage::PinterStartTiming:
     case MenuPage::Shares:
     case MenuPage::ShareDetail:
@@ -879,6 +645,15 @@ fonts::FontFace softkey_label_font(MenuPage page)
     }
 
     return fonts::FontFace::Font5x7;
+}
+
+/// @brief Returns how many lines one softkey label may wrap onto for a page.
+/// @details Most pages cap this at two lines so long labels degrade
+/// gracefully; the Pinter page opts into a third line so each vessel's slot
+/// key can carry a stage countdown alongside its state and recipe name.
+constexpr int softkey_label_max_lines(MenuPage page)
+{
+    return page == MenuPage::Pinter ? 3 : 2;
 }
 
 /// @brief Returns the maximum drawable width for one softkey label line.
@@ -915,13 +690,8 @@ struct WrappedSoftkeyLabel
 {
     char line_one[48];
     char line_two[48];
+    char line_three[48];
     int line_count;
-};
-
-struct DetailRow
-{
-    const char* label;
-    const char* value;
 };
 
 /// @brief Copies one bounded label slice into a temporary line buffer.
@@ -997,75 +767,66 @@ size_t skip_wrapped_label_breaks(const char* text, size_t start)
     return start;
 }
 
-/// @brief Wraps one softkey label into at most two renderable lines.
-/// @details Softkeys are deliberately limited to two lines so long labels
-/// degrade gracefully without taking over the rest of the screen layout.
-WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+/// @brief Wraps one softkey label into at most `max_lines` renderable lines.
+/// @details Softkeys are deliberately capped (two lines for most pages, three
+/// where a page opts in) so long labels degrade gracefully without taking
+/// over the rest of the screen layout. Each line greedily fits as much text
+/// as the width allows, preferring to break on whitespace.
+WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
+                                     int max_lines)
 {
     WrappedSoftkeyLabel wrapped = {};
     wrapped.line_count = 0;
 
-    if (label == nullptr || label[0] == '\0')
+    if (label == nullptr || label[0] == '\0' || max_lines <= 0)
     {
         return wrapped;
     }
 
-    const size_t kFirstFitLength = fit_wrapped_label_prefix(label, font, max_width);
-    if (kFirstFitLength == 0)
-    {
-        return wrapped;
-    }
+    char* const line_buffers[3] = {wrapped.line_one, wrapped.line_two, wrapped.line_three};
+    const int kEffectiveMaxLines = (max_lines > 3) ? 3 : max_lines;
+    const char* cursor = label;
 
-    size_t first_length = find_wrapped_label_split(label, kFirstFitLength);
-    while (first_length > 0 && label[first_length - 1] == ' ')
+    for (int line_index = 0; line_index < kEffectiveMaxLines; ++line_index)
     {
-        --first_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_one, sizeof(wrapped.line_one), label, first_length);
-    wrapped.line_count = 1;
-
-    size_t second_start = skip_wrapped_label_breaks(label, first_length);
-    if (label[second_start] == '\0')
-    {
-        return wrapped;
-    }
-
-    const size_t kSecondFitLength = fit_wrapped_label_prefix(label + second_start, font, max_width);
-    if (kSecondFitLength == 0)
-    {
-        return wrapped;
-    }
-
-    size_t second_length = kSecondFitLength;
-    if (label[second_start + kSecondFitLength] != '\0' &&
-        label[second_start + kSecondFitLength] != '\n')
-    {
-        const size_t kSecondSplit =
-            find_wrapped_label_split(label + second_start, kSecondFitLength);
-        if (kSecondSplit > 0)
+        if (cursor[0] == '\0')
         {
-            second_length = kSecondSplit;
+            break;
         }
+
+        const size_t kFitLength = fit_wrapped_label_prefix(cursor, font, max_width);
+        if (kFitLength == 0)
+        {
+            break;
+        }
+
+        size_t length = find_wrapped_label_split(cursor, kFitLength);
+        while (length > 0 && cursor[length - 1] == ' ')
+        {
+            --length;
+        }
+
+        copy_softkey_label_slice(line_buffers[line_index], 48, cursor, length);
+        wrapped.line_count = line_index + 1;
+        cursor += skip_wrapped_label_breaks(cursor, length);
     }
 
-    while (second_length > 0 && label[second_start + second_length - 1] == ' ')
-    {
-        --second_length;
-    }
-
-    copy_softkey_label_slice(wrapped.line_two, sizeof(wrapped.line_two), label + second_start,
-                             second_length);
-    wrapped.line_count = 2;
     return wrapped;
 }
 
-/// @brief Applies the current softkey width policy to one label string.
+/// @brief Wraps one softkey label into at most two renderable lines.
+WrappedSoftkeyLabel wrap_label_two_lines(const char* label, fonts::FontFace font, int max_width)
+{
+    return wrap_label_lines(label, font, max_width, 2);
+}
+
+/// @brief Applies the current softkey width and line-count policy for a page
+/// to one label string.
 /// @details This keeps callers from hard-coding layout limits in multiple places
 /// when the bezel or font rules change.
-WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font)
+WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font, int max_lines)
 {
-    return wrap_label_two_lines(label, font, softkey_label_max_width());
+    return wrap_label_lines(label, font, softkey_label_max_width(), max_lines);
 }
 
 /// @brief Draws one aligned detail row for information-oriented pages.
@@ -1503,14 +1264,14 @@ void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool
 /// @details The label is vertically centred within the physical key slot so
 /// wrapped text still reads like it belongs to one button location.
 void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
-                        fonts::FontFace font)
+                        fonts::FontFace font, int max_lines)
 {
     if (action.label == nullptr || action.label[0] == '\0')
     {
         return;
     }
 
-    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font);
+    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font, max_lines);
     const int kLineHeight = framebuffer::font_height(font);
     const int kBlockHeight =
         (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
@@ -1569,6 +1330,10 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
     if (kWrapped.line_count > 1)
     {
         draw_line(kWrapped.line_two, 1);
+    }
+    if (kWrapped.line_count > 2)
+    {
+        draw_line(kWrapped.line_three, 2);
     }
 }
 
@@ -1644,12 +1409,14 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
     const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
+    const int kMaxLines = softkey_label_max_lines(console_state.active_page);
 
     for (int i = 0; i < 5; ++i)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont);
+        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont,
+                           kMaxLines);
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           kLabelFont);
+                           kLabelFont, kMaxLines);
     }
 }
 
@@ -1914,7 +1681,11 @@ void draw_compact_detail_line(uint8_t* fb, int y, const char* label, const char*
                            true, kCompactDetailFont, 1);
 }
 
+} // namespace
+
 /// @brief Draws compact `Label: value` rows for data-dense pages.
+/// @details Declared in screens_shared.h -- used by every split-out page
+/// family that renders dense key/value diagnostics (Status, Sensors, etc.).
 void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y,
                               int row_pitch)
 {
@@ -1925,6 +1696,9 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
                                  rows[i].value, value_x);
     }
 }
+
+namespace
+{
 
 /// @brief Produces a short user-facing weather-status fallback string.
 /// @details Home Assistant keeps the old end-user wording, while direct
@@ -2364,26 +2138,17 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
                                         page_count);
         return;
     }
-    case MenuPage::PinterSelectedBrews:
-    {
-        const uint8_t page_count =
-            list_page_count(console_state.pinter_selected_brew_count,
-                            kPinterBrewListVisibleCount);
-        draw_page_navigation_arrows(fb, console_state.pinter_selected_brews_page_index > 0U,
-                                    (console_state.pinter_selected_brews_page_index + 1U) <
-                                        page_count);
+    case MenuPage::Pinter:
+        // Centre data is otherwise intentionally blank on this page -- status is
+        // carried by the softkey labels -- except for this one case: when the
+        // primary action is blocked by a capacity limit, that reason goes here
+        // too, since a two-line softkey hint is easy to press right past.
+        if (console_state.pinter_block_reason[0] != '\0')
+        {
+            draw_centered_text(fb, kUiWidth / 2, 150, console_state.pinter_block_reason.data(),
+                               true, fonts::FontFace::Font5x7, 1);
+        }
         return;
-    }
-    case MenuPage::PinterStartBrew:
-    {
-        const uint8_t page_count =
-            list_page_count(console_state.pinter_selected_brew_count,
-                            kPinterBrewListVisibleCount);
-        draw_page_navigation_arrows(fb, console_state.pinter_start_brews_page_index > 0U,
-                                    (console_state.pinter_start_brews_page_index + 1U) <
-                                        page_count);
-        return;
-    }
     default:
         break;
     }
@@ -2451,10 +2216,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     const int kGraphWidth = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 94;
     constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotLeftInset = 1;
-    constexpr int kGraphPlotRightInset = 1;
-    constexpr int kGraphPlotTopInset = 1;
-    constexpr int kGraphPlotBottomInset = 1;
+    constexpr int kGraphPlotInset = 1;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
@@ -2471,20 +2233,14 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const uint16_t range =
-        (max_value > min_value) ? static_cast<uint16_t>(max_value - min_value) : 1U;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
-    const int plot_height = kGraphHeight - kGraphPlotTopInset - kGraphPlotBottomInset - 1;
-    const int plot_width = kGraphWidth - kGraphPlotLeftInset - kGraphPlotRightInset - 1;
-    const int base_y = kGraphY + kGraphHeight - kGraphPlotBottomInset - 1;
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kGraphPlotInset};
+    draw_graph_plot_border(fb, plot_area);
+    const int base_y = graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
     {
         const uint16_t value = share.history_points[static_cast<size_t>(i)];
-        const int x = kGraphX + kGraphPlotLeftInset +
-                      (plot_width * i) / (point_count - 1);
-        const int normalised =
-            ((static_cast<int>(value - min_value)) * plot_height) / static_cast<int>(range);
-        const int y = base_y - normalised;
+        const int x = graph_plot_x(plot_area, i, point_count);
+        const int y = graph_plot_y(plot_area, value, min_value, max_value);
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
 
@@ -2610,8 +2366,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         return;
     }
 
-    const int32_t range = scale.maximum - scale.minimum;
-    framebuffer::draw_rect(fb, kGraphX, kGraphY, kGraphWidth, kGraphHeight, true);
+    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
+    draw_graph_plot_border(fb, plot_area);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
                     scale.middle_label);
@@ -2622,15 +2378,8 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
     for (std::size_t i = 0U; i < count; ++i)
     {
-        const int x = kGraphX + kPlotInset +
-                      ((kGraphWidth - (kPlotInset * 2) - 1) * static_cast<int>(i)) /
-                          static_cast<int>(count - 1U);
-        const int32_t clamped_value = std::clamp(values[i], scale.minimum, scale.maximum);
-        const int normalised = static_cast<int>(
-            (static_cast<int64_t>(clamped_value - scale.minimum) *
-             (kGraphHeight - (kPlotInset * 2) - 1)) /
-            range);
-        const int y = kGraphY + kGraphHeight - 1 - kPlotInset - normalised;
+        const int x = graph_plot_x(plot_area, static_cast<int>(i), static_cast<int>(count));
+        const int y = graph_plot_y(plot_area, values[i], scale.minimum, scale.maximum);
         if (i > 0U)
         {
             framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
@@ -2673,340 +2422,6 @@ void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
-/// @brief Draws one proportional resource bar with a label and compact value.
-void draw_resource_bar(uint8_t* fb, int x, int y, int width, int height, size_t used_bytes,
-                       size_t total_bytes, const char* label, const char* value_text)
-{
-    framebuffer::draw_rect(fb, x, y, width, height, true);
-    const size_t clamped_total = (total_bytes == 0U) ? 1U : total_bytes;
-    const size_t clamped_used = std::min(used_bytes, clamped_total);
-    const int inner_width = std::max(0, width - 2);
-    const int inner_height = std::max(0, height - 2);
-    const int fill_width = static_cast<int>((clamped_used * static_cast<size_t>(inner_width)) /
-                                            clamped_total);
-    if (fill_width > 0 && inner_height > 0)
-    {
-        framebuffer::fill_rect(fb, x + 1, y + 1, fill_width, inner_height, true);
-    }
-    framebuffer::draw_text(fb, x + 2, y - 10, label, true, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, x + width - framebuffer::measure_text(value_text,
-                                                                      fonts::FontFace::Font5x7, 1),
-                           y - 10, value_text, true, fonts::FontFace::Font5x7, 1);
-}
-
-/// @brief Formats byte counts as rounded-up KiB for compact resource rows.
-void build_kib_text(size_t bytes, char* out, size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    const size_t kib = (bytes + 1023U) / 1024U;
-    std::snprintf(out, out_size, "%zuK", kib);
-}
-
-/// @brief Returns the linked image footprint that occupies programme flash.
-size_t program_flash_bytes()
-{
-    const uintptr_t start = reinterpret_cast<uintptr_t>(&__flash_binary_start);
-    const uintptr_t end = reinterpret_cast<uintptr_t>(&__flash_binary_end);
-    return (end > start) ? static_cast<size_t>(end - start) : 0U;
-}
-
-/// @brief Returns the REST status label used by status subpages.
-const char* home_assistant_rest_state_text(const ConsoleState& console_state,
-                                           const RuntimeConfig& config)
-{
-    if (!config.home_assistant_enabled)
-    {
-        return "Disabled";
-    }
-    if (console_state.weather_source == WeatherSource::HomeAssistant)
-    {
-        return home_assistant_state_text(console_state.home_assistant_status.state);
-    }
-    if (config.home_assistant_host[0] != '\0' && config.home_assistant_token[0] != '\0')
-    {
-        return "Enabled";
-    }
-
-    return "Unconfig";
-}
-
-/// @brief Draws the Status selector page.
-void draw_status_selector_page(uint8_t* fb)
-{
-    (void)fb;
-}
-
-/// @brief Draws the high-level system overview status page.
-void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    char alert_count_text[8] = {};
-    std::snprintf(alert_count_text, sizeof(alert_count_text), "%u",
-                  static_cast<unsigned>(console_state.alert_count));
-
-    const DetailRow rows[] = {
-        {"TIME",
-         console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
-        {"WIFI", wifi_state_text(console_state.wifi_status.state)},
-        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
-                           ? console_state.wifi_status.ip_address.data()
-                           : "-"},
-        {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
-        {"ENV SENSOR",
-         environment_sensor_health_text(console_state.environment_sensor_status.health)},
-        {"ALERTS", alert_count_text},
-        {"TEST", test_state_text(console_state.test_state)},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
-}
-
-/// @brief Draws network and Home Assistant connectivity state.
-void draw_status_connectivity_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    const RuntimeConfig& config = config_manager::settings();
-    char rtt_text[16] = {};
-    if (console_state.wifi_status.internet_rtt_ms >= 0)
-    {
-        std::snprintf(rtt_text, sizeof(rtt_text), "%dms",
-                      console_state.wifi_status.internet_rtt_ms);
-    }
-    else
-    {
-        std::snprintf(rtt_text, sizeof(rtt_text), "-");
-    }
-
-    const char* internet_text = console_state.wifi_status.internet_reachable ? "Up" : "Down";
-    if (console_state.wifi_status.internet_probe_pending)
-    {
-        internet_text = "Probe";
-    }
-
-    const DetailRow rows[] = {
-        {"TIME SYNC", console_state.time_status.synced ? "Synced" : "No sync"},
-        {"WIFI", wifi_state_text(console_state.wifi_status.state)},
-        {"SSID", console_state.wifi_status.credentials_present
-                     ? console_state.wifi_status.ssid.data()
-                     : "-"},
-        {"IP ADDRESS", console_state.wifi_status.ip_address[0]
-                           ? console_state.wifi_status.ip_address.data()
-                           : "-"},
-        {"INTERNET", internet_text},
-        {"RTT", rtt_text},
-        {"HA REST", home_assistant_rest_state_text(console_state, config)},
-        {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
-}
-
-/// @brief Draws fixed-memory and foreground-loop resource usage.
-void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    constexpr size_t kConsoleStateBytes = sizeof(ConsoleState);
-    constexpr size_t kUiFramebufferBytes = static_cast<size_t>(kUiFbSize) * 2U;
-    constexpr size_t kStaticRamBytes = kConsoleStateBytes + kUiFramebufferBytes;
-    constexpr size_t kPico2WSramBytes = 520U * 1024U;
-
-    const size_t program_flash = program_flash_bytes();
-
-    char flash_value_text[24] = {};
-    char ram_value_text[24] = {};
-    char program_flash_text[16] = {};
-    char flash_budget_text[16] = {};
-    char config_flash_text[16] = {};
-    char static_ram_text[16] = {};
-    char console_text[16] = {};
-    char framebuffer_text[16] = {};
-    char loop_load_text[16] = {};
-    char loop_sample_text[16] = {};
-    char heap_value_text[24] = {};
-    build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
-    build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
-    build_kib_text(kConfigFlashBytes, config_flash_text, sizeof(config_flash_text));
-    build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
-    build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
-    build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
-    std::snprintf(flash_value_text, sizeof(flash_value_text), "%s/%s", program_flash_text,
-                  flash_budget_text);
-    std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/520K", static_ram_text);
-    if (console_state.main_loop_load_status.valid)
-    {
-        std::snprintf(loop_load_text, sizeof(loop_load_text), "%u%%",
-                      static_cast<unsigned>(console_state.main_loop_load_status.load_percent));
-        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "%ums",
-                      static_cast<unsigned>(console_state.main_loop_load_status.sample_ms));
-    }
-    else
-    {
-        std::snprintf(loop_load_text, sizeof(loop_load_text), "-");
-        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "-");
-    }
-
-    if (console_state.heap_status.valid)
-    {
-        char heap_used_text[16] = {};
-        char heap_arena_text[16] = {};
-        build_kib_text(console_state.heap_status.used_bytes, heap_used_text,
-                      sizeof(heap_used_text));
-        build_kib_text(console_state.heap_status.arena_bytes, heap_arena_text,
-                      sizeof(heap_arena_text));
-        std::snprintf(heap_value_text, sizeof(heap_value_text), "%s/%s", heap_used_text,
-                      heap_arena_text);
-    }
-    else
-    {
-        std::snprintf(heap_value_text, sizeof(heap_value_text), "-");
-    }
-
-    draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
-                      "PROGRAM FLASH", flash_value_text);
-    draw_resource_bar(fb, 54, 96, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
-                      ram_value_text);
-
-    const DetailRow rows[] = {
-        {"PROG FLASH", flash_value_text},
-        {"CONFIG", config_flash_text},
-        {"STATIC RAM", ram_value_text},
-        {"CONSOLE", console_text},
-        {"UI BUFFERS", framebuffer_text},
-        {"LOOP LOAD", loop_load_text},
-        {"LOOP SAMPLE", loop_sample_text},
-        {"HEAP LIVE", heap_value_text},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);
-}
-
-/// @brief Draws local sensor health and readings.
-void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    char sensor_bus_text[24] = {};
-    build_environment_bus_text(console_state.environment_sensor_status, sensor_bus_text,
-                               sizeof(sensor_bus_text));
-    char sensor_addresses_text[24] = {};
-    build_environment_address_text(console_state.environment_sensor_status, sensor_addresses_text,
-                                   sizeof(sensor_addresses_text));
-    char sensor_temperature_text[16] = {};
-    build_environment_temperature_text(console_state.environment_sensor_status,
-                                       sensor_temperature_text,
-                                       sizeof(sensor_temperature_text));
-    char sensor_humidity_text[16] = {};
-    build_environment_humidity_text(console_state.environment_sensor_status, sensor_humidity_text,
-                                    sizeof(sensor_humidity_text));
-    char sensor_pressure_text[16] = {};
-    build_environment_pressure_text(console_state.environment_sensor_status, sensor_pressure_text,
-                                    sizeof(sensor_pressure_text));
-    char sensor_scan_text[16] = {};
-    if (console_state.environment_sensor_status.enabled &&
-        console_state.environment_sensor_status.last_scan_ms > 0U)
-    {
-        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "%lus",
-                      static_cast<unsigned long>(
-                          console_state.environment_sensor_status.last_scan_ms / 1000U));
-    }
-    else
-    {
-        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "-");
-    }
-    char sensor_error_text[16] = {};
-    if (console_state.environment_sensor_status.enabled)
-    {
-        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "%d",
-                      console_state.environment_sensor_status.last_error);
-    }
-    else
-    {
-        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "-");
-    }
-
-    const DetailRow rows[] = {
-        {"ENV SENSOR", environment_sensor_health_text(console_state.environment_sensor_status.health)},
-        {"ENV BUS", sensor_bus_text},
-        {"ENV BME", environment_bme_text(console_state.environment_sensor_status)},
-        {"ENV TEMP", sensor_temperature_text},
-        {"ENV HUM", sensor_humidity_text},
-        {"ENV PRESS", sensor_pressure_text},
-        {"ENV ADDR", sensor_addresses_text},
-        {"ENV SCAN", sensor_scan_text},
-        {"ENV ERR", sensor_error_text},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
-}
-
-/// @brief Draws external integration state.
-void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    const RuntimeConfig& config = config_manager::settings();
-    char http_text[12] = {};
-    if (console_state.home_assistant_status.last_http_status > 0)
-    {
-        std::snprintf(http_text, sizeof(http_text), "%d",
-                      console_state.home_assistant_status.last_http_status);
-    }
-    else
-    {
-        std::snprintf(http_text, sizeof(http_text), "-");
-    }
-
-    char share_http_text[12] = {};
-    if (console_state.share_data_last_http_status > 0)
-    {
-        std::snprintf(share_http_text, sizeof(share_http_text), "%d",
-                      console_state.share_data_last_http_status);
-    }
-    else
-    {
-        std::snprintf(share_http_text, sizeof(share_http_text), "-");
-    }
-
-    const DetailRow rows[] = {
-        {"HA REST", home_assistant_rest_state_text(console_state, config)},
-        {"HA HOST", config.home_assistant_host[0] != '\0' ? config.home_assistant_host.data() : "-"},
-        {"WX FETCH", weather_fetch_state_text(console_state.home_assistant_status.state)},
-        {"WX HOST", console_state.home_assistant_status.host[0]
-                        ? console_state.home_assistant_status.host.data()
-                        : "-"},
-        {"HTTP", http_text},
-        {"SHARES", console_state.share_data_configured ? "Configured" : "Unconfig"},
-        {"SHARE DATA", console_state.share_data_valid ? "Valid" : "-"},
-        {"SHARE HTTP", share_http_text},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
-}
-
-/// @brief Draws Status root and status readout pages.
-void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    switch (console_state.active_page)
-    {
-    case MenuPage::Status:
-        draw_status_selector_page(fb);
-        break;
-    case MenuPage::StatusOverview:
-        draw_status_overview_page(fb, console_state);
-        break;
-    case MenuPage::StatusConnectivity:
-        draw_status_connectivity_page(fb, console_state);
-        break;
-    case MenuPage::StatusResources:
-        draw_status_resources_page(fb, console_state);
-        break;
-    case MenuPage::StatusSensors:
-        draw_status_sensors_page(fb, console_state);
-        break;
-    case MenuPage::StatusIntegrations:
-        draw_status_integrations_page(fb, console_state);
-        break;
-    default:
-        break;
-    }
-}
 
 /// @brief Draws shared left/right page-navigation arrows used by paged menus.
 /// @details One shared helper keeps all paged screens visually consistent and allows
@@ -3269,15 +2684,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         draw_weather_page(fb, console_state);
         break;
     case MenuPage::Pinter:
-    case MenuPage::PinterToBeBrewed:
     case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterSelectedBrews:
-    case MenuPage::PinterStartBrew:
     case MenuPage::PinterStartTiming:
         draw_pinter_page(fb, console_state);
-        break;
-    case MenuPage::PinterPacks:
-        draw_blank_menu_page(fb, console_state);
         break;
     case MenuPage::Shares:
         draw_shares_page(fb, console_state);
@@ -3291,7 +2700,7 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::StatusResources:
     case MenuPage::StatusSensors:
     case MenuPage::StatusIntegrations:
-        draw_status_page(fb, console_state);
+        status_screens::draw_status_page(fb, console_state);
         break;
     case MenuPage::LocalConditions:
         draw_local_conditions_page(fb, console_state);

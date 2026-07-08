@@ -153,11 +153,7 @@ enum class MenuPage : uint8_t
     AlertList,
     AlertDetail,
     Pinter,
-    PinterPacks,
-    PinterToBeBrewed,
     PinterSelectBrew,
-    PinterSelectedBrews,
-    PinterStartBrew,
     PinterStartTiming,
     Shares,
     ShareDetail,
@@ -363,6 +359,37 @@ struct HomeAssistantStatus
     std::array<char, 48> self_entity_id;
 };
 
+/// @brief Compares two Home Assistant status snapshots field-by-field.
+/// @details Used to detect whether `update()` produced a UI-visible change
+/// without relying on `memcmp` over the whole struct, which is not immune to
+/// padding bytes.
+inline bool operator==(const HomeAssistantStatus& lhs, const HomeAssistantStatus& rhs)
+{
+    return lhs.state == rhs.state && lhs.configured == rhs.configured &&
+           lhs.self_entity_published == rhs.self_entity_published &&
+           lhs.last_error == rhs.last_error && lhs.last_http_status == rhs.last_http_status &&
+           lhs.host == rhs.host && lhs.tracked_entity_id == rhs.tracked_entity_id &&
+           lhs.tracked_entity_state == rhs.tracked_entity_state &&
+           lhs.weather_entity_id == rhs.weather_entity_id &&
+           lhs.weather_source_hint == rhs.weather_source_hint &&
+           lhs.weather_condition == rhs.weather_condition &&
+           lhs.weather_temperature == rhs.weather_temperature &&
+           lhs.weather_wind_unit == rhs.weather_wind_unit &&
+           lhs.sunrise_text == rhs.sunrise_text && lhs.sunset_text == rhs.sunset_text &&
+           lhs.weather_forecast_count == rhs.weather_forecast_count &&
+           lhs.weather_forecast == rhs.weather_forecast &&
+           lhs.weather_daily_forecast_count == rhs.weather_daily_forecast_count &&
+           lhs.weather_daily_forecast == rhs.weather_daily_forecast &&
+           lhs.weather_metrics == rhs.weather_metrics &&
+           lhs.weather_alert_status == rhs.weather_alert_status &&
+           lhs.self_entity_id == rhs.self_entity_id;
+}
+
+inline bool operator!=(const HomeAssistantStatus& lhs, const HomeAssistantStatus& rhs)
+{
+    return !(lhs == rhs);
+}
+
 /// @brief Snapshot of MQTT discovery state suitable for UI and controller use.
 struct MqttStatus
 {
@@ -373,6 +400,20 @@ struct MqttStatus
     std::array<char, 48> broker;
     std::array<char, 32> device_id;
 };
+
+/// @brief Compares two MQTT status snapshots field-by-field.
+inline bool operator==(const MqttStatus& lhs, const MqttStatus& rhs)
+{
+    return lhs.state == rhs.state && lhs.configured == rhs.configured &&
+           lhs.discovery_published == rhs.discovery_published &&
+           lhs.last_error == rhs.last_error && lhs.broker == rhs.broker &&
+           lhs.device_id == rhs.device_id;
+}
+
+inline bool operator!=(const MqttStatus& lhs, const MqttStatus& rhs)
+{
+    return !(lhs == rhs);
+}
 
 /// @brief Weather backends stored in flash and exposed to the CCU UI.
 enum class WeatherSource : uint8_t
@@ -468,8 +509,6 @@ inline constexpr uint8_t kDefaultPinterBrewIndex = 0U;
 inline constexpr uint8_t kPinterBrewDockCapacity = 3U;
 inline constexpr uint8_t kPinterFridgeCapacity = 2U;
 inline constexpr size_t kPinterBrewListVisibleCount = 8;
-inline constexpr size_t kPinterSelectedBrewCapacity = 24;
-inline constexpr uint8_t kInvalidPinterBrewSelection = 255U;
 
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
@@ -542,20 +581,15 @@ enum class SoftKeyRoute : uint8_t
     AlertAccept,
     AlertIgnore,
     GoPinter,
-    GoPinterPacks,
     SelectPinterSlot1,
     SelectPinterSlot2,
     SelectPinterSlot3,
     SelectPinterSlot4,
-    CyclePinterBrew,
-    AddPinterBrewPack,
-    RemovePinterBrewPack,
     ApplyPinterPrimaryAction,
     ResetSelectedPinter,
-    GoPinterToBeBrewed,
+    DecreaseSelectedPinterDay,
+    IncreaseSelectedPinterDay,
     GoPinterSelectBrew,
-    GoPinterSelectedBrews,
-    GoPinterStartBrew,
     SelectPinterListItem1,
     SelectPinterListItem2,
     SelectPinterListItem3,
@@ -723,7 +757,7 @@ struct HeapStatus
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
 struct PinterStatus
 {
-    std::array<char, 8> label;
+    std::array<char, 24> label;
     PinterState state;
     uint8_t brew_index;
     uint32_t brew_start_day;
@@ -756,18 +790,15 @@ struct ConsoleState
     uint8_t share_count;
     uint8_t selected_share_index;
     uint8_t selected_pinter_index;
-    uint8_t pinter_brew_pack_count;
-    uint8_t pinter_selected_brew_index;
-    uint8_t pinter_selected_brew_count;
-    std::array<uint8_t, kPinterSelectedBrewCapacity> pinter_selected_brews;
     uint8_t pinter_catalogue_page_index;
-    uint8_t pinter_selected_brews_page_index;
-    uint8_t pinter_start_brews_page_index;
-    uint8_t pinter_pending_inventory_index;
     uint8_t pinter_pending_brew_index;
     uint8_t pinter_pending_brewing_days;
     uint8_t pinter_pending_cold_crash_days;
     uint8_t pinter_pending_conditioning_days;
+    /// @brief Human-readable reason the primary Pinter action is blocked, or
+    /// empty when it isn't. Exists so a capacity block (fridge/dock full) is an
+    /// unmissable on-screen message rather than only a two-line softkey hint.
+    std::array<char, 40> pinter_block_reason;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

@@ -16,6 +16,7 @@
 #include "mbedtls/ssl.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "text_utils.h"
 
 namespace share_price_manager
 {
@@ -61,18 +62,7 @@ int g_completion_http_status = 0;
 err_t g_completion_error = ERR_OK;
 SharePeriod g_inflight_period = SharePeriod::Today;
 
-template <size_t N>
-/// @brief Copies provider text into a fixed-size UI buffer.
-void copy_text(std::array<char, N>& dst, const char* src)
-{
-    dst.fill('\0');
-    if (src == nullptr)
-    {
-        return;
-    }
-
-    std::snprintf(dst.data(), dst.size(), "%s", src);
-}
+using text_utils::copy_text;
 
 /// @brief Seeds graph history for the selected placeholder period.
 void seed_placeholder_history(ShareWatchEntry& share, SharePeriod period)

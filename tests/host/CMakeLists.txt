@@ -18,13 +18,34 @@ add_executable(host_tests
     main.cpp
     test_alert_ordering.cpp
     test_keypad_matrix_decode.cpp
+    test_config_persistence.cpp
+    test_date_time_math.cpp
+    test_pinter_scheduling.cpp
+    test_pinter_persistence.cpp
+    test_calendar_navigation.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
+    ${MERLIN_ROOT}/src/config/config_persistence.cpp
+    ${MERLIN_ROOT}/src/network/date_time_math.cpp
+    ${MERLIN_ROOT}/src/core/pinter_scheduling.cpp
+    ${MERLIN_ROOT}/src/core/pinter_persistence.cpp
+    ${MERLIN_ROOT}/src/core/calendar_navigation.cpp
 )
 
 target_include_directories(host_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MERLIN_ROOT}/include/core
     ${MERLIN_ROOT}/include/sensors
+    ${MERLIN_ROOT}/include/config
+    ${MERLIN_ROOT}/include/network
+)
+
+# Issue #69: the only static-analysis net for this native build was previously
+# .clang-tidy, which needs a manual/IDE invocation rather than running on
+# every build. MSVC's /W4 and GCC/Clang's -Wall -Wextra are each the closest
+# native equivalent for whichever compiler configures this project.
+target_compile_options(host_tests PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>
 )
 
 enable_testing()
