@@ -50,6 +50,7 @@ add_executable(MerlinCCU
     src/display/framebuffer.cpp
     src/display/screen_banners.cpp
     src/display/screens.cpp
+    src/display/status_screens.cpp
     src/display/screensavers/screensaver_clock.cpp
     src/display/screensavers/screensaver_life.cpp
     src/display/screensavers/screensaver_matrix.cpp

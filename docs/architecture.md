@@ -21,7 +21,16 @@ README history, chat context, or incidental source-code discovery.
   present scheduling.
 - `src/core/console_controller.cpp`: UI state, softkey routing, alert state,
   runtime config application.
-- `src/display/screens.cpp`: page rendering into the logical framebuffer.
+- `src/display/screens.cpp`: shared drawing primitives (detail rows, centred
+  text, graph plotting), the `draw_menu_screen()` dispatch, and page families
+  not yet split out (issue #45, staged: Status is split into
+  `status_screens.cpp`; Weather/Calendar/Shares/Pinter/Settings/Alerts remain
+  in `screens.cpp` pending the same treatment).
+- `src/display/status_screens.cpp`: Status root/overview/connectivity/
+  resources/sensors/integrations pages.
+- `include/display/screens_shared.h`: primitives split-out page-family files
+  need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`, a few
+  state-label lookups) that aren't part of the public `screens.h` API.
 - `src/display/display.cpp`: framebuffer-to-panel raster composition and DMA/PIO
   presentation.
 - `src/core/input.cpp`: physical/provisional keypad polling and logical button
@@ -128,4 +137,5 @@ hardware headers to compile.
 | 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
 | 2026-07-06 | Add `tests/host/`, a native-compiler CMake project covering keypad matrix decode and alert ordering/acknowledgement, extracted into hardware-independent headers. | Closes issue #14; both areas were previously only reachable through hand testing on real hardware. | Extend the same pattern to other pure logic (e.g. Pinter scheduling, #48) as it's identified. |
 | 2026-07-08 | Extract Calendar owner-filter/day-navigation/slot-selection logic into `calendar_navigation.h`, following the #48 Pinter-scheduling split. | Closes issue #49; keeps this logic reviewable and host-testable ahead of the #8/#33/#34 Home Assistant calendar ingestion work landing in the same area. | Split `console_controller.cpp` further per #44 (softkey label construction, status ingestion remain inline). |
+| 2026-07-08 | Split the Status page family (root/overview/connectivity/resources/sensors/integrations) out of `screens.cpp` into `status_screens.cpp`, with cross-family primitives promoted into `screens_shared.h`. | Progresses issue #45 as a staged refactor (per the #3 housekeeping notes) rather than one large rewrite; `screens.cpp` dropped from 3319 to 2817 lines with no rendering change. | Repeat the same split for Weather, Calendar, Shares, Pinter, Settings, and Alerts page families. |
 | YYYY-MM-DD |  |  |  |
