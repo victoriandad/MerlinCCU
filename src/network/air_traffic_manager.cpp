@@ -828,7 +828,13 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
 
     if (copy_len < received_len)
     {
-        defer_completion(false, ERR_BUF, partial_http_status());
+        // The response didn't fit in our fixed-size buffer (a wider search
+        // radius returns more aircraft). This is not a hard failure --
+        // parse_aircraft_response() already tolerates a truncated final
+        // object and keeps whatever complete, closest aircraft it already
+        // found, so treat this the same as a normal completion rather than
+        // discarding a perfectly usable partial result.
+        handle_response_complete();
         return ERR_OK;
     }
     if (chunked_response_complete())
