@@ -307,12 +307,6 @@ const char* enabled_selection_text(bool enabled)
     return enabled ? "Enabled" : "Disabled";
 }
 
-/// @brief Returns the concise admin-save policy label used by the menu.
-const char* admin_requirement_selection_text(bool require_admin_password)
-{
-    return require_admin_password ? "Required" : "Open";
-}
-
 /// @brief Returns whether a saved secret has a non-empty persisted value.
 const char* secret_selection_text(bool present)
 {
@@ -2161,7 +2155,6 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::StatusIntegrations:
         return MenuPage::Status;
     case MenuPage::DeviceSettings:
-    case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
@@ -2684,16 +2677,6 @@ bool toggle_remote_config_enabled()
         });
 }
 
-/// @brief Toggles whether web saves require the admin password.
-bool toggle_require_admin_password()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.require_admin_password = !settings.require_admin_password;
-            return true;
-        });
-}
 
 /// @brief Toggles the Home Assistant REST integration enable flag.
 bool toggle_home_assistant_enabled()
@@ -3091,11 +3074,11 @@ void update_softkeys_from_state()
             };
             softkeys[softkey_index(SoftKeyId::Left2)] = {
                 build_selection_softkey_label(
-                    SoftKeyId::Left2, "SECURITY",
-                    admin_requirement_selection_text(
-                        config_manager::settings().require_admin_password)),
-                SoftKeyRoute::GoSecuritySettings,
+                    SoftKeyId::Left2, "REMOTE CONFIG",
+                    enabled_selection_text(config_manager::settings().remote_config_enabled)),
+                SoftKeyRoute::ToggleRemoteConfig,
                 true,
+                config_manager::settings().remote_config_enabled,
             };
             softkeys[softkey_index(SoftKeyId::Left3)] = {
                 build_selection_softkey_label(SoftKeyId::Left3, "NETWORK",
@@ -3169,31 +3152,6 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(SoftKeyId::Left4, "ROOM",
                                           config_manager::settings().room.data()),
-            SoftKeyRoute::None,
-            true,
-        };
-        break;
-    case MenuPage::SecuritySettings:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Left1, "REMOTE CONFIG",
-                enabled_selection_text(config_manager::settings().remote_config_enabled)),
-            SoftKeyRoute::ToggleRemoteConfig,
-            true,
-            config_manager::settings().remote_config_enabled,
-        };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {
-            build_selection_softkey_label(SoftKeyId::Left2, "SAVE PASSWORD",
-                                          admin_requirement_selection_text(
-                                              config_manager::settings().require_admin_password)),
-            SoftKeyRoute::ToggleRequireAdminPassword,
-            true,
-            config_manager::settings().require_admin_password,
-        };
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Left3, "ADMIN PW",
-                secret_selection_text(config_manager::settings().admin_password[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -3848,10 +3806,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::DeviceSettings;
         return true;
-    case SoftKeyRoute::GoSecuritySettings:
-        stop_screen_saver_timeout_editing();
-        g_console_state.active_page = MenuPage::SecuritySettings;
-        return true;
     case SoftKeyRoute::GoWifiSettings:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WifiSettings;
@@ -3890,8 +3844,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
-    case SoftKeyRoute::ToggleRequireAdminPassword:
-        return toggle_require_admin_password();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:
         return toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:

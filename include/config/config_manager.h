@@ -15,9 +15,7 @@ struct RuntimeConfig
     std::array<char, 32> device_label;
     std::array<char, 32> location;
     std::array<char, 32> room;
-    std::array<char, 32> admin_password;
     bool remote_config_enabled;
-    bool require_admin_password;
 
     std::array<char, 33> wifi_ssid;
     std::array<char, 64> wifi_password;
@@ -91,9 +89,6 @@ bool reset_to_defaults();
 /// @details Must be called from a point in the main loop that is not nested
 /// inside network request handling -- see save()'s docs for why.
 bool flush_pending_save();
-
-/// @brief Returns whether a password satisfies the current web-admin policy.
-bool admin_password_matches(const char* password);
 
 /// @brief Returns a normalized device name suitable for hostnames and UI labels.
 const char* device_name();

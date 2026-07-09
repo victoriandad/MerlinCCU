@@ -456,8 +456,6 @@ const char* menu_page_title(MenuPage page)
         return "SETTINGS";
     case MenuPage::DeviceSettings:
         return "DEVICE IDENTITY";
-    case MenuPage::SecuritySettings:
-        return "SECURITY";
     case MenuPage::WifiSettings:
         return "NETWORK";
     case MenuPage::HomeAssistantSettings:
@@ -601,7 +599,6 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::LocalConditions:
     case MenuPage::LocalConditionGraph:
     case MenuPage::DeviceSettings:
-    case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
@@ -1711,14 +1708,6 @@ void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
-/// @brief Leaves the security settings body blank.
-/// @details Security state is shown on the bracketed softkey labels.
-void draw_security_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
 /// @brief Leaves the network settings body blank.
 /// @details Configured Wi-Fi values are shown as softkey attributes only.
 void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
@@ -1966,9 +1955,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::DeviceSettings:
         draw_device_settings_page(fb, console_state);
-        break;
-    case MenuPage::SecuritySettings:
-        draw_security_settings_page(fb, console_state);
         break;
     case MenuPage::WifiSettings:
         draw_wifi_settings_page(fb, console_state);

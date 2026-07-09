@@ -551,8 +551,8 @@ void build_config_page(const char* message)
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
         "initial-scale=1\"><title>Merlin CCU</title><style>"
         ":root{color-scheme:dark;--bg:#08110f;--panel:#111f1b;--panel2:#162a24;"
-        "--line:#2b4a41;--text:#eefbf3;--muted:#8eb5a7;--accent:#b7ff57;"
-        "--warn:#ffcf5a}*{box-sizing:border-box}body{margin:0;background:"
+        "--line:#2b4a41;--text:#eefbf3;--muted:#8eb5a7;--accent:#b7ff57}"
+        "*{box-sizing:border-box}body{margin:0;background:"
         "radial-gradient(circle at 20%% 0,#193c31 0,#08110f 42%%,#050807 100%%);"
         "font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
         ".wrap{max-width:1080px;margin:0 auto;padding:32px 18px 48px}.hero{display:flex;"
@@ -584,8 +584,9 @@ void build_config_page(const char* message)
         "color:var(--text);text-decoration:none;background:#0d1815;font-weight:700;"
         "letter-spacing:.04em;font-size:12px;text-transform:uppercase}"
         "button{border:0;border-radius:999px;background:var(--accent);color:#09110d;"
-        "font-weight:800;padding:12px 20px;letter-spacing:.05em}.msg{color:var(--warn);"
-        "font-weight:700}.hint{font-size:12px;color:var(--muted);margin-top:6px}"
+        "font-weight:800;padding:12px 20px;letter-spacing:.05em}.msg{font-weight:700}"
+        ".msg.ok{color:var(--accent)}.msg.error{color:#ff6b6b}"
+        ".hint{font-size:12px;color:var(--muted);margin-top:6px}"
         "@media(max-width:760px){.grid,.row{grid-template-columns:1fr}.hero{display:block}"
         ".actions{align-items:flex-start;flex-direction:column}"
         "h1{font-size:28px}}</style></head><body><main class=\"wrap\"><div class=\"hero\">"
@@ -602,7 +603,9 @@ void build_config_page(const char* message)
 
     if (escaped_message[0] != '\0')
     {
-        (void)append(cursor, remaining, "<p class=\"msg\">%s</p>", escaped_message);
+        const bool is_error = std::strncmp(message, "Configuration not saved", 24) == 0;
+        (void)append(cursor, remaining, "<p class=\"msg %s\">%s</p>", is_error ? "error" : "ok",
+                    escaped_message);
     }
 
     (void)append(
@@ -620,22 +623,12 @@ void build_config_page(const char* message)
 
     (void)append(
         cursor, remaining,
-        "<section class=\"card\"><h2>Security</h2><label>Current admin password</label>"
-        "<input name=\"admin_password_current\" type=\"password\" "
-        "autocomplete=\"current-password\"><p class=\"hint\">Uses a factory default until "
-        "you set your own here; see project documentation before relying on this page "
-        "routinely.</p><label>New admin password</label>"
-        "<input name=\"admin_password_new\" type=\"password\" autocomplete=\"new-password\">"
-        "<label>Repeat new admin password</label><input name=\"admin_password_repeat\" "
-        "type=\"password\" autocomplete=\"new-password\">"
-        "<input type=\"hidden\" name=\"require_admin_present\" value=\"1\">"
-        "<label class=\"check\"><input type=\"checkbox\" name=\"require_admin\" %s>"
-        "Require admin password for saves</label><input type=\"hidden\" "
+        "<section class=\"card\"><h2>Remote Access</h2><input type=\"hidden\" "
         "name=\"remote_config_present\" value=\"1\"><label class=\"check\"><input "
         "type=\"checkbox\" name=\"remote_config\" %s>Enable local web configuration "
         "server</label><p class=\"hint\">Disable this if you only want setup changes to "
         "come from the front panel.</p></section>",
-        cfg.require_admin_password ? "checked" : "", cfg.remote_config_enabled ? "checked" : "");
+        cfg.remote_config_enabled ? "checked" : "");
 
     (void)append(
         cursor, remaining,
@@ -782,14 +775,6 @@ void build_config_page(const char* message)
         "'popup=yes,width=900,height=1550,resizable=yes,scrollbars=yes');"
         "if(!popup){window.location.href='/preview';}"
         "});}"
-        "var "
-        "form=document.querySelector('form'),pw=document.querySelector('[name=admin_password_new]')"
-        ","
-        "rp=document.querySelector('[name=admin_password_repeat]');"
-        "function syncPw(){rp.setCustomValidity(pw.value!==rp.value?'New admin passwords do not "
-        "match':'')}"
-        "if(form&&pw&&rp){pw.addEventListener('input',syncPw);rp.addEventListener('input',syncPw);"
-        "form.addEventListener('submit',syncPw)}"
         "</script></main></body></html>",
         static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
 }
@@ -2255,7 +2240,7 @@ const char* handle_config_post(const char* body)
 {
     std::printf("Web config POST received: %u bytes\n", body != nullptr ? std::strlen(body) : 0U);
 
-    if (!form_has_key(body, "config_form_marker") || !form_has_key(body, "require_admin_present") ||
+    if (!form_has_key(body, "config_form_marker") ||
         !form_has_key(body, "remote_config_present") || !form_has_key(body, "ha_enabled_present") ||
         !form_has_key(body, "mqtt_enabled_present") ||
         !form_has_key(body, "air_traffic_enabled_present"))
@@ -2264,18 +2249,8 @@ const char* handle_config_post(const char* body)
         return "Configuration not saved: configuration page was incomplete. Reload and try again.";
     }
 
-    char current_password[40] = {};
-    (void)get_form_value(body, "admin_password_current", current_password,
-                         sizeof(current_password));
-    if (!config_manager::admin_password_matches(current_password))
-    {
-        std::printf("Web config save rejected: admin password mismatch\n");
-        return "Configuration not saved: admin password did not match.";
-    }
-
     RuntimeConfig cfg = config_manager::settings();
     char value[160] = {};
-    char repeated_value[160] = {};
     static char validation_error[160] = {};
     validation_error[0] = '\0';
 
@@ -2322,24 +2297,6 @@ const char* handle_config_post(const char* body)
         }
         copy_text(cfg.room, value);
     }
-    if (get_form_value(body, "admin_password_new", value, sizeof(value)) && value[0] != '\0')
-    {
-        (void)get_form_value(body, "admin_password_repeat", repeated_value, sizeof(repeated_value));
-        if (std::strcmp(value, repeated_value) != 0)
-        {
-            std::printf("Web config save rejected: new admin passwords did not match\n");
-            return "Configuration not saved: new admin passwords did not match.";
-        }
-        if (!validate_text_field("New admin password", value, cfg.admin_password.size() - 1, true,
-                                 is_printable_config_text, validation_error,
-                                 sizeof(validation_error)))
-        {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
-        }
-        copy_text(cfg.admin_password, value);
-    }
-    cfg.require_admin_password = form_has_key(body, "require_admin");
     cfg.remote_config_enabled = form_has_key(body, "remote_config");
 
     if (get_form_value(body, "wifi_ssid", value, sizeof(value)))

@@ -64,9 +64,7 @@ RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
     migrated.device_label = legacy.device_label;
     migrated.location = legacy.location;
     migrated.room = legacy.room;
-    migrated.admin_password = legacy.admin_password;
     migrated.remote_config_enabled = legacy.remote_config_enabled;
-    migrated.require_admin_password = legacy.require_admin_password;
     migrated.wifi_ssid = legacy.wifi_ssid;
     migrated.wifi_password = legacy.wifi_password;
     migrated.home_assistant_enabled = legacy.home_assistant_enabled;
@@ -99,9 +97,7 @@ RuntimeConfig make_default_settings()
     copy_text(settings.device_label, "Merlin CCU");
     copy_text(settings.location, "");
     copy_text(settings.room, "");
-    copy_text(settings.admin_password, kDefaultAdminPassword);
     settings.remote_config_enabled = true;
-    settings.require_admin_password = true;
 
     copy_text(settings.wifi_ssid, "");
     copy_text(settings.wifi_password, "");
@@ -151,10 +147,6 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
     {
         copy_text(sanitized.device_name, kDefaultDeviceName);
     }
-    if (sanitized.admin_password[0] == '\0')
-    {
-        copy_text(sanitized.admin_password, kDefaultAdminPassword);
-    }
     if (sanitized.home_assistant_port == 0)
     {
         sanitized.home_assistant_port = 8123;
@@ -196,28 +188,6 @@ const ConfigCandidate* choose_newest_candidate(const ConfigCandidate& a, const C
         return (b.sequence > a.sequence) ? &b : &a;
     }
     return a.valid ? &a : &b;
-}
-
-bool constant_time_password_matches(const char* candidate, const std::array<char, 32>& stored)
-{
-    if (candidate == nullptr)
-    {
-        return false;
-    }
-
-    unsigned char diff = 0;
-    bool candidate_ended = false;
-    bool stored_ended = false;
-    for (size_t i = 0; i < stored.size(); ++i)
-    {
-        candidate_ended = candidate_ended || candidate[i] == '\0';
-        stored_ended = stored_ended || stored[i] == '\0';
-        const char candidate_byte = candidate_ended ? '\0' : candidate[i];
-        const char stored_byte = stored_ended ? '\0' : stored[i];
-        diff |= static_cast<unsigned char>(candidate_byte ^ stored_byte);
-    }
-
-    return diff == 0;
 }
 
 } // namespace config_persistence
