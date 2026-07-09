@@ -521,6 +521,8 @@ void build_config_page(const char* message)
     char mqtt_user[96] = {};
     char mqtt_prefix[64] = {};
     char mqtt_topic[96] = {};
+    char air_traffic_host[96] = {};
+    char air_traffic_coordinates[96] = {};
     char escaped_message[160] = {};
 
     html_escape(cfg.device_name.data(), device_name, sizeof(device_name));
@@ -538,6 +540,9 @@ void build_config_page(const char* message)
     html_escape(cfg.mqtt_username.data(), mqtt_user, sizeof(mqtt_user));
     html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix, sizeof(mqtt_prefix));
     html_escape(cfg.mqtt_base_topic.data(), mqtt_topic, sizeof(mqtt_topic));
+    html_escape(cfg.air_traffic_host.data(), air_traffic_host, sizeof(air_traffic_host));
+    html_escape(cfg.air_traffic_coordinates.data(), air_traffic_coordinates,
+                sizeof(air_traffic_coordinates));
     html_escape(message, escaped_message, sizeof(escaped_message));
 
     (void)append(
@@ -678,6 +683,28 @@ void build_config_page(const char* message)
                  "value=\"%s\"></div></div></fieldset></section>",
                  cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled", mqtt_host,
                  static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic);
+
+    (void)append(
+        cursor, remaining,
+        "<section class=\"card\"><h2>Local Air Traffic</h2><input type=\"hidden\" "
+        "name=\"air_traffic_enabled_present\" value=\"1\"><label class=\"check\"><input "
+        "type=\"checkbox\" name=\"air_traffic_enabled\" data-controls=\"air_traffic_fields\" "
+        "%s>Enable Local Traffic</label><fieldset id=\"air_traffic_fields\" class=\"%s\">"
+        "<label>Provider host</label><input name=\"air_traffic_host\" maxlength=\"63\" "
+        "value=\"%s\"><div class=\"row\"><div><label>Port</label><input name=\"air_traffic_port\" "
+        "type=\"number\" min=\"1\" max=\"65535\" inputmode=\"numeric\" value=\"%u\"></div>"
+        "<div><label>Search radius (nm)</label><input name=\"air_traffic_radius\" type=\"number\" "
+        "min=\"1\" max=\"250\" inputmode=\"numeric\" value=\"%u\"></div></div>"
+        "<label>Home coordinates</label><input name=\"air_traffic_coordinates\" maxlength=\"63\" "
+        "value=\"%s\"><p class=\"hint\">Latitude,longitude used as the search centre -- "
+        "same format as the direct weather coordinates above.</p>"
+        "<label>API key</label><input name=\"air_traffic_api_key\" type=\"password\" "
+        "placeholder=\"Leave blank to keep current\"><p class=\"hint\">Not required for "
+        "adsb.lol today; only needed if a provider starts gating access.</p>"
+        "</fieldset></section>",
+        cfg.air_traffic_enabled ? "checked" : "", cfg.air_traffic_enabled ? "" : "disabled",
+        air_traffic_host, static_cast<unsigned>(cfg.air_traffic_port),
+        static_cast<unsigned>(cfg.air_traffic_radius_nm), air_traffic_coordinates);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
@@ -2230,7 +2257,8 @@ const char* handle_config_post(const char* body)
 
     if (!form_has_key(body, "config_form_marker") || !form_has_key(body, "require_admin_present") ||
         !form_has_key(body, "remote_config_present") || !form_has_key(body, "ha_enabled_present") ||
-        !form_has_key(body, "mqtt_enabled_present"))
+        !form_has_key(body, "mqtt_enabled_present") ||
+        !form_has_key(body, "air_traffic_enabled_present"))
     {
         std::printf("Web config save rejected: incomplete form payload; reload required\n");
         return "Configuration not saved: configuration page was incomplete. Reload and try again.";
@@ -2496,6 +2524,62 @@ const char* handle_config_post(const char* body)
         }
         copy_text(cfg.mqtt_base_topic, value);
     }
+
+    cfg.air_traffic_enabled = form_has_key(body, "air_traffic_enabled");
+    if (get_form_value(body, "air_traffic_host", value, sizeof(value)))
+    {
+        if (!validate_text_field("Air traffic host", value, cfg.air_traffic_host.size() - 1, false,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        copy_text(cfg.air_traffic_host, value);
+    }
+    if (get_form_value(body, "air_traffic_port", value, sizeof(value)))
+    {
+        uint16_t port = 0;
+        if (!parse_port_field(value, &port))
+        {
+            std::printf("Web config save rejected: invalid air traffic port '%s'\n", value);
+            return "Configuration not saved: air traffic port must be 1-65535.";
+        }
+        cfg.air_traffic_port = port;
+    }
+    if (get_form_value(body, "air_traffic_radius", value, sizeof(value)))
+    {
+        uint16_t radius_nm = 0;
+        if (!parse_u16_field(value, 1, 250, &radius_nm))
+        {
+            std::printf("Web config save rejected: invalid air traffic radius '%s'\n", value);
+            return "Configuration not saved: air traffic radius must be 1-250 nm.";
+        }
+        cfg.air_traffic_radius_nm = radius_nm;
+    }
+    if (get_form_value(body, "air_traffic_coordinates", value, sizeof(value)))
+    {
+        if (!validate_text_field(
+                "Air traffic coordinates", value, cfg.air_traffic_coordinates.size() - 1, false,
+                is_printable_config_text, validation_error, sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        copy_text(cfg.air_traffic_coordinates, value);
+    }
+    if (get_form_value(body, "air_traffic_api_key", value, sizeof(value)) && value[0] != '\0')
+    {
+        if (!validate_text_field("Air traffic API key", value, cfg.air_traffic_api_key.size() - 1,
+                                 true, is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        copy_text(cfg.air_traffic_api_key, value);
+    }
+
     if (get_form_value(body, "time_zone", value, sizeof(value)))
     {
         cfg.time_zone = parse_time_zone(value, cfg.time_zone);

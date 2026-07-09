@@ -1,8 +1,12 @@
 # Local Air Traffic Feature Design (ADS-B)
 
-Design proposal only; no code written yet. Written to be scoped and buildable
-with the existing network-manager and rendering patterns already in the
-codebase, not a new architecture.
+Written to be scoped and buildable with the existing network-manager and
+rendering patterns already in the codebase, not a new architecture.
+
+**Status (2026-07-09):** milestone (B), the compact list page, is implemented
+(`air_traffic_manager.cpp`/`air_traffic_screens.cpp`, issue #74). The
+radar-style visualization described below remains a possible follow-up but is
+not built.
 
 ## Motivation
 

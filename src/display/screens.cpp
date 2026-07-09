@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "air_traffic_screens.h"
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
@@ -447,6 +448,8 @@ const char* menu_page_title(MenuPage page)
         return "INTEGRATIONS";
     case MenuPage::LocalConditions:
         return "LOCAL CONDITIONS";
+    case MenuPage::AirTraffic:
+        return "LOCAL TRAFFIC";
     case MenuPage::LocalConditionGraph:
         return "LOCAL GRAPH";
     case MenuPage::Settings:
@@ -609,6 +612,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::ShareDetail:
         return fonts::FontFace::Font5x7;
     case MenuPage::Weather:
+    case MenuPage::AirTraffic:
     case MenuPage::Status:
     case MenuPage::StatusOverview:
     case MenuPage::StatusConnectivity:
@@ -1917,6 +1921,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::Weather:
         weather_screens::draw_weather_page(fb, console_state);
+        break;
+    case MenuPage::AirTraffic:
+        air_traffic_screens::draw_air_traffic_page(fb, console_state);
         break;
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:

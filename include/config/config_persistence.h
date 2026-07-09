@@ -20,6 +20,8 @@ inline constexpr uint32_t kConfigMagic = 0x4D434355U; // "MCCU"
 inline constexpr uint16_t kConfigVersion = 2;
 inline constexpr uint16_t kLegacyConfigVersion = 1;
 inline constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
+/// @brief Widest ADS-B search radius accepted, matching common provider limits.
+inline constexpr uint16_t kMaxAirTrafficRadiusNm = 250U;
 inline constexpr char kDefaultDeviceName[] = "MerlinCCU";
 inline constexpr char kDefaultAdminPassword[] = "merlin";
 

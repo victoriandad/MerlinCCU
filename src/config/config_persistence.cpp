@@ -124,6 +124,13 @@ RuntimeConfig make_default_settings()
     copy_text(settings.mqtt_discovery_prefix, "homeassistant");
     copy_text(settings.mqtt_base_topic, "merlinccu");
 
+    settings.air_traffic_enabled = false;
+    copy_text(settings.air_traffic_host, "api.adsb.lol");
+    settings.air_traffic_port = 80;
+    copy_text(settings.air_traffic_api_key, "");
+    copy_text(settings.air_traffic_coordinates, "");
+    settings.air_traffic_radius_nm = 30;
+
     settings.weather_source = WeatherSource::HomeAssistant;
     settings.time_zone = TimeZoneSelection::EuropeLondon;
     settings.screen_saver = ScreenSaverSelection::Life;
@@ -156,6 +163,15 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
     {
         sanitized.mqtt_port = 1883;
     }
+    if (sanitized.air_traffic_port == 0)
+    {
+        sanitized.air_traffic_port = 80;
+    }
+    if (sanitized.air_traffic_radius_nm == 0)
+    {
+        sanitized.air_traffic_radius_nm = 30;
+    }
+    sanitized.air_traffic_radius_nm = std::min(sanitized.air_traffic_radius_nm, kMaxAirTrafficRadiusNm);
     sanitized.screen_saver_timeout_minutes =
         std::min(sanitized.screen_saver_timeout_minutes, kMaxScreenSaverTimeoutMinutes);
     if (sanitized.weather_source == WeatherSource::MetNorway)

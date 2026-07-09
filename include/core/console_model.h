@@ -157,6 +157,7 @@ enum class MenuPage : uint8_t
     PinterStartTiming,
     Shares,
     ShareDetail,
+    AirTraffic,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
@@ -612,6 +613,7 @@ enum class SoftKeyRoute : uint8_t
     GoShares,
     SelectShareSlot1,
     CycleSharePeriod,
+    GoAirTraffic,
     CycleCalendarOwner,
     ResetCalendarFilters,
     SelectCalendarSlot1,
@@ -677,6 +679,49 @@ struct ShareMarketStatus
     uint8_t share_count;
     std::array<ShareWatchEntry, 6> watched_shares;
 };
+
+/// @brief Maximum nearby aircraft rendered on the Local Traffic page.
+inline constexpr size_t kAirTrafficEntryCapacity = 10U;
+
+/// @brief One nearby aircraft row, pre-formatted for the compact table page.
+struct AirTrafficEntry
+{
+    std::array<char, 12> callsign;
+    std::array<char, 10> distance_text;
+    std::array<char, 10> altitude_text;
+    std::array<char, 8> bearing_text;
+};
+
+/// @brief Compares two aircraft rows field-by-field for redraw detection.
+inline bool operator==(const AirTrafficEntry& lhs, const AirTrafficEntry& rhs)
+{
+    return lhs.callsign == rhs.callsign && lhs.distance_text == rhs.distance_text &&
+           lhs.altitude_text == rhs.altitude_text && lhs.bearing_text == rhs.bearing_text;
+}
+
+/// @brief Snapshot of the local ADS-B air-traffic feed suitable for UI use.
+struct AirTrafficStatus
+{
+    bool configured;
+    bool data_valid;
+    int last_error;
+    int last_http_status;
+    uint8_t aircraft_count;
+    std::array<AirTrafficEntry, kAirTrafficEntryCapacity> aircraft;
+};
+
+/// @brief Compares two air-traffic snapshots field-by-field.
+inline bool operator==(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
+{
+    return lhs.configured == rhs.configured && lhs.data_valid == rhs.data_valid &&
+           lhs.last_error == rhs.last_error && lhs.last_http_status == rhs.last_http_status &&
+           lhs.aircraft_count == rhs.aircraft_count && lhs.aircraft == rhs.aircraft;
+}
+
+inline bool operator!=(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
+{
+    return !(lhs == rhs);
+}
 
 inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
@@ -818,6 +863,7 @@ struct ConsoleState
     HeapStatus heap_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
+    AirTrafficStatus air_traffic_status;
     uint8_t alert_count;
     uint8_t alert_list_page_index;
     uint8_t alert_detail_index;

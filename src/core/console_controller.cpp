@@ -2133,6 +2133,7 @@ MenuPage parent_page(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Weather:
+    case MenuPage::AirTraffic:
     case MenuPage::Calendar:
     case MenuPage::Status:
     case MenuPage::LocalConditions:
@@ -2790,6 +2791,8 @@ void update_softkeys_from_state()
         };
         softkeys[softkey_index(SoftKeyId::Right3)] = {
             "LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions, true};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            "LOCAL\nTRAFFIC", SoftKeyRoute::GoAirTraffic, true};
         break;
     case MenuPage::Calendar:
     {
@@ -2842,6 +2845,8 @@ void update_softkeys_from_state()
             SoftKeyRoute::CycleWeatherPeriod,
             true,
         };
+        break;
+    case MenuPage::AirTraffic:
         break;
     case MenuPage::Pinter:
     {
@@ -3637,6 +3642,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Weather;
         return true;
+    case SoftKeyRoute::GoAirTraffic:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::AirTraffic;
+        return true;
     case SoftKeyRoute::GoPinter:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Pinter;
@@ -4176,6 +4185,19 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     }
 
     g_console_state.mqtt_status = mqtt_status;
+    update_softkeys_from_state();
+    return true;
+}
+
+/// @brief Updates the cached local air-traffic snapshot in the console model.
+bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
+{
+    if (g_console_state.air_traffic_status == air_traffic_status)
+    {
+        return false;
+    }
+
+    g_console_state.air_traffic_status = air_traffic_status;
     update_softkeys_from_state();
     return true;
 }

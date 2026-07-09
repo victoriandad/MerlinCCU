@@ -48,6 +48,7 @@ add_executable(MerlinCCU
     src/config/config_persistence.cpp
     src/display/display.cpp
     src/display/framebuffer.cpp
+    src/display/air_traffic_screens.cpp
     src/display/screen_banners.cpp
     src/display/screens.cpp
     src/display/status_screens.cpp
@@ -60,6 +61,7 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_starfield.cpp
     src/display/screensavers/screensaver_worms.cpp
     src/network/date_time_math.cpp
+    src/network/air_traffic_manager.cpp
     src/network/home_assistant_manager.cpp
     src/network/mqtt_manager.cpp
     src/network/share_price_manager.cpp
