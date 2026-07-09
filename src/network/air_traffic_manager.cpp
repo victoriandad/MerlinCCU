@@ -33,11 +33,11 @@ constexpr uint32_t kRetryDelayMs = 20U * 1000U;
 constexpr uint32_t kRefreshIntervalMs = 15U * 1000U;
 constexpr size_t kRequestBufferSize = 320U;
 // Bounded so a busy airspace + large configured radius cannot grow this
-// without limit. If the real response doesn't fit, that fetch cycle simply
-// fails and retries -- the same "truncation is failure" tradeoff already
-// accepted elsewhere in this codebase (see share_price_manager.cpp), not a
-// new one introduced here.
-constexpr size_t kResponseBufferSize = 8192U;
+// without limit. A response that doesn't fit is treated as a partial
+// success (see on_tcp_recv/parse_aircraft_response) rather than a hard
+// failure -- widened once already after a 60nm-radius search overflowed the
+// original 8KB.
+constexpr size_t kResponseBufferSize = 16384U;
 constexpr uint16_t kDefaultPort = 80U;
 
 AirTrafficStatus g_status = {};
@@ -70,6 +70,7 @@ using text_utils::copy_text;
 /// @brief One nearby aircraft parsed from the provider response.
 struct Candidate
 {
+    char hex[8];
     char callsign[16];
     double distance_nm;
     double bearing_deg;
@@ -77,6 +78,22 @@ struct Candidate
     bool on_ground;
     bool has_altitude;
 };
+
+/// @brief One continuously-tracked aircraft's snail-trail history.
+/// @details Keyed by ICAO24 hex address (stable across a callsign going
+/// blank or being reused), separate from the display-facing
+/// `AirTrafficEntry` snapshot. Cleared whenever an aircraft drops out of a
+/// fetch cycle's closest-N selection, rather than decayed gradually -- simpler,
+/// and "last 10 refreshes" already implies continuous tracking.
+struct TrackedAircraft
+{
+    char hex[8];
+    uint8_t trail_count;
+    std::array<AirTrafficTrailPoint, kAirTrafficTrailDepth> trail;
+    bool updated_this_cycle;
+};
+
+std::array<TrackedAircraft, kAirTrafficEntryCapacity> g_tracked = {};
 
 /// @brief Scans forward for the next signed decimal number in `*cursor`.
 bool parse_next_double(const char** cursor, double* out_value)
@@ -494,6 +511,98 @@ void insert_candidate(std::array<Candidate, kAirTrafficEntryCapacity>& best, uin
     }
 }
 
+/// @brief Merges this cycle's closest-N candidates into the persistent
+/// per-aircraft trail history, and writes each aircraft's current position
+/// and trail into `g_status.aircraft[]`.
+/// @details Matches by ICAO24 hex against `g_tracked`. A slot not matched
+/// this cycle is cleared at the end -- an aircraft dropping out of the
+/// closest-N selection loses its trail rather than decaying gradually, which
+/// keeps eviction simple and slot accounting exact (one tracked slot per
+/// displayable aircraft, so a free slot is always available for a new one).
+void merge_trail_history(const std::array<Candidate, kAirTrafficEntryCapacity>& best,
+                        uint8_t best_count)
+{
+    for (TrackedAircraft& tracked : g_tracked)
+    {
+        tracked.updated_this_cycle = false;
+    }
+
+    for (uint8_t i = 0U; i < best_count; ++i)
+    {
+        const Candidate& candidate = best[i];
+        TrackedAircraft* slot = nullptr;
+        if (candidate.hex[0] != '\0')
+        {
+            for (TrackedAircraft& tracked : g_tracked)
+            {
+                if (tracked.trail_count > 0U && std::strcmp(tracked.hex, candidate.hex) == 0)
+                {
+                    slot = &tracked;
+                    break;
+                }
+            }
+        }
+        if (slot == nullptr)
+        {
+            for (TrackedAircraft& tracked : g_tracked)
+            {
+                if (tracked.trail_count == 0U)
+                {
+                    slot = &tracked;
+                    break;
+                }
+            }
+        }
+
+        AirTrafficTrailPoint point = {};
+        const double bounded_distance = std::clamp(candidate.distance_nm, 0.0, 3276.7);
+        point.distance_deci_nm = static_cast<int16_t>(std::lround(bounded_distance * 10.0));
+        const int bearing =
+            ((static_cast<int>(std::lround(candidate.bearing_deg)) % 360) + 360) % 360;
+        point.bearing_deg = static_cast<int16_t>(bearing);
+
+        if (slot != nullptr)
+        {
+            std::snprintf(slot->hex, sizeof(slot->hex), "%s", candidate.hex);
+            slot->updated_this_cycle = true;
+            if (slot->trail_count < slot->trail.size())
+            {
+                slot->trail[slot->trail_count] = point;
+                ++slot->trail_count;
+            }
+            else
+            {
+                for (size_t t = 1U; t < slot->trail.size(); ++t)
+                {
+                    slot->trail[t - 1U] = slot->trail[t];
+                }
+                slot->trail[slot->trail.size() - 1U] = point;
+            }
+
+            g_status.aircraft[i].trail_count = slot->trail_count;
+            g_status.aircraft[i].trail = slot->trail;
+        }
+        else
+        {
+            // No free slot this cycle (shouldn't happen -- as many tracked
+            // slots as displayable aircraft) -- show the position with no trail.
+            g_status.aircraft[i].trail_count = 1U;
+            g_status.aircraft[i].trail[0] = point;
+        }
+
+        g_status.aircraft[i].distance_deci_nm = point.distance_deci_nm;
+        g_status.aircraft[i].bearing_deg = point.bearing_deg;
+    }
+
+    for (TrackedAircraft& tracked : g_tracked)
+    {
+        if (!tracked.updated_this_cycle)
+        {
+            tracked = {};
+        }
+    }
+}
+
 /// @brief Parses the `"ac":[...]` aircraft array into the closest-N entries.
 bool parse_aircraft_response()
 {
@@ -549,6 +658,8 @@ bool parse_aircraft_response()
             extract_bounded_number(cursor, obj_end, "\"dir\"", &dir);
             candidate.bearing_deg = dir;
 
+            extract_bounded_string(cursor, obj_end, "\"hex\"", candidate.hex, sizeof(candidate.hex));
+
             char callsign[16] = {};
             if (extract_bounded_string(cursor, obj_end, "\"flight\"", callsign, sizeof(callsign)))
             {
@@ -560,7 +671,7 @@ bool parse_aircraft_response()
             }
             if (callsign[0] == '\0')
             {
-                extract_bounded_string(cursor, obj_end, "\"hex\"", callsign, sizeof(callsign));
+                std::snprintf(callsign, sizeof(callsign), "%s", candidate.hex);
             }
             std::snprintf(candidate.callsign, sizeof(candidate.callsign), "%s",
                           callsign[0] != '\0' ? callsign : "?");
@@ -583,6 +694,8 @@ bool parse_aircraft_response()
 
         cursor = obj_end + 1;
     }
+
+    merge_trail_history(best, best_count);
 
     g_status.aircraft_count = best_count;
     char text[16] = {};
@@ -946,6 +1059,7 @@ void init()
     g_status.configured = false;
     g_status.data_valid = false;
     g_config_valid = false;
+    g_tracked = {};
     reset_attempt_state();
     g_next_attempt = nil_time;
     g_request_attempted = false;
@@ -963,6 +1077,7 @@ bool update(const WifiStatus& wifi_status, bool fetch_enabled)
     g_status.enabled = config_manager::settings().air_traffic_enabled;
     g_config_valid = refresh_config();
     g_status.configured = g_config_valid;
+    g_status.configured_radius_nm = g_configured_radius_nm;
     if (!g_config_valid)
     {
         if (g_pcb != nullptr || g_dns_pending || g_completion_pending || g_request_attempted)

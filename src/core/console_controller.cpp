@@ -1043,6 +1043,12 @@ const char* share_period_selection_text(const ConsoleState& console_state)
     return share_period_definition(console_state.share_period).selection_label;
 }
 
+/// @brief Returns the Local Traffic page's current presentation mode label.
+const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
+{
+    return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
+}
+
 /// @brief Returns the currently selected shared-calendar owner label.
 const char* calendar_owner_selection_text(const ConsoleState& console_state)
 {
@@ -2609,6 +2615,29 @@ bool cycle_share_period()
     return true;
 }
 
+/// @brief Toggles the Local Traffic page between the Tabular and Plot views.
+bool toggle_air_traffic_view_mode()
+{
+    g_console_state.air_traffic_view_mode =
+        (g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
+            ? AirTrafficViewMode::Plot
+            : AirTrafficViewMode::Tabular;
+    g_console_state.air_traffic_page_index = 0U;
+    return true;
+}
+
+/// @brief Returns the number of tabular Local Traffic pages for the current aircraft count.
+uint8_t air_traffic_page_count()
+{
+    const uint8_t count = g_console_state.air_traffic_status.aircraft_count;
+    if (count == 0U)
+    {
+        return 1U;
+    }
+
+    return static_cast<uint8_t>((count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage);
+}
+
 /// @brief Opens the requested share detail page from the current watchlist.
 bool select_share_slot(uint8_t slot)
 {
@@ -2761,6 +2790,12 @@ void update_softkeys_from_state()
 {
     sync_system_alerts();
 
+    const uint8_t air_traffic_pages = air_traffic_page_count();
+    if (g_console_state.air_traffic_page_index >= air_traffic_pages)
+    {
+        g_console_state.air_traffic_page_index = static_cast<uint8_t>(air_traffic_pages - 1U);
+    }
+
     SoftKeyMap softkeys = {{
         {"", SoftKeyRoute::None, false},
         {"", SoftKeyRoute::None, false},
@@ -2850,6 +2885,12 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::AirTraffic:
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "VIEW",
+                                          air_traffic_view_mode_selection_text(g_console_state)),
+            SoftKeyRoute::ToggleAirTrafficViewMode,
+            true,
+        };
         break;
     case MenuPage::Pinter:
     {
@@ -3674,6 +3715,7 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoAirTraffic:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::AirTraffic;
+        g_console_state.air_traffic_page_index = 0U;
         return true;
     case SoftKeyRoute::GoPinter:
         stop_screen_saver_timeout_editing();
@@ -3876,6 +3918,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_share_slot(0U);
     case SoftKeyRoute::CycleSharePeriod:
         return cycle_share_period();
+    case SoftKeyRoute::ToggleAirTrafficViewMode:
+        return toggle_air_traffic_view_mode();
     case SoftKeyRoute::GoSelectedShareDetail:
         return open_selected_share_detail();
     case SoftKeyRoute::CycleCalendarOwner:
@@ -4601,6 +4645,16 @@ bool handle_button_event(const ButtonEvent& event)
         else if (g_console_state.active_page == MenuPage::Shares && direction > 0)
         {
             changed = open_selected_share_detail();
+        }
+        else if (g_console_state.active_page == MenuPage::AirTraffic &&
+                g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
+        {
+            const int next_page = static_cast<int>(g_console_state.air_traffic_page_index) + direction;
+            if (next_page >= 0 && next_page < static_cast<int>(air_traffic_page_count()))
+            {
+                g_console_state.air_traffic_page_index = static_cast<uint8_t>(next_page);
+                changed = true;
+            }
         }
 
         if (!changed)

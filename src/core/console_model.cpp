@@ -217,6 +217,8 @@ ConsoleState make_default_console_state()
     state.keypad_debug_status.probe_hit_count = 0;
     state.keypad_debug_status.probe_hit_panel_pins.fill('\0');
     state.air_traffic_status = {};
+    state.air_traffic_view_mode = AirTrafficViewMode::Tabular;
+    state.air_traffic_page_index = 0U;
     state.alert_count = 0U;
     state.alert_list_page_index = 0U;
     state.alert_detail_index = 0U;
