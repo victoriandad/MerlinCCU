@@ -449,7 +449,7 @@ const char* menu_page_title(MenuPage page)
     case MenuPage::LocalConditions:
         return "LOCAL CONDITIONS";
     case MenuPage::AirTraffic:
-        return "LOCAL TRAFFIC";
+        return "ADS-B TRAFFIC";
     case MenuPage::LocalConditionGraph:
         return "LOCAL GRAPH";
     case MenuPage::Settings:
@@ -464,6 +464,8 @@ const char* menu_page_title(MenuPage page)
         return "HOME ASSISTANT";
     case MenuPage::MqttSettings:
         return "MQTT DISCOVERY";
+    case MenuPage::AirTrafficSettings:
+        return "ADS-B TRAFFIC";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
     case MenuPage::WeatherSources:
@@ -603,6 +605,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
+    case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::Pinter:
@@ -1740,6 +1743,14 @@ void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
+/// @brief Leaves the ADS-B traffic settings body blank.
+/// @details Feed enable/host/coordinates values are shown around the bezel.
+void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
 /// @brief Draws only active screen-saver editing UI.
 /// @details When not editing, the selected saver and timeout live on softkeys.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
@@ -1967,6 +1978,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::MqttSettings:
         draw_mqtt_settings_page(fb, console_state);
+        break;
+    case MenuPage::AirTrafficSettings:
+        draw_air_traffic_settings_page(fb, console_state);
         break;
     case MenuPage::ScreenSaverSettings:
         draw_screen_saver_page(fb, console_state);

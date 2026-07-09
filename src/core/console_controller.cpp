@@ -339,6 +339,14 @@ const char* port_selection_text(SoftKeyId key, uint16_t port)
     return buffer.data();
 }
 
+/// @brief Formats a nautical-mile radius for bracketed softkey labels.
+const char* radius_nm_selection_text(SoftKeyId key, uint16_t radius_nm)
+{
+    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
+    std::snprintf(buffer.data(), buffer.size(), "%unm", static_cast<unsigned>(radius_nm));
+    return buffer.data();
+}
+
 /// @brief Moves the top-level settings menu between paged section groups.
 bool change_settings_page(int direction)
 {
@@ -2157,6 +2165,7 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
+    case MenuPage::AirTrafficSettings:
     case MenuPage::ScreenSaverSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
@@ -2708,6 +2717,17 @@ bool toggle_mqtt_enabled()
         });
 }
 
+/// @brief Toggles the local ADS-B air-traffic feed enable flag.
+bool toggle_air_traffic_enabled()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.air_traffic_enabled = !settings.air_traffic_enabled;
+            return true;
+        });
+}
+
 /// @brief Persists the scratchpad timeout value when the user presses Enter.
 bool confirm_screen_saver_timeout_edit()
 {
@@ -2792,7 +2812,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right3)] = {
             "LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions, true};
         softkeys[softkey_index(SoftKeyId::Left5)] = {
-            "LOCAL\nTRAFFIC", SoftKeyRoute::GoAirTraffic, true};
+            "ADS-B\nTRAFFIC", SoftKeyRoute::GoAirTraffic, true};
         break;
     case MenuPage::Calendar:
     {
@@ -3118,6 +3138,13 @@ void update_softkeys_from_state()
                 SoftKeyRoute::GoScreenSaverSettings,
                 true,
             };
+            softkeys[softkey_index(SoftKeyId::Right1)] = {
+                build_selection_softkey_label(
+                    SoftKeyId::Right1, "ADS-B TRAFFIC",
+                    enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+                SoftKeyRoute::GoAirTrafficSettings,
+                true,
+            };
         }
         break;
     case MenuPage::DeviceSettings:
@@ -3275,6 +3302,50 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "TOPIC",
                                           config_manager::settings().mqtt_base_topic.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        break;
+    case MenuPage::AirTrafficSettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "ADS-B",
+                enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+            SoftKeyRoute::ToggleAirTrafficEnabled,
+            true,
+            config_manager::settings().air_traffic_enabled,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(SoftKeyId::Left2, "HOST",
+                                          config_manager::settings().air_traffic_host.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left3, "PORT",
+                port_selection_text(SoftKeyId::Left3, config_manager::settings().air_traffic_port)),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left4, "RADIUS",
+                radius_nm_selection_text(SoftKeyId::Left4,
+                                         config_manager::settings().air_traffic_radius_nm)),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "COORDS",
+                                          config_manager::settings().air_traffic_coordinates.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Right1, "API KEY",
+                secret_selection_text(config_manager::settings().air_traffic_api_key[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -3793,6 +3864,10 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::MqttSettings;
         return true;
+    case SoftKeyRoute::GoAirTrafficSettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::AirTrafficSettings;
+        return true;
     case SoftKeyRoute::GoScreenSaverSettings:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
@@ -3821,6 +3896,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:
         return toggle_mqtt_enabled();
+    case SoftKeyRoute::ToggleAirTrafficEnabled:
+        return toggle_air_traffic_enabled();
     case SoftKeyRoute::SelectScreenSaverLife:
         return select_screen_saver(ScreenSaverSelection::Life);
     case SoftKeyRoute::SelectScreenSaverClock:

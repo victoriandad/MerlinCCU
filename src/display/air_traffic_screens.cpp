@@ -59,7 +59,7 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
     if (!status.configured)
     {
         const screens::DetailRow rows[] = {
-            {"SOURCE", "Local Traffic (ADS-B)"},
+            {"SOURCE", "ADS-B"},
             {"STATUS", "Disabled"},
             {"DETAIL", "Enable in Settings"},
         };
