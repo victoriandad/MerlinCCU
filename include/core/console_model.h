@@ -705,6 +705,7 @@ inline bool operator==(const AirTrafficEntry& lhs, const AirTrafficEntry& rhs)
 /// @brief Snapshot of the local ADS-B air-traffic feed suitable for UI use.
 struct AirTrafficStatus
 {
+    bool enabled;
     bool configured;
     bool data_valid;
     int last_error;
@@ -716,8 +717,9 @@ struct AirTrafficStatus
 /// @brief Compares two air-traffic snapshots field-by-field.
 inline bool operator==(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
 {
-    return lhs.configured == rhs.configured && lhs.data_valid == rhs.data_valid &&
-           lhs.last_error == rhs.last_error && lhs.last_http_status == rhs.last_http_status &&
+    return lhs.enabled == rhs.enabled && lhs.configured == rhs.configured &&
+           lhs.data_valid == rhs.data_valid && lhs.last_error == rhs.last_error &&
+           lhs.last_http_status == rhs.last_http_status &&
            lhs.aircraft_count == rhs.aircraft_count && lhs.aircraft == rhs.aircraft;
 }
 

@@ -60,8 +60,8 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
     {
         const screens::DetailRow rows[] = {
             {"SOURCE", "ADS-B"},
-            {"STATUS", "Disabled"},
-            {"DETAIL", "Enable in Settings"},
+            {"STATUS", status.enabled ? "Enabled" : "Disabled"},
+            {"DETAIL", status.enabled ? "No coordinates set" : "Enable in Settings"},
         };
         screens::draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
         return;

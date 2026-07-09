@@ -936,6 +936,7 @@ void start_request()
 void init()
 {
     g_status = {};
+    g_status.enabled = false;
     g_status.configured = false;
     g_status.data_valid = false;
     g_config_valid = false;
@@ -953,6 +954,7 @@ bool update(const WifiStatus& wifi_status, bool fetch_enabled)
         init();
     }
 
+    g_status.enabled = config_manager::settings().air_traffic_enabled;
     g_config_valid = refresh_config();
     g_status.configured = g_config_valid;
     if (!g_config_valid)
