@@ -20,8 +20,9 @@ inline constexpr uint32_t kConfigMagic = 0x4D434355U; // "MCCU"
 inline constexpr uint16_t kConfigVersion = 2;
 inline constexpr uint16_t kLegacyConfigVersion = 1;
 inline constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
+/// @brief Widest ADS-B search radius accepted, matching common provider limits.
+inline constexpr uint16_t kMaxAirTrafficRadiusNm = 250U;
 inline constexpr char kDefaultDeviceName[] = "MerlinCCU";
-inline constexpr char kDefaultAdminPassword[] = "merlin";
 
 /// @brief One flash-backed configuration slot (current version).
 /// @details Two slots are alternated by sequence number so a power loss during
@@ -123,11 +124,5 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings);
 /// @details The returned pointer aliases whichever input candidate won; the
 /// caller must keep both candidates alive for as long as the result is used.
 const ConfigCandidate* choose_newest_candidate(const ConfigCandidate& a, const ConfigCandidate& b);
-
-/// @brief Compares a candidate password against the stored one in constant time.
-/// @details Always walks the full stored-password capacity regardless of where
-/// either string ends, so match/mismatch timing does not depend on how many
-/// leading characters happen to agree.
-bool constant_time_password_matches(const char* candidate, const std::array<char, 32>& stored);
 
 } // namespace config_persistence

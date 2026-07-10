@@ -30,6 +30,19 @@ include(pico_sdk_import.cmake)
 
 project(MerlinCCU C CXX ASM)
 
+# The SDK default core-0 stack is a razor-thin 2KB (PICO_STACK_SIZE). A stack
+# overflow bug (returning a ~27KB ConsoleState by value into an assignment,
+# rather than an elided direct-init) was found consuming the *entire* default
+# stack on every boot before being fixed at the call site -- the stack-depth
+# canary read exactly 0 bytes free even after that fix, meaning there is
+# still no real safety margin left for any deeper call chain. The core-0
+# stack lives in a dedicated 4KB hardware scratch bank (SCRATCH_Y) on the
+# RP2350, not the general SRAM pool, so 0x1000 is the most this can be
+# widened to without custom linker-script surgery -- still a full doubling
+# of the previous margin. Must be set before pico_sdk_init() so it reaches
+# pico_crt0's own stack-reservation section, not just this target's sources.
+add_compile_definitions(PICO_STACK_SIZE=0x1000)
+
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
@@ -48,6 +61,7 @@ add_executable(MerlinCCU
     src/config/config_persistence.cpp
     src/display/display.cpp
     src/display/framebuffer.cpp
+    src/display/air_traffic_screens.cpp
     src/display/screen_banners.cpp
     src/display/screens.cpp
     src/display/status_screens.cpp
@@ -60,6 +74,7 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_starfield.cpp
     src/display/screensavers/screensaver_worms.cpp
     src/network/date_time_math.cpp
+    src/network/air_traffic_manager.cpp
     src/network/home_assistant_manager.cpp
     src/network/mqtt_manager.cpp
     src/network/share_price_manager.cpp

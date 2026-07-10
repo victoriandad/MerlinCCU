@@ -193,16 +193,6 @@ bool reset_to_defaults()
     return save(config_persistence::make_default_settings());
 }
 
-bool admin_password_matches(const char* password)
-{
-    if (!g_settings.require_admin_password)
-    {
-        return true;
-    }
-
-    return config_persistence::constant_time_password_matches(password, g_settings.admin_password);
-}
-
 const char* device_name()
 {
     return g_settings.device_name[0] != '\0' ? g_settings.device_name.data()

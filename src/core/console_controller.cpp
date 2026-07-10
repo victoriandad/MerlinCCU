@@ -32,7 +32,7 @@ namespace
 // The console controller owns the user-facing aggregate state. Subsystem
 // managers push snapshots into it, while button events mutate the menu and
 // annunciator model from one central place.
-ConsoleState g_console_state = make_default_console_state();
+ConsoleState g_console_state = {};
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
 // Set by Pinter mutations, consumed by flush_pending_pinter_save(). The
@@ -307,12 +307,6 @@ const char* enabled_selection_text(bool enabled)
     return enabled ? "Enabled" : "Disabled";
 }
 
-/// @brief Returns the concise admin-save policy label used by the menu.
-const char* admin_requirement_selection_text(bool require_admin_password)
-{
-    return require_admin_password ? "Required" : "Open";
-}
-
 /// @brief Returns whether a saved secret has a non-empty persisted value.
 const char* secret_selection_text(bool present)
 {
@@ -336,6 +330,14 @@ const char* port_selection_text(SoftKeyId key, uint16_t port)
 {
     auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
     std::snprintf(buffer.data(), buffer.size(), "%u", static_cast<unsigned>(port));
+    return buffer.data();
+}
+
+/// @brief Formats a nautical-mile radius for bracketed softkey labels.
+const char* radius_nm_selection_text(SoftKeyId key, uint16_t radius_nm)
+{
+    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
+    std::snprintf(buffer.data(), buffer.size(), "%unm", static_cast<unsigned>(radius_nm));
     return buffer.data();
 }
 
@@ -1039,6 +1041,12 @@ const char* weather_period_selection_text(const ConsoleState& console_state)
 const char* share_period_selection_text(const ConsoleState& console_state)
 {
     return share_period_definition(console_state.share_period).selection_label;
+}
+
+/// @brief Returns the Local Traffic page's current presentation mode label.
+const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
+{
+    return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
 }
 
 /// @brief Returns the currently selected shared-calendar owner label.
@@ -2133,6 +2141,7 @@ MenuPage parent_page(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Weather:
+    case MenuPage::AirTraffic:
     case MenuPage::Calendar:
     case MenuPage::Status:
     case MenuPage::LocalConditions:
@@ -2152,10 +2161,10 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::StatusIntegrations:
         return MenuPage::Status;
     case MenuPage::DeviceSettings:
-    case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
+    case MenuPage::AirTrafficSettings:
     case MenuPage::ScreenSaverSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
@@ -2606,6 +2615,29 @@ bool cycle_share_period()
     return true;
 }
 
+/// @brief Toggles the Local Traffic page between the Tabular and Plot views.
+bool toggle_air_traffic_view_mode()
+{
+    g_console_state.air_traffic_view_mode =
+        (g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
+            ? AirTrafficViewMode::Plot
+            : AirTrafficViewMode::Tabular;
+    g_console_state.air_traffic_page_index = 0U;
+    return true;
+}
+
+/// @brief Returns the number of tabular Local Traffic pages for the current aircraft count.
+uint8_t air_traffic_page_count()
+{
+    const uint8_t count = g_console_state.air_traffic_status.aircraft_count;
+    if (count == 0U)
+    {
+        return 1U;
+    }
+
+    return static_cast<uint8_t>((count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage);
+}
+
 /// @brief Opens the requested share detail page from the current watchlist.
 bool select_share_slot(uint8_t slot)
 {
@@ -2674,16 +2706,6 @@ bool toggle_remote_config_enabled()
         });
 }
 
-/// @brief Toggles whether web saves require the admin password.
-bool toggle_require_admin_password()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.require_admin_password = !settings.require_admin_password;
-            return true;
-        });
-}
 
 /// @brief Toggles the Home Assistant REST integration enable flag.
 bool toggle_home_assistant_enabled()
@@ -2703,6 +2725,17 @@ bool toggle_mqtt_enabled()
         [](RuntimeConfig& settings)
         {
             settings.mqtt_enabled = !settings.mqtt_enabled;
+            return true;
+        });
+}
+
+/// @brief Toggles the local ADS-B air-traffic feed enable flag.
+bool toggle_air_traffic_enabled()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.air_traffic_enabled = !settings.air_traffic_enabled;
             return true;
         });
 }
@@ -2757,6 +2790,12 @@ void update_softkeys_from_state()
 {
     sync_system_alerts();
 
+    const uint8_t air_traffic_pages = air_traffic_page_count();
+    if (g_console_state.air_traffic_page_index >= air_traffic_pages)
+    {
+        g_console_state.air_traffic_page_index = static_cast<uint8_t>(air_traffic_pages - 1U);
+    }
+
     SoftKeyMap softkeys = {{
         {"", SoftKeyRoute::None, false},
         {"", SoftKeyRoute::None, false},
@@ -2790,6 +2829,8 @@ void update_softkeys_from_state()
         };
         softkeys[softkey_index(SoftKeyId::Right3)] = {
             "LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions, true};
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            "ADS-B\nTRAFFIC", SoftKeyRoute::GoAirTraffic, true};
         break;
     case MenuPage::Calendar:
     {
@@ -2840,6 +2881,14 @@ void update_softkeys_from_state()
             build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
                                           weather_period_selection_text(g_console_state)),
             SoftKeyRoute::CycleWeatherPeriod,
+            true,
+        };
+        break;
+    case MenuPage::AirTraffic:
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "VIEW",
+                                          air_traffic_view_mode_selection_text(g_console_state)),
+            SoftKeyRoute::ToggleAirTrafficViewMode,
             true,
         };
         break;
@@ -3066,11 +3115,11 @@ void update_softkeys_from_state()
             };
             softkeys[softkey_index(SoftKeyId::Left2)] = {
                 build_selection_softkey_label(
-                    SoftKeyId::Left2, "SECURITY",
-                    admin_requirement_selection_text(
-                        config_manager::settings().require_admin_password)),
-                SoftKeyRoute::GoSecuritySettings,
+                    SoftKeyId::Left2, "REMOTE CONFIG",
+                    enabled_selection_text(config_manager::settings().remote_config_enabled)),
+                SoftKeyRoute::ToggleRemoteConfig,
                 true,
+                config_manager::settings().remote_config_enabled,
             };
             softkeys[softkey_index(SoftKeyId::Left3)] = {
                 build_selection_softkey_label(SoftKeyId::Left3, "NETWORK",
@@ -3113,6 +3162,13 @@ void update_softkeys_from_state()
                 SoftKeyRoute::GoScreenSaverSettings,
                 true,
             };
+            softkeys[softkey_index(SoftKeyId::Right1)] = {
+                build_selection_softkey_label(
+                    SoftKeyId::Right1, "ADS-B TRAFFIC",
+                    enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+                SoftKeyRoute::GoAirTrafficSettings,
+                true,
+            };
         }
         break;
     case MenuPage::DeviceSettings:
@@ -3137,31 +3193,6 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(SoftKeyId::Left4, "ROOM",
                                           config_manager::settings().room.data()),
-            SoftKeyRoute::None,
-            true,
-        };
-        break;
-    case MenuPage::SecuritySettings:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Left1, "REMOTE CONFIG",
-                enabled_selection_text(config_manager::settings().remote_config_enabled)),
-            SoftKeyRoute::ToggleRemoteConfig,
-            true,
-            config_manager::settings().remote_config_enabled,
-        };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {
-            build_selection_softkey_label(SoftKeyId::Left2, "SAVE PASSWORD",
-                                          admin_requirement_selection_text(
-                                              config_manager::settings().require_admin_password)),
-            SoftKeyRoute::ToggleRequireAdminPassword,
-            true,
-            config_manager::settings().require_admin_password,
-        };
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Left3, "ADMIN PW",
-                secret_selection_text(config_manager::settings().admin_password[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -3270,6 +3301,50 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "TOPIC",
                                           config_manager::settings().mqtt_base_topic.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        break;
+    case MenuPage::AirTrafficSettings:
+        softkeys[softkey_index(SoftKeyId::Left1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "ADS-B",
+                enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+            SoftKeyRoute::ToggleAirTrafficEnabled,
+            true,
+            config_manager::settings().air_traffic_enabled,
+        };
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(SoftKeyId::Left2, "HOST",
+                                          config_manager::settings().air_traffic_host.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left3)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left3, "PORT",
+                port_selection_text(SoftKeyId::Left3, config_manager::settings().air_traffic_port)),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left4)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Left4, "RADIUS",
+                radius_nm_selection_text(SoftKeyId::Left4,
+                                         config_manager::settings().air_traffic_radius_nm)),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Left5)] = {
+            build_selection_softkey_label(SoftKeyId::Left5, "COORDS",
+                                          config_manager::settings().air_traffic_coordinates.data()),
+            SoftKeyRoute::None,
+            true,
+        };
+        softkeys[softkey_index(SoftKeyId::Right1)] = {
+            build_selection_softkey_label(
+                SoftKeyId::Right1, "API KEY",
+                secret_selection_text(config_manager::settings().air_traffic_api_key[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -3637,6 +3712,11 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Weather;
         return true;
+    case SoftKeyRoute::GoAirTraffic:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::AirTraffic;
+        g_console_state.air_traffic_page_index = 0U;
+        return true;
     case SoftKeyRoute::GoPinter:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::Pinter;
@@ -3768,10 +3848,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::DeviceSettings;
         return true;
-    case SoftKeyRoute::GoSecuritySettings:
-        stop_screen_saver_timeout_editing();
-        g_console_state.active_page = MenuPage::SecuritySettings;
-        return true;
     case SoftKeyRoute::GoWifiSettings:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::WifiSettings;
@@ -3783,6 +3859,10 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoMqttSettings:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::MqttSettings;
+        return true;
+    case SoftKeyRoute::GoAirTrafficSettings:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::AirTrafficSettings;
         return true;
     case SoftKeyRoute::GoScreenSaverSettings:
         stop_screen_saver_timeout_editing();
@@ -3806,12 +3886,12 @@ bool apply_softkey_route(SoftKeyRoute route)
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
-    case SoftKeyRoute::ToggleRequireAdminPassword:
-        return toggle_require_admin_password();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:
         return toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:
         return toggle_mqtt_enabled();
+    case SoftKeyRoute::ToggleAirTrafficEnabled:
+        return toggle_air_traffic_enabled();
     case SoftKeyRoute::SelectScreenSaverLife:
         return select_screen_saver(ScreenSaverSelection::Life);
     case SoftKeyRoute::SelectScreenSaverClock:
@@ -3838,6 +3918,8 @@ bool apply_softkey_route(SoftKeyRoute route)
         return select_share_slot(0U);
     case SoftKeyRoute::CycleSharePeriod:
         return cycle_share_period();
+    case SoftKeyRoute::ToggleAirTrafficViewMode:
+        return toggle_air_traffic_view_mode();
     case SoftKeyRoute::GoSelectedShareDetail:
         return open_selected_share_detail();
     case SoftKeyRoute::CycleCalendarOwner:
@@ -3886,7 +3968,7 @@ bool apply_softkey_route(SoftKeyRoute route)
         g_console_state.test_state = next_test_state(g_console_state.test_state);
         return true;
     case SoftKeyRoute::ResetConsoleState:
-        g_console_state = make_default_console_state();
+        make_default_console_state(g_console_state);
         g_alert_sequence_counter = 1U;
         g_home_assistant_connect_failures = 0U;
         g_weather_refresh_failures = 0U;
@@ -3979,7 +4061,7 @@ bool apply_softkey_route(SoftKeyRoute route)
 /// @brief Initializes the console controller state and derived outputs.
 void init()
 {
-    g_console_state = make_default_console_state();
+    make_default_console_state(g_console_state);
     g_redraw_requested = false;
     g_alert_sequence_counter = 1U;
     g_home_assistant_connect_failures = 0U;
@@ -4176,6 +4258,19 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     }
 
     g_console_state.mqtt_status = mqtt_status;
+    update_softkeys_from_state();
+    return true;
+}
+
+/// @brief Updates the cached local air-traffic snapshot in the console model.
+bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
+{
+    if (g_console_state.air_traffic_status == air_traffic_status)
+    {
+        return false;
+    }
+
+    g_console_state.air_traffic_status = air_traffic_status;
     update_softkeys_from_state();
     return true;
 }
@@ -4550,6 +4645,16 @@ bool handle_button_event(const ButtonEvent& event)
         else if (g_console_state.active_page == MenuPage::Shares && direction > 0)
         {
             changed = open_selected_share_detail();
+        }
+        else if (g_console_state.active_page == MenuPage::AirTraffic &&
+                g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
+        {
+            const int next_page = static_cast<int>(g_console_state.air_traffic_page_index) + direction;
+            if (next_page >= 0 && next_page < static_cast<int>(air_traffic_page_count()))
+            {
+                g_console_state.air_traffic_page_index = static_cast<uint8_t>(next_page);
+                changed = true;
+            }
         }
 
         if (!changed)

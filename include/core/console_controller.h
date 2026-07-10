@@ -60,6 +60,9 @@ bool set_mqtt_status(const MqttStatus& mqtt_status);
 /// @brief Copies the latest share market-data snapshot into the UI state.
 bool set_share_market_status(const ShareMarketStatus& share_market_status);
 
+/// @brief Copies the latest local air-traffic snapshot into the UI state.
+bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status);
+
 /// @brief Copies the latest environment sensor discovery snapshot into the UI state.
 bool set_environment_sensor_status(
     const environment_sensor_manager::EnvironmentSensorStatus& environment_sensor_status);

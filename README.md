@@ -391,11 +391,12 @@ Safety rules:
 Network support is currently development-friendly rather than hardened. The
 remaining hardening work is tracked in GitHub Issues rather than in this file.
 
-The factory-default admin password for the local web configuration page is
-`merlin`. Change it from the Security section of `/config` before relying on
-that page routinely; the web UI itself no longer prints the default value.
-Flash contents (including saved Wi-Fi/MQTT/Home Assistant credentials and the
-admin password) are stored as plaintext, so treat a device with physical or
+The local web configuration page (`/config`) has no login of any kind -- any
+device on the local network can view and change settings. A "Remote Access"
+toggle on that page (`remote_config_enabled`) controls whether the web server
+runs at all; turn it off if you only want setup changes to come from the
+front panel. Flash contents (including saved Wi-Fi/MQTT/Home Assistant
+credentials) are stored as plaintext, so treat a device with physical or
 debug-port access as having those credentials exposed.
 
 ## Open Work

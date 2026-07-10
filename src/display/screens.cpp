@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "air_traffic_screens.h"
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
@@ -447,20 +448,22 @@ const char* menu_page_title(MenuPage page)
         return "INTEGRATIONS";
     case MenuPage::LocalConditions:
         return "LOCAL CONDITIONS";
+    case MenuPage::AirTraffic:
+        return "ADS-B TRAFFIC";
     case MenuPage::LocalConditionGraph:
         return "LOCAL GRAPH";
     case MenuPage::Settings:
         return "SETTINGS";
     case MenuPage::DeviceSettings:
         return "DEVICE IDENTITY";
-    case MenuPage::SecuritySettings:
-        return "SECURITY";
     case MenuPage::WifiSettings:
         return "NETWORK";
     case MenuPage::HomeAssistantSettings:
         return "HOME ASSISTANT";
     case MenuPage::MqttSettings:
         return "MQTT DISCOVERY";
+    case MenuPage::AirTrafficSettings:
+        return "ADS-B TRAFFIC";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
     case MenuPage::WeatherSources:
@@ -526,6 +529,21 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
                       static_cast<unsigned>(console_state.alert_list_page_index + 1U),
                       static_cast<unsigned>(page_count));
         return buffer;
+    }
+    if (console_state.active_page == MenuPage::AirTraffic &&
+        console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
+    {
+        constexpr uint8_t kRowsPerPage = kAirTrafficRowsPerPage;
+        const uint8_t count = console_state.air_traffic_status.aircraft_count;
+        const uint8_t page_count = static_cast<uint8_t>(
+            (count == 0U) ? 1U : ((count + (kRowsPerPage - 1U)) / kRowsPerPage));
+        if (page_count > 1U)
+        {
+            std::snprintf(buffer, buffer_size, "ADS-B TRAFFIC %u/%u",
+                          static_cast<unsigned>(console_state.air_traffic_page_index + 1U),
+                          static_cast<unsigned>(page_count));
+            return buffer;
+        }
     }
 
     return menu_page_title(console_state.active_page);
@@ -596,10 +614,10 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::LocalConditions:
     case MenuPage::LocalConditionGraph:
     case MenuPage::DeviceSettings:
-    case MenuPage::SecuritySettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
+    case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::Pinter:
@@ -609,6 +627,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::ShareDetail:
         return fonts::FontFace::Font5x7;
     case MenuPage::Weather:
+    case MenuPage::AirTraffic:
     case MenuPage::Status:
     case MenuPage::StatusOverview:
     case MenuPage::StatusConnectivity:
@@ -819,7 +838,6 @@ void draw_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int star
 
 void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
                                      int total_width, fonts::FontFace font, bool on);
-void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right);
 
 } // namespace
 
@@ -832,6 +850,35 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
     constexpr int kInfoPageStartY = 42;
     constexpr int kInfoPageRowPitch = 18;
     draw_detail_rows(fb, rows, count, kInfoPageStartY, kInfoPageRowPitch, false);
+}
+
+/// @brief Draws shared left/right page-navigation arrows used by paged menus.
+/// @details One shared helper keeps all paged screens visually consistent and
+/// allows global position tweaks from a single location. Declared in
+/// screens_shared.h -- used by split-out page families too (Air Traffic).
+void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
+{
+    constexpr int kArrowY = kUiHeight - 18;
+    constexpr int kArrowHalfWidth = 5;
+    constexpr int kArrowHalfHeight = 6;
+    constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
+    constexpr int kRightArrowX = (kUiWidth / 2) + 26;
+
+    if (show_left)
+    {
+        framebuffer::draw_line(fb, kLeftArrowX + kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kLeftArrowX - kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kLeftArrowX - kArrowHalfWidth, kArrowY,
+                               kLeftArrowX + kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
+
+    if (show_right)
+    {
+        framebuffer::draw_line(fb, kRightArrowX - kArrowHalfWidth, kArrowY - kArrowHalfHeight,
+                               kRightArrowX + kArrowHalfWidth, kArrowY, true);
+        framebuffer::draw_line(fb, kRightArrowX + kArrowHalfWidth, kArrowY,
+                               kRightArrowX - kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
+    }
 }
 
 namespace
@@ -1658,34 +1705,6 @@ void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 
-/// @brief Draws shared left/right page-navigation arrows used by paged menus.
-/// @details One shared helper keeps all paged screens visually consistent and allows
-/// global position tweaks from a single location.
-void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
-{
-    constexpr int kArrowY = kUiHeight - 18;
-    constexpr int kArrowHalfWidth = 5;
-    constexpr int kArrowHalfHeight = 6;
-    constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
-    constexpr int kRightArrowX = (kUiWidth / 2) + 26;
-
-    if (show_left)
-    {
-        framebuffer::draw_line(fb, kLeftArrowX + kArrowHalfWidth, kArrowY - kArrowHalfHeight,
-                               kLeftArrowX - kArrowHalfWidth, kArrowY, true);
-        framebuffer::draw_line(fb, kLeftArrowX - kArrowHalfWidth, kArrowY,
-                               kLeftArrowX + kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
-    }
-
-    if (show_right)
-    {
-        framebuffer::draw_line(fb, kRightArrowX - kArrowHalfWidth, kArrowY - kArrowHalfHeight,
-                               kRightArrowX + kArrowHalfWidth, kArrowY, true);
-        framebuffer::draw_line(fb, kRightArrowX + kArrowHalfWidth, kArrowY,
-                               kRightArrowX - kArrowHalfWidth, kArrowY + kArrowHalfHeight, true);
-    }
-}
-
 /// @brief Draws the top-level settings routing page.
 /// @details The root page intentionally leaves the centre clear. Section state
 /// belongs in the bracketed softkey labels; detailed values are shown only
@@ -1699,14 +1718,6 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 /// @brief Leaves the device identity settings body blank.
 /// @details The surrounding softkeys carry each visible identity value.
 void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the security settings body blank.
-/// @details Security state is shown on the bracketed softkey labels.
-void draw_security_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
     (void)fb;
     (void)console_state;
@@ -1731,6 +1742,14 @@ void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_
 /// @brief Leaves the MQTT discovery settings body blank.
 /// @details Broker and discovery values are shown around the bezel.
 void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    (void)fb;
+    (void)console_state;
+}
+
+/// @brief Leaves the ADS-B traffic settings body blank.
+/// @details Feed enable/host/coordinates values are shown around the bezel.
+void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
     (void)fb;
     (void)console_state;
@@ -1918,6 +1937,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::Weather:
         weather_screens::draw_weather_page(fb, console_state);
         break;
+    case MenuPage::AirTraffic:
+        air_traffic_screens::draw_air_traffic_page(fb, console_state);
+        break;
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:
     case MenuPage::PinterStartTiming:
@@ -1949,9 +1971,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::DeviceSettings:
         draw_device_settings_page(fb, console_state);
         break;
-    case MenuPage::SecuritySettings:
-        draw_security_settings_page(fb, console_state);
-        break;
     case MenuPage::WifiSettings:
         draw_wifi_settings_page(fb, console_state);
         break;
@@ -1960,6 +1979,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         break;
     case MenuPage::MqttSettings:
         draw_mqtt_settings_page(fb, console_state);
+        break;
+    case MenuPage::AirTrafficSettings:
+        draw_air_traffic_settings_page(fb, console_state);
         break;
     case MenuPage::ScreenSaverSettings:
         draw_screen_saver_page(fb, console_state);

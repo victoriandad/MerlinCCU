@@ -9,6 +9,7 @@
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
 
+#include "air_traffic_manager.h"
 #include "config_manager.h"
 #include "console_controller.h"
 #include "debug_logging.h"
@@ -302,6 +303,8 @@ int main()
 
     uint32_t life_frame_counter = 0;
     absolute_time_t next_life_stats = make_timeout_time_ms(1000);
+    constexpr uint32_t kHeartbeatIntervalMs = 30000U;
+    absolute_time_t next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
     absolute_time_t last_user_activity = get_absolute_time();
     ScreenSaverSelection active_screen_saver = ScreenSaverSelection::Life;
     const float current_clkdiv = kPanel.clkdiv;
@@ -328,6 +331,7 @@ int main()
     home_assistant_manager::init();
     mqtt_manager::init();
     share_price_manager::init();
+    air_traffic_manager::init();
     environment_sensor_manager::init();
     web_config_server::init();
     console_controller::set_wifi_status(wifi_manager::status());
@@ -335,6 +339,7 @@ int main()
     console_controller::set_home_assistant_status(home_assistant_manager::status());
     console_controller::set_mqtt_status(mqtt_manager::status());
     console_controller::set_share_market_status(share_price_manager::status());
+    console_controller::set_air_traffic_status(air_traffic_manager::status());
     console_controller::set_environment_sensor_status(environment_sensor_manager::status());
 
     // Render one complete back buffer before scanout starts so the panel never
@@ -361,7 +366,6 @@ int main()
     {
         screens::draw_demo_screen(framebuffer::back());
     }
-
     framebuffer::swap();
     display::present(framebuffer::front());
 
@@ -501,6 +505,10 @@ int main()
             (on_shares_landing || on_share_detail) && !any_key_activity;
         const SharePeriod share_fetch_period =
             on_shares_landing ? SharePeriod::Today : console_state.share_period;
+        // Same page-isolation rule as shares: only poll the ADS-B feed while
+        // its own page is the one actually visible.
+        const bool air_traffic_fetch_enabled =
+            console_state.active_page == MenuPage::AirTraffic && !any_key_activity;
         // Local web control should stay responsive even when share data refresh
         // is active, so service the web server before optional market fetches.
         update_start = get_absolute_time();
@@ -513,6 +521,12 @@ int main()
                                         share_fetch_enabled) ||
             console_changed;
         log_if_slow("share_price_manager::update", update_start);
+
+        update_start = get_absolute_time();
+        console_changed =
+            air_traffic_manager::update(wifi_manager::status(), air_traffic_fetch_enabled) ||
+            console_changed;
+        log_if_slow("air_traffic_manager::update", update_start);
 
         update_start = get_absolute_time();
         environment_sensor_manager::update();
@@ -534,6 +548,9 @@ int main()
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
         console_changed =
             console_controller::set_share_market_status(share_price_manager::status()) ||
+            console_changed;
+        console_changed =
+            console_controller::set_air_traffic_status(air_traffic_manager::status()) ||
             console_changed;
         console_changed = console_controller::set_environment_sensor_status(
                               environment_sensor_manager::status()) ||
@@ -614,12 +631,18 @@ int main()
         {
             // Diagnostic-only, deliberately always-on (not PERIODIC_LOG,
             // which compiles out by default): reports the worst-case stack
-            // headroom seen so far against the fixed 2048-byte core0 stack.
-            // If this heads toward zero, a hard lockup from stack overflow
-            // (as opposed to a software dead-end) is the explanation, not a
-            // guess.
-            std::printf("Stack free (worst case since boot): %lu bytes\n",
-                        static_cast<unsigned long>(stack_high_water_free_bytes()));
+            // headroom seen so far against the core0 stack. If this heads
+            // toward zero, a hard lockup from stack overflow (as opposed to
+            // a software dead-end) is the explanation, not a guess. Rate
+            // limited well below the 1s load/heap sampling window below so
+            // it reads as an occasional liveness heartbeat, not per-second
+            // spam indistinguishable from other log lines.
+            if (absolute_time_diff_us(get_absolute_time(), next_heartbeat) <= 0)
+            {
+                std::printf("HEARTBEAT: alive, stack free (worst case since boot) = %lu bytes\n",
+                            static_cast<unsigned long>(stack_high_water_free_bytes()));
+                next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
+            }
 
             const uint64_t total_us = loop_load.active_us + loop_load.sleep_us;
             const uint8_t load_percent =

@@ -71,4 +71,7 @@ WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, in
 /// and consistent without extra boxes, subtitles, or divider lines.
 void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count);
 
+/// @brief Draws shared left/right page-navigation arrows used by paged menus.
+void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right);
+
 } // namespace screens

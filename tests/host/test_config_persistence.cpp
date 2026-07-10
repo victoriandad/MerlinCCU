@@ -138,17 +138,14 @@ HOST_TEST(migrate_legacy_settings_carries_every_field_forward)
     EXPECT_EQ(migrated.weather_coordinates[0], '\0');
 }
 
-HOST_TEST(sanitize_settings_fills_empty_device_name_and_password)
+HOST_TEST(sanitize_settings_fills_empty_device_name)
 {
     RuntimeConfig settings = config_persistence::make_default_settings();
     settings.device_name.fill('\0');
-    settings.admin_password.fill('\0');
 
     const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
 
     EXPECT_TRUE(std::strcmp(sanitized.device_name.data(), config_persistence::kDefaultDeviceName) == 0);
-    EXPECT_TRUE(
-        std::strcmp(sanitized.admin_password.data(), config_persistence::kDefaultAdminPassword) == 0);
 }
 
 HOST_TEST(sanitize_settings_clamps_screen_saver_timeout_to_the_maximum)
@@ -206,31 +203,4 @@ HOST_TEST(should_auto_enable_home_assistant_requires_all_three_fields)
     // Already-enabled should not be reported as "needs auto-enable".
     settings.home_assistant_enabled = true;
     EXPECT_FALSE(config_persistence::should_auto_enable_home_assistant(settings));
-}
-
-HOST_TEST(constant_time_password_matches_functional_correctness)
-{
-    std::array<char, 32> stored = {};
-    text_utils::copy_text(stored, "merlin");
-
-    // Real call sites always pass an oversized, zero-initialized buffer (see
-    // web_config_server.cpp's `char current_password[40] = {}`), so tests use
-    // the same shape rather than a bare string literal.
-    std::array<char, 40> correct = {};
-    text_utils::copy_text(correct, "merlin");
-    EXPECT_TRUE(config_persistence::constant_time_password_matches(correct.data(), stored));
-
-    std::array<char, 40> wrong = {};
-    text_utils::copy_text(wrong, "wrong-password");
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(wrong.data(), stored));
-
-    std::array<char, 40> shorter = {};
-    text_utils::copy_text(shorter, "merli");
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(shorter.data(), stored));
-
-    std::array<char, 40> longer = {};
-    text_utils::copy_text(longer, "merlin2");
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(longer.data(), stored));
-
-    EXPECT_FALSE(config_persistence::constant_time_password_matches(nullptr, stored));
 }
