@@ -364,7 +364,6 @@ int main()
     {
         screens::draw_demo_screen(framebuffer::back());
     }
-
     framebuffer::swap();
     display::present(framebuffer::front());
 

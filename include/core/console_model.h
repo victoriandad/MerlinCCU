@@ -924,4 +924,10 @@ struct ConsoleState
 const KeyLegend& key_legend(HardKeyId key);
 
 /// @brief Builds a default console state for startup.
-ConsoleState make_default_console_state();
+/// @details Writes directly into `out` rather than returning by value --
+/// `ConsoleState` is tens of KB, and returning it through an assignment
+/// (rather than a direct-initialization the compiler can elide) requires a
+/// full stack-resident temporary, which overflows this MCU's tiny default
+/// stack. Never change this back to return-by-value without confirming the
+/// call site is a guaranteed-elided direct-initialization.
+void make_default_console_state(ConsoleState& out);

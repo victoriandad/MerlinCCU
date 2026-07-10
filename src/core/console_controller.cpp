@@ -32,7 +32,7 @@ namespace
 // The console controller owns the user-facing aggregate state. Subsystem
 // managers push snapshots into it, while button events mutate the menu and
 // annunciator model from one central place.
-ConsoleState g_console_state = make_default_console_state();
+ConsoleState g_console_state = {};
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
 // Set by Pinter mutations, consumed by flush_pending_pinter_save(). The
@@ -3968,7 +3968,7 @@ bool apply_softkey_route(SoftKeyRoute route)
         g_console_state.test_state = next_test_state(g_console_state.test_state);
         return true;
     case SoftKeyRoute::ResetConsoleState:
-        g_console_state = make_default_console_state();
+        make_default_console_state(g_console_state);
         g_alert_sequence_counter = 1U;
         g_home_assistant_connect_failures = 0U;
         g_weather_refresh_failures = 0U;
@@ -4061,7 +4061,7 @@ bool apply_softkey_route(SoftKeyRoute route)
 /// @brief Initializes the console controller state and derived outputs.
 void init()
 {
-    g_console_state = make_default_console_state();
+    make_default_console_state(g_console_state);
     g_redraw_requested = false;
     g_alert_sequence_counter = 1U;
     g_home_assistant_connect_failures = 0U;
