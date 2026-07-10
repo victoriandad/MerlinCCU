@@ -303,6 +303,8 @@ int main()
 
     uint32_t life_frame_counter = 0;
     absolute_time_t next_life_stats = make_timeout_time_ms(1000);
+    constexpr uint32_t kHeartbeatIntervalMs = 30000U;
+    absolute_time_t next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
     absolute_time_t last_user_activity = get_absolute_time();
     ScreenSaverSelection active_screen_saver = ScreenSaverSelection::Life;
     const float current_clkdiv = kPanel.clkdiv;
@@ -629,12 +631,18 @@ int main()
         {
             // Diagnostic-only, deliberately always-on (not PERIODIC_LOG,
             // which compiles out by default): reports the worst-case stack
-            // headroom seen so far against the fixed 2048-byte core0 stack.
-            // If this heads toward zero, a hard lockup from stack overflow
-            // (as opposed to a software dead-end) is the explanation, not a
-            // guess.
-            std::printf("Stack free (worst case since boot): %lu bytes\n",
-                        static_cast<unsigned long>(stack_high_water_free_bytes()));
+            // headroom seen so far against the core0 stack. If this heads
+            // toward zero, a hard lockup from stack overflow (as opposed to
+            // a software dead-end) is the explanation, not a guess. Rate
+            // limited well below the 1s load/heap sampling window below so
+            // it reads as an occasional liveness heartbeat, not per-second
+            // spam indistinguishable from other log lines.
+            if (absolute_time_diff_us(get_absolute_time(), next_heartbeat) <= 0)
+            {
+                std::printf("HEARTBEAT: alive, stack free (worst case since boot) = %lu bytes\n",
+                            static_cast<unsigned long>(stack_high_water_free_bytes()));
+                next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
+            }
 
             const uint64_t total_us = loop_load.active_us + loop_load.sleep_us;
             const uint8_t load_percent =
