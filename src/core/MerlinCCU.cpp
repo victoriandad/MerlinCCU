@@ -56,6 +56,14 @@ inline constexpr uint32_t kMenuLoopSleepMs = 20U;
 inline constexpr int64_t kMicrosecondsPerMinute = 60LL * 1000LL * 1000LL;
 inline constexpr int64_t kLoopLoadWindowUs = 1000LL * 1000LL;
 
+/// @brief Sampling window for the screensaver's periodic fps/timing log.
+inline constexpr uint32_t kLifeStatsIntervalMs = 1000U;
+
+/// @brief Screensaver frame pacing; the LED matrix screensavers render their
+/// own full frame each iteration and do not need the menu loop's tighter
+/// input-polling cadence.
+inline constexpr uint32_t kScreenSaverFrameSleepMs = 75U;
+
 /// @brief Hardware watchdog window for the main loop.
 /// @details Normal iterations complete in tens of milliseconds (20ms menu sleep
 /// plus draw/update work), so this is two to three orders of magnitude above
@@ -302,7 +310,7 @@ int main()
     ScreenMode active_mode = startup_mode;
 
     uint32_t life_frame_counter = 0;
-    absolute_time_t next_life_stats = make_timeout_time_ms(1000);
+    absolute_time_t next_life_stats = make_timeout_time_ms(kLifeStatsIntervalMs);
     constexpr uint32_t kHeartbeatIntervalMs = 30000U;
     absolute_time_t next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
     absolute_time_t last_user_activity = get_absolute_time();
@@ -415,7 +423,7 @@ int main()
         // already-pending web-preview request -- exactly the kind of
         // multi-second UI stall that is otherwise very hard to pin down
         // after the fact without a timestamp trail.
-        constexpr int64_t kSlowUpdateThresholdUs = 100000; // 100ms
+        constexpr int64_t kSlowUpdateThresholdUs = 100000LL; // 100ms
         const auto log_if_slow = [](const char* name, absolute_time_t start)
         {
             const int64_t elapsed_us = absolute_time_diff_us(start, get_absolute_time());
@@ -455,7 +463,7 @@ int main()
         {
             active_mode = ScreenMode::Menu;
             last_user_activity = get_absolute_time();
-            next_life_stats = make_timeout_time_ms(1000);
+            next_life_stats = make_timeout_time_ms(kLifeStatsIntervalMs);
             console_changed = true;
             if (event.type == ButtonEventType::Pressed && event.id == ButtonId::Alert)
             {
@@ -571,7 +579,7 @@ int main()
                     resolve_runtime_screen_saver(console_controller::state().screen_saver_selection);
                 init_selected_screensaver(active_screen_saver, framebuffer::front(),
                                           console_controller::state().time_status);
-                next_life_stats = make_timeout_time_ms(1000);
+                next_life_stats = make_timeout_time_ms(kLifeStatsIntervalMs);
             }
         }
 
@@ -597,13 +605,13 @@ int main()
                              static_cast<unsigned long>(life_frame_counter), stats.sim_us,
                              stats.draw_us, stats.present_us);
                 life_frame_counter = 0;
-                next_life_stats = make_timeout_time_ms(1000);
+                next_life_stats = make_timeout_time_ms(kLifeStatsIntervalMs);
             }
 
             const absolute_time_t sleep_start = get_absolute_time();
             loop_load.active_us +=
                 static_cast<uint64_t>(absolute_time_diff_us(loop_start, sleep_start));
-            sleep_ms(75);
+            sleep_ms(kScreenSaverFrameSleepMs);
             loop_load.sleep_us +=
                 static_cast<uint64_t>(absolute_time_diff_us(sleep_start, get_absolute_time()));
         }

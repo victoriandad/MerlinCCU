@@ -63,15 +63,15 @@ void set_pixel(uint8_t* fb, int x, int y, bool on)
     // Pixels are packed MSB-first so the in-memory layout matches the raster
     // generation code and avoids another bit-order transform during scanout.
     uint8_t& byte = fb[y * kUiStride + (x >> 3)];
-    const uint8_t kMask = 0x80U >> (x & 7);
+    const uint8_t mask = 0x80U >> (x & 7);
 
     if (on)
     {
-        byte |= kMask;
+        byte |= mask;
     }
     else
     {
-        byte &= static_cast<uint8_t>(~kMask);
+        byte &= static_cast<uint8_t>(~mask);
     }
 }
 
@@ -83,9 +83,9 @@ bool get_pixel(const uint8_t* fb, int x, int y)
         return false;
     }
 
-    const uint8_t kByte = fb[y * kUiStride + (x >> 3)];
-    const uint8_t kMask = 0x80U >> (x & 7);
-    return (kByte & kMask) != 0;
+    const uint8_t byte = fb[y * kUiStride + (x >> 3)];
+    const uint8_t mask = 0x80U >> (x & 7);
+    return (byte & mask) != 0;
 }
 
 /// @brief Draws a horizontal line clipped to the framebuffer bounds.
@@ -159,8 +159,8 @@ void fill_rect(uint8_t* fb, int x, int y, int w, int h, bool on)
 /// @brief Draws the main top-left to bottom-right diagonal.
 void draw_diag(uint8_t* fb, bool on)
 {
-    const int kLimit = std::min(kUiWidth, kUiHeight);
-    for (int i = 0; i < kLimit; ++i)
+    const int limit = std::min(kUiWidth, kUiHeight);
+    for (int i = 0; i < limit; ++i)
     {
         set_pixel(fb, i, i, on);
     }
@@ -183,13 +183,13 @@ void draw_line(uint8_t* fb, int x0, int y0, int x1, int y1, bool on)
             break;
         }
 
-        const int kE2 = 2 * err;
-        if (kE2 >= dy)
+        const int e2 = 2 * err;
+        if (e2 >= dy)
         {
             err += dy;
             x0 += sx;
         }
-        if (kE2 <= dx)
+        if (e2 <= dx)
         {
             err += dx;
             y0 += sy;
@@ -203,17 +203,17 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, int scale)
     scale = std::max(scale, 1);
 
     const fonts::Glyph5x7* g = fonts::lookup_5x7(c);
-    const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, c);
+    const fonts::GlyphMetrics metrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, c);
 
     // Glyph metrics are used instead of always drawing the full cell width so
     // small labels look more like a panel legend and less like monospaced debug text.
-    for (int col = 0; col < kMetrics.draw_width; ++col)
+    for (int col = 0; col < metrics.draw_width; ++col)
     {
-        const uint8_t kBits = g->col[kMetrics.first_column + col];
+        const uint8_t bits = g->col[metrics.first_column + col];
 
         for (int row = 0; row < 7; ++row)
         {
-            if (((kBits >> row) & 0x01U) == 0)
+            if (((bits >> row) & 0x01U) == 0)
             {
                 continue;
             }
@@ -235,16 +235,16 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font)
     if (font == fonts::FontFace::Font5x7)
     {
         const fonts::Glyph5x7* glyph = fonts::lookup_5x7(c);
-        const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(font, c);
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, c);
 
         // The 5x7 font is stored column-wise, so it is handled directly here
         // instead of forcing the generic bitmap-font path to special-case it later.
-        for (int col = 0; col < kMetrics.draw_width; ++col)
+        for (int col = 0; col < metrics.draw_width; ++col)
         {
-            const uint8_t kBits = glyph->col[kMetrics.first_column + col];
+            const uint8_t bits = glyph->col[metrics.first_column + col];
             for (int row = 0; row < 7; ++row)
             {
-                if (((kBits >> row) & 0x01U) == 0)
+                if (((bits >> row) & 0x01U) == 0)
                 {
                     continue;
                 }
@@ -255,18 +255,18 @@ void draw_char(uint8_t* fb, int x, int y, char c, bool on, fonts::FontFace font)
     }
 
     const uint8_t* rows = fonts::lookup_bitmap_rows(font, c);
-    const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(font, c);
-    const int kHeight = fonts::font_height(font);
+    const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, c);
+    const int height = fonts::font_height(font);
 
     // Larger fonts stay row-major because that makes title-style glyph data
     // easier to author and inspect by eye in the static font tables.
-    for (int row = 0; row < kHeight; ++row)
+    for (int row = 0; row < height; ++row)
     {
-        const uint8_t kBits = rows[row];
-        for (int col = 0; col < kMetrics.draw_width; ++col)
+        const uint8_t bits = rows[row];
+        for (int col = 0; col < metrics.draw_width; ++col)
         {
-            const int kSourceCol = kMetrics.first_column + col;
-            if ((kBits & (0x80U >> kSourceCol)) == 0)
+            const int source_col = metrics.first_column + col;
+            if ((bits & (0x80U >> source_col)) == 0)
             {
                 continue;
             }
@@ -281,9 +281,9 @@ void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, int scale, int
     int cursor_x = x;
     while (*s)
     {
-        const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, *s);
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(fonts::FontFace::Font5x7, *s);
         draw_char(fb, cursor_x, y, *s, on, scale);
-        cursor_x += (kMetrics.advance * scale) + spacing;
+        cursor_x += (metrics.advance * scale) + spacing;
         ++s;
     }
 }
@@ -295,9 +295,9 @@ void draw_text(uint8_t* fb, int x, int y, const char* s, bool on, fonts::FontFac
 
     while (*s)
     {
-        const fonts::GlyphMetrics kMetrics = fonts::glyph_metrics(font, *s);
+        const fonts::GlyphMetrics metrics = fonts::glyph_metrics(font, *s);
         draw_char(fb, cursor_x, y, *s, on, font);
-        cursor_x += kMetrics.advance + spacing;
+        cursor_x += metrics.advance + spacing;
         ++s;
     }
 }

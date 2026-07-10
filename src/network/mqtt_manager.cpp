@@ -359,7 +359,7 @@ bool parse_mqtt_endpoint()
 /// @brief Derives MQTT identity strings and retained topic names from Wi-Fi identity.
 void configure_identity_and_topics(const WifiStatus& wifi_status)
 {
-    char mac_hex[kMacAddressHexTextCapacity] = {};
+    std::array<char, kMacAddressHexTextCapacity> mac_hex = {};
     size_t hex_len = 0;
     // Derive stable MQTT identifiers from the Wi-Fi MAC so Home Assistant sees
     // the device as the same entity across reboots without extra storage.
@@ -369,7 +369,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         {
             break;
         }
-        if (is_hex_digit(c) && hex_len + 1 < sizeof(mac_hex))
+        if (is_hex_digit(c) && hex_len + 1 < mac_hex.size())
         {
             mac_hex[hex_len++] = to_lower_hex(c);
         }
@@ -378,7 +378,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
 
     if (hex_len != kMacAddressHexDigitCount)
     {
-        std::snprintf(mac_hex, sizeof(mac_hex), "%s", kUnknownMacText);
+        std::snprintf(mac_hex.data(), mac_hex.size(), "%s", kUnknownMacText);
     }
 
     const RuntimeConfig& config = config_manager::settings();
@@ -389,12 +389,13 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         config.mqtt_discovery_prefix[0]
             ? config.mqtt_discovery_prefix.data()
             : (kMqttDiscoveryPrefix[0] ? kMqttDiscoveryPrefix : "homeassistant");
-    const char* name_suffix = (std::strlen(mac_hex) >= kDeviceNameSuffixLength)
-                                  ? (mac_hex + std::strlen(mac_hex) - kDeviceNameSuffixLength)
-                                  : mac_hex;
+    const char* name_suffix = (std::strlen(mac_hex.data()) >= kDeviceNameSuffixLength)
+                                  ? (mac_hex.data() + std::strlen(mac_hex.data()) -
+                                     kDeviceNameSuffixLength)
+                                  : mac_hex.data();
 
-    std::snprintf(g_device_id, sizeof(g_device_id), "merlinccu_%s", mac_hex);
-    std::snprintf(g_client_id, sizeof(g_client_id), "merlinccu-%s", mac_hex);
+    std::snprintf(g_device_id, sizeof(g_device_id), "merlinccu_%s", mac_hex.data());
+    std::snprintf(g_client_id, sizeof(g_client_id), "merlinccu-%s", mac_hex.data());
     if (config.device_name[0] != '\0')
     {
         std::snprintf(g_device_name, sizeof(g_device_name), "%s", config.device_name.data());
@@ -404,7 +405,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         std::snprintf(g_device_name, sizeof(g_device_name), "MerlinCCU %s", name_suffix);
     }
     std::snprintf(g_availability_topic, sizeof(g_availability_topic), "%s/%s/availability",
-                  base_topic, mac_hex);
+                  base_topic, mac_hex.data());
 
     // Topic strings are precomputed once per session so the publish path can
     // focus on ordering and retry behaviour instead of repeated formatting.
@@ -414,7 +415,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         std::snprintf(g_sensor_unique_ids[i].data(), g_sensor_unique_ids[i].size(), "%s_%s",
                       g_device_id, sensor.slug);
         std::snprintf(g_sensor_state_topics[i].data(), g_sensor_state_topics[i].size(),
-                      "%s/%s/%s/state", base_topic, mac_hex, sensor.slug);
+                      "%s/%s/%s/state", base_topic, mac_hex.data(), sensor.slug);
         std::snprintf(g_sensor_discovery_topics[i].data(), g_sensor_discovery_topics[i].size(),
                       "%s/sensor/%s/%s/config", discovery_prefix, g_device_id, sensor.slug);
     }
@@ -468,48 +469,48 @@ bool ensure_client()
 bool build_discovery_payload(SensorId sensor_id)
 {
     const SensorDescriptor& sensor = kSensorDescriptors[sensor_index(sensor_id)];
-    char extras[512] = {};
+    std::array<char, 512> extras = {};
     size_t extras_len = 0;
 
     // Optional Home Assistant metadata is appended incrementally so each sensor
     // can stay compact while still advertising richer diagnostics where useful.
     if (sensor.icon != nullptr && sensor.icon[0] != '\0')
     {
-        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
+        const int len = std::snprintf(extras.data() + extras_len, extras.size() - extras_len,
                                        ",\"icon\":\"%s\"", sensor.icon);
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
+        if (len <= 0 || static_cast<size_t>(len) >= (extras.size() - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(kLen);
+        extras_len += static_cast<size_t>(len);
     }
 
     if (sensor.diagnostic)
     {
-        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
+        const int len = std::snprintf(extras.data() + extras_len, extras.size() - extras_len,
                                        ",\"entity_category\":\"diagnostic\"");
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
+        if (len <= 0 || static_cast<size_t>(len) >= (extras.size() - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(kLen);
+        extras_len += static_cast<size_t>(len);
     }
 
     if (sensor.options_json != nullptr)
     {
-        const int kLen =
-            std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
+        const int len =
+            std::snprintf(extras.data() + extras_len, extras.size() - extras_len,
                           ",\"device_class\":\"enum\",\"options\":%s", sensor.options_json);
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
+        if (len <= 0 || static_cast<size_t>(len) >= (extras.size() - extras_len))
         {
             return false;
         }
-        extras_len += static_cast<size_t>(kLen);
+        extras_len += static_cast<size_t>(len);
     }
 
     // The final payload is a retained self-description of the device and one
     // sensor entity. State values are published separately afterward.
-    const int kLen =
+    const int len =
         std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
                       "{\"name\":\"%s\",\"unique_id\":\"%s\","
                       "\"state_topic\":\"%s\",\"availability_topic\":\"%s\","
@@ -520,8 +521,8 @@ bool build_discovery_payload(SensorId sensor_id)
                       sensor.name, g_sensor_unique_ids[sensor_index(sensor_id)].data(),
                       g_sensor_state_topics[sensor_index(sensor_id)].data(), g_availability_topic,
                       kOnlineState, kOfflineState, kFirmwareVersion, g_device_id, g_device_name,
-                      kManufacturer, kDeviceModel, kFirmwareVersion, extras);
-    return kLen > 0 && static_cast<size_t>(kLen) < sizeof(g_publish_buffer);
+                      kManufacturer, kDeviceModel, kFirmwareVersion, extras.data());
+    return len > 0 && static_cast<size_t>(len) < sizeof(g_publish_buffer);
 }
 
 /// @brief Builds the state payload for one sensor from the cached value table.
@@ -605,19 +606,19 @@ void update_sensor_values(const WifiStatus& wifi_status,
 
     // HTTP status is surfaced separately because it is often the fastest clue
     // when Home Assistant is reachable but the API flow is still misconfigured.
-    char http_status_text[16] = {};
+    std::array<char, 16> http_status_text = {};
     if (home_assistant_status.last_http_status > 0)
     {
-        std::snprintf(http_status_text, sizeof(http_status_text), "%d",
+        std::snprintf(http_status_text.data(), http_status_text.size(), "%d",
                       home_assistant_status.last_http_status);
     }
     else
     {
-        std::snprintf(http_status_text, sizeof(http_status_text), "%s", kUnknownState);
+        std::snprintf(http_status_text.data(), http_status_text.size(), "%s", kUnknownState);
     }
     copy_cstr(g_current_sensor_values[sensor_index(SensorId::HomeAssistantHttp)].data(),
               g_current_sensor_values[sensor_index(SensorId::HomeAssistantHttp)].size(),
-              http_status_text);
+              http_status_text.data());
 
     const char* tracked_entity_state =
         home_assistant_status.tracked_entity_id[0] == '\0'
@@ -639,8 +640,8 @@ void mqtt_request_cb(void* arg, err_t err)
 {
     (void)arg;
 
-    const PendingPublishType kCompletedType = g_publish_type_in_flight;
-    const SensorId kCompletedSensor = g_sensor_in_flight;
+    const PendingPublishType completed_type = g_publish_type_in_flight;
+    const SensorId completed_sensor = g_sensor_in_flight;
     g_publish_type_in_flight = PendingPublishType::None;
     g_request_in_flight = false;
 
@@ -653,24 +654,24 @@ void mqtt_request_cb(void* arg, err_t err)
         return;
     }
 
-    switch (kCompletedType)
+    switch (completed_type)
     {
     case PendingPublishType::Availability:
         g_availability_published = true;
         PERIODIC_LOG("MQTT availability published topic=%s\n", g_availability_topic);
         break;
     case PendingPublishType::Discovery:
-        g_sensor_discovery_published[sensor_index(kCompletedSensor)] = true;
+        g_sensor_discovery_published[sensor_index(completed_sensor)] = true;
         g_status.discovery_published = all_discovery_published();
         PERIODIC_LOG("MQTT discovery published topic=%s\n",
-                     g_sensor_discovery_topics[sensor_index(kCompletedSensor)].data());
+                     g_sensor_discovery_topics[sensor_index(completed_sensor)].data());
         break;
     case PendingPublishType::State:
-        copy_text(g_published_sensor_values[sensor_index(kCompletedSensor)],
-                  g_current_sensor_values[sensor_index(kCompletedSensor)].data());
+        copy_text(g_published_sensor_values[sensor_index(completed_sensor)],
+                  g_current_sensor_values[sensor_index(completed_sensor)].data());
         PERIODIC_LOG("MQTT state published topic=%s value=%s\n",
-                     g_sensor_state_topics[sensor_index(kCompletedSensor)].data(),
-                     g_published_sensor_values[sensor_index(kCompletedSensor)].data());
+                     g_sensor_state_topics[sensor_index(completed_sensor)].data(),
+                     g_published_sensor_values[sensor_index(completed_sensor)].data());
         break;
     case PendingPublishType::None:
         break;
@@ -722,11 +723,11 @@ bool start_mqtt_connect()
     set_status(MqttConnectionState::Connecting, 0);
 
     cyw43_arch_lwip_begin();
-    const err_t kRc = mqtt_client_connect(g_client, &g_resolved_ip, g_broker_port,
-                                          mqtt_connection_cb, nullptr, &g_client_info);
+    const err_t rc = mqtt_client_connect(g_client, &g_resolved_ip, g_broker_port,
+                                         mqtt_connection_cb, nullptr, &g_client_info);
     cyw43_arch_lwip_end();
 
-    if (kRc == ERR_OK)
+    if (rc == ERR_OK)
     {
         PERIODIC_LOG("MQTT connecting host=%s port=%u\n", g_broker_host,
                      static_cast<unsigned>(g_broker_port));
@@ -734,8 +735,8 @@ bool start_mqtt_connect()
     }
 
     g_connect_in_progress = false;
-    set_status(MqttConnectionState::Error, kRc);
-    std::printf("MQTT connect start failed err=%d\n", static_cast<int>(kRc));
+    set_status(MqttConnectionState::Error, rc);
+    std::printf("MQTT connect start failed err=%d\n", static_cast<int>(rc));
     return false;
 }
 
@@ -784,15 +785,15 @@ bool start_session()
     }
 
     cyw43_arch_lwip_begin();
-    const err_t kDnsRc = dns_gethostbyname(g_broker_host, &g_resolved_ip, dns_found, nullptr);
+    const err_t dns_rc = dns_gethostbyname(g_broker_host, &g_resolved_ip, dns_found, nullptr);
     cyw43_arch_lwip_end();
 
-    if (kDnsRc == ERR_OK)
+    if (dns_rc == ERR_OK)
     {
         return start_mqtt_connect();
     }
 
-    if (kDnsRc == ERR_INPROGRESS)
+    if (dns_rc == ERR_INPROGRESS)
     {
         g_dns_pending = true;
         g_dns_deadline = make_timeout_time_ms(kResolveTimeoutMs);
@@ -801,8 +802,8 @@ bool start_session()
         return true;
     }
 
-    set_status(MqttConnectionState::Error, kDnsRc);
-    std::printf("MQTT dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(kDnsRc),
+    set_status(MqttConnectionState::Error, dns_rc);
+    std::printf("MQTT dns_gethostbyname failed err=%d host=%s\n", static_cast<int>(dns_rc),
                 g_broker_host);
     return false;
 }
@@ -817,18 +818,18 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
         return false;
     }
 
-    const u16_t kPayloadLength = static_cast<u16_t>(std::strlen(payload));
-    const u8_t kRetain = 1;
+    const u16_t payload_length = static_cast<u16_t>(std::strlen(payload));
+    const u8_t retain = 1;
 
     cyw43_arch_lwip_begin();
-    const err_t kRc = mqtt_publish(g_client, topic, payload, kPayloadLength, 0, kRetain,
-                                   mqtt_request_cb, nullptr);
+    const err_t rc = mqtt_publish(g_client, topic, payload, payload_length, 0, retain,
+                                  mqtt_request_cb, nullptr);
     cyw43_arch_lwip_end();
 
-    if (kRc != ERR_OK)
+    if (rc != ERR_OK)
     {
-        set_status(MqttConnectionState::Error, kRc);
-        std::printf("MQTT publish start failed err=%d topic=%s\n", static_cast<int>(kRc), topic);
+        set_status(MqttConnectionState::Error, rc);
+        std::printf("MQTT publish start failed err=%d topic=%s\n", static_cast<int>(rc), topic);
         return false;
     }
 
@@ -912,14 +913,14 @@ void init()
 bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assistant_status,
             const TimeStatus& time_status)
 {
-    const MqttStatus kPrevious = g_status;
+    const MqttStatus previous = g_status;
 
     // Configuration and runtime-disable paths are handled first so the rest of
     // the function can assume MQTT is actually supposed to run.
     if (!g_status.configured)
     {
         g_status.state = MqttConnectionState::Unconfigured;
-        return kPrevious != g_status;
+        return previous != g_status;
     }
 
     if (!kMqttRuntimeEnabled)
@@ -927,16 +928,16 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         g_status.state = MqttConnectionState::Disabled;
         g_status.last_error = 0;
         reset_runtime(true);
-        return kPrevious != g_status;
+        return previous != g_status;
     }
 
-    const bool kWifiReady = wifi_status.ip_address[0] != '\0';
-    if (!kWifiReady)
+    const bool wifi_ready = wifi_status.ip_address[0] != '\0';
+    if (!wifi_ready)
     {
         reset_runtime(true);
         g_status.state = MqttConnectionState::WaitingForWifi;
         g_status.last_error = 0;
-        return kPrevious != g_status;
+        return previous != g_status;
     }
 
     configure_identity_and_topics(wifi_status);
@@ -970,7 +971,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
         start_next_publish();
     }
 
-    return kPrevious != g_status;
+    return previous != g_status;
 }
 
 const MqttStatus& status()

@@ -1,6 +1,7 @@
 #include "air_traffic_screens.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -109,8 +110,15 @@ void draw_ring(uint8_t* fb, int cx, int cy, int radius)
 }
 
 constexpr int kPlotCenterX = kUiWidth / 2;
-constexpr int kPlotCenterY = 36 + ((kFooterY - 10 - 36) / 2);
+constexpr int kPlotCenterY = kTableHeaderY + ((kFooterY - 10 - kTableHeaderY) / 2);
 constexpr int kPlotRadius = 96;
+
+/// @brief Ratio of a circle's circumference to its diameter, needed here
+/// because C++17 has no `std::numbers::pi` (that's a C++20 addition).
+constexpr double kPi = 3.14159265358979;
+
+constexpr int kMessageY = 92;
+constexpr int kMessageDetailY = 120;
 
 /// @brief Converts a distance/bearing pair to a screen point on the PPI plot.
 /// @details Bearing is compass degrees (0 = North = up), not screen angle, so
@@ -121,7 +129,7 @@ void polar_to_screen(int16_t distance_deci_nm, int16_t bearing_deg, uint16_t ran
     const double distance_nm = static_cast<double>(distance_deci_nm) / 10.0;
     const double clamped_nm = std::min(distance_nm, static_cast<double>(range_nm));
     const double radius_px = (clamped_nm / static_cast<double>(range_nm)) * kPlotRadius;
-    const double radians = static_cast<double>(bearing_deg) * (3.14159265358979 / 180.0);
+    const double radians = static_cast<double>(bearing_deg) * (kPi / 180.0);
 
     *out_x = kPlotCenterX + static_cast<int>(std::lround(radius_px * std::sin(radians)));
     *out_y = kPlotCenterY - static_cast<int>(std::lround(radius_px * std::cos(radians)));
@@ -165,7 +173,8 @@ void draw_plot_blip(uint8_t* fb, const AirTrafficEntry& entry, uint16_t range_nm
 void draw_plot_view(uint8_t* fb, const ConsoleState& console_state)
 {
     const AirTrafficStatus& status = console_state.air_traffic_status;
-    const uint16_t range_nm = (status.configured_radius_nm != 0U) ? status.configured_radius_nm : 30U;
+    const uint16_t range_nm =
+        (status.configured_radius_nm != 0U) ? status.configured_radius_nm : kDefaultAirTrafficRadiusNm;
 
     draw_ring(fb, kPlotCenterX, kPlotCenterY, kPlotRadius);
     draw_ring(fb, kPlotCenterX, kPlotCenterY, kPlotRadius / 3);
@@ -174,10 +183,10 @@ void draw_plot_view(uint8_t* fb, const ConsoleState& console_state)
                             kPlotCenterY - kPlotRadius, true);
     framebuffer::fill_rect(fb, kPlotCenterX - 1, kPlotCenterY - 1, 3, 3, true);
 
-    char range_text[8] = {};
-    std::snprintf(range_text, sizeof(range_text), "%unm", static_cast<unsigned>(range_nm));
-    framebuffer::draw_text(fb, kPlotCenterX + 4, kPlotCenterY - kPlotRadius, range_text, true,
-                           fonts::FontFace::Font5x7, 1);
+    std::array<char, 8> range_text = {};
+    std::snprintf(range_text.data(), range_text.size(), "%unm", static_cast<unsigned>(range_nm));
+    framebuffer::draw_text(fb, kPlotCenterX + 4, kPlotCenterY - kPlotRadius, range_text.data(),
+                           true, fonts::FontFace::Font5x7, 1);
 
     for (uint8_t i = 0U; i < status.aircraft_count; ++i)
     {
@@ -206,22 +215,22 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
 
     if (!status.data_valid || status.aircraft_count == 0U)
     {
-        char detail[24] = {};
+        std::array<char, 24> detail = {};
         if (!status.data_valid && status.last_http_status > 0)
         {
-            std::snprintf(detail, sizeof(detail), "HTTP %d", status.last_http_status);
+            std::snprintf(detail.data(), detail.size(), "HTTP %d", status.last_http_status);
         }
         else if (!status.data_valid && status.last_error != 0)
         {
-            std::snprintf(detail, sizeof(detail), "ERR %d", status.last_error);
+            std::snprintf(detail.data(), detail.size(), "ERR %d", status.last_error);
         }
 
         const char* message = status.data_valid ? "NO AIRCRAFT NEARBY" : "WAITING FOR DATA";
-        screens::draw_centered_text(fb, kUiWidth / 2, 92, message, true, fonts::FontFace::Font8x12,
-                                    1);
+        screens::draw_centered_text(fb, kUiWidth / 2, kMessageY, message, true,
+                                    fonts::FontFace::Font8x12, 1);
         if (detail[0] != '\0')
         {
-            screens::draw_centered_text(fb, kUiWidth / 2, 120, detail, true,
+            screens::draw_centered_text(fb, kUiWidth / 2, kMessageDetailY, detail.data(), true,
                                         fonts::FontFace::Font5x7, 1);
         }
         draw_footer_disclaimer(fb);

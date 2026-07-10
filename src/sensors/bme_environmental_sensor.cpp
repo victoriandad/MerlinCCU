@@ -1,5 +1,7 @@
 #include "bme_environmental_sensor.h"
 
+#include <algorithm>
+
 #include "pico/error.h"
 #include "pico/stdlib.h"
 
@@ -322,14 +324,11 @@ BmeEnvironmentalReading BmeEnvironmentalSensor::compensate_bme280(
         humidity - (((((humidity >> 15) * (humidity >> 15)) >> 7) *
                      static_cast<int32_t>(c.dig_h1)) >>
                     4);
-    if (humidity < 0)
-    {
-        humidity = 0;
-    }
-    if (humidity > 419430400)
-    {
-        humidity = 419430400;
-    }
+    // Bosch's compensation formula can overshoot slightly past 0-100% RH in its
+    // Q22.10 fixed-point output; clamp back into that range before scaling down.
+    constexpr int32_t kHumidityQ22Dot10Min = 0;
+    constexpr int32_t kHumidityQ22Dot10Max = 419430400; // 100% RH in Q22.10
+    humidity = std::clamp(humidity, kHumidityQ22Dot10Min, kHumidityQ22Dot10Max);
 
     reading.valid = true;
     reading.temperature_centi_celsius = (t_fine * 5 + 128) >> 8;

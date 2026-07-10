@@ -671,9 +671,9 @@ void copy_softkey_label_slice(char* dest, size_t dest_size, const char* src, siz
         return;
     }
 
-    const size_t kCopyLength = (length < (dest_size - 1)) ? length : (dest_size - 1);
-    std::memcpy(dest, src, kCopyLength);
-    dest[kCopyLength] = '\0';
+    const size_t copy_length = (length < (dest_size - 1)) ? length : (dest_size - 1);
+    std::memcpy(dest, src, copy_length);
+    dest[copy_length] = '\0';
 }
 
 /// @brief Returns the longest prefix that still fits within the softkey label width.
@@ -681,13 +681,13 @@ void copy_softkey_label_slice(char* dest, size_t dest_size, const char* src, siz
 /// and the code needs a visual fit, not a character-count fit.
 size_t fit_wrapped_label_prefix(const char* text, fonts::FontFace font, int max_width)
 {
-    char candidate[48] = {};
+    std::array<char, 48> candidate = {};
     size_t length = 0;
 
     while (text[length] != '\0' && text[length] != '\n')
     {
-        copy_softkey_label_slice(candidate, sizeof(candidate), text, length + 1);
-        if (text_width(candidate, font) > max_width)
+        copy_softkey_label_slice(candidate.data(), candidate.size(), text, length + 1);
+        if (text_width(candidate.data(), font) > max_width)
         {
             break;
         }
@@ -755,23 +755,23 @@ WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, in
     }
 
     char* const line_buffers[3] = {wrapped.line_one, wrapped.line_two, wrapped.line_three};
-    const int kEffectiveMaxLines = (max_lines > 3) ? 3 : max_lines;
+    const int effective_max_lines = (max_lines > 3) ? 3 : max_lines;
     const char* cursor = label;
 
-    for (int line_index = 0; line_index < kEffectiveMaxLines; ++line_index)
+    for (int line_index = 0; line_index < effective_max_lines; ++line_index)
     {
         if (cursor[0] == '\0')
         {
             break;
         }
 
-        const size_t kFitLength = fit_wrapped_label_prefix(cursor, font, max_width);
-        if (kFitLength == 0)
+        const size_t fit_length = fit_wrapped_label_prefix(cursor, font, max_width);
+        if (fit_length == 0)
         {
             break;
         }
 
-        size_t length = find_wrapped_label_split(cursor, kFitLength);
+        size_t length = find_wrapped_label_split(cursor, fit_length);
         while (length > 0 && cursor[length - 1] == ' ')
         {
             --length;
@@ -811,9 +811,10 @@ void draw_detail_row(uint8_t* fb, int y, const DetailRow& row, bool draw_divider
     constexpr size_t kLabelBufferSize = 32U;
 
     const char* value = (row.value != nullptr && row.value[0] != '\0') ? row.value : "-";
-    char label_text[kLabelBufferSize] = {};
-    build_uppercase_label(row.label, label_text, sizeof(label_text));
-    framebuffer::draw_text(fb, kLabelX, y, label_text, true, fonts::FontFace::FontTitle8x12, 1);
+    std::array<char, kLabelBufferSize> label_text = {};
+    build_uppercase_label(row.label, label_text.data(), label_text.size());
+    framebuffer::draw_text(fb, kLabelX, y, label_text.data(), true, fonts::FontFace::FontTitle8x12,
+                           1);
     framebuffer::draw_text(fb, kValueX, y + kValueBaselineOffsetY, value, true,
                            fonts::FontFace::Font5x7, 1);
 
@@ -907,17 +908,17 @@ void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state
     constexpr int kScratchpadTopY = kUiHeight - kScratchpadHeight - 3;
     constexpr int kTextInsetY = 4;
     constexpr int kRightPadX = 10;
-    char timeout_text[16] = {};
-    build_screen_saver_timeout_text(console_state.screen_saver_timeout_edit_minutes, timeout_text,
-                                    sizeof(timeout_text));
-    const int kTextWidth = text_width(timeout_text, fonts::FontFace::Font5x7, 1);
-    const int kTextX = kScratchpadLeftX + kScratchpadWidth - kRightPadX - kTextWidth;
+    std::array<char, 16> timeout_text = {};
+    build_screen_saver_timeout_text(console_state.screen_saver_timeout_edit_minutes,
+                                    timeout_text.data(), timeout_text.size());
+    const int timeout_text_width = text_width(timeout_text.data(), fonts::FontFace::Font5x7, 1);
+    const int text_x = kScratchpadLeftX + kScratchpadWidth - kRightPadX - timeout_text_width;
 
     framebuffer::fill_rect(fb, kScratchpadLeftX + 1, kScratchpadTopY + 1, kScratchpadWidth - 2,
                            kScratchpadHeight - 2, false);
     draw_softkey_selection_brackets(fb, kScratchpadLeftX, kScratchpadTopY, kScratchpadHeight,
                                     kScratchpadWidth, fonts::FontFace::Font5x7, true);
-    framebuffer::draw_text(fb, kTextX, kScratchpadTopY + kTextInsetY, timeout_text, true,
+    framebuffer::draw_text(fb, text_x, kScratchpadTopY + kTextInsetY, timeout_text.data(), true,
                            fonts::FontFace::Font5x7, 1);
 }
 
@@ -931,13 +932,13 @@ bool extract_bracketed_softkey_value(const char* line_text, char* out_value, siz
         return false;
     }
 
-    const size_t kLength = std::strlen(line_text);
-    if (kLength < 3 || line_text[0] != '[' || line_text[kLength - 1] != ']')
+    const size_t length = std::strlen(line_text);
+    if (length < 3 || line_text[0] != '[' || line_text[length - 1] != ']')
     {
         return false;
     }
 
-    copy_softkey_label_slice(out_value, out_size, line_text + 1, kLength - 2);
+    copy_softkey_label_slice(out_value, out_size, line_text + 1, length - 2);
     return true;
 }
 
@@ -963,17 +964,17 @@ constexpr int softkey_bracket_depth(fonts::FontFace font)
 void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
                                      int total_width, fonts::FontFace font, bool on)
 {
-    const int kDepth = softkey_bracket_depth(font);
-    const int kRightX = left_x + total_width - 1;
-    const int kBottomY = top_y + total_height - 1;
+    const int depth = softkey_bracket_depth(font);
+    const int right_x = left_x + total_width - 1;
+    const int bottom_y = top_y + total_height - 1;
 
-    framebuffer::draw_vline(fb, left_x, top_y, kBottomY, on);
-    framebuffer::draw_hline(fb, left_x, left_x + kDepth, top_y, on);
-    framebuffer::draw_hline(fb, left_x, left_x + kDepth, kBottomY, on);
+    framebuffer::draw_vline(fb, left_x, top_y, bottom_y, on);
+    framebuffer::draw_hline(fb, left_x, left_x + depth, top_y, on);
+    framebuffer::draw_hline(fb, left_x, left_x + depth, bottom_y, on);
 
-    framebuffer::draw_vline(fb, kRightX, top_y, kBottomY, on);
-    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, top_y, on);
-    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, kBottomY, on);
+    framebuffer::draw_vline(fb, right_x, top_y, bottom_y, on);
+    framebuffer::draw_hline(fb, right_x - depth, right_x, top_y, on);
+    framebuffer::draw_hline(fb, right_x - depth, right_x, bottom_y, on);
 }
 
 } // namespace
@@ -1003,11 +1004,11 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         return;
     }
 
-    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font, max_lines);
-    const int kLineHeight = framebuffer::font_height(font);
-    const int kBlockHeight =
-        (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
-    const int kBlockTopY = y + ((kSoftkeyLayout.height - kBlockHeight) / 2);
+    const WrappedSoftkeyLabel wrapped = wrap_softkey_label(action.label, font, max_lines);
+    const int line_height = framebuffer::font_height(font);
+    const int block_height =
+        (wrapped.line_count * line_height) + ((wrapped.line_count - 1) * kSoftkeyLayout.line_gap);
+    const int block_top_y = y + ((kSoftkeyLayout.height - block_height) / 2);
 
     auto draw_line = [&](const char* line_text, int line_index)
     {
@@ -1016,56 +1017,57 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
             return;
         }
 
-        char bracketed_value[48] = {};
-        const bool kBracketedValue =
-            extract_bracketed_softkey_value(line_text, bracketed_value, sizeof(bracketed_value));
-        const int kBracketDepth = softkey_bracket_depth(font);
+        std::array<char, 48> bracketed_value = {};
+        const bool has_bracketed_value = extract_bracketed_softkey_value(
+            line_text, bracketed_value.data(), bracketed_value.size());
+        const int bracket_depth = softkey_bracket_depth(font);
         constexpr int kBracketGap = 2;
         constexpr int kBracketPadY = 2;
-        const int kInnerTextWidth =
-            kBracketedValue ? text_width(bracketed_value, font) : text_width(line_text, font);
-        const int kLabelWidth = kBracketedValue
-                                    ? (kInnerTextWidth + (kBracketDepth * 2) + (kBracketGap * 2))
-                                    : kInnerTextWidth;
-        const int kTextX =
+        const int inner_text_width = has_bracketed_value ? text_width(bracketed_value.data(), font)
+                                                          : text_width(line_text, font);
+        const int label_width = has_bracketed_value
+                                    ? (inner_text_width + (bracket_depth * 2) + (kBracketGap * 2))
+                                    : inner_text_width;
+        const int text_x =
             left_side
                 ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
-                : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kLabelWidth);
-        const int kTextY = kBlockTopY + (line_index * (kLineHeight + kSoftkeyLayout.line_gap));
-        const int kBracketTopY = kTextY - kBracketPadY;
-        const int kBracketHeight = kLineHeight + (kBracketPadY * 2);
-        const bool kTextOn = !action.inverted;
+                : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - label_width);
+        const int text_y = block_top_y + (line_index * (line_height + kSoftkeyLayout.line_gap));
+        const int bracket_top_y = text_y - kBracketPadY;
+        const int bracket_height = line_height + (kBracketPadY * 2);
+        const bool text_on = !action.inverted;
         if (action.inverted)
         {
             constexpr int kHighlightPadX = 1;
             constexpr int kHighlightPadY = 1;
-            const int kHighlightTopY = (kBracketedValue ? kBracketTopY : kTextY) - kHighlightPadY;
-            const int kHighlightHeight =
-                (kBracketedValue ? kBracketHeight : kLineHeight) + (kHighlightPadY * 2);
-            framebuffer::fill_rect(fb, kTextX - kHighlightPadX, kHighlightTopY,
-                                   kLabelWidth + (kHighlightPadX * 2), kHighlightHeight, true);
+            const int highlight_top_y =
+                (has_bracketed_value ? bracket_top_y : text_y) - kHighlightPadY;
+            const int highlight_height =
+                (has_bracketed_value ? bracket_height : line_height) + (kHighlightPadY * 2);
+            framebuffer::fill_rect(fb, text_x - kHighlightPadX, highlight_top_y,
+                                   label_width + (kHighlightPadX * 2), highlight_height, true);
         }
 
-        if (!kBracketedValue)
+        if (!has_bracketed_value)
         {
-            framebuffer::draw_text(fb, kTextX, kTextY, line_text, kTextOn, font, 1);
+            framebuffer::draw_text(fb, text_x, text_y, line_text, text_on, font, 1);
             return;
         }
 
-        const int kInnerTextX = kTextX + kBracketDepth + kBracketGap;
-        draw_softkey_selection_brackets(fb, kTextX, kBracketTopY, kBracketHeight, kLabelWidth, font,
-                                        kTextOn);
-        framebuffer::draw_text(fb, kInnerTextX, kTextY, bracketed_value, kTextOn, font, 1);
+        const int inner_text_x = text_x + bracket_depth + kBracketGap;
+        draw_softkey_selection_brackets(fb, text_x, bracket_top_y, bracket_height, label_width,
+                                        font, text_on);
+        framebuffer::draw_text(fb, inner_text_x, text_y, bracketed_value.data(), text_on, font, 1);
     };
 
-    draw_line(kWrapped.line_one, 0);
-    if (kWrapped.line_count > 1)
+    draw_line(wrapped.line_one, 0);
+    if (wrapped.line_count > 1)
     {
-        draw_line(kWrapped.line_two, 1);
+        draw_line(wrapped.line_two, 1);
     }
-    if (kWrapped.line_count > 2)
+    if (wrapped.line_count > 2)
     {
-        draw_line(kWrapped.line_three, 2);
+        draw_line(wrapped.line_three, 2);
     }
 }
 
@@ -1074,15 +1076,15 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
 /// share the same bezel framing while only the content region changes.
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
-    const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
-    const int kMaxLines = softkey_label_max_lines(console_state.active_page);
+    const fonts::FontFace label_font = softkey_label_font(console_state.active_page);
+    const int max_lines = softkey_label_max_lines(console_state.active_page);
 
     for (int i = 0; i < 5; ++i)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont,
-                           kMaxLines);
+        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, label_font,
+                           max_lines);
         draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           kLabelFont, kMaxLines);
+                           label_font, max_lines);
     }
 }
 
@@ -1266,14 +1268,14 @@ void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_st
     constexpr int kArrowGap = 12;
     constexpr int kArrowCentreYOffset = 3;
     constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
-    char day_label[32] = {};
+    std::array<char, 32> day_label = {};
     const char* day_text = calendar_day_text(console_state, console_state.calendar_day_offset,
-                                             day_label, sizeof(day_label));
+                                             day_label.data(), day_label.size());
     if (day_text == nullptr || day_text[0] == '\0')
     {
-        std::snprintf(day_label, sizeof(day_label), "%d days",
+        std::snprintf(day_label.data(), day_label.size(), "%d days",
                       static_cast<int>(console_state.calendar_day_offset));
-        day_text = day_label;
+        day_text = day_label.data();
     }
 
     const int label_width = text_width(day_text, kFooterFont, 1);
@@ -1297,11 +1299,11 @@ int compact_detail_value_x(const DetailRow* rows, size_t count)
     int widest_label_width = 0;
     for (size_t i = 0; i < count; ++i)
     {
-        char label_text[kLabelBufferSize] = {};
-        std::snprintf(label_text, sizeof(label_text),
+        std::array<char, kLabelBufferSize> label_text = {};
+        std::snprintf(label_text.data(), label_text.size(),
                       "%s:", rows[i].label != nullptr ? rows[i].label : "");
         widest_label_width =
-            std::max(widest_label_width, text_width(label_text, kCompactDetailFont, 1));
+            std::max(widest_label_width, text_width(label_text.data(), kCompactDetailFont, 1));
     }
 
     return kCompactDetailTextX + widest_label_width + text_width(" ", kCompactDetailFont, 1);
@@ -1311,10 +1313,11 @@ int compact_detail_value_x(const DetailRow* rows, size_t count)
 void draw_compact_detail_line(uint8_t* fb, int y, const char* label, const char* value, int value_x)
 {
     constexpr size_t kLabelBufferSize = 32U;
-    char label_text[kLabelBufferSize] = {};
-    std::snprintf(label_text, sizeof(label_text), "%s:", label != nullptr ? label : "");
+    std::array<char, kLabelBufferSize> label_text = {};
+    std::snprintf(label_text.data(), label_text.size(), "%s:", label != nullptr ? label : "");
 
-    framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text, true, kCompactDetailFont, 1);
+    framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text.data(), true, kCompactDetailFont,
+                           1);
     framebuffer::draw_text(fb, value_x, y, (value != nullptr && value[0] != '\0') ? value : "-",
                            true, kCompactDetailFont, 1);
 }
@@ -1349,10 +1352,11 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 
     draw_blank_menu_page(fb, console_state);
 
-    char ip_text[32] = {};
-    framebuffer::draw_text(fb, kHomeIpX, kHomeIpY,
-                           home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
-                           true, kHomeIpFont, 1);
+    std::array<char, 32> ip_text = {};
+    framebuffer::draw_text(
+        fb, kHomeIpX, kHomeIpY,
+        home_ip_status_text(console_state.wifi_status, ip_text.data(), ip_text.size()), true,
+        kHomeIpFont, 1);
 }
 
 /// @brief Draws the shared calendar overview selected from Home.
@@ -1383,17 +1387,17 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
         return;
     }
 
-    char owner_line[48] = {};
-    char time_line[48] = {};
-    std::snprintf(owner_line, sizeof(owner_line), "%s", calendar_owner_text(event.owner));
-    std::snprintf(time_line, sizeof(time_line), "%s-%s",
+    std::array<char, 48> owner_line = {};
+    std::array<char, 48> time_line = {};
+    std::snprintf(owner_line.data(), owner_line.size(), "%s", calendar_owner_text(event.owner));
+    std::snprintf(time_line.data(), time_line.size(), "%s-%s",
                   event.start_time[0] != '\0' ? event.start_time.data() : "--:--",
                   event.end_time[0] != '\0' ? event.end_time.data() : "--:--");
 
     const DetailRow rows[] = {
         {"Event", event.title.data()},
-        {"Time", time_line},
-        {"Owner", owner_line},
+        {"Time", time_line.data()},
+        {"Owner", owner_line.data()},
         {"Location", event.location[0] != '\0' ? event.location.data() : "-"},
         {"Alarm", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
         {"Attendees", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
@@ -1495,7 +1499,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
 {
     constexpr int kGraphX = 42;
     constexpr int kGraphY = 44;
-    const int kGraphWidth = kUiWidth - (kGraphX * 2);
+    const int graph_width = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 94;
     constexpr int kGraphMinLabelGapY = 6;
     constexpr int kGraphPlotInset = 1;
@@ -1515,7 +1519,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kGraphPlotInset};
+    const GraphPlotArea plot_area{kGraphX, kGraphY, graph_width, kGraphHeight, kGraphPlotInset};
     draw_graph_plot_border(fb, plot_area);
     const int base_y = graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
@@ -1548,20 +1552,21 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
                            1);
 
-    char min_value_text[16] = {};
-    char max_value_text[16] = {};
-    char min_label[24] = {};
-    char max_label[24] = {};
-    format_share_graph_value(min_value, min_value_text, sizeof(min_value_text));
-    format_share_graph_value(max_value, max_value_text, sizeof(max_value_text));
-    std::snprintf(min_label, sizeof(min_label), "MIN %s", min_value_text);
-    std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
+    std::array<char, 16> min_value_text = {};
+    std::array<char, 16> max_value_text = {};
+    std::array<char, 24> min_label = {};
+    std::array<char, 24> max_label = {};
+    format_share_graph_value(min_value, min_value_text.data(), min_value_text.size());
+    format_share_graph_value(max_value, max_value_text.data(), max_value_text.size());
+    std::snprintf(min_label.data(), min_label.size(), "MIN %s", min_value_text.data());
+    std::snprintf(max_label.data(), max_label.size(), "MAX %s", max_value_text.data());
 
     const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
-    framebuffer::draw_text(fb, kGraphX, label_y, min_label, true, fonts::FontFace::Font5x7, 1);
-    const int max_label_width = text_width(max_label, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
-                           fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kGraphX, label_y, min_label.data(), true, fonts::FontFace::Font5x7,
+                           1);
+    const int max_label_width = text_width(max_label.data(), fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_text(fb, kGraphX + graph_width - max_label_width, label_y, max_label.data(),
+                           true, fonts::FontFace::Font5x7, 1);
 }
 
 /// @brief Returns a compact label for one share history period.
@@ -1619,7 +1624,7 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
 {
     constexpr int kGraphX = 42;
     constexpr int kGraphY = 52;
-    constexpr int kGraphWidth = kUiWidth - (kGraphX * 2);
+    const int graph_width = kUiWidth - (kGraphX * 2);
     constexpr int kGraphHeight = 128;
     constexpr int kTimelineLabelY = kGraphY + kGraphHeight + 5;
     constexpr int kMetricLabelY = kTimelineLabelY + 13;
@@ -1634,21 +1639,21 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     if (count < 2U)
     {
         const char* metric_label = local_condition_metric_text(console_state.local_condition_metric);
-        char current_text[20] = {};
+        std::array<char, 20> current_text = {};
         build_local_condition_value_text(console_state.local_condition_metric,
-                                         console_state.environment_sensor_status, current_text,
-                                         sizeof(current_text));
+                                         console_state.environment_sensor_status,
+                                         current_text.data(), current_text.size());
         draw_centered_text(fb, kUiWidth / 2, 106, metric_label, true, fonts::FontFace::Font8x12,
                            1);
         draw_centered_text(fb, kUiWidth / 2, 136,
-                           current_text[0] != '\0' && std::strcmp(current_text, "-") != 0
-                               ? current_text
+                           current_text[0] != '\0' && std::strcmp(current_text.data(), "-") != 0
+                               ? current_text.data()
                                : "NO DATA",
                            true, fonts::FontFace::Font8x12, 1);
         return;
     }
 
-    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
+    const GraphPlotArea plot_area{kGraphX, kGraphY, graph_width, kGraphHeight, kPlotInset};
     draw_graph_plot_border(fb, plot_area);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
     draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
@@ -1670,15 +1675,15 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         previous_y = y;
     }
 
-    char current_text[20] = {};
+    std::array<char, 20> current_text = {};
     build_local_condition_value_text(console_state.local_condition_metric,
-                                     console_state.environment_sensor_status, current_text,
-                                     sizeof(current_text));
+                                     console_state.environment_sensor_status, current_text.data(),
+                                     current_text.size());
 
     framebuffer::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", true,
                            fonts::FontFace::Font5x7, 1);
     const int now_width = text_width("NOW", fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - now_width, kTimelineLabelY, "NOW", true,
+    framebuffer::draw_text(fb, kGraphX + graph_width - now_width, kTimelineLabelY, "NOW", true,
                            fonts::FontFace::Font5x7, 1);
 
     framebuffer::draw_text(fb, kGraphX, kMetricLabelY,
@@ -1690,9 +1695,9 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         text_width(" ", fonts::FontFace::Font5x7, 1);
     framebuffer::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, true,
                            fonts::FontFace::Font5x7, 1);
-    const int current_width = text_width(current_text, fonts::FontFace::Font8x12, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - current_width, kMetricLabelY - 3,
-                           current_text, true, fonts::FontFace::Font8x12, 1);
+    const int current_width = text_width(current_text.data(), fonts::FontFace::Font8x12, 1);
+    framebuffer::draw_text(fb, kGraphX + graph_width - current_width, kMetricLabelY - 3,
+                           current_text.data(), true, fonts::FontFace::Font8x12, 1);
 }
 
 /// @brief Draws the weather-source selection page under Settings.
@@ -1778,23 +1783,23 @@ void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
 /// the same clean row styling as the status page instead of a boxed panel.
 void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    char mask_text[16] = {};
-    std::snprintf(mask_text, sizeof(mask_text), "0x%04lX",
+    std::array<char, 16> mask_text = {};
+    std::snprintf(mask_text.data(), mask_text.size(), "0x%04lX",
                   static_cast<unsigned long>(console_state.keypad_debug_status.active_mask));
-    char lines_text[24] = {};
-    std::snprintf(lines_text, sizeof(lines_text), "%u/%u",
+    std::array<char, 24> lines_text = {};
+    std::snprintf(lines_text.data(), lines_text.size(), "%u/%u",
                   static_cast<unsigned>(console_state.keypad_debug_status.active_count),
                   static_cast<unsigned>(console_state.keypad_debug_status.configured_count));
-    char drive_text[16] = {};
+    std::array<char, 16> drive_text = {};
     if (console_state.keypad_debug_status.probe_drive_panel_pin != 0)
     {
         std::snprintf(
-            drive_text, sizeof(drive_text), "%u",
+            drive_text.data(), drive_text.size(), "%u",
             static_cast<unsigned>(console_state.keypad_debug_status.probe_drive_panel_pin));
     }
     else
     {
-        std::snprintf(drive_text, sizeof(drive_text), "-");
+        std::snprintf(drive_text.data(), drive_text.size(), "-");
     }
 
     const DetailRow rows[] = {
@@ -1804,9 +1809,9 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
         {"ACTIVE PINS", console_state.keypad_debug_status.active_panel_pins[0]
                             ? console_state.keypad_debug_status.active_panel_pins.data()
                             : "-"},
-        {"ACTIVE MASK", mask_text},
-        {"ACTIVE LINES", lines_text},
-        {"PROBE DRIVE", drive_text},
+        {"ACTIVE MASK", mask_text.data()},
+        {"ACTIVE LINES", lines_text.data()},
+        {"PROBE DRIVE", drive_text.data()},
         {"PROBE SENSE", console_state.keypad_debug_status.probe_hit_panel_pins[0]
                             ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
                             : "-"},
@@ -1862,20 +1867,21 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
     while (cursor != nullptr && cursor[0] != '\0' && drawn < kVisibleLines)
     {
         const char* eol = std::strchr(cursor, '\n');
-        char line[80] = {};
+        std::array<char, 80> line = {};
         if (eol == nullptr)
         {
-            std::snprintf(line, sizeof(line), "%s", cursor);
+            std::snprintf(line.data(), line.size(), "%s", cursor);
         }
         else
         {
             const size_t len = static_cast<size_t>(eol - cursor);
-            std::snprintf(line, sizeof(line), "%.*s", static_cast<int>(len), cursor);
+            std::snprintf(line.data(), line.size(), "%.*s", static_cast<int>(len), cursor);
         }
 
         if (logical_line >= console_state.alert_detail_scroll_line)
         {
-            framebuffer::draw_text(fb, kTextX, kStartY + (drawn * kPitch), line, true, kFont, 1);
+            framebuffer::draw_text(fb, kTextX, kStartY + (drawn * kPitch), line.data(), true, kFont,
+                                   1);
             ++drawn;
         }
 
@@ -1918,9 +1924,9 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
 {
     framebuffer::clear(fb, false);
 
-    char title[24] = {};
-    screen_banners::draw_standard_banners(fb, console_state,
-                                          menu_page_title(console_state, title, sizeof(title)));
+    std::array<char, 24> title = {};
+    screen_banners::draw_standard_banners(
+        fb, console_state, menu_page_title(console_state, title.data(), title.size()));
     draw_softkeys(fb, console_state);
 
     switch (console_state.active_page)
@@ -2014,12 +2020,12 @@ void draw_calibration_screen(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    const int kMidX = kUiWidth / 2;
-    const int kMidY = kUiHeight / 2;
-    const int kQ1X = kUiWidth / 4;
-    const int kQ3X = (kUiWidth * 3) / 4;
-    const int kQ1Y = kUiHeight / 4;
-    const int kQ3Y = (kUiHeight * 3) / 4;
+    const int mid_x = kUiWidth / 2;
+    const int mid_y = kUiHeight / 2;
+    const int q1_x = kUiWidth / 4;
+    const int q3_x = (kUiWidth * 3) / 4;
+    const int q1_y = kUiHeight / 4;
+    const int q3_y = (kUiHeight * 3) / 4;
 
     // Full outer border of the logical UI.
     framebuffer::draw_rect(fb, 0, 0, kUiWidth, kUiHeight, true);
@@ -2034,14 +2040,14 @@ void draw_calibration_screen(uint8_t* fb)
     framebuffer::fill_rect(fb, kUiWidth - 8, kUiHeight - 8, 8, 8, true);
 
     // Centre cross.
-    framebuffer::draw_vline(fb, kMidX, 0, kUiHeight - 1, true);
-    framebuffer::draw_hline(fb, 0, kUiWidth - 1, kMidY, true);
+    framebuffer::draw_vline(fb, mid_x, 0, kUiHeight - 1, true);
+    framebuffer::draw_hline(fb, 0, kUiWidth - 1, mid_y, true);
 
     // Quarter lines.
-    framebuffer::draw_vline(fb, kQ1X, 16, kUiHeight - 17, true);
-    framebuffer::draw_vline(fb, kQ3X, 16, kUiHeight - 17, true);
-    framebuffer::draw_hline(fb, 16, kUiWidth - 17, kQ1Y, true);
-    framebuffer::draw_hline(fb, 16, kUiWidth - 17, kQ3Y, true);
+    framebuffer::draw_vline(fb, q1_x, 16, kUiHeight - 17, true);
+    framebuffer::draw_vline(fb, q3_x, 16, kUiHeight - 17, true);
+    framebuffer::draw_hline(fb, 16, kUiWidth - 17, q1_y, true);
+    framebuffer::draw_hline(fb, 16, kUiWidth - 17, q3_y, true);
 
     // Small edge ticks every 32 logical pixels.
     for (int x = 0; x < kUiWidth; x += 32)
@@ -2057,7 +2063,7 @@ void draw_calibration_screen(uint8_t* fb)
     }
 
     // Central box.
-    framebuffer::draw_rect(fb, kMidX - 30, kMidY - 20, 60, 40, true);
+    framebuffer::draw_rect(fb, mid_x - 30, mid_y - 20, 60, 40, true);
 
     // Top and bottom labels for orientation.
     framebuffer::draw_text(fb, 12, 12, "TOP", true, 1, 1);
@@ -2065,10 +2071,10 @@ void draw_calibration_screen(uint8_t* fb)
     framebuffer::draw_text(fb, 12, kUiHeight - 20, "BOTTOM", true, 1, 1);
 
     // A few filled blocks for checking edge visibility and stability.
-    framebuffer::fill_rect(fb, 20, kMidY - 10, 12, 20, true);
-    framebuffer::fill_rect(fb, kUiWidth - 32, kMidY - 10, 12, 20, true);
-    framebuffer::fill_rect(fb, kMidX - 10, 24, 20, 12, true);
-    framebuffer::fill_rect(fb, kMidX - 10, kUiHeight - 36, 20, 12, true);
+    framebuffer::fill_rect(fb, 20, mid_y - 10, 12, 20, true);
+    framebuffer::fill_rect(fb, kUiWidth - 32, mid_y - 10, 12, 20, true);
+    framebuffer::fill_rect(fb, mid_x - 10, 24, 20, 12, true);
+    framebuffer::fill_rect(fb, mid_x - 10, kUiHeight - 36, 20, 12, true);
 }
 
 } // namespace screens

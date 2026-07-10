@@ -584,28 +584,28 @@ bool parse_yahoo_chart_response()
     ShareWatchEntry& share = g_status.watched_shares[0];
     copy_text(share.display_name, "BAE SYSTEMS");
 
-    char text[32] = {};
-    if (extract_json_string(body, "\"symbol\"", text, sizeof(text)))
+    std::array<char, 32> text = {};
+    if (extract_json_string(body, "\"symbol\"", text.data(), text.size()))
     {
-        copy_text(share.symbol, text);
+        copy_text(share.symbol, text.data());
     }
     else
     {
         copy_text(share.symbol, kWatchedSymbol);
     }
 
-    if (extract_json_string(body, "\"exchangeName\"", text, sizeof(text)))
+    if (extract_json_string(body, "\"exchangeName\"", text.data(), text.size()))
     {
-        copy_text(share.exchange, text);
+        copy_text(share.exchange, text.data());
     }
     else
     {
         copy_text(share.exchange, "LSE");
     }
 
-    if (extract_json_string(body, "\"currency\"", text, sizeof(text)))
+    if (extract_json_string(body, "\"currency\"", text.data(), text.size()))
     {
-        copy_text(share.currency, std::strcmp(text, "GBp") == 0 ? "GBX" : text);
+        copy_text(share.currency, std::strcmp(text.data(), "GBp") == 0 ? "GBX" : text.data());
     }
     else
     {

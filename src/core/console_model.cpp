@@ -359,15 +359,15 @@ void make_default_console_state(ConsoleState& out)
             kSampleOwners[static_cast<size_t>(sample_index) %
                           (sizeof(kSampleOwners) / sizeof(kSampleOwners[0]))];
         const int start_hour = 8 + (sample_index % 10);
-        char start_time[6] = {};
-        char end_time[6] = {};
-        char title[32] = {};
-        std::snprintf(start_time, sizeof(start_time), "%02d:00", start_hour);
-        std::snprintf(end_time, sizeof(end_time), "%02d:30", start_hour);
-        std::snprintf(title, sizeof(title), "%s %+d", sample_owner.title_prefix, day);
+        std::array<char, 6> start_time = {};
+        std::array<char, 6> end_time = {};
+        std::array<char, 32> title = {};
+        std::snprintf(start_time.data(), start_time.size(), "%02d:00", start_hour);
+        std::snprintf(end_time.data(), end_time.size(), "%02d:30", start_hour);
+        std::snprintf(title.data(), title.size(), "%s %+d", sample_owner.title_prefix, day);
 
-        add_calendar_event(sample_owner.owner, day_offset, start_time, end_time, title,
-                           "Calendar test", "None", sample_owner.attendee,
+        add_calendar_event(sample_owner.owner, day_offset, start_time.data(), end_time.data(),
+                           title.data(), "Calendar test", "None", sample_owner.attendee,
                            "Generated sample for day paging.");
     }
 

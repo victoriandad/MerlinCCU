@@ -78,25 +78,25 @@ bool parse_clock_text_minutes(const char* text, int* out_minutes)
         return false;
     }
 
-    const char kHourTens = text[0];
-    const char kHourOnes = text[1];
-    const char kMinuteTens = text[3];
-    const char kMinuteOnes = text[4];
+    const char hour_tens = text[0];
+    const char hour_ones = text[1];
+    const char minute_tens = text[3];
+    const char minute_ones = text[4];
 
-    if (kHourTens < '0' || kHourTens > '9' || kHourOnes < '0' || kHourOnes > '9' ||
-        kMinuteTens < '0' || kMinuteTens > '9' || kMinuteOnes < '0' || kMinuteOnes > '9')
+    if (hour_tens < '0' || hour_tens > '9' || hour_ones < '0' || hour_ones > '9' ||
+        minute_tens < '0' || minute_tens > '9' || minute_ones < '0' || minute_ones > '9')
     {
         return false;
     }
 
-    const int kHours = ((kHourTens - '0') * 10) + (kHourOnes - '0');
-    const int kMinutes = ((kMinuteTens - '0') * 10) + (kMinuteOnes - '0');
-    if (kHours < 0 || kHours > 23 || kMinutes < 0 || kMinutes > 59)
+    const int hours = ((hour_tens - '0') * 10) + (hour_ones - '0');
+    const int minutes = ((minute_tens - '0') * 10) + (minute_ones - '0');
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
     {
         return false;
     }
 
-    *out_minutes = (kHours * 60) + kMinutes;
+    *out_minutes = (hours * 60) + minutes;
     return true;
 }
 
@@ -138,11 +138,11 @@ ForecastRenderSlice build_forecast_render_slice(const ConsoleState& console_stat
     constexpr int kDayMinutes = 24 * 60;
     std::array<int, kWeatherForecastEntryCount> raw_minutes = {};
     std::array<int, kWeatherForecastEntryCount> absolute_minutes = {};
-    const uint8_t kForecastCount =
+    const uint8_t forecast_count =
         std::min(console_state.home_assistant_status.weather_forecast_count,
                  static_cast<uint8_t>(kWeatherForecastEntryCount));
     uint8_t parsed_count = 0;
-    while (parsed_count < kForecastCount)
+    while (parsed_count < forecast_count)
     {
         int parsed_minutes = 0;
         if (!parse_clock_text_minutes(
@@ -376,31 +376,33 @@ bool weather_sun_times_available(const ConsoleState& console_state)
 void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr fonts::FontFace kSunFont = fonts::FontFace::Font5x7;
-    char sunrise_label[24] = {};
-    char sunset_label[24] = {};
+    std::array<char, 24> sunrise_label = {};
+    std::array<char, 24> sunset_label = {};
 
     if (console_state.home_assistant_status.sunrise_text[0] != '\0')
     {
-        std::snprintf(sunrise_label, sizeof(sunrise_label), "Sunrise %s",
+        std::snprintf(sunrise_label.data(), sunrise_label.size(), "Sunrise %s",
                       console_state.home_assistant_status.sunrise_text.data());
     }
 
     if (console_state.home_assistant_status.sunset_text[0] != '\0')
     {
-        std::snprintf(sunset_label, sizeof(sunset_label), "Sunset %s",
+        std::snprintf(sunset_label.data(), sunset_label.size(), "Sunset %s",
                       console_state.home_assistant_status.sunset_text.data());
     }
 
     if (sunrise_label[0] != '\0' && sunset_label[0] != '\0')
     {
         framebuffer::draw_hline(fb, 12, kUiWidth - 12, weather_sun_times_y() - 10, true);
-        framebuffer::draw_text(fb, 12, weather_sun_times_y(), sunrise_label, true, kSunFont, 1);
-        framebuffer::draw_text(fb, kUiWidth - 12 - screens::text_width(sunset_label, kSunFont),
-                               weather_sun_times_y(), sunset_label, true, kSunFont, 1);
+        framebuffer::draw_text(fb, 12, weather_sun_times_y(), sunrise_label.data(), true, kSunFont,
+                               1);
+        framebuffer::draw_text(fb,
+                               kUiWidth - 12 - screens::text_width(sunset_label.data(), kSunFont),
+                               weather_sun_times_y(), sunset_label.data(), true, kSunFont, 1);
         return;
     }
 
-    const char* label = sunrise_label[0] != '\0' ? sunrise_label : sunset_label;
+    const char* label = sunrise_label[0] != '\0' ? sunrise_label.data() : sunset_label.data();
     if (label[0] == '\0')
     {
         return;
@@ -418,22 +420,22 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
     constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
     constexpr int kFooterLineGap = 2;
 
-    const screens::WrappedSoftkeyLabel kWrapped = screens::wrap_label_lines(
+    const screens::WrappedSoftkeyLabel wrapped = screens::wrap_label_lines(
         weather_source_label_text(console_state), kFooterFont, weather_source_footer_max_width(), 2);
-    const int kLineHeight = framebuffer::font_height(kFooterFont);
-    const int kFirstLineY = weather_source_footer_bottom_y() -
-                            ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));
+    const int line_height = framebuffer::font_height(kFooterFont);
+    const int first_line_y = weather_source_footer_bottom_y() -
+                             ((wrapped.line_count - 1) * (line_height + kFooterLineGap));
 
-    if (kWrapped.line_one[0] != '\0')
+    if (wrapped.line_one[0] != '\0')
     {
-        framebuffer::draw_text(fb, weather_source_footer_left_x(), kFirstLineY, kWrapped.line_one,
+        framebuffer::draw_text(fb, weather_source_footer_left_x(), first_line_y, wrapped.line_one,
                                true, kFooterFont, 1);
     }
 
-    if (kWrapped.line_count > 1 && kWrapped.line_two[0] != '\0')
+    if (wrapped.line_count > 1 && wrapped.line_two[0] != '\0')
     {
         framebuffer::draw_text(fb, weather_source_footer_left_x(),
-                               kFirstLineY + kLineHeight + kFooterLineGap, kWrapped.line_two, true,
+                               first_line_y + line_height + kFooterLineGap, wrapped.line_two, true,
                                kFooterFont, 1);
     }
 }
@@ -535,16 +537,16 @@ void draw_weather_forecast_table_header(uint8_t* fb, fonts::FontFace font)
 void draw_weather_forecast_table_row(uint8_t* fb, const WeatherForecastEntry& entry, int row_y,
                                      fonts::FontFace font)
 {
-    char formatted_condition[24] = {};
-    format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                          sizeof(formatted_condition));
+    std::array<char, 24> formatted_condition = {};
+    format_weather_phrase(entry.condition_text.data(), formatted_condition.data(),
+                          formatted_condition.size());
 
     framebuffer::draw_text(fb, kForecastTimeX, row_y, entry.time_text.data(), true, font, 1);
     framebuffer::draw_text(fb, kForecastTemperatureX, row_y, entry.temperature_text.data(), true,
                            font, 1);
     framebuffer::draw_text(fb, kForecastWindX, row_y, entry.wind_text.data(), true, font, 1);
     framebuffer::draw_text(fb, kForecastConditionX, row_y,
-                           formatted_condition[0] != '\0' ? formatted_condition
+                           formatted_condition[0] != '\0' ? formatted_condition.data()
                                                           : entry.condition_text.data(),
                            true, font, 1);
 }
@@ -625,25 +627,25 @@ bool draw_next_seven_days_forecast_period(uint8_t* fb, const ConsoleState& conso
     framebuffer::draw_text(fb, 148, 36, "Conditions", true, kForecastHeaderFont, 1);
     framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
 
-    char day_label[16] = {};
-    char formatted_condition[24] = {};
+    std::array<char, 16> day_label = {};
+    std::array<char, 24> formatted_condition = {};
     for (uint8_t i = 0; i < row_count; ++i)
     {
         const WeatherDailyForecastEntry& entry =
             console_state.home_assistant_status.weather_daily_forecast[i];
         const int row_y = 54 + (static_cast<int>(i) * 24);
-        format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                              sizeof(formatted_condition));
+        format_weather_phrase(entry.condition_text.data(), formatted_condition.data(),
+                              formatted_condition.size());
 
-        framebuffer::draw_text(
-            fb, 12, row_y,
-            next_seven_days_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)),
-            true, kForecastBodyFont, 1);
+        framebuffer::draw_text(fb, 12, row_y,
+                               next_seven_days_label_text(i, entry.date_text.data(),
+                                                          day_label.data(), day_label.size()),
+                               true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 56, row_y, entry.temperature_text.data(), true,
                                kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 106, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
         framebuffer::draw_text(fb, 148, row_y,
-                               formatted_condition[0] != '\0' ? formatted_condition
+                               formatted_condition[0] != '\0' ? formatted_condition.data()
                                                               : entry.condition_text.data(),
                                true, kForecastBodyFont, 1);
 
@@ -687,19 +689,19 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
         return;
     }
 
-    char status_detail[24] = {};
-    char formatted_condition[32] = {};
-    char direct_config_detail[48] = {};
-    const bool kWeatherConfigured =
+    std::array<char, 24> status_detail = {};
+    std::array<char, 32> formatted_condition = {};
+    std::array<char, 48> direct_config_detail = {};
+    const bool weather_configured =
         (console_state.weather_source == WeatherSource::HomeAssistant)
             ? (console_state.home_assistant_status.weather_entity_id[0] != '\0')
             : true;
-    const ForecastRenderSlice kForecastSlice = build_forecast_render_slice(console_state);
+    const ForecastRenderSlice forecast_slice = build_forecast_render_slice(console_state);
     const char* weather_condition = "WEATHER OFF";
     const char* weather_temperature = "";
     const char* weather_footer = "";
 
-    if (kWeatherConfigured)
+    if (weather_configured)
     {
         if (console_state.weather_source != WeatherSource::HomeAssistant &&
             console_state.home_assistant_status.state == HomeAssistantConnectionState::Unconfigured)
@@ -707,9 +709,9 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
             weather_condition = "SET COORDS";
             if (console_state.home_assistant_status.weather_entity_id[0] != '\0')
             {
-                std::snprintf(direct_config_detail, sizeof(direct_config_detail), "GOT %.32s",
+                std::snprintf(direct_config_detail.data(), direct_config_detail.size(), "GOT %.32s",
                               console_state.home_assistant_status.weather_entity_id.data());
-                weather_footer = direct_config_detail;
+                weather_footer = direct_config_detail.data();
             }
             else
             {
@@ -723,8 +725,9 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
                                     : (console_state.home_assistant_status.state ==
                                                HomeAssistantConnectionState::Connected
                                            ? "NO DATA AVAILABLE"
-                                           : weather_status_detail(console_state, status_detail,
-                                                                   sizeof(status_detail)));
+                                           : weather_status_detail(console_state,
+                                                                   status_detail.data(),
+                                                                   status_detail.size()));
             weather_temperature = console_state.home_assistant_status.weather_temperature.data();
 
             if (console_state.home_assistant_status.state ==
@@ -745,15 +748,15 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
             }
             else
             {
-                weather_footer =
-                    weather_status_detail(console_state, status_detail, sizeof(status_detail));
+                weather_footer = weather_status_detail(console_state, status_detail.data(),
+                                                        status_detail.size());
             }
 
             if (console_state.home_assistant_status.weather_condition[0] != '\0')
             {
                 format_weather_phrase(console_state.home_assistant_status.weather_condition.data(),
-                                      formatted_condition, sizeof(formatted_condition));
-                weather_condition = formatted_condition;
+                                      formatted_condition.data(), formatted_condition.size());
+                weather_condition = formatted_condition.data();
             }
         }
     }
@@ -761,14 +764,14 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
     const bool have_active_period_data =
         (console_state.weather_period == WeatherPeriod::NextSevenDays)
             ? (console_state.home_assistant_status.weather_daily_forecast_count > 0)
-            : (kForecastSlice.count > 0);
-    if (have_active_period_data && draw_weather_forecast_period(fb, console_state, kForecastSlice))
+            : (forecast_slice.count > 0);
+    if (have_active_period_data && draw_weather_forecast_period(fb, console_state, forecast_slice))
     {
-        if (kWeatherConfigured && weather_sun_times_available(console_state))
+        if (weather_configured && weather_sun_times_available(console_state))
         {
             draw_weather_sun_times(fb, console_state);
         }
-        if (kWeatherConfigured)
+        if (weather_configured)
         {
             draw_weather_source_footer(fb, console_state);
         }
@@ -783,13 +786,13 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
                                     fonts::FontFace::Font8x14, 1);
     }
 
-    if (kWeatherConfigured && weather_footer[0] != '\0')
+    if (weather_configured && weather_footer[0] != '\0')
     {
         screens::draw_centered_text(fb, kUiWidth / 2, 162, weather_footer, true,
                                     fonts::FontFace::Font5x7, 1);
     }
 
-    if (kWeatherConfigured)
+    if (weather_configured)
     {
         draw_weather_source_footer(fb, console_state);
     }

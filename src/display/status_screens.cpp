@@ -1,6 +1,7 @@
 #include "status_screens.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdint>
 
@@ -286,8 +287,8 @@ void draw_status_selector_page(uint8_t* fb)
 /// @brief Draws the high-level system overview status page.
 void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    char alert_count_text[8] = {};
-    std::snprintf(alert_count_text, sizeof(alert_count_text), "%u",
+    std::array<char, 8> alert_count_text = {};
+    std::snprintf(alert_count_text.data(), alert_count_text.size(), "%u",
                   static_cast<unsigned>(console_state.alert_count));
 
     const screens::DetailRow rows[] = {
@@ -300,7 +301,7 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
         {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
         {"ENV SENSOR",
          environment_sensor_health_text(console_state.environment_sensor_status.health)},
-        {"ALERTS", alert_count_text},
+        {"ALERTS", alert_count_text.data()},
         {"TEST", test_state_text(console_state.test_state)},
     };
 
@@ -311,15 +312,15 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 void draw_status_connectivity_page(uint8_t* fb, const ConsoleState& console_state)
 {
     const RuntimeConfig& config = config_manager::settings();
-    char rtt_text[16] = {};
+    std::array<char, 16> rtt_text = {};
     if (console_state.wifi_status.internet_rtt_ms >= 0)
     {
-        std::snprintf(rtt_text, sizeof(rtt_text), "%dms",
+        std::snprintf(rtt_text.data(), rtt_text.size(), "%dms",
                       console_state.wifi_status.internet_rtt_ms);
     }
     else
     {
-        std::snprintf(rtt_text, sizeof(rtt_text), "-");
+        std::snprintf(rtt_text.data(), rtt_text.size(), "-");
     }
 
     const char* internet_text = console_state.wifi_status.internet_reachable ? "Up" : "Down";
@@ -338,7 +339,7 @@ void draw_status_connectivity_page(uint8_t* fb, const ConsoleState& console_stat
                            ? console_state.wifi_status.ip_address.data()
                            : "-"},
         {"INTERNET", internet_text},
-        {"RTT", rtt_text},
+        {"RTT", rtt_text.data()},
         {"HA REST", home_assistant_rest_state_text(console_state, config)},
         {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
     };
@@ -356,51 +357,51 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 
     const size_t program_flash = program_flash_bytes();
 
-    char flash_value_text[24] = {};
-    char ram_value_text[24] = {};
-    char program_flash_text[16] = {};
-    char flash_budget_text[16] = {};
-    char reserved_flash_text[16] = {};
-    char static_ram_text[16] = {};
-    char console_text[16] = {};
-    char framebuffer_text[16] = {};
-    char loop_load_text[16] = {};
-    char loop_sample_text[16] = {};
-    build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
-    build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
-    build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
-    build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
-    build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
-    build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
-    std::snprintf(flash_value_text, sizeof(flash_value_text), "%s/%s", program_flash_text,
-                  flash_budget_text);
-    std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/520K", static_ram_text);
+    std::array<char, 24> flash_value_text = {};
+    std::array<char, 24> ram_value_text = {};
+    std::array<char, 16> program_flash_text = {};
+    std::array<char, 16> flash_budget_text = {};
+    std::array<char, 16> reserved_flash_text = {};
+    std::array<char, 16> static_ram_text = {};
+    std::array<char, 16> console_text = {};
+    std::array<char, 16> framebuffer_text = {};
+    std::array<char, 16> loop_load_text = {};
+    std::array<char, 16> loop_sample_text = {};
+    build_kib_text(program_flash, program_flash_text.data(), program_flash_text.size());
+    build_kib_text(kProgramFlashBudgetBytes, flash_budget_text.data(), flash_budget_text.size());
+    build_kib_text(kReservedFlashBytes, reserved_flash_text.data(), reserved_flash_text.size());
+    build_kib_text(kStaticRamBytes, static_ram_text.data(), static_ram_text.size());
+    build_kib_text(kConsoleStateBytes, console_text.data(), console_text.size());
+    build_kib_text(kUiFramebufferBytes, framebuffer_text.data(), framebuffer_text.size());
+    std::snprintf(flash_value_text.data(), flash_value_text.size(), "%s/%s",
+                  program_flash_text.data(), flash_budget_text.data());
+    std::snprintf(ram_value_text.data(), ram_value_text.size(), "%s/520K", static_ram_text.data());
     if (console_state.main_loop_load_status.valid)
     {
-        std::snprintf(loop_load_text, sizeof(loop_load_text), "%u%%",
+        std::snprintf(loop_load_text.data(), loop_load_text.size(), "%u%%",
                       static_cast<unsigned>(console_state.main_loop_load_status.load_percent));
-        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "%ums",
+        std::snprintf(loop_sample_text.data(), loop_sample_text.size(), "%ums",
                       static_cast<unsigned>(console_state.main_loop_load_status.sample_ms));
     }
     else
     {
-        std::snprintf(loop_load_text, sizeof(loop_load_text), "-");
-        std::snprintf(loop_sample_text, sizeof(loop_sample_text), "-");
+        std::snprintf(loop_load_text.data(), loop_load_text.size(), "-");
+        std::snprintf(loop_sample_text.data(), loop_sample_text.size(), "-");
     }
 
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
-                      "PROGRAM FLASH", flash_value_text);
+                      "PROGRAM FLASH", flash_value_text.data());
     draw_resource_bar(fb, 54, 96, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
-                      ram_value_text);
+                      ram_value_text.data());
 
     const screens::DetailRow rows[] = {
-        {"PROG FLASH", flash_value_text},
-        {"RESERVED", reserved_flash_text},
-        {"STATIC RAM", ram_value_text},
-        {"CONSOLE", console_text},
-        {"UI BUFFERS", framebuffer_text},
-        {"LOOP LOAD", loop_load_text},
-        {"LOOP SAMPLE", loop_sample_text},
+        {"PROG FLASH", flash_value_text.data()},
+        {"RESERVED", reserved_flash_text.data()},
+        {"STATIC RAM", ram_value_text.data()},
+        {"CONSOLE", console_text.data()},
+        {"UI BUFFERS", framebuffer_text.data()},
+        {"LOOP LOAD", loop_load_text.data()},
+        {"LOOP SAMPLE", loop_sample_text.data()},
         {"HEAP LIVE", "-"},
     };
 
@@ -410,55 +411,57 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 /// @brief Draws local sensor health and readings.
 void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    char sensor_bus_text[24] = {};
-    build_environment_bus_text(console_state.environment_sensor_status, sensor_bus_text,
-                               sizeof(sensor_bus_text));
-    char sensor_addresses_text[24] = {};
-    build_environment_address_text(console_state.environment_sensor_status, sensor_addresses_text,
-                                   sizeof(sensor_addresses_text));
-    char sensor_temperature_text[16] = {};
+    std::array<char, 24> sensor_bus_text = {};
+    build_environment_bus_text(console_state.environment_sensor_status, sensor_bus_text.data(),
+                               sensor_bus_text.size());
+    std::array<char, 24> sensor_addresses_text = {};
+    build_environment_address_text(console_state.environment_sensor_status,
+                                   sensor_addresses_text.data(), sensor_addresses_text.size());
+    std::array<char, 16> sensor_temperature_text = {};
     screens::build_environment_temperature_text(console_state.environment_sensor_status,
-                                                sensor_temperature_text,
-                                                sizeof(sensor_temperature_text));
-    char sensor_humidity_text[16] = {};
+                                                sensor_temperature_text.data(),
+                                                sensor_temperature_text.size());
+    std::array<char, 16> sensor_humidity_text = {};
     screens::build_environment_humidity_text(console_state.environment_sensor_status,
-                                             sensor_humidity_text, sizeof(sensor_humidity_text));
-    char sensor_pressure_text[16] = {};
+                                             sensor_humidity_text.data(),
+                                             sensor_humidity_text.size());
+    std::array<char, 16> sensor_pressure_text = {};
     screens::build_environment_pressure_text(console_state.environment_sensor_status,
-                                             sensor_pressure_text, sizeof(sensor_pressure_text));
-    char sensor_scan_text[16] = {};
+                                             sensor_pressure_text.data(),
+                                             sensor_pressure_text.size());
+    std::array<char, 16> sensor_scan_text = {};
     if (console_state.environment_sensor_status.enabled &&
         console_state.environment_sensor_status.last_scan_ms > 0U)
     {
-        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "%lus",
+        std::snprintf(sensor_scan_text.data(), sensor_scan_text.size(), "%lus",
                       static_cast<unsigned long>(
                           console_state.environment_sensor_status.last_scan_ms / 1000U));
     }
     else
     {
-        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "-");
+        std::snprintf(sensor_scan_text.data(), sensor_scan_text.size(), "-");
     }
-    char sensor_error_text[16] = {};
+    std::array<char, 16> sensor_error_text = {};
     if (console_state.environment_sensor_status.enabled)
     {
-        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "%d",
+        std::snprintf(sensor_error_text.data(), sensor_error_text.size(), "%d",
                       console_state.environment_sensor_status.last_error);
     }
     else
     {
-        std::snprintf(sensor_error_text, sizeof(sensor_error_text), "-");
+        std::snprintf(sensor_error_text.data(), sensor_error_text.size(), "-");
     }
 
     const screens::DetailRow rows[] = {
         {"ENV SENSOR", environment_sensor_health_text(console_state.environment_sensor_status.health)},
-        {"ENV BUS", sensor_bus_text},
+        {"ENV BUS", sensor_bus_text.data()},
         {"ENV BME", environment_bme_text(console_state.environment_sensor_status)},
-        {"ENV TEMP", sensor_temperature_text},
-        {"ENV HUM", sensor_humidity_text},
-        {"ENV PRESS", sensor_pressure_text},
-        {"ENV ADDR", sensor_addresses_text},
-        {"ENV SCAN", sensor_scan_text},
-        {"ENV ERR", sensor_error_text},
+        {"ENV TEMP", sensor_temperature_text.data()},
+        {"ENV HUM", sensor_humidity_text.data()},
+        {"ENV PRESS", sensor_pressure_text.data()},
+        {"ENV ADDR", sensor_addresses_text.data()},
+        {"ENV SCAN", sensor_scan_text.data()},
+        {"ENV ERR", sensor_error_text.data()},
     };
 
     screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
@@ -468,26 +471,26 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
 void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_state)
 {
     const RuntimeConfig& config = config_manager::settings();
-    char http_text[12] = {};
+    std::array<char, 12> http_text = {};
     if (console_state.home_assistant_status.last_http_status > 0)
     {
-        std::snprintf(http_text, sizeof(http_text), "%d",
+        std::snprintf(http_text.data(), http_text.size(), "%d",
                       console_state.home_assistant_status.last_http_status);
     }
     else
     {
-        std::snprintf(http_text, sizeof(http_text), "-");
+        std::snprintf(http_text.data(), http_text.size(), "-");
     }
 
-    char share_http_text[12] = {};
+    std::array<char, 12> share_http_text = {};
     if (console_state.share_data_last_http_status > 0)
     {
-        std::snprintf(share_http_text, sizeof(share_http_text), "%d",
+        std::snprintf(share_http_text.data(), share_http_text.size(), "%d",
                       console_state.share_data_last_http_status);
     }
     else
     {
-        std::snprintf(share_http_text, sizeof(share_http_text), "-");
+        std::snprintf(share_http_text.data(), share_http_text.size(), "-");
     }
 
     const screens::DetailRow rows[] = {
@@ -497,10 +500,10 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
         {"WX HOST", console_state.home_assistant_status.host[0]
                         ? console_state.home_assistant_status.host.data()
                         : "-"},
-        {"HTTP", http_text},
+        {"HTTP", http_text.data()},
         {"SHARES", console_state.share_data_configured ? "Configured" : "Unconfig"},
         {"SHARE DATA", console_state.share_data_valid ? "Valid" : "-"},
-        {"SHARE HTTP", share_http_text},
+        {"SHARE HTTP", share_http_text.data()},
     };
 
     screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);

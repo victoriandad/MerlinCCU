@@ -1,5 +1,6 @@
 #include "time_manager.h"
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -66,8 +67,8 @@ bool update_time_text()
     const char* previous_date = g_status.date_text.data();
     const uint32_t previous_epoch_day = g_status.local_epoch_day;
     const uint8_t previous_weekday = g_status.weekday_index;
-    char next_text[sizeof(g_status.time_text)] = {};
-    char next_date[sizeof(g_status.date_text)] = {};
+    std::array<char, sizeof(g_status.time_text)> next_text = {};
+    std::array<char, sizeof(g_status.date_text)> next_date = {};
     uint32_t next_epoch_day = 0U;
     uint8_t next_weekday = kInvalidWeekdayIndex;
 
@@ -78,15 +79,15 @@ bool update_time_text()
         constexpr uint32_t kSecondsPerDay = 24U * 60U * 60U;
         const uint32_t local_epoch_seconds = current_local_epoch_seconds();
         const DateTimeParts local = unix_time_to_utc(local_epoch_seconds);
-        std::snprintf(next_text, sizeof(next_text), "%02d:%02d", local.hour, local.minute);
-        std::snprintf(next_date, sizeof(next_date), "%04d-%02d-%02d", local.year, local.month,
+        std::snprintf(next_text.data(), next_text.size(), "%02d:%02d", local.hour, local.minute);
+        std::snprintf(next_date.data(), next_date.size(), "%04d-%02d-%02d", local.year, local.month,
                       local.day);
         next_epoch_day = local_epoch_seconds / kSecondsPerDay;
         next_weekday = static_cast<uint8_t>(weekday_from_ymd(local.year, local.month, local.day));
     }
 
-    if (std::strncmp(previous_text, next_text, sizeof(g_status.time_text)) == 0 &&
-        std::strncmp(previous_date, next_date, sizeof(g_status.date_text)) == 0 &&
+    if (std::strncmp(previous_text, next_text.data(), sizeof(g_status.time_text)) == 0 &&
+        std::strncmp(previous_date, next_date.data(), sizeof(g_status.date_text)) == 0 &&
         previous_epoch_day == next_epoch_day &&
         previous_weekday == next_weekday)
     {
@@ -94,9 +95,9 @@ bool update_time_text()
     }
 
     g_status.time_text.fill('\0');
-    std::snprintf(g_status.time_text.data(), g_status.time_text.size(), "%s", next_text);
+    std::snprintf(g_status.time_text.data(), g_status.time_text.size(), "%s", next_text.data());
     g_status.date_text.fill('\0');
-    std::snprintf(g_status.date_text.data(), g_status.date_text.size(), "%s", next_date);
+    std::snprintf(g_status.date_text.data(), g_status.date_text.size(), "%s", next_date.data());
     g_status.local_epoch_day = next_epoch_day;
     g_status.weekday_index = next_weekday;
     return true;

@@ -103,16 +103,16 @@ inline bool parse_host_and_optional_port(const char* text, char* host_out, size_
             ++port_end;
         }
 
-        char port_text[8] = {};
+        std::array<char, 8> port_text = {};
         const size_t port_len = static_cast<size_t>(port_end - port_start);
-        if (port_len == 0 || port_len >= sizeof(port_text))
+        if (port_len == 0 || port_len >= port_text.size())
         {
             return false;
         }
 
-        std::memcpy(port_text, port_start, port_len);
+        std::memcpy(port_text.data(), port_start, port_len);
         port_text[port_len] = '\0';
-        if (!parse_port(port_text, port_out))
+        if (!parse_port(port_text.data(), port_out))
         {
             return false;
         }

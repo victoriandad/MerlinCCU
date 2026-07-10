@@ -125,7 +125,7 @@ RuntimeConfig make_default_settings()
     settings.air_traffic_port = 80;
     copy_text(settings.air_traffic_api_key, "");
     copy_text(settings.air_traffic_coordinates, "");
-    settings.air_traffic_radius_nm = 30;
+    settings.air_traffic_radius_nm = kDefaultAirTrafficRadiusNm;
 
     settings.weather_source = WeatherSource::HomeAssistant;
     settings.time_zone = TimeZoneSelection::EuropeLondon;
@@ -161,7 +161,7 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
     }
     if (sanitized.air_traffic_radius_nm == 0)
     {
-        sanitized.air_traffic_radius_nm = 30;
+        sanitized.air_traffic_radius_nm = kDefaultAirTrafficRadiusNm;
     }
     sanitized.air_traffic_radius_nm = std::min(sanitized.air_traffic_radius_nm, kMaxAirTrafficRadiusNm);
     sanitized.screen_saver_timeout_minutes =

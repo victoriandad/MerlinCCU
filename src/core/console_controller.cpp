@@ -913,14 +913,14 @@ const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection select
 const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
                                                         int offset)
 {
-    const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
-    const int kTargetIndex = kCurrentIndex + offset;
-    if (kTargetIndex < 0 || kTargetIndex >= static_cast<int>(kTimeZones.size()))
+    const int current_index = static_cast<int>(time_zone_index(console_state.time_zone));
+    const int target_index = current_index + offset;
+    if (target_index < 0 || target_index >= static_cast<int>(kTimeZones.size()))
     {
         return nullptr;
     }
 
-    return &kTimeZones[static_cast<size_t>(kTargetIndex)];
+    return &kTimeZones[static_cast<size_t>(target_index)];
 }
 
 /// @brief Formats the list of currently active keypad panel pins.
@@ -939,25 +939,25 @@ void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
             continue;
         }
 
-        const int kWritten = std::snprintf(
-            out_text.data() + used, 
-            out_text.size() - used, 
-            "%s%u", 
-            (used == 0) ? "" : " ", 
+        const int written = std::snprintf(
+            out_text.data() + used,
+            out_text.size() - used,
+            "%s%u",
+            (used == 0) ? "" : " ",
             static_cast<unsigned>(line.panel_pin));
 
-        if (kWritten <= 0)
+        if (written <= 0)
         {
             break;
         }
 
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_text.size() - used))
         {
             used = out_text.size() - 1;
             break;
         }
-        used += kWriteSize;
+        used += write_size;
     }
 }
 
@@ -974,21 +974,21 @@ void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
             continue;
         }
 
-        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
+        const int written = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
                                            (used == 0) ? "" : " ",
                                            static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (kWritten <= 0)
+        if (written <= 0)
         {
             break;
         }
 
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
+        const size_t write_size = static_cast<size_t>(written);
+        if (write_size >= (out_text.size() - used))
         {
             used = out_text.size() - 1;
             break;
         }
-        used += kWriteSize;
+        used += write_size;
     }
 }
 
@@ -1415,12 +1415,12 @@ bool local_pressure_storm_warning(
         return false;
     }
 
-    char current_pressure_text[12] = {};
-    char pressure_fall_text[12] = {};
-    build_pressure_tenths_hpa_text(status.bme_pressure_pa, current_pressure_text,
-                                   sizeof(current_pressure_text));
-    build_pressure_tenths_hpa_text(pressure_fall_pa, pressure_fall_text,
-                                   sizeof(pressure_fall_text));
+    std::array<char, 12> current_pressure_text = {};
+    std::array<char, 12> pressure_fall_text = {};
+    build_pressure_tenths_hpa_text(status.bme_pressure_pa, current_pressure_text.data(),
+                                   current_pressure_text.size());
+    build_pressure_tenths_hpa_text(pressure_fall_pa, pressure_fall_text.data(),
+                                   pressure_fall_text.size());
 
     if (detail != nullptr && detail_size > 0U)
     {
@@ -1429,20 +1429,20 @@ bool local_pressure_storm_warning(
             std::snprintf(detail, detail_size,
                           "Local pressure is %s hPa and has fallen %s hPa across recent "
                           "averages.\nCheck local forecast and conditions.",
-                          current_pressure_text, pressure_fall_text);
+                          current_pressure_text.data(), pressure_fall_text.data());
         }
         else if (rapid_fall)
         {
             std::snprintf(detail, detail_size,
                           "Local pressure has fallen %s hPa across recent five-minute "
                           "averages.\nCheck local forecast and conditions.",
-                          pressure_fall_text);
+                          pressure_fall_text.data());
         }
         else
         {
             std::snprintf(detail, detail_size,
                           "Local pressure is low at %s hPa.\nCheck local forecast and conditions.",
-                          current_pressure_text);
+                          current_pressure_text.data());
         }
     }
 
@@ -1594,16 +1594,16 @@ void sync_system_alerts()
     // update_softkeys_from_state and update_lamps_from_state), so trimming
     // its stack footprint matters on a memory-constrained MCU with no
     // configured stack guard.
-    char alert_detail_scratch[sizeof(ActiveAlert::detail)] = {};
+    std::array<char, sizeof(ActiveAlert::detail)> alert_detail_scratch = {};
     if (temperature_warning)
     {
         build_weather_temperature_alert_detail(min_temperature_celsius, max_temperature_celsius,
-                                               alert_detail_scratch,
-                                               sizeof(alert_detail_scratch));
+                                               alert_detail_scratch.data(),
+                                               alert_detail_scratch.size());
     }
     set_alert_condition(AlertCode::WeatherTemperatureWarning, temperature_warning,
                         AlertSeverity::Warning, "WX TEMP",
-                        temperature_warning ? alert_detail_scratch : "");
+                        temperature_warning ? alert_detail_scratch.data() : "");
 
     float max_wind_mph = 0.0F;
     const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
@@ -1611,11 +1611,11 @@ void sync_system_alerts()
         weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
     if (wind_warning)
     {
-        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch,
-                                        sizeof(alert_detail_scratch));
+        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch.data(),
+                                        alert_detail_scratch.size());
     }
     set_alert_condition(AlertCode::WeatherWindWarning, wind_warning, AlertSeverity::Warning,
-                        "WX WIND", wind_warning ? alert_detail_scratch : "");
+                        "WX WIND", wind_warning ? alert_detail_scratch.data() : "");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = g_console_state.mqtt_status.state;
@@ -1682,10 +1682,10 @@ void sync_system_alerts()
         "jumpers.\nStatus page shows the detected addresses and read errors.");
 
     const bool pressure_storm_warning = local_pressure_storm_warning(
-        environment_status, alert_detail_scratch, sizeof(alert_detail_scratch));
+        environment_status, alert_detail_scratch.data(), alert_detail_scratch.size());
     set_alert_condition(AlertCode::LocalPressureStormWarning, pressure_storm_warning,
                         AlertSeverity::Warning, "STORM WARN",
-                        pressure_storm_warning ? alert_detail_scratch : "");
+                        pressure_storm_warning ? alert_detail_scratch.data() : "");
 
     // Placeholder: enable this once render/frame timing counters are exposed to console state.
     const bool display_pipeline_lag = false;
@@ -1730,9 +1730,9 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
     auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
     const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
     constexpr size_t kSoftkeyTitleBufferSize = 24U;
-    char title_upper[kSoftkeyTitleBufferSize] = {};
-    build_uppercase_title(title, title_upper, sizeof(title_upper));
-    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper, value);
+    std::array<char, kSoftkeyTitleBufferSize> title_upper = {};
+    build_uppercase_title(title, title_upper.data(), title_upper.size());
+    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper.data(), value);
     return buffer.data();
 }
 
@@ -1759,10 +1759,10 @@ bool calendar_event_matches_filter(const CalendarEvent& event)
 const char* build_calendar_event_softkey_label(SoftKeyId key, const CalendarEvent& event)
 {
     const char* owner_text = calendar_owner_definition(event.owner).selection_label;
-    char value[24] = {};
-    std::snprintf(value, sizeof(value), "%s %s",
+    std::array<char, 24> value = {};
+    std::snprintf(value.data(), value.size(), "%s %s",
                   event.start_time[0] != '\0' ? event.start_time.data() : "--:--", owner_text);
-    return build_selection_softkey_label(key, event.title.data(), value);
+    return build_selection_softkey_label(key, event.title.data(), value.data());
 }
 
 /// @brief Formats a "days remaining - target date" countdown for the vessel's
@@ -1806,21 +1806,21 @@ const char* build_pinter_slot_softkey_label(SoftKeyId key, const PinterStatus& p
     }
 
     const PinterBrewTiming& brew = pinter_brew_definition(pinter.brew_index);
-    char value[40] = {};
-    std::snprintf(value, sizeof(value), "%s %s", state_text, brew.name);
+    std::array<char, 40> value = {};
+    std::snprintf(value.data(), value.size(), "%s %s", state_text, brew.name);
 
-    char countdown_text[24] = {};
-    format_pinter_countdown_text(pinter, countdown_text, sizeof(countdown_text));
+    std::array<char, 24> countdown_text = {};
+    format_pinter_countdown_text(pinter, countdown_text.data(), countdown_text.size());
     if (countdown_text[0] == '\0')
     {
-        return build_selection_softkey_label(key, pinter.label.data(), value);
+        return build_selection_softkey_label(key, pinter.label.data(), value.data());
     }
 
     auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
-    char title_upper[24] = {};
-    build_uppercase_title(pinter.label.data(), title_upper, sizeof(title_upper));
-    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]\n[%s]", title_upper, value,
-                  countdown_text);
+    std::array<char, 24> title_upper = {};
+    build_uppercase_title(pinter.label.data(), title_upper.data(), title_upper.size());
+    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]\n[%s]", title_upper.data(), value.data(),
+                  countdown_text.data());
     return buffer.data();
 }
 
@@ -1839,19 +1839,19 @@ const char* build_pinter_home_softkey_label(SoftKeyId key)
 const char* build_pinter_catalogue_item_label(SoftKeyId key, uint8_t brew_index)
 {
     const PinterBrewTiming& brew = pinter_brew_definition(brew_index);
-    char timing_text[16] = {};
-    std::snprintf(timing_text, sizeof(timing_text), "R%u M%u",
+    std::array<char, 16> timing_text = {};
+    std::snprintf(timing_text.data(), timing_text.size(), "R%u M%u",
                   static_cast<unsigned>(pinter_recommended_total_days(brew)),
                   static_cast<unsigned>(pinter_minimum_total_days(brew)));
-    return build_selection_softkey_label(key, brew.name, timing_text);
+    return build_selection_softkey_label(key, brew.name, timing_text.data());
 }
 
 /// @brief Formats one timing-adjustment label in the pending Pinter start flow.
 const char* build_pinter_days_label(SoftKeyId key, const char* title, uint8_t days)
 {
-    char day_text[8] = {};
-    std::snprintf(day_text, sizeof(day_text), "%ud", static_cast<unsigned>(days));
-    return build_selection_softkey_label(key, title, day_text);
+    std::array<char, 8> day_text = {};
+    std::snprintf(day_text.data(), day_text.size(), "%ud", static_cast<unsigned>(days));
+    return build_selection_softkey_label(key, title, day_text.data());
 }
 
 /// @brief Returns true when the selected Pinter can be started now.
@@ -2188,13 +2188,13 @@ MenuPage parent_page(MenuPage page)
 /// @brief Moves the active page one level up the menu hierarchy.
 bool navigate_up_one_level()
 {
-    const MenuPage kParentPage = parent_page(g_console_state.active_page);
-    if (kParentPage == g_console_state.active_page)
+    const MenuPage parent = parent_page(g_console_state.active_page);
+    if (parent == g_console_state.active_page)
     {
         return false;
     }
 
-    g_console_state.active_page = kParentPage;
+    g_console_state.active_page = parent;
     return true;
 }
 
@@ -2331,14 +2331,14 @@ bool alpha_character_from_button(ButtonId id, char* out_character)
     // the physical keypad block. That keeps the conversion table-free while
     // still preserving the physical key identifiers elsewhere in the model.
     const uint8_t value = static_cast<uint8_t>(id);
-    const uint8_t kFirstAlpha = static_cast<uint8_t>(ButtonId::AlphaA);
-    const uint8_t kLastAlpha = static_cast<uint8_t>(ButtonId::AlphaZ);
-    if (value < kFirstAlpha || value > kLastAlpha)
+    const uint8_t first_alpha = static_cast<uint8_t>(ButtonId::AlphaA);
+    const uint8_t last_alpha = static_cast<uint8_t>(ButtonId::AlphaZ);
+    if (value < first_alpha || value > last_alpha)
     {
         return false;
     }
 
-    *out_character = static_cast<char>('A' + (value - kFirstAlpha));
+    *out_character = static_cast<char>('A' + (value - first_alpha));
     return true;
 }
 
@@ -2406,22 +2406,22 @@ bool apply_screen_saver_timeout_digit(uint8_t digit)
         return false;
     }
 
-    const uint16_t kCurrentMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
+    const uint16_t current_minutes = g_console_state.screen_saver_timeout_replace_on_next_digit
                                          ? 0
                                          : g_console_state.screen_saver_timeout_edit_minutes;
-    const uint16_t kCandidateMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
+    const uint16_t candidate_minutes = g_console_state.screen_saver_timeout_replace_on_next_digit
                                            ? digit
-                                           : static_cast<uint16_t>((kCurrentMinutes * 10U) + digit);
-    if (kCandidateMinutes > kMaxScreenSaverTimeoutMinutes)
+                                           : static_cast<uint16_t>((current_minutes * 10U) + digit);
+    if (candidate_minutes > kMaxScreenSaverTimeoutMinutes)
     {
         return false;
     }
 
-    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
+    const bool changed = g_console_state.screen_saver_timeout_edit_minutes != candidate_minutes ||
                           g_console_state.screen_saver_timeout_replace_on_next_digit;
-    g_console_state.screen_saver_timeout_edit_minutes = kCandidateMinutes;
+    g_console_state.screen_saver_timeout_edit_minutes = candidate_minutes;
     g_console_state.screen_saver_timeout_replace_on_next_digit = false;
-    return kChanged;
+    return changed;
 }
 
 /// @brief Clears the timeout scratchpad back to the disabled `0 mins` state.
@@ -2432,11 +2432,11 @@ bool clear_screen_saver_timeout_edit()
         return false;
     }
 
-    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != 0 ||
+    const bool changed = g_console_state.screen_saver_timeout_edit_minutes != 0 ||
                           !g_console_state.screen_saver_timeout_replace_on_next_digit;
     g_console_state.screen_saver_timeout_edit_minutes = 0;
     g_console_state.screen_saver_timeout_replace_on_next_digit = true;
-    return kChanged;
+    return changed;
 }
 
 /// @brief Handles digit-only timeout entry while the scratchpad is visible.
@@ -4193,7 +4193,7 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 {
     // These setters short-circuit unchanged snapshots so the UI does not redraw
     // every loop when the subsystem state is stable.
-    const bool kChanged =
+    const bool changed =
         g_console_state.wifi_status.state != wifi_status.state ||
         g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
         g_console_state.wifi_status.internet_reachable != wifi_status.internet_reachable ||
@@ -4206,7 +4206,7 @@ bool set_wifi_status(const WifiStatus& wifi_status)
         g_console_state.wifi_status.ssid != wifi_status.ssid ||
         g_console_state.wifi_status.ip_address != wifi_status.ip_address;
 
-    if (!kChanged)
+    if (!changed)
     {
         return false;
     }
@@ -4219,14 +4219,14 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 /// @brief Updates the cached time snapshot in the console model.
 bool set_time_status(const TimeStatus& time_status)
 {
-    const bool kChanged = g_console_state.time_status.synced != time_status.synced ||
+    const bool changed = g_console_state.time_status.synced != time_status.synced ||
                           g_console_state.time_status.time_text != time_status.time_text ||
                           g_console_state.time_status.date_text != time_status.date_text ||
                           g_console_state.time_status.local_epoch_day !=
                               time_status.local_epoch_day ||
                           g_console_state.time_status.weekday_index != time_status.weekday_index;
 
-    if (!kChanged)
+    if (!changed)
     {
         return false;
     }
@@ -4278,7 +4278,7 @@ bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 /// @brief Updates the cached share market-data snapshot in the console model.
 bool set_share_market_status(const ShareMarketStatus& share_market_status)
 {
-    const bool kChanged =
+    const bool changed =
         g_console_state.share_data_configured != share_market_status.configured ||
         g_console_state.share_data_valid != share_market_status.data_valid ||
         g_console_state.share_data_last_error != share_market_status.last_error ||
@@ -4286,7 +4286,7 @@ bool set_share_market_status(const ShareMarketStatus& share_market_status)
         g_console_state.share_count != share_market_status.share_count ||
         g_console_state.watched_shares != share_market_status.watched_shares;
 
-    if (!kChanged)
+    if (!changed)
     {
         return false;
     }
@@ -4334,7 +4334,7 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
     std::snprintf(pressed_key_name.data(), pressed_key_name.size(), "%s",
                   decoded_pressed_key(keypad_status));
 
-    const bool kChanged =
+    const bool changed =
         g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
         g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
         g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
@@ -4346,7 +4346,7 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
         g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
         g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins;
 
-    if (!kChanged)
+    if (!changed)
     {
         return false;
     }
@@ -4397,38 +4397,38 @@ bool set_heap_status(const HeapStatus& status)
 /// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {
-    const size_t kIndex = softkey_index(key);
-    const bool kClearOverride = (label == nullptr) || (label[0] == '\0');
+    const size_t index = softkey_index(key);
+    const bool clear_override = (label == nullptr) || (label[0] == '\0');
 
     // Clearing the override falls back to the page-defined label instead of
     // keeping an empty string that would mask the underlying softkey action.
-    if (kClearOverride)
+    if (clear_override)
     {
-        if (!g_softkey_label_override_active[kIndex] &&
-            g_softkey_label_overrides[kIndex][0] == '\0')
+        if (!g_softkey_label_override_active[index] &&
+            g_softkey_label_overrides[index][0] == '\0')
         {
             return false;
         }
 
-        g_softkey_label_override_active[kIndex] = false;
-        g_softkey_label_overrides[kIndex][0] = '\0';
+        g_softkey_label_override_active[index] = false;
+        g_softkey_label_overrides[index][0] = '\0';
         update_softkeys_from_state();
         return true;
     }
 
-    char copied_label[kSoftkeyLabelCapacity] = {};
-    std::snprintf(copied_label, sizeof(copied_label), "%s", label);
+    std::array<char, kSoftkeyLabelCapacity> copied_label = {};
+    std::snprintf(copied_label.data(), copied_label.size(), "%s", label);
 
-    const bool kChanged = !g_softkey_label_override_active[kIndex] ||
-                          std::strcmp(g_softkey_label_overrides[kIndex].data(), copied_label) != 0;
-    if (!kChanged)
+    const bool changed = !g_softkey_label_override_active[index] ||
+                          std::strcmp(g_softkey_label_overrides[index].data(), copied_label.data()) != 0;
+    if (!changed)
     {
         return false;
     }
 
-    std::snprintf(g_softkey_label_overrides[kIndex].data(),
-                  g_softkey_label_overrides[kIndex].size(), "%s", copied_label);
-    g_softkey_label_override_active[kIndex] = true;
+    std::snprintf(g_softkey_label_overrides[index].data(),
+                  g_softkey_label_overrides[index].size(), "%s", copied_label.data());
+    g_softkey_label_override_active[index] = true;
     update_softkeys_from_state();
     return true;
 }
@@ -4531,8 +4531,8 @@ bool handle_button_event(const ButtonEvent& event)
     if (event.id == ButtonId::Alert || event.id == ButtonId::Test || event.id == ButtonId::Brt ||
         event.id == ButtonId::Dim || event.id == ButtonId::Ltrs)
     {
-        const bool kHardKeyChanged = handle_direct_hard_key_event(event.id);
-        if (!kHardKeyChanged)
+        const bool hard_key_changed = handle_direct_hard_key_event(event.id);
+        if (!hard_key_changed)
         {
             return false;
         }
@@ -4551,8 +4551,8 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (g_console_state.screen_saver_timeout_editing)
     {
-        const bool kEditChanged = handle_screen_saver_timeout_edit_event(event);
-        if (kEditChanged)
+        const bool edit_changed = handle_screen_saver_timeout_edit_event(event);
+        if (edit_changed)
         {
             update_softkeys_from_state();
             update_lamps_from_state();
@@ -4571,8 +4571,8 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (event.id == ButtonId::BackStep)
     {
-        const bool kRouteChanged = navigate_up_one_level();
-        if (!kRouteChanged)
+        const bool route_changed = navigate_up_one_level();
+        if (!route_changed)
         {
             return false;
         }
@@ -4691,8 +4691,8 @@ bool handle_button_event(const ButtonEvent& event)
         return false;
     }
 
-    const SoftKeyId kEy = softkey_id_from_button(event.id);
-    const SoftKeyAction& action = g_console_state.softkeys[softkey_index(kEy)];
+    const SoftKeyId softkey_id = softkey_id_from_button(event.id);
+    const SoftKeyAction& action = g_console_state.softkeys[softkey_index(softkey_id)];
     if (!action.enabled)
     {
         return false;
@@ -4700,9 +4700,9 @@ bool handle_button_event(const ButtonEvent& event)
 
     // The route mutates the logical console state first, then softkeys and lamp
     // outputs are recomputed from that new state as a separate step.
-    const bool kRouteChanged = apply_softkey_route(action.route);
+    const bool route_changed = apply_softkey_route(action.route);
 
-    if (!kRouteChanged)
+    if (!route_changed)
     {
         return false;
     }

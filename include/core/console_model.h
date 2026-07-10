@@ -681,6 +681,11 @@ struct ShareMarketStatus
     std::array<ShareWatchEntry, 6> watched_shares;
 };
 
+/// @brief Fallback ADS-B search radius used whenever a stored or in-flight
+/// radius value is unset (0), shared by config defaults, the manager, and the
+/// Plot view's range rings so the three can never silently drift apart.
+inline constexpr uint16_t kDefaultAirTrafficRadiusNm = 30U;
+
 /// @brief Maximum nearby aircraft tracked and rendered on the Local Traffic page.
 inline constexpr size_t kAirTrafficEntryCapacity = 24U;
 

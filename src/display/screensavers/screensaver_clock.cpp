@@ -1,5 +1,6 @@
 #include "screensaver_clock.h"
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -49,19 +50,19 @@ void init()
 /// @brief Advances the clock screensaver and renders one frame.
 void step_and_render(uint8_t* fb, const TimeStatus& time_status)
 {
-    char clock_text[8] = {};
-    std::snprintf(clock_text, sizeof(clock_text), "%s",
+    std::array<char, 8> clock_text = {};
+    std::snprintf(clock_text.data(), clock_text.size(), "%s",
                   (time_status.synced && time_status.time_text[0] != '\0')
                       ? time_status.time_text.data()
                       : "--:--");
 
-    const int text_width = clock_text_width(clock_text);
+    const int text_width = clock_text_width(clock_text.data());
     const int text_height = clock_text_height();
     const int max_x = kUiWidth - text_width;
     const int max_y = kUiHeight - text_height;
 
     framebuffer::clear(fb, false);
-    framebuffer::draw_text(fb, g_clock_x, g_clock_y, clock_text, true, kClockFont, 1);
+    framebuffer::draw_text(fb, g_clock_x, g_clock_y, clock_text.data(), true, kClockFont, 1);
 
     g_clock_x += g_clock_dx;
     g_clock_y += g_clock_dy;

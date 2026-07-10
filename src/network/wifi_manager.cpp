@@ -677,11 +677,11 @@ bool start_dns_probe()
     ip_addr_t resolved = {};
 
     cyw43_arch_lwip_begin();
-    const err_t kResult =
+    const err_t result =
         dns_gethostbyname(kInternetProbeHostName, &resolved, dns_probe_found, nullptr);
     cyw43_arch_lwip_end();
 
-    if (kResult == ERR_OK)
+    if (result == ERR_OK)
     {
         g_probe_in_flight = true;
         g_probe_started_at = get_absolute_time();
@@ -689,9 +689,9 @@ bool start_dns_probe()
         return true;
     }
 
-    if (kResult != ERR_INPROGRESS)
+    if (result != ERR_INPROGRESS)
     {
-        std::printf("WiFi internet probe start failed: %d\n", static_cast<int>(kResult));
+        std::printf("WiFi internet probe start failed: %d\n", static_cast<int>(result));
         g_probe_in_flight = false;
         g_probe_deadline = nil_time;
         g_next_probe = make_timeout_time_ms(kInternetProbeIntervalMs);
@@ -767,34 +767,34 @@ bool attempt_connect()
         return false;
     }
 
-    const uint32_t kAuthMode = configured_auth_mode(*credential);
+    const uint32_t auth_mode = configured_auth_mode(*credential);
     copy_text(g_status.ssid, credential->ssid);
-    copy_auth_mode(kAuthMode);
+    copy_auth_mode(auth_mode);
     clear_ip_address();
     g_status.state = WifiConnectionState::Connecting;
     g_status.last_error = 0;
 
     std::printf("WiFi connecting to SSID '%s' auth=%s timeout=%lums\n", credential->ssid,
-                auth_mode_text(kAuthMode), static_cast<unsigned long>(kConnectTimeoutMs));
+                auth_mode_text(auth_mode), static_cast<unsigned long>(kConnectTimeoutMs));
 
     // This only starts the join; it must not block. The main loop's update()
     // already polls cyw43_wifi_link_status() every iteration and drives the
     // Connecting -> WaitingForIp/Connected/failed transitions from there (see
-    // the kLinkStatus != g_last_observed_link_status branch below). Blocking
+    // the link_status != g_last_observed_link_status branch below). Blocking
     // here for up to kConnectTimeoutMs previously starved the whole main loop
     // -- including input handling and any future watchdog pet -- for as long
     // as 30 seconds on every reconnect.
-    const int kRc =
-        cyw43_arch_wifi_connect_async(credential->ssid, credential_password(*credential), kAuthMode);
-    if (kRc != 0)
+    const int rc =
+        cyw43_arch_wifi_connect_async(credential->ssid, credential_password(*credential), auth_mode);
+    if (rc != 0)
     {
         // The driver refused to even start the join (e.g. busy). Fail this
         // attempt immediately rather than leaving the state machine parked in
         // Connecting with nothing to ever move it forward.
-        g_status.last_error = kRc;
+        g_status.last_error = rc;
         g_status.state = WifiConnectionState::ConnectFailed;
         std::printf("WiFi connect request failed to start for '%s' rc=%d\n", credential->ssid,
-                    kRc);
+                    rc);
         g_connect_deadline = nil_time;
         g_wait_for_ip_deadline = nil_time;
         reset_internet_probe_status();
@@ -846,12 +846,12 @@ void init()
 
     // Bring up the radio before publishing any identity details, because the
     // MAC address and hostname advertisement depend on cyw43 being active.
-    const int kRc = cyw43_arch_init_with_country(kWifiCountry);
-    if (kRc != 0)
+    const int rc = cyw43_arch_init_with_country(kWifiCountry);
+    if (rc != 0)
     {
         g_status.state = WifiConnectionState::Error;
-        g_status.last_error = kRc;
-        std::printf("WiFi init failed: %d\n", kRc);
+        g_status.last_error = rc;
+        std::printf("WiFi init failed: %d\n", rc);
         return;
     }
 
@@ -879,18 +879,18 @@ bool update()
 
     // Poll both cyw43 link state and lwIP IP state every loop because they do
     // not always transition at the same moment.
-    const int kLinkStatus = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
-    const bool kIpReady = has_ipv4_address();
-    if (kLinkStatus != g_last_observed_link_status)
+    const int link_status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
+    const bool ip_ready = has_ipv4_address();
+    if (link_status != g_last_observed_link_status)
     {
-        g_last_observed_link_status = kLinkStatus;
-        g_status.link_status = kLinkStatus;
-        PERIODIC_LOG("WiFi link status changed: %d\n", kLinkStatus);
+        g_last_observed_link_status = link_status;
+        g_status.link_status = link_status;
+        PERIODIC_LOG("WiFi link status changed: %d\n", link_status);
 
         // cyw43 link notifications and lwIP IP state do not always advance in
         // lockstep, so the state machine deliberately cross-checks both before
         // deciding whether the firmware is truly connected.
-        if (kLinkStatus == CYW43_LINK_UP || kIpReady)
+        if (link_status == CYW43_LINK_UP || ip_ready)
         {
             g_connect_deadline = nil_time;
             apply_static_ip_config();
@@ -902,7 +902,7 @@ bool update()
             reset_internet_probe_failures();
             g_next_probe = get_absolute_time();
         }
-        else if (kLinkStatus == CYW43_LINK_JOIN || kLinkStatus == CYW43_LINK_NOIP)
+        else if (link_status == CYW43_LINK_JOIN || link_status == CYW43_LINK_NOIP)
         {
             g_connect_deadline = nil_time;
             if (kUseStaticIp && apply_static_ip_config())
@@ -925,7 +925,7 @@ bool update()
         else
         {
             clear_ip_address();
-            g_status.state = state_from_link_status(kLinkStatus);
+            g_status.state = state_from_link_status(link_status);
             g_wait_for_ip_deadline = nil_time;
             reset_internet_probe_status();
             reset_internet_probe_timers();
@@ -936,12 +936,12 @@ bool update()
         changed = true;
     }
 
-    if (kIpReady && (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0]))
+    if (ip_ready && (g_status.state != WifiConnectionState::Connected || !g_status.ip_address[0]))
     {
         // This reconciliation path exists because DHCP can complete after the
         // initial link transition has already been observed and logged.
-        g_status.link_status = kLinkStatus;
-        g_last_observed_link_status = kLinkStatus;
+        g_status.link_status = link_status;
+        g_last_observed_link_status = link_status;
         apply_static_ip_config();
         update_ip_address();
         g_status.state = WifiConnectionState::Connected;

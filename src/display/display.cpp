@@ -55,8 +55,8 @@ float g_configured_clkdiv = kPanel.clkdiv;
 /// risking a torn frame half way down the panel.
 void dma_ctrl_irq_handler()
 {
-    const uint32_t kMask = 1U << g_dma_chan_ctrl;
-    dma_hw->ints0 = kMask;
+    const uint32_t mask = 1U << g_dma_chan_ctrl;
+    dma_hw->ints0 = mask;
 
     if (g_raster_pending != nullptr)
     {
@@ -73,9 +73,9 @@ void dma_ctrl_irq_handler()
 /// VS. Eight nibbles are packed into one 32-bit word.
 void emit_step(uint32_t* buf, int& step_index, uint8_t nibble)
 {
-    const int kWordIndex = step_index / 8;
-    const int kNibbleIndex = step_index % 8;
-    buf[kWordIndex] |= static_cast<uint32_t>(nibble & 0x0F) << (kNibbleIndex * 4);
+    const int word_index = step_index / 8;
+    const int nibble_index = step_index % 8;
+    buf[word_index] |= static_cast<uint32_t>(nibble & 0x0F) << (nibble_index * 4);
     ++step_index;
 }
 
@@ -133,8 +133,8 @@ void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
 {
     std::memset(line_buf, 0, kWordsPerLine * sizeof(uint32_t));
     int step = 0;
-    const int kMaxUiSourceY = kFbHeight - 1 + kPanel.native_row_offset;
-    const int kUiX = std::clamp(kMaxUiSourceY - y, 0, kUiWidth - 1);
+    const int max_ui_source_y = kFbHeight - 1 + kPanel.native_row_offset;
+    const int ui_x = std::clamp(max_ui_source_y - y, 0, kUiWidth - 1);
 
     for (int i = 0; i < kPanel.h_pre_blank; ++i)
     {
@@ -143,9 +143,10 @@ void build_fb_line(uint32_t* line_buf, const uint8_t* fb, int y, bool vs_high)
 
     for (int x = 0; x < kFbWidth; ++x)
     {
-        const bool kVidOn =
-            (x < kUiHeight) && (y <= kMaxUiSourceY) ? framebuffer::get_pixel(fb, kUiX, x) : false;
-        emit_pixel(line_buf, step, kVidOn, true, vs_high);
+        const bool vid_on = (x < kUiHeight) && (y <= max_ui_source_y)
+                                ? framebuffer::get_pixel(fb, ui_x, x)
+                                : false;
+        emit_pixel(line_buf, step, vid_on, true, vs_high);
     }
 
     for (int i = 0; i < kPanel.h_post_blank; ++i)
@@ -264,8 +265,8 @@ void start_dma(PIO pio, uint sm)
     // Starting only the data channel is enough: once it completes, the chain
     // relationship hands control to the reload channel, which in turn hands
     // back to the data channel for the next frame.
-    const uint32_t kDataChannelMask = 1UL << static_cast<uint32_t>(g_dma_chan_data);
-    dma_start_channel_mask(kDataChannelMask);
+    const uint32_t data_channel_mask = 1UL << static_cast<uint32_t>(g_dma_chan_data);
+    dma_start_channel_mask(data_channel_mask);
     g_dma_running = true;
 }
 

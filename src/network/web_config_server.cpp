@@ -506,44 +506,45 @@ void build_config_page(const char* message)
     const RuntimeConfig& cfg = config_manager::settings();
     char* cursor = g_response;
     size_t remaining = sizeof(g_response);
-    char device_name[64] = {};
-    char device_label[64] = {};
-    char location[64] = {};
-    char room[64] = {};
-    char wifi_ssid[80] = {};
-    char ha_host[96] = {};
-    char ha_entity[96] = {};
-    char ha_self[96] = {};
-    char weather_entity[96] = {};
-    char sun_entity[96] = {};
-    char weather_coordinates[96] = {};
-    char mqtt_host[96] = {};
-    char mqtt_user[96] = {};
-    char mqtt_prefix[64] = {};
-    char mqtt_topic[96] = {};
-    char air_traffic_host[96] = {};
-    char air_traffic_coordinates[96] = {};
-    char escaped_message[160] = {};
+    std::array<char, 64> device_name = {};
+    std::array<char, 64> device_label = {};
+    std::array<char, 64> location = {};
+    std::array<char, 64> room = {};
+    std::array<char, 80> wifi_ssid = {};
+    std::array<char, 96> ha_host = {};
+    std::array<char, 96> ha_entity = {};
+    std::array<char, 96> ha_self = {};
+    std::array<char, 96> weather_entity = {};
+    std::array<char, 96> sun_entity = {};
+    std::array<char, 96> weather_coordinates = {};
+    std::array<char, 96> mqtt_host = {};
+    std::array<char, 96> mqtt_user = {};
+    std::array<char, 64> mqtt_prefix = {};
+    std::array<char, 96> mqtt_topic = {};
+    std::array<char, 96> air_traffic_host = {};
+    std::array<char, 96> air_traffic_coordinates = {};
+    std::array<char, 160> escaped_message = {};
 
-    html_escape(cfg.device_name.data(), device_name, sizeof(device_name));
-    html_escape(cfg.device_label.data(), device_label, sizeof(device_label));
-    html_escape(cfg.location.data(), location, sizeof(location));
-    html_escape(cfg.room.data(), room, sizeof(room));
-    html_escape(cfg.wifi_ssid.data(), wifi_ssid, sizeof(wifi_ssid));
-    html_escape(cfg.home_assistant_host.data(), ha_host, sizeof(ha_host));
-    html_escape(cfg.home_assistant_entity_id.data(), ha_entity, sizeof(ha_entity));
-    html_escape(cfg.home_assistant_self_entity_id.data(), ha_self, sizeof(ha_self));
-    html_escape(cfg.weather_entity_id.data(), weather_entity, sizeof(weather_entity));
-    html_escape(cfg.sun_entity_id.data(), sun_entity, sizeof(sun_entity));
-    html_escape(cfg.weather_coordinates.data(), weather_coordinates, sizeof(weather_coordinates));
-    html_escape(cfg.mqtt_host.data(), mqtt_host, sizeof(mqtt_host));
-    html_escape(cfg.mqtt_username.data(), mqtt_user, sizeof(mqtt_user));
-    html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix, sizeof(mqtt_prefix));
-    html_escape(cfg.mqtt_base_topic.data(), mqtt_topic, sizeof(mqtt_topic));
-    html_escape(cfg.air_traffic_host.data(), air_traffic_host, sizeof(air_traffic_host));
-    html_escape(cfg.air_traffic_coordinates.data(), air_traffic_coordinates,
-                sizeof(air_traffic_coordinates));
-    html_escape(message, escaped_message, sizeof(escaped_message));
+    html_escape(cfg.device_name.data(), device_name.data(), device_name.size());
+    html_escape(cfg.device_label.data(), device_label.data(), device_label.size());
+    html_escape(cfg.location.data(), location.data(), location.size());
+    html_escape(cfg.room.data(), room.data(), room.size());
+    html_escape(cfg.wifi_ssid.data(), wifi_ssid.data(), wifi_ssid.size());
+    html_escape(cfg.home_assistant_host.data(), ha_host.data(), ha_host.size());
+    html_escape(cfg.home_assistant_entity_id.data(), ha_entity.data(), ha_entity.size());
+    html_escape(cfg.home_assistant_self_entity_id.data(), ha_self.data(), ha_self.size());
+    html_escape(cfg.weather_entity_id.data(), weather_entity.data(), weather_entity.size());
+    html_escape(cfg.sun_entity_id.data(), sun_entity.data(), sun_entity.size());
+    html_escape(cfg.weather_coordinates.data(), weather_coordinates.data(),
+               weather_coordinates.size());
+    html_escape(cfg.mqtt_host.data(), mqtt_host.data(), mqtt_host.size());
+    html_escape(cfg.mqtt_username.data(), mqtt_user.data(), mqtt_user.size());
+    html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix.data(), mqtt_prefix.size());
+    html_escape(cfg.mqtt_base_topic.data(), mqtt_topic.data(), mqtt_topic.size());
+    html_escape(cfg.air_traffic_host.data(), air_traffic_host.data(), air_traffic_host.size());
+    html_escape(cfg.air_traffic_coordinates.data(), air_traffic_coordinates.data(),
+                air_traffic_coordinates.size());
+    html_escape(message, escaped_message.data(), escaped_message.size());
 
     (void)append(
         cursor, remaining,
@@ -596,7 +597,7 @@ void build_config_page(const char* message)
         "Wi-Fi, Home Assistant and MQTT changes take effect after reboot. A full flash erase "
         "or firmware image that overwrites the reserved area will remove saved settings.</p></div>"
         "<div class=\"hero-tools\">",
-        kHttpOkHeader, device_label[0] ? device_label : device_name);
+        kHttpOkHeader, device_label[0] ? device_label.data() : device_name.data());
     (void)append_page_nav(cursor, remaining, ConfigWebPage::Config);
     (void)append(cursor, remaining,
                 "<div class=\"pill\">Local intranet configuration</div></div></div>");
@@ -605,7 +606,7 @@ void build_config_page(const char* message)
     {
         const bool is_error = std::strncmp(message, "Configuration not saved", 24) == 0;
         (void)append(cursor, remaining, "<p class=\"msg %s\">%s</p>", is_error ? "error" : "ok",
-                    escaped_message);
+                    escaped_message.data());
     }
 
     (void)append(
@@ -619,7 +620,7 @@ void build_config_page(const char* message)
         "name=\"location\" maxlength=\"31\" value=\"%s\"></div><div><label>Room</label><input "
         "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Use names like "
         "CCU1, CCU2, GroundFloorCCU, KitchenCCU.</p></section>",
-        device_name, device_label, location, room);
+        device_name.data(), device_label.data(), location.data(), room.data());
 
     (void)append(
         cursor, remaining,
@@ -638,7 +639,7 @@ void build_config_page(const char* message)
         "current\">"
         "<p class=\"hint\">The web server starts once the CCU joins Wi-Fi. Changing Wi-Fi requires "
         "a reboot.</p></section>",
-        wifi_ssid);
+        wifi_ssid.data());
 
     (void)append(
         cursor, remaining,
@@ -654,7 +655,8 @@ void build_config_page(const char* message)
         "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"63\" "
         "value=\"%s\"></fieldset></section>",
         cfg.home_assistant_enabled ? "checked" : "", cfg.home_assistant_enabled ? "" : "disabled",
-        ha_host, static_cast<unsigned>(cfg.home_assistant_port), ha_entity, ha_self);
+        ha_host.data(), static_cast<unsigned>(cfg.home_assistant_port), ha_entity.data(),
+        ha_self.data());
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>MQTT Discovery</h2><input type=\"hidden\" "
@@ -674,8 +676,9 @@ void build_config_page(const char* message)
                  "value=\"%s\"></div><div><label>Base topic</label><input name=\"mqtt_topic\" "
                  "maxlength=\"63\" "
                  "value=\"%s\"></div></div></fieldset></section>",
-                 cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled", mqtt_host,
-                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic);
+                 cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled",
+                 mqtt_host.data(), static_cast<unsigned>(cfg.mqtt_port), mqtt_user.data(),
+                 mqtt_prefix.data(), mqtt_topic.data());
 
     (void)append(
         cursor, remaining,
@@ -696,8 +699,8 @@ void build_config_page(const char* message)
         "adsb.lol today; only needed if a provider starts gating access.</p>"
         "</fieldset></section>",
         cfg.air_traffic_enabled ? "checked" : "", cfg.air_traffic_enabled ? "" : "disabled",
-        air_traffic_host, static_cast<unsigned>(cfg.air_traffic_port),
-        static_cast<unsigned>(cfg.air_traffic_radius_nm), air_traffic_coordinates);
+        air_traffic_host.data(), static_cast<unsigned>(cfg.air_traffic_port),
+        static_cast<unsigned>(cfg.air_traffic_radius_nm), air_traffic_coordinates.data());
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
@@ -716,8 +719,8 @@ void build_config_page(const char* message)
         "weather coordinates</label><input name=\"weather_coordinates\" maxlength=\"63\" "
         "value=\"%s\"><p class=\"hint\">Direct weather sources use this "
         "latitude,longitude value independently of Home Assistant.</p></fieldset></section>",
-        weather_is_home_assistant ? "" : "disabled", weather_entity, sun_entity,
-        weather_is_home_assistant ? "disabled" : "", weather_coordinates);
+        weather_is_home_assistant ? "" : "disabled", weather_entity.data(), sun_entity.data(),
+        weather_is_home_assistant ? "disabled" : "", weather_coordinates.data());
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
@@ -913,15 +916,15 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
                                 uint32_t today_day)
 {
     constexpr unsigned kReadyHoldDisplayDays = 2U;
-    char label[24] = {};
-    char brew_name[96] = {};
-    char brew_label[24] = {};
-    char crash_label[16] = {};
-    char condition_label[24] = {};
-    char ready_label[16] = {};
-    char timing_text[24] = {};
-    char start_text[48] = {};
-    char start_date[16] = {};
+    std::array<char, 24> label = {};
+    std::array<char, 96> brew_name = {};
+    std::array<char, 24> brew_label = {};
+    std::array<char, 16> crash_label = {};
+    std::array<char, 24> condition_label = {};
+    std::array<char, 16> ready_label = {};
+    std::array<char, 24> timing_text = {};
+    std::array<char, 48> start_text = {};
+    std::array<char, 16> start_date = {};
 
     const console_controller::PinterBrewTiming& timing =
         console_controller::pinter_brew_timing(pinter.brew_index);
@@ -932,36 +935,38 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
     const unsigned conditioning_days = pinter.planned_conditioning_days != 0U
                                            ? pinter.planned_conditioning_days
                                            : timing.recommended_conditioning_days;
-    html_escape(pinter.label.data(), label, sizeof(label));
-    html_escape(timing.name, brew_name, sizeof(brew_name));
-    std::snprintf(brew_label, sizeof(brew_label), "Brew %ud", brew_days);
-    std::snprintf(crash_label, sizeof(crash_label), "Crash %ud", crash_days);
-    std::snprintf(condition_label, sizeof(condition_label), "Condition %ud", conditioning_days);
-    std::snprintf(ready_label, sizeof(ready_label), "Ready");
-    std::snprintf(timing_text, sizeof(timing_text), "Plan %ud",
+    html_escape(pinter.label.data(), label.data(), label.size());
+    html_escape(timing.name, brew_name.data(), brew_name.size());
+    std::snprintf(brew_label.data(), brew_label.size(), "Brew %ud", brew_days);
+    std::snprintf(crash_label.data(), crash_label.size(), "Crash %ud", crash_days);
+    std::snprintf(condition_label.data(), condition_label.size(), "Condition %ud",
+                  conditioning_days);
+    std::snprintf(ready_label.data(), ready_label.size(), "Ready");
+    std::snprintf(timing_text.data(), timing_text.size(), "Plan %ud",
                   static_cast<unsigned>(brew_days + crash_days + conditioning_days));
     const uint32_t activity_start_day = pinter_activity_start_day(pinter, today_day);
     if (activity_start_day != 0U)
     {
         if (today_day != 0U || pinter.brew_start_day != 0U)
         {
-            format_epoch_day_label(activity_start_day, start_date, sizeof(start_date));
-            std::snprintf(start_text, sizeof(start_text), "Start %s, %s", start_date, timing_text);
+            format_epoch_day_label(activity_start_day, start_date.data(), start_date.size());
+            std::snprintf(start_text.data(), start_text.size(), "Start %s, %s", start_date.data(),
+                          timing_text.data());
         }
         else
         {
-            std::snprintf(start_text, sizeof(start_text), "Undated, %s", timing_text);
+            std::snprintf(start_text.data(), start_text.size(), "Undated, %s", timing_text.data());
         }
     }
     else
     {
-        std::snprintf(start_text, sizeof(start_text), "%s", timing_text);
+        std::snprintf(start_text.data(), start_text.size(), "%s", timing_text.data());
     }
 
     bool ok = append(cursor, remaining,
                      "<section class=\"pinter-row\"><div class=\"pinter-name\"><strong>%s</strong>"
                      "<span>%s</span></div><div class=\"track\">",
-                     label, brew_name);
+                     label.data(), brew_name.data());
     if (!ok)
     {
         return false;
@@ -990,7 +995,7 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
         uint32_t start_day = activity_start_day;
         ok = append_pinter_stage(cursor, remaining, "brew",
                                  pinter_stage_tone(pinter.state, PinterTimelineStage::Brew),
-                                 brew_label, start_day, brew_days, window_start_day,
+                                 brew_label.data(), start_day, brew_days, window_start_day,
                                  timeline_days);
         start_day += brew_days;
 
@@ -1003,7 +1008,7 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
             ok = ok && append_pinter_stage(cursor, remaining, "crash",
                                            pinter_stage_tone(pinter.state,
                                                              PinterTimelineStage::Crash),
-                                           crash_label, start_day, crash_days,
+                                           crash_label.data(), start_day, crash_days,
                                            window_start_day, timeline_days);
             start_day += crash_days;
         }
@@ -1015,7 +1020,7 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
         ok = ok && append_pinter_stage(cursor, remaining, "condition",
                                        pinter_stage_tone(pinter.state,
                                                          PinterTimelineStage::Condition),
-                                       condition_label, start_day, conditioning_days,
+                                       condition_label.data(), start_day, conditioning_days,
                                        window_start_day,
                                        timeline_days);
         start_day += conditioning_days;
@@ -1027,7 +1032,7 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
         ok = ok && append_pinter_stage(cursor, remaining, "ready",
                                        pinter_stage_tone(pinter.state,
                                                          PinterTimelineStage::Ready),
-                                       ready_label, start_day, kReadyHoldDisplayDays,
+                                       ready_label.data(), start_day, kReadyHoldDisplayDays,
                                        window_start_day,
                                        timeline_days);
     }
@@ -1035,7 +1040,7 @@ bool append_pinter_activity_row(char*& cursor, size_t& remaining, const PinterSt
     ok = ok && append(cursor, remaining,
                       "</div><div class=\"pinter-status\"><strong>%s</strong><span>%s</span>"
                       "</div></section>",
-                      pinter_state_text(pinter.state), start_text);
+                      pinter_state_text(pinter.state), start_text.data());
     return ok;
 }
 
@@ -1098,38 +1103,38 @@ bool build_pinter_activity_page()
         window_start_day = 1U;
     }
 
-    char axis_0[16] = {};
-    char axis_7[16] = {};
-    char axis_14[16] = {};
-    char axis_21[16] = {};
-    char axis_28[16] = {};
-    char today_label[32] = {};
+    std::array<char, 16> axis_0 = {};
+    std::array<char, 16> axis_7 = {};
+    std::array<char, 16> axis_14 = {};
+    std::array<char, 16> axis_21 = {};
+    std::array<char, 16> axis_28 = {};
+    std::array<char, 32> today_label = {};
     const bool has_real_dates = today_day != 0U || real_start_seen;
     if (has_real_dates)
     {
-        format_epoch_day_label(window_start_day, axis_0, sizeof(axis_0));
-        format_epoch_day_label(window_start_day + 7U, axis_7, sizeof(axis_7));
-        format_epoch_day_label(window_start_day + 14U, axis_14, sizeof(axis_14));
-        format_epoch_day_label(window_start_day + 21U, axis_21, sizeof(axis_21));
-        format_epoch_day_label(window_start_day + 28U, axis_28, sizeof(axis_28));
+        format_epoch_day_label(window_start_day, axis_0.data(), axis_0.size());
+        format_epoch_day_label(window_start_day + 7U, axis_7.data(), axis_7.size());
+        format_epoch_day_label(window_start_day + 14U, axis_14.data(), axis_14.size());
+        format_epoch_day_label(window_start_day + 21U, axis_21.data(), axis_21.size());
+        format_epoch_day_label(window_start_day + 28U, axis_28.data(), axis_28.size());
     }
     else
     {
-        std::snprintf(axis_0, sizeof(axis_0), "0d");
-        std::snprintf(axis_7, sizeof(axis_7), "7d");
-        std::snprintf(axis_14, sizeof(axis_14), "14d");
-        std::snprintf(axis_21, sizeof(axis_21), "21d");
-        std::snprintf(axis_28, sizeof(axis_28), "28d");
+        std::snprintf(axis_0.data(), axis_0.size(), "0d");
+        std::snprintf(axis_7.data(), axis_7.size(), "7d");
+        std::snprintf(axis_14.data(), axis_14.size(), "14d");
+        std::snprintf(axis_21.data(), axis_21.size(), "21d");
+        std::snprintf(axis_28.data(), axis_28.size(), "28d");
     }
     if (today_day != 0U)
     {
-        char today_date[16] = {};
-        format_epoch_day_label(today_day, today_date, sizeof(today_date));
-        std::snprintf(today_label, sizeof(today_label), "Today %s", today_date);
+        std::array<char, 16> today_date = {};
+        format_epoch_day_label(today_day, today_date.data(), today_date.size());
+        std::snprintf(today_label.data(), today_label.size(), "Today %s", today_date.data());
     }
     else
     {
-        std::snprintf(today_label, sizeof(today_label), "Waiting for network time");
+        std::snprintf(today_label.data(), today_label.size(), "Waiting for network time");
     }
 
     const bool today_visible =
@@ -1207,16 +1212,17 @@ bool build_pinter_activity_page()
                    "<span style=\"left:25%%\">%s</span><span style=\"left:50%%\">%s</span><span "
                    "style=\"left:75%%\">%s</span><span style=\"left:100%%\">%s</span>",
                    brewing, conditioning,
-                   ready, axis_0, axis_7, axis_14, axis_21, axis_28);
+                   ready, axis_0.data(), axis_7.data(), axis_14.data(), axis_21.data(),
+                   axis_28.data());
 
     if (ok && today_visible)
     {
         ok = append(cursor, remaining,
                     "<span class=\"today-label\" style=\"left:%.2f%%\">%s</span>"
                     "<div class=\"today-line\" style=\"left:%.2f%%\" aria-hidden=\"true\"></div>",
-                    today_percent, today_label, today_percent);
+                    today_percent, today_label.data(), today_percent);
     }
-    ok = ok && append(cursor, remaining, "</div><div>%s</div></div>", today_label);
+    ok = ok && append(cursor, remaining, "</div><div>%s</div></div>", today_label.data());
 
     for (const PinterStatus& pinter : state.pinters)
     {
@@ -2013,15 +2019,15 @@ bool form_value(char* body, const char* key, char* output, size_t output_size)
 /// @brief Reads a form value without mutating the original POST body.
 bool get_form_value(const char* body, const char* key, char* output, size_t output_size)
 {
-    char copy[kRequestCapacity] = {};
-    std::snprintf(copy, sizeof(copy), "%s", body != nullptr ? body : "");
-    return form_value(copy, key, output, output_size);
+    std::array<char, kRequestCapacity> copy = {};
+    std::snprintf(copy.data(), copy.size(), "%s", body != nullptr ? body : "");
+    return form_value(copy.data(), key, output, output_size);
 }
 
 bool form_has_key(const char* body, const char* key)
 {
-    char value[8] = {};
-    return get_form_value(body, key, value, sizeof(value));
+    std::array<char, 8> value = {};
+    return get_form_value(body, key, value.data(), value.size());
 }
 
 /// @brief Parses a required TCP/HTTP port and rejects malformed form input.
@@ -2250,307 +2256,307 @@ const char* handle_config_post(const char* body)
     }
 
     RuntimeConfig cfg = config_manager::settings();
-    char value[160] = {};
+    std::array<char, 160> value = {};
     static char validation_error[160] = {};
     validation_error[0] = '\0';
 
-    if (get_form_value(body, "device_name", value, sizeof(value)))
+    if (get_form_value(body, "device_name", value.data(), value.size()))
     {
-        if (!validate_text_field("Device name", value, cfg.device_name.size() - 1, true,
+        if (!validate_text_field("Device name", value.data(), cfg.device_name.size() - 1, true,
                                  is_valid_device_name, validation_error, sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.device_name, value);
+        copy_text(cfg.device_name, value.data());
     }
-    if (get_form_value(body, "device_label", value, sizeof(value)))
+    if (get_form_value(body, "device_label", value.data(), value.size()))
     {
-        if (!validate_text_field("Display label", value, cfg.device_label.size() - 1, false,
+        if (!validate_text_field("Display label", value.data(), cfg.device_label.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.device_label, value);
+        copy_text(cfg.device_label, value.data());
     }
-    if (get_form_value(body, "location", value, sizeof(value)))
+    if (get_form_value(body, "location", value.data(), value.size()))
     {
-        if (!validate_text_field("Location", value, cfg.location.size() - 1, false,
+        if (!validate_text_field("Location", value.data(), cfg.location.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.location, value);
+        copy_text(cfg.location, value.data());
     }
-    if (get_form_value(body, "room", value, sizeof(value)))
+    if (get_form_value(body, "room", value.data(), value.size()))
     {
-        if (!validate_text_field("Room", value, cfg.room.size() - 1, false,
+        if (!validate_text_field("Room", value.data(), cfg.room.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.room, value);
+        copy_text(cfg.room, value.data());
     }
     cfg.remote_config_enabled = form_has_key(body, "remote_config");
 
-    if (get_form_value(body, "wifi_ssid", value, sizeof(value)))
+    if (get_form_value(body, "wifi_ssid", value.data(), value.size()))
     {
-        if (!validate_text_field("Wi-Fi SSID", value, cfg.wifi_ssid.size() - 1, false,
+        if (!validate_text_field("Wi-Fi SSID", value.data(), cfg.wifi_ssid.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.wifi_ssid, value);
+        copy_text(cfg.wifi_ssid, value.data());
     }
-    if (get_form_value(body, "wifi_password", value, sizeof(value)) && value[0] != '\0')
+    if (get_form_value(body, "wifi_password", value.data(), value.size()) && value[0] != '\0')
     {
-        if (!validate_text_field("Wi-Fi password", value, cfg.wifi_password.size() - 1, true,
+        if (!validate_text_field("Wi-Fi password", value.data(), cfg.wifi_password.size() - 1, true,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.wifi_password, value);
+        copy_text(cfg.wifi_password, value.data());
     }
 
     cfg.home_assistant_enabled = form_has_key(body, "ha_enabled");
-    if (get_form_value(body, "ha_host", value, sizeof(value)))
+    if (get_form_value(body, "ha_host", value.data(), value.size()))
     {
-        if (!validate_text_field("Home Assistant host", value, cfg.home_assistant_host.size() - 1,
+        if (!validate_text_field("Home Assistant host", value.data(), cfg.home_assistant_host.size() - 1,
                                  false, is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.home_assistant_host, value);
+        copy_text(cfg.home_assistant_host, value.data());
     }
-    if (get_form_value(body, "ha_port", value, sizeof(value)))
+    if (get_form_value(body, "ha_port", value.data(), value.size()))
     {
         uint16_t port = 0;
-        if (!parse_port_field(value, &port))
+        if (!parse_port_field(value.data(), &port))
         {
-            std::printf("Web config save rejected: invalid Home Assistant port '%s'\n", value);
+            std::printf("Web config save rejected: invalid Home Assistant port '%s'\n", value.data());
             return "Configuration not saved: Home Assistant port must be 1-65535.";
         }
         cfg.home_assistant_port = port;
     }
-    if (get_form_value(body, "ha_token", value, sizeof(value)) && value[0] != '\0')
+    if (get_form_value(body, "ha_token", value.data(), value.size()) && value[0] != '\0')
     {
-        if (!validate_text_field("Home Assistant token", value, cfg.home_assistant_token.size() - 1,
+        if (!validate_text_field("Home Assistant token", value.data(), cfg.home_assistant_token.size() - 1,
                                  true, is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.home_assistant_token, value);
+        copy_text(cfg.home_assistant_token, value.data());
     }
-    if (get_form_value(body, "ha_entity", value, sizeof(value)))
+    if (get_form_value(body, "ha_entity", value.data(), value.size()))
     {
-        if (!validate_text_field("Tracked entity", value, cfg.home_assistant_entity_id.size() - 1,
+        if (!validate_text_field("Tracked entity", value.data(), cfg.home_assistant_entity_id.size() - 1,
                                  false, is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.home_assistant_entity_id, value);
+        copy_text(cfg.home_assistant_entity_id, value.data());
     }
-    if (get_form_value(body, "ha_self", value, sizeof(value)))
+    if (get_form_value(body, "ha_self", value.data(), value.size()))
     {
-        if (!validate_text_field("Self entity", value, cfg.home_assistant_self_entity_id.size() - 1,
+        if (!validate_text_field("Self entity", value.data(), cfg.home_assistant_self_entity_id.size() - 1,
                                  false, is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.home_assistant_self_entity_id, value);
+        copy_text(cfg.home_assistant_self_entity_id, value.data());
     }
-    if (get_form_value(body, "weather_entity", value, sizeof(value)))
+    if (get_form_value(body, "weather_entity", value.data(), value.size()))
     {
-        if (!validate_text_field("Weather entity", value, cfg.weather_entity_id.size() - 1, false,
+        if (!validate_text_field("Weather entity", value.data(), cfg.weather_entity_id.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.weather_entity_id, value);
+        copy_text(cfg.weather_entity_id, value.data());
     }
-    if (get_form_value(body, "sun_entity", value, sizeof(value)))
+    if (get_form_value(body, "sun_entity", value.data(), value.size()))
     {
-        if (!validate_text_field("Sun entity", value, cfg.sun_entity_id.size() - 1, false,
+        if (!validate_text_field("Sun entity", value.data(), cfg.sun_entity_id.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.sun_entity_id, value);
+        copy_text(cfg.sun_entity_id, value.data());
     }
-    if (get_form_value(body, "weather_coordinates", value, sizeof(value)))
+    if (get_form_value(body, "weather_coordinates", value.data(), value.size()))
     {
         if (!validate_text_field(
-                "Direct weather coordinates", value, cfg.weather_coordinates.size() - 1, false,
+                "Direct weather coordinates", value.data(), cfg.weather_coordinates.size() - 1, false,
                 is_printable_config_text, validation_error, sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.weather_coordinates, value);
+        copy_text(cfg.weather_coordinates, value.data());
     }
-    if (get_form_value(body, "weather_source", value, sizeof(value)))
+    if (get_form_value(body, "weather_source", value.data(), value.size()))
     {
-        cfg.weather_source = parse_weather_source(value, cfg.weather_source);
+        cfg.weather_source = parse_weather_source(value.data(), cfg.weather_source);
     }
 
     cfg.mqtt_enabled = form_has_key(body, "mqtt_enabled");
-    if (get_form_value(body, "mqtt_host", value, sizeof(value)))
+    if (get_form_value(body, "mqtt_host", value.data(), value.size()))
     {
-        if (!validate_text_field("MQTT broker host", value, cfg.mqtt_host.size() - 1, false,
+        if (!validate_text_field("MQTT broker host", value.data(), cfg.mqtt_host.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.mqtt_host, value);
+        copy_text(cfg.mqtt_host, value.data());
     }
-    if (get_form_value(body, "mqtt_port", value, sizeof(value)))
+    if (get_form_value(body, "mqtt_port", value.data(), value.size()))
     {
         uint16_t port = 0;
-        if (!parse_port_field(value, &port))
+        if (!parse_port_field(value.data(), &port))
         {
-            std::printf("Web config save rejected: invalid MQTT port '%s'\n", value);
+            std::printf("Web config save rejected: invalid MQTT port '%s'\n", value.data());
             return "Configuration not saved: MQTT port must be 1-65535.";
         }
         cfg.mqtt_port = port;
     }
-    if (get_form_value(body, "mqtt_username", value, sizeof(value)))
+    if (get_form_value(body, "mqtt_username", value.data(), value.size()))
     {
-        if (!validate_text_field("MQTT username", value, cfg.mqtt_username.size() - 1, false,
+        if (!validate_text_field("MQTT username", value.data(), cfg.mqtt_username.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.mqtt_username, value);
+        copy_text(cfg.mqtt_username, value.data());
     }
-    if (get_form_value(body, "mqtt_password", value, sizeof(value)) && value[0] != '\0')
+    if (get_form_value(body, "mqtt_password", value.data(), value.size()) && value[0] != '\0')
     {
-        if (!validate_text_field("MQTT password", value, cfg.mqtt_password.size() - 1, true,
+        if (!validate_text_field("MQTT password", value.data(), cfg.mqtt_password.size() - 1, true,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.mqtt_password, value);
+        copy_text(cfg.mqtt_password, value.data());
     }
-    if (get_form_value(body, "mqtt_prefix", value, sizeof(value)))
+    if (get_form_value(body, "mqtt_prefix", value.data(), value.size()))
     {
         if (!validate_text_field(
-                "MQTT discovery prefix", value, cfg.mqtt_discovery_prefix.size() - 1, false,
+                "MQTT discovery prefix", value.data(), cfg.mqtt_discovery_prefix.size() - 1, false,
                 is_printable_config_text, validation_error, sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.mqtt_discovery_prefix, value);
+        copy_text(cfg.mqtt_discovery_prefix, value.data());
     }
-    if (get_form_value(body, "mqtt_topic", value, sizeof(value)))
+    if (get_form_value(body, "mqtt_topic", value.data(), value.size()))
     {
-        if (!validate_text_field("MQTT base topic", value, cfg.mqtt_base_topic.size() - 1, false,
+        if (!validate_text_field("MQTT base topic", value.data(), cfg.mqtt_base_topic.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.mqtt_base_topic, value);
+        copy_text(cfg.mqtt_base_topic, value.data());
     }
 
     cfg.air_traffic_enabled = form_has_key(body, "air_traffic_enabled");
-    if (get_form_value(body, "air_traffic_host", value, sizeof(value)))
+    if (get_form_value(body, "air_traffic_host", value.data(), value.size()))
     {
-        if (!validate_text_field("Air traffic host", value, cfg.air_traffic_host.size() - 1, false,
+        if (!validate_text_field("Air traffic host", value.data(), cfg.air_traffic_host.size() - 1, false,
                                  is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.air_traffic_host, value);
+        copy_text(cfg.air_traffic_host, value.data());
     }
-    if (get_form_value(body, "air_traffic_port", value, sizeof(value)))
+    if (get_form_value(body, "air_traffic_port", value.data(), value.size()))
     {
         uint16_t port = 0;
-        if (!parse_port_field(value, &port))
+        if (!parse_port_field(value.data(), &port))
         {
-            std::printf("Web config save rejected: invalid air traffic port '%s'\n", value);
+            std::printf("Web config save rejected: invalid air traffic port '%s'\n", value.data());
             return "Configuration not saved: air traffic port must be 1-65535.";
         }
         cfg.air_traffic_port = port;
     }
-    if (get_form_value(body, "air_traffic_radius", value, sizeof(value)))
+    if (get_form_value(body, "air_traffic_radius", value.data(), value.size()))
     {
         uint16_t radius_nm = 0;
-        if (!parse_u16_field(value, 1, 250, &radius_nm))
+        if (!parse_u16_field(value.data(), 1, 250, &radius_nm))
         {
-            std::printf("Web config save rejected: invalid air traffic radius '%s'\n", value);
+            std::printf("Web config save rejected: invalid air traffic radius '%s'\n", value.data());
             return "Configuration not saved: air traffic radius must be 1-250 nm.";
         }
         cfg.air_traffic_radius_nm = radius_nm;
     }
-    if (get_form_value(body, "air_traffic_coordinates", value, sizeof(value)))
+    if (get_form_value(body, "air_traffic_coordinates", value.data(), value.size()))
     {
         if (!validate_text_field(
-                "Air traffic coordinates", value, cfg.air_traffic_coordinates.size() - 1, false,
+                "Air traffic coordinates", value.data(), cfg.air_traffic_coordinates.size() - 1, false,
                 is_printable_config_text, validation_error, sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.air_traffic_coordinates, value);
+        copy_text(cfg.air_traffic_coordinates, value.data());
     }
-    if (get_form_value(body, "air_traffic_api_key", value, sizeof(value)) && value[0] != '\0')
+    if (get_form_value(body, "air_traffic_api_key", value.data(), value.size()) && value[0] != '\0')
     {
-        if (!validate_text_field("Air traffic API key", value, cfg.air_traffic_api_key.size() - 1,
+        if (!validate_text_field("Air traffic API key", value.data(), cfg.air_traffic_api_key.size() - 1,
                                  true, is_printable_config_text, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.air_traffic_api_key, value);
+        copy_text(cfg.air_traffic_api_key, value.data());
     }
 
-    if (get_form_value(body, "time_zone", value, sizeof(value)))
+    if (get_form_value(body, "time_zone", value.data(), value.size()))
     {
-        cfg.time_zone = parse_time_zone(value, cfg.time_zone);
+        cfg.time_zone = parse_time_zone(value.data(), cfg.time_zone);
     }
-    if (get_form_value(body, "screen_saver", value, sizeof(value)))
+    if (get_form_value(body, "screen_saver", value.data(), value.size()))
     {
-        cfg.screen_saver = parse_screen_saver(value, cfg.screen_saver);
+        cfg.screen_saver = parse_screen_saver(value.data(), cfg.screen_saver);
     }
-    if (get_form_value(body, "screen_timeout", value, sizeof(value)))
+    if (get_form_value(body, "screen_timeout", value.data(), value.size()))
     {
         uint16_t timeout_minutes = 0;
-        if (!parse_u16_field(value, 0, 120, &timeout_minutes))
+        if (!parse_u16_field(value.data(), 0, 120, &timeout_minutes))
         {
-            std::printf("Web config save rejected: invalid screen timeout '%s'\n", value);
+            std::printf("Web config save rejected: invalid screen timeout '%s'\n", value.data());
             return "Configuration not saved: screen-saver timeout must be 0-120 minutes.";
         }
         cfg.screen_saver_timeout_minutes = timeout_minutes;
@@ -2580,26 +2586,26 @@ bool handle_button_post(const char* body, char* message, size_t message_size)
     }
 
     message[0] = '\0';
-    char id_text[24] = {};
-    if (!get_form_value(body, "id", id_text, sizeof(id_text)))
+    std::array<char, 24> id_text = {};
+    if (!get_form_value(body, "id", id_text.data(), id_text.size()))
     {
         std::snprintf(message, message_size, "Missing button id.");
         return false;
     }
 
     ButtonId id = ButtonId::LeftTop;
-    if (!parse_web_button_id(id_text, &id))
+    if (!parse_web_button_id(id_text.data(), &id))
     {
-        std::snprintf(message, message_size, "Unknown button id '%s'.", id_text);
+        std::snprintf(message, message_size, "Unknown button id '%s'.", id_text.data());
         return false;
     }
 
     ButtonEventType type = ButtonEventType::Pressed;
-    char type_text[24] = {};
-    if (get_form_value(body, "type", type_text, sizeof(type_text)) &&
-        !parse_button_event_type(type_text, &type))
+    std::array<char, 24> type_text = {};
+    if (get_form_value(body, "type", type_text.data(), type_text.size()) &&
+        !parse_button_event_type(type_text.data(), &type))
     {
-        std::snprintf(message, message_size, "Unknown button type '%s'.", type_text);
+        std::snprintf(message, message_size, "Unknown button type '%s'.", type_text.data());
         return false;
     }
 
@@ -2631,14 +2637,14 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
     }
 
     message[0] = '\0';
-    char action_text[32] = {};
-    if (!get_form_value(body, "action", action_text, sizeof(action_text)))
+    std::array<char, 32> action_text = {};
+    if (!get_form_value(body, "action", action_text.data(), action_text.size()))
     {
         std::snprintf(message, message_size, "Missing panel action.");
         return false;
     }
 
-    if (std::strcmp(action_text, "open_alerts") == 0)
+    if (std::strcmp(action_text.data(), "open_alerts") == 0)
     {
         console_controller::request_user_activity();
         const bool changed = console_controller::open_alert_page();
@@ -2650,7 +2656,7 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
         return true;
     }
 
-    if (std::strcmp(action_text, "cycle_test") == 0)
+    if (std::strcmp(action_text.data(), "cycle_test") == 0)
     {
         console_controller::request_user_activity();
         (void)console_controller::cycle_test_lamp_preview();
@@ -2659,7 +2665,7 @@ bool handle_panel_action_post(const char* body, char* message, size_t message_si
         return true;
     }
 
-    std::snprintf(message, message_size, "Unknown panel action '%s'.", action_text);
+    std::snprintf(message, message_size, "Unknown panel action '%s'.", action_text.data());
     return false;
 }
 
@@ -2743,22 +2749,22 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     if (matches_post_path(request, "/api/button"))
     {
         const char* body = std::strstr(request, "\r\n\r\n");
-        char button_message[96] = {};
-        const bool ok = handle_button_post(body != nullptr ? body + 4 : "", button_message,
-                                           sizeof(button_message));
+        std::array<char, 96> button_message = {};
+        const bool ok = handle_button_post(body != nullptr ? body + 4 : "", button_message.data(),
+                                           button_message.size());
         std::snprintf(g_response, sizeof(g_response), "%s%s\n",
-                      ok ? kHttpTextHeader : kHttpBadRequestHeader, button_message);
+                      ok ? kHttpTextHeader : kHttpBadRequestHeader, button_message.data());
         send_response(session, pcb, g_response);
         return;
     }
     if (matches_post_path(request, "/api/panel-state"))
     {
         const char* body = std::strstr(request, "\r\n\r\n");
-        char panel_message[96] = {};
-        const bool ok = handle_panel_action_post(body != nullptr ? body + 4 : "", panel_message,
-                                                 sizeof(panel_message));
+        std::array<char, 96> panel_message = {};
+        const bool ok = handle_panel_action_post(body != nullptr ? body + 4 : "",
+                                                 panel_message.data(), panel_message.size());
         std::snprintf(g_response, sizeof(g_response), "%s%s\n",
-                      ok ? kHttpTextHeader : kHttpBadRequestHeader, panel_message);
+                      ok ? kHttpTextHeader : kHttpBadRequestHeader, panel_message.data());
         send_response(session, pcb, g_response);
         return;
     }
@@ -2777,9 +2783,9 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     }
     else if (matches_get_path(request, "/api/panel-state"))
     {
-        char panel_state[128] = {};
-        build_panel_state_text(panel_state, sizeof(panel_state));
-        std::snprintf(g_response, sizeof(g_response), "%s%s", kHttpTextHeader, panel_state);
+        std::array<char, 128> panel_state = {};
+        build_panel_state_text(panel_state.data(), panel_state.size());
+        std::snprintf(g_response, sizeof(g_response), "%s%s", kHttpTextHeader, panel_state.data());
         send_response(session, pcb, g_response);
         return;
     }

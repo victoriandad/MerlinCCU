@@ -46,7 +46,7 @@ uint16_t g_configured_port = kDefaultPort;
 char g_configured_api_key[128] = {};
 double g_home_latitude = 0.0;
 double g_home_longitude = 0.0;
-uint16_t g_configured_radius_nm = 30U;
+uint16_t g_configured_radius_nm = kDefaultAirTrafficRadiusNm;
 bool g_config_valid = false;
 
 ip_addr_t g_resolved_ip = {};
@@ -173,7 +173,8 @@ bool refresh_config()
     g_configured_port = (config.air_traffic_port != 0U) ? config.air_traffic_port : kDefaultPort;
     std::snprintf(g_configured_api_key, sizeof(g_configured_api_key), "%s",
                   config.air_traffic_api_key.data());
-    g_configured_radius_nm = (config.air_traffic_radius_nm != 0U) ? config.air_traffic_radius_nm : 30U;
+    g_configured_radius_nm =
+        (config.air_traffic_radius_nm != 0U) ? config.air_traffic_radius_nm : kDefaultAirTrafficRadiusNm;
     return true;
 }
 
@@ -660,10 +661,11 @@ bool parse_aircraft_response()
 
             extract_bounded_string(cursor, obj_end, "\"hex\"", candidate.hex, sizeof(candidate.hex));
 
-            char callsign[16] = {};
-            if (extract_bounded_string(cursor, obj_end, "\"flight\"", callsign, sizeof(callsign)))
+            std::array<char, 16> callsign = {};
+            if (extract_bounded_string(cursor, obj_end, "\"flight\"", callsign.data(),
+                                       callsign.size()))
             {
-                size_t len = std::strlen(callsign);
+                size_t len = std::strlen(callsign.data());
                 while (len > 0U && callsign[len - 1U] == ' ')
                 {
                     callsign[--len] = '\0';
@@ -671,10 +673,10 @@ bool parse_aircraft_response()
             }
             if (callsign[0] == '\0')
             {
-                std::snprintf(callsign, sizeof(callsign), "%s", candidate.hex);
+                std::snprintf(callsign.data(), callsign.size(), "%s", candidate.hex);
             }
             std::snprintf(candidate.callsign, sizeof(candidate.callsign), "%s",
-                          callsign[0] != '\0' ? callsign : "?");
+                          callsign[0] != '\0' ? callsign.data() : "?");
 
             if (bounded_value_is_string(cursor, obj_end, "\"alt_baro\""))
             {
@@ -698,14 +700,14 @@ bool parse_aircraft_response()
     merge_trail_history(best, best_count);
 
     g_status.aircraft_count = best_count;
-    char text[16] = {};
+    std::array<char, 16> text = {};
     for (uint8_t i = 0U; i < best_count; ++i)
     {
         AirTrafficEntry& entry = g_status.aircraft[i];
         copy_text(entry.callsign, best[i].callsign);
 
-        std::snprintf(text, sizeof(text), "%.1fnm", best[i].distance_nm);
-        copy_text(entry.distance_text, text);
+        std::snprintf(text.data(), text.size(), "%.1fnm", best[i].distance_nm);
+        copy_text(entry.distance_text, text.data());
 
         if (best[i].on_ground)
         {
@@ -713,8 +715,8 @@ bool parse_aircraft_response()
         }
         else if (best[i].has_altitude)
         {
-            std::snprintf(text, sizeof(text), "%ldft", std::lround(best[i].altitude_ft));
-            copy_text(entry.altitude_text, text);
+            std::snprintf(text.data(), text.size(), "%ldft", std::lround(best[i].altitude_ft));
+            copy_text(entry.altitude_text, text.data());
         }
         else
         {
@@ -722,8 +724,8 @@ bool parse_aircraft_response()
         }
 
         const int bearing = ((static_cast<int>(std::lround(best[i].bearing_deg)) % 360) + 360) % 360;
-        std::snprintf(text, sizeof(text), "%03d", bearing);
-        copy_text(entry.bearing_text, text);
+        std::snprintf(text.data(), text.size(), "%03d", bearing);
+        copy_text(entry.bearing_text, text.data());
     }
 
     for (uint8_t i = best_count; i < kAirTrafficEntryCapacity; ++i)
@@ -769,13 +771,14 @@ void defer_completion(bool success, err_t err, int http_status)
 /// @brief Builds the HTTP GET request for the configured point/radius query.
 bool build_request()
 {
-    char auth_header[160] = {};
+    std::array<char, 160> auth_header = {};
     if (g_configured_api_key[0] != '\0')
     {
         // adsb.lol does not require a key today; the exact header name for a
         // future gated tier is unconfirmed (see design doc's open questions),
         // so this is a best-effort placeholder that's easy to adjust later.
-        std::snprintf(auth_header, sizeof(auth_header), "Api-Auth: %s\r\n", g_configured_api_key);
+        std::snprintf(auth_header.data(), auth_header.size(), "Api-Auth: %s\r\n",
+                      g_configured_api_key);
     }
 
     const int target_len = std::snprintf(
@@ -789,7 +792,7 @@ bool build_request()
         "Connection: close\r\n"
         "\r\n",
         g_home_latitude, g_home_longitude, static_cast<unsigned>(g_configured_radius_nm),
-        g_configured_host, auth_header);
+        g_configured_host, auth_header.data());
     return target_len > 0 && static_cast<size_t>(target_len) < sizeof(g_request);
 }
 
