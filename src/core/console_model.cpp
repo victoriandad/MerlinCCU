@@ -204,6 +204,7 @@ void make_default_console_state(ConsoleState& out)
     out.time_status.weekday_index = kInvalidWeekdayIndex;
     out.main_loop_load_status = {};
     out.heap_status = {};
+    out.display_timing_status = {};
 
     // The keypad debug surface is always present, so its snapshot fields start
     // cleared rather than being allocated lazily later.

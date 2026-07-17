@@ -98,6 +98,16 @@ rather than assuming headroom exists.
   and lwIP/CYW43 callback rules are reviewed.
 - Safe early candidates are sensor polling, compensation maths, payload
   parsing, and data reduction.
+- A narrower, display-only candidate is also under design: dedicating core 1
+  to per-frame raster regeneration for temporal dithering (see
+  `docs/multicore-raster-regen-design.md`). This is a different shape of
+  multicore work than the network-offload direction above — core 1 would own
+  a small, mechanical task (rebuild dirty raster lines from a per-pixel level
+  buffer, once per physical frame) rather than sharing in UI or network
+  logic. It is a candidate specifically because its interface is narrow (one
+  small input buffer, one output buffer) compared to migrating any part of
+  lwIP/CYW43. See the admission-checklist exception below before treating
+  this as precedent for other display-state work.
 
 ## Environment Sensor Direction
 
@@ -129,6 +139,17 @@ Do not move work to core 1 until these are true:
   during erase/program operations.
 - lwIP/CYW43 calls remain on their current owner unless explicit locking and
   callback-context rules have been reviewed.
+
+**Exception under design:** the raster-regeneration candidate above
+necessarily writes display state (the raster back-buffer) from core 1,
+which the second checklist item forbids in general. This is treated as a
+deliberate, narrow exception rather than a relaxation of the rule: core 1
+would own *only* the raster buffer's dirty-line contents, under the same
+producer/consumer discipline the DMA control-channel IRQ already uses today
+for content-change adoption, and would not touch `ConsoleState`, softkeys, or
+any other UI/display state. This exception applies to that specific design
+only, not to display-state work in general, until it has been implemented
+and reviewed on hardware.
 
 ## Host-Testable Logic
 
@@ -168,6 +189,7 @@ hardware headers to compile.
 | Date | Decision | Reason | Follow-up |
 | --- | --- | --- | --- |
 | 2026-07-04 | Use a Home Assistant/local proxy feed for share market data instead of direct provider scraping on the Pico. | Google has no supported Pico-friendly Finance REST API, and direct Yahoo chart fetching caused share-page lockup risk. A local feed keeps third-party API keys, large JSON, and provider churn off the device. | Implement #42 before re-enabling live share values. |
+| 2026-07-05 | Added a narrow multicore exception for a dedicated raster-regeneration core (core 1), instead of storing multiple pre-built native raster buffers, to make limited temporal dithering RAM-feasible. | Static RAM is already at ~467 KB of 520 KB (measured via `arm-none-eabi-size` on the compiled firmware), so storing 2+ additional ~98 KB raster buffers for temporal-dithering phases is not viable; regenerating on the fly from a small per-pixel level buffer avoids that cost but needs a core dedicated to it so it doesn't compete with Wi-Fi/HTTP/keypad work on core 0. | Measure actual frame rate and raster-rebuild time on hardware (new instrumentation on the Resources status page) before implementing; see `docs/multicore-raster-regen-design.md`. |
 | 2026-07-06 | Add `tests/host/`, a native-compiler CMake project covering keypad matrix decode and alert ordering/acknowledgement, extracted into hardware-independent headers. | Closes issue #14; both areas were previously only reachable through hand testing on real hardware. | Extend the same pattern to other pure logic (e.g. Pinter scheduling, #48) as it's identified. |
 | 2026-07-08 | Extract Calendar owner-filter/day-navigation/slot-selection logic into `calendar_navigation.h`, following the #48 Pinter-scheduling split. | Closes issue #49; keeps this logic reviewable and host-testable ahead of the #8/#33/#34 Home Assistant calendar ingestion work landing in the same area. | Split `console_controller.cpp` further per #44 (softkey label construction, status ingestion remain inline). |
 | 2026-07-08 | Split the Status page family (root/overview/connectivity/resources/sensors/integrations) out of `screens.cpp` into `status_screens.cpp`, with cross-family primitives promoted into `screens_shared.h`. | Progresses issue #45 as a staged refactor (per the #3 housekeeping notes) rather than one large rewrite; `screens.cpp` dropped from 3319 to 2817 lines with no rendering change. | Repeat the same split for Weather, Calendar, Shares, Pinter, Settings, and Alerts page families. |

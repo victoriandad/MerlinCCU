@@ -1707,7 +1707,6 @@ void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
     (void)console_state;
 }
 
-
 /// @brief Draws the top-level settings routing page.
 /// @details The root page intentionally leaves the centre clear. Section state
 /// belongs in the bracketed softkey labels; detailed values are shown only

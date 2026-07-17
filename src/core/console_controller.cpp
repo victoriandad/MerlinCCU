@@ -4401,6 +4401,21 @@ bool set_heap_status(const HeapStatus& status)
     return true;
 }
 
+/// @brief Updates panel scanout timing telemetry shown by Resources status.
+bool set_display_timing_status(const DisplayTimingStatus& status)
+{
+    if (g_console_state.display_timing_status.valid == status.valid &&
+        g_console_state.display_timing_status.frame_rate_hz == status.frame_rate_hz &&
+        g_console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us)
+    {
+        return false;
+    }
+
+    g_console_state.display_timing_status = status;
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Applies or clears a temporary label override for one softkey.
 bool set_softkey_label(SoftKeyId key, const char* label)
 {

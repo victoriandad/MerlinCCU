@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "hardware/dma.h"
+#include "pico/time.h"
 
 #include "el320_raster.pio.h"
 #include "framebuffer.h"
@@ -47,6 +48,12 @@ PIO g_active_pio = pio0;
 uint g_active_sm = 0;
 float g_configured_clkdiv = kPanel.clkdiv;
 
+// Diagnostic-only counters. Word-aligned reads/writes are atomic on
+// Cortex-M33, so these are safe to read from the main loop without extra
+// locking; at worst a reader sees a value that is one increment stale.
+volatile uint32_t g_frame_count = 0;
+volatile uint32_t g_last_rebuild_us = 0;
+
 /// @brief DMA interrupt handler used to switch scanout buffers safely.
 /// @details The data DMA channel streams one whole frame into the PIO TX FIFO.
 /// A second control DMA channel then reloads the data channel's read address so
@@ -57,6 +64,7 @@ void dma_ctrl_irq_handler()
 {
     const uint32_t kMask = 1U << g_dma_chan_ctrl;
     dma_hw->ints0 = kMask;
+    ++g_frame_count;
 
     if (g_raster_pending != nullptr)
     {
@@ -292,7 +300,10 @@ void set_clkdiv(float clkdiv)
 /// is what keeps scanout atomic from the panel's point of view.
 void present(const uint8_t* ui_fb)
 {
+    const absolute_time_t kRebuildStart = get_absolute_time();
     rebuild_raster_from_fb(ui_fb, g_raster_back->data());
+    g_last_rebuild_us =
+        static_cast<uint32_t>(absolute_time_diff_us(kRebuildStart, get_absolute_time()));
 
     if (!g_dma_running)
     {
@@ -301,6 +312,18 @@ void present(const uint8_t* ui_fb)
     }
 
     g_raster_pending = g_raster_back;
+}
+
+/// @brief Returns the number of physical frame-boundary interrupts observed.
+uint32_t frame_count()
+{
+    return g_frame_count;
+}
+
+/// @brief Returns how long the most recent raster rebuild took, in microseconds.
+uint32_t last_rebuild_us()
+{
+    return g_last_rebuild_us;
 }
 
 } // namespace display
