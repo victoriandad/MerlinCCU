@@ -6,6 +6,7 @@
 
 #include "config_manager.h"
 #include "console_model.h"
+#include "display.h"
 #include "framebuffer.h"
 #include "hardware/flash.h"
 #include "panel_config.h"
@@ -368,6 +369,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char loop_sample_text[16] = {};
     char frame_rate_text[16] = {};
     char rebuild_time_text[16] = {};
+    char present_skipped_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
     build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
@@ -401,6 +403,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(frame_rate_text, sizeof(frame_rate_text), "-");
         std::snprintf(rebuild_time_text, sizeof(rebuild_time_text), "-");
     }
+    std::snprintf(present_skipped_text, sizeof(present_skipped_text), "%lu",
+                  static_cast<unsigned long>(display::present_skipped_count()));
 
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
                       "PROGRAM FLASH", flash_value_text);
@@ -417,6 +421,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         {"LOOP SAMPLE", loop_sample_text},
         {"FRAME RATE", frame_rate_text},
         {"RASTER BUILD", rebuild_time_text},
+        {"PRESENT SKIP", present_skipped_text},
         {"HEAP LIVE", "-"},
     };
 
