@@ -152,7 +152,8 @@ For a fuller checklist, use `docs/display-test-checklist.md`.
 
 Greyscale rendering feasibility (temporal/spatial dithering, panel timing
 limits) is written up in `docs/greyscale-investigation.md`, tracking issue
-#27.
+#27. The concrete 2x2 ordered-dither implementation and test card are
+documented in `docs/greyscale-test-card-design.md`, tracking issue #54.
 
 ## Build Notes
 

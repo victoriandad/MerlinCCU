@@ -2169,6 +2169,7 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::KeypadDebug:
+    case MenuPage::GreyscaleTest:
         return MenuPage::Settings;
     case MenuPage::AlertList:
         return g_console_state.alert_parent_page;
@@ -3060,6 +3061,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left4)] = {"SENSORS", SoftKeyRoute::GoStatusSensors, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {
             "INTEGR.", SoftKeyRoute::GoStatusIntegrations, true};
+        softkeys[softkey_index(SoftKeyId::Right3)] = {"GREYSCL", SoftKeyRoute::GoGreyscaleTest, true};
         softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
         break;
@@ -3503,6 +3505,7 @@ void update_softkeys_from_state()
     }
     case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
+    case MenuPage::GreyscaleTest:
         break;
     case MenuPage::AlertList:
     {
@@ -3883,6 +3886,10 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoKeypadDebug:
         stop_screen_saver_timeout_editing();
         g_console_state.active_page = MenuPage::KeypadDebug;
+        return true;
+    case SoftKeyRoute::GoGreyscaleTest:
+        stop_screen_saver_timeout_editing();
+        g_console_state.active_page = MenuPage::GreyscaleTest;
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return toggle_remote_config_enabled();
