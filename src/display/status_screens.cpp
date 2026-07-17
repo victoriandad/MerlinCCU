@@ -23,11 +23,14 @@ constexpr size_t kReservedFlashBytes =
     config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes;
 constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kReservedFlashBytes;
 
+// These names are fixed by the Pico SDK's linker script and cannot be renamed.
+// NOLINTBEGIN(bugprone-reserved-identifier,readability-identifier-naming)
 extern "C"
 {
 extern const uint8_t __flash_binary_start;
 extern const uint8_t __flash_binary_end;
 }
+// NOLINTEND(bugprone-reserved-identifier,readability-identifier-naming)
 
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)

@@ -11,11 +11,14 @@
 #include "alert_ordering.h"
 #include "calendar_navigation.h"
 #include "config_persistence.h"
+#include "coordinate_editor.h"
 #include "date_time_math.h"
 #include "debug_logging.h"
+#include "geo_coordinates.h"
 #include "pico/error.h"
 #include "pinter_scheduling.h"
 #include "pinter_store.h"
+#include "text_utils.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -2466,6 +2469,115 @@ bool handle_screen_saver_timeout_edit_event(const ButtonEvent& event)
     return apply_screen_saver_timeout_digit(digit);
 }
 
+/// @brief Returns the RuntimeConfig text currently stored for `field`.
+const char* coordinate_field_text(coordinate_editor::Field field)
+{
+    return field == coordinate_editor::Field::AirTraffic
+               ? config_manager::settings().air_traffic_coordinates.data()
+               : config_manager::settings().weather_coordinates.data();
+}
+
+/// @brief Leaves the coordinate editor without saving, restoring normal
+/// softkey navigation on the page it was opened from.
+bool stop_coordinate_editing()
+{
+    return coordinate_editor::stop(g_console_state.coordinate_editor_state);
+}
+
+/// @brief Enters the coordinate editor for `field`, pre-loading both axis
+/// buffers and hemispheres from the currently saved value.
+bool start_coordinate_editing(coordinate_editor::Field field)
+{
+    return coordinate_editor::start(g_console_state.coordinate_editor_state, field,
+                                    coordinate_field_text(field));
+}
+
+/// @brief Advances editing from the latitude axis to the longitude axis.
+bool advance_coordinate_axis()
+{
+    return coordinate_editor::advance_axis(g_console_state.coordinate_editor_state);
+}
+
+/// @brief Handles keys captured while the coordinate scratchpad is visible.
+/// @details The pure digit/dot/clear/hemisphere/axis mutations live in
+/// `coordinate_editor`; this function only decodes which physical key maps to
+/// which mutation, since that decoding depends on the keypad's `LetterMode`
+/// (`button_digit_value`), which is itself console-controller state.
+bool handle_coordinate_edit_event(const ButtonEvent& event)
+{
+    coordinate_editor::State& state = g_console_state.coordinate_editor_state;
+    if (!state.editing || event.type != ButtonEventType::Pressed)
+    {
+        return false;
+    }
+
+    if (event.id == ButtonId::BackStep)
+    {
+        return stop_coordinate_editing();
+    }
+
+    if (event.id == ButtonId::Clr)
+    {
+        return coordinate_editor::clear_buffer(state);
+    }
+
+    if (event.id == ButtonId::Dot)
+    {
+        return coordinate_editor::apply_dot(state);
+    }
+
+    if (event.id == ButtonId::Slash)
+    {
+        // Bound here rather than to `Ltrs`, since `Ltrs` is consumed
+        // unconditionally before the coordinate-editing gate is reached.
+        return coordinate_editor::toggle_hemisphere(state);
+    }
+
+    uint8_t digit = 0;
+    if (!button_digit_value(event.id, &digit))
+    {
+        return false;
+    }
+
+    return coordinate_editor::apply_digit(state, digit);
+}
+
+/// @brief Validates both axes and persists the coordinate edit when the user
+/// presses Enter on the longitude axis. Uses the same shared
+/// parse/format/hemisphere helpers as the web config UI so the two entry
+/// paths can never disagree on format (issue #87).
+bool confirm_coordinate_edit()
+{
+    std::array<char, 32> coordinates_text = {};
+    if (!coordinate_editor::try_confirm(g_console_state.coordinate_editor_state,
+                                        coordinates_text.data(), coordinates_text.size()))
+    {
+        return false;
+    }
+
+    const coordinate_editor::Field field = g_console_state.coordinate_editor_state.field;
+    if (std::strcmp(coordinate_field_text(field), coordinates_text.data()) != 0 &&
+        !persist_runtime_config_change(
+            [field, coordinates_text](RuntimeConfig& settings)
+            {
+                auto& target = field == coordinate_editor::Field::AirTraffic
+                                   ? settings.air_traffic_coordinates
+                                   : settings.weather_coordinates;
+                if (std::strcmp(target.data(), coordinates_text.data()) == 0)
+                {
+                    return false;
+                }
+
+                text_utils::copy_text(target, coordinates_text.data());
+                return true;
+            }))
+    {
+        return false;
+    }
+
+    return stop_coordinate_editing();
+}
+
 /// @brief Updates the selected weather source when a new provider is chosen.
 bool select_weather_source(WeatherSource source)
 {
@@ -3306,26 +3418,30 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::AirTrafficSettings:
+    {
+        const bool editing_air_traffic_coordinates =
+            g_console_state.coordinate_editor_state.editing &&
+            g_console_state.coordinate_editor_state.field == coordinate_editor::Field::AirTraffic;
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left1, "ADS-B",
                 enabled_selection_text(config_manager::settings().air_traffic_enabled)),
             SoftKeyRoute::ToggleAirTrafficEnabled,
-            true,
+            !editing_air_traffic_coordinates,
             config_manager::settings().air_traffic_enabled,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             build_selection_softkey_label(SoftKeyId::Left2, "HOST",
                                           config_manager::settings().air_traffic_host.data()),
             SoftKeyRoute::None,
-            true,
+            !editing_air_traffic_coordinates,
         };
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left3, "PORT",
                 port_selection_text(SoftKeyId::Left3, config_manager::settings().air_traffic_port)),
             SoftKeyRoute::None,
-            true,
+            !editing_air_traffic_coordinates,
         };
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(
@@ -3333,22 +3449,35 @@ void update_softkeys_from_state()
                 radius_nm_selection_text(SoftKeyId::Left4,
                                          config_manager::settings().air_traffic_radius_nm)),
             SoftKeyRoute::None,
-            true,
+            !editing_air_traffic_coordinates,
         };
         softkeys[softkey_index(SoftKeyId::Left5)] = {
-            build_selection_softkey_label(SoftKeyId::Left5, "COORDS",
+            build_selection_softkey_label(SoftKeyId::Left5, "LAT/LONG",
                                           config_manager::settings().air_traffic_coordinates.data()),
-            SoftKeyRoute::None,
-            true,
+            SoftKeyRoute::EditAirTrafficCoordinates,
+            !editing_air_traffic_coordinates,
+            editing_air_traffic_coordinates,
         };
         softkeys[softkey_index(SoftKeyId::Right1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Right1, "API KEY",
                 secret_selection_text(config_manager::settings().air_traffic_api_key[0] != '\0')),
             SoftKeyRoute::None,
-            true,
+            !editing_air_traffic_coordinates,
         };
+        if (editing_air_traffic_coordinates)
+        {
+            const bool on_lat_axis =
+                g_console_state.coordinate_editor_state.axis == coordinate_editor::Axis::Lat;
+            softkeys[softkey_index(SoftKeyId::Right5)] = {
+                on_lat_axis ? "LONG" : "ENTER",
+                on_lat_axis ? SoftKeyRoute::AdvanceCoordinateEditAxis
+                            : SoftKeyRoute::ConfirmCoordinateEdit,
+                true,
+            };
+        }
         break;
+    }
     case MenuPage::ScreenSaverSettings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(SoftKeyId::Left1, "TIMEOUT PERIOD",
@@ -3415,36 +3544,51 @@ void update_softkeys_from_state()
         }
         break;
     case MenuPage::WeatherSources:
+    {
+        const bool weather_is_open_meteo = g_console_state.weather_source == WeatherSource::OpenMeteo;
+        const bool editing_weather_coordinates =
+            g_console_state.coordinate_editor_state.editing &&
+            g_console_state.coordinate_editor_state.field == coordinate_editor::Field::Weather;
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             weather_source_definition(WeatherSource::HomeAssistant).option_label,
             SoftKeyRoute::SelectWeatherHomeAssistant,
-            true,
+            !editing_weather_coordinates,
             g_console_state.weather_source == WeatherSource::HomeAssistant,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             weather_source_definition(WeatherSource::OpenMeteo).option_label,
             SoftKeyRoute::SelectWeatherOpenMeteo,
-            true,
-            g_console_state.weather_source == WeatherSource::OpenMeteo,
+            !editing_weather_coordinates,
+            weather_is_open_meteo,
         };
         softkeys[softkey_index(SoftKeyId::Right1)] = {
             build_selection_softkey_label(
-                SoftKeyId::Right1,
-                g_console_state.weather_source == WeatherSource::HomeAssistant ? "WEATHER"
-                                                                               : "COORDS",
-                g_console_state.weather_source == WeatherSource::HomeAssistant
-                    ? config_manager::settings().weather_entity_id.data()
-                    : config_manager::settings().weather_coordinates.data()),
-            SoftKeyRoute::None,
-            true,
+                SoftKeyId::Right1, weather_is_open_meteo ? "LAT/LONG" : "WEATHER",
+                weather_is_open_meteo ? config_manager::settings().weather_coordinates.data()
+                                      : config_manager::settings().weather_entity_id.data()),
+            weather_is_open_meteo ? SoftKeyRoute::EditWeatherCoordinates : SoftKeyRoute::None,
+            !editing_weather_coordinates,
+            editing_weather_coordinates,
         };
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "SUN",
                                           config_manager::settings().sun_entity_id.data()),
             SoftKeyRoute::None,
-            true,
+            !editing_weather_coordinates,
         };
+        if (editing_weather_coordinates)
+        {
+            const bool on_lat_axis =
+                g_console_state.coordinate_editor_state.axis == coordinate_editor::Axis::Lat;
+            softkeys[softkey_index(SoftKeyId::Right5)] = {
+                on_lat_axis ? "LONG" : "ENTER",
+                on_lat_axis ? SoftKeyRoute::AdvanceCoordinateEditAxis
+                            : SoftKeyRoute::ConfirmCoordinateEdit,
+                true,
+            };
+        }
         break;
+    }
     case MenuPage::TimeZoneSettings:
     {
         const TimeZoneDefinition* west_one = relative_time_zone_definition(g_console_state, -1);
@@ -3702,27 +3846,33 @@ bool apply_softkey_route(SoftKeyRoute route)
         return false;
     case SoftKeyRoute::GoHome:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Home;
         return true;
     case SoftKeyRoute::GoCalendar:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Calendar;
         return true;
     case SoftKeyRoute::GoWeather:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Weather;
         return true;
     case SoftKeyRoute::GoAirTraffic:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::AirTraffic;
         g_console_state.air_traffic_page_index = 0U;
         return true;
     case SoftKeyRoute::GoPinter:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Pinter;
         return true;
     case SoftKeyRoute::GoPinterSelectBrew:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         clamp_pinter_list_page(g_console_state.pinter_catalogue_page_index,
                                kPinterBrewCatalogue.size());
         g_console_state.active_page = MenuPage::PinterSelectBrew;
@@ -3789,99 +3939,129 @@ bool apply_softkey_route(SoftKeyRoute route)
         return confirm_pinter_start();
     case SoftKeyRoute::GoShares:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Shares;
         return true;
     case SoftKeyRoute::GoStatus:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Status;
         return true;
     case SoftKeyRoute::GoStatusOverview:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::StatusOverview;
         return true;
     case SoftKeyRoute::GoStatusConnectivity:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::StatusConnectivity;
         return true;
     case SoftKeyRoute::GoStatusResources:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::StatusResources;
         return true;
     case SoftKeyRoute::GoStatusSensors:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::StatusSensors;
         return true;
     case SoftKeyRoute::GoStatusIntegrations:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::StatusIntegrations;
         return true;
     case SoftKeyRoute::GoLocalConditions:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::LocalConditions;
         return true;
     case SoftKeyRoute::ShowLocalTemperatureGraph:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.local_condition_metric = LocalConditionMetric::Temperature;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalHumidityGraph:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.local_condition_metric = LocalConditionMetric::Humidity;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalPressureGraph:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.local_condition_metric = LocalConditionMetric::AirPressure;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalAirQualityGraph:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.local_condition_metric = LocalConditionMetric::AirQuality;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::GoSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::Settings;
         g_console_state.settings_page_index = 0;
         return true;
     case SoftKeyRoute::GoDeviceSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::DeviceSettings;
         return true;
     case SoftKeyRoute::GoWifiSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::WifiSettings;
         return true;
     case SoftKeyRoute::GoHomeAssistantSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::HomeAssistantSettings;
         return true;
     case SoftKeyRoute::GoMqttSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::MqttSettings;
         return true;
     case SoftKeyRoute::GoAirTrafficSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::AirTrafficSettings;
         return true;
     case SoftKeyRoute::GoScreenSaverSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
         return true;
     case SoftKeyRoute::EditScreenSaverTimeout:
         return start_screen_saver_timeout_editing();
     case SoftKeyRoute::ConfirmScreenSaverTimeout:
         return confirm_screen_saver_timeout_edit();
+    case SoftKeyRoute::EditAirTrafficCoordinates:
+        return start_coordinate_editing(coordinate_editor::Field::AirTraffic);
+    case SoftKeyRoute::EditWeatherCoordinates:
+        return start_coordinate_editing(coordinate_editor::Field::Weather);
+    case SoftKeyRoute::AdvanceCoordinateEditAxis:
+        return advance_coordinate_axis();
+    case SoftKeyRoute::ConfirmCoordinateEdit:
+        return confirm_coordinate_edit();
     case SoftKeyRoute::GoWeatherSources:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::WeatherSources;
         return true;
     case SoftKeyRoute::GoTimeZoneSettings:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::TimeZoneSettings;
         return true;
     case SoftKeyRoute::GoKeypadDebug:
         stop_screen_saver_timeout_editing();
+        stop_coordinate_editing();
         g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
@@ -4560,6 +4740,25 @@ bool handle_button_event(const ButtonEvent& event)
                          static_cast<unsigned>(g_console_state.active_page),
                          static_cast<unsigned>(g_console_state.screen_saver_timeout_minutes),
                          g_console_state.screen_saver_timeout_editing ? "on" : "off");
+            return true;
+        }
+
+        if (!button_maps_to_softkey(event.id))
+        {
+            return false;
+        }
+    }
+
+    if (g_console_state.coordinate_editor_state.editing)
+    {
+        const bool edit_changed = handle_coordinate_edit_event(event);
+        if (edit_changed)
+        {
+            update_softkeys_from_state();
+            update_lamps_from_state();
+            PERIODIC_LOG("Console state updated: page=%u coordinate_edit=%s\n",
+                         static_cast<unsigned>(g_console_state.active_page),
+                         g_console_state.coordinate_editor_state.editing ? "on" : "off");
             return true;
         }
 

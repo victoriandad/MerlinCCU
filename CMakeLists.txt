@@ -53,6 +53,8 @@ add_executable(MerlinCCU
     src/core/calendar_navigation.cpp
     src/core/console_controller.cpp
     src/core/console_model.cpp
+    src/core/coordinate_editor.cpp
+    src/core/geo_coordinates.cpp
     src/core/input.cpp
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp

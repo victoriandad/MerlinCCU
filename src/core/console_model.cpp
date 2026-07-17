@@ -130,6 +130,7 @@ void make_default_console_state(ConsoleState& out)
     out.screen_saver_timeout_editing = false;
     out.screen_saver_timeout_edit_minutes = 5;
     out.screen_saver_timeout_replace_on_next_digit = true;
+    out.coordinate_editor_state = {};
     out.letter_mode = LetterMode::UpperCase;
     out.alert_severity = AlertSeverity::None;
     out.test_state = SystemTestState::Idle;

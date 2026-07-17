@@ -922,6 +922,41 @@ void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state
                            fonts::FontFace::Font5x7, 1);
 }
 
+/// @brief Draws the bottom scratchpad used for on-device lat/lon entry
+/// (issue #87). Mirrors `draw_screen_saver_scratchpad` above; shows whichever
+/// axis is currently active as e.g. "LAT N50.2300".
+void draw_coordinate_scratchpad(uint8_t* fb, const ConsoleState& console_state)
+{
+    constexpr int kScratchpadWidth = 160;
+    constexpr int kScratchpadHeight = 15;
+    constexpr int kScratchpadLeftX = (kUiWidth - kScratchpadWidth) / 2;
+    constexpr int kScratchpadTopY = kUiHeight - kScratchpadHeight - 3;
+    constexpr int kTextInsetY = 4;
+    constexpr int kRightPadX = 10;
+
+    const coordinate_editor::State& edit_state = console_state.coordinate_editor_state;
+    const bool is_lat = edit_state.axis == coordinate_editor::Axis::Lat;
+    const char* axis_label = is_lat ? "LAT" : "LONG";
+    const char hemisphere = is_lat ? edit_state.lat_hemisphere : edit_state.lon_hemisphere;
+    const char* magnitude_text =
+        is_lat ? edit_state.lat_buffer.data() : edit_state.lon_buffer.data();
+
+    std::array<char, 20> coordinate_text = {};
+    std::snprintf(coordinate_text.data(), coordinate_text.size(), "%s %c%s", axis_label,
+                 hemisphere, magnitude_text);
+
+    const int coordinate_text_width =
+        text_width(coordinate_text.data(), fonts::FontFace::Font5x7, 1);
+    const int text_x = kScratchpadLeftX + kScratchpadWidth - kRightPadX - coordinate_text_width;
+
+    framebuffer::fill_rect(fb, kScratchpadLeftX + 1, kScratchpadTopY + 1, kScratchpadWidth - 2,
+                           kScratchpadHeight - 2, false);
+    draw_softkey_selection_brackets(fb, kScratchpadLeftX, kScratchpadTopY, kScratchpadHeight,
+                                    kScratchpadWidth, fonts::FontFace::Font5x7, true);
+    framebuffer::draw_text(fb, text_x, kScratchpadTopY + kTextInsetY, coordinate_text.data(), true,
+                           fonts::FontFace::Font5x7, 1);
+}
+
 /// @brief Extracts the inner text from a bracketed softkey value line.
 /// @details Selection labels are still authored as `[value]`, but the renderer
 /// can choose to draw larger brackets around the value instead of tiny glyphs.
@@ -1702,11 +1737,15 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
 
 /// @brief Draws the weather-source selection page under Settings.
 /// @details Settings subpages keep values on the surrounding softkeys so the
-/// centre of the display stays free of duplicate status text.
+/// centre of the display stays free of duplicate status text, except while
+/// the coordinate editor (issue #87) is open on this page.
 void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    (void)fb;
-    (void)console_state;
+    if (console_state.coordinate_editor_state.editing &&
+        console_state.coordinate_editor_state.field == coordinate_editor::Field::Weather)
+    {
+        draw_coordinate_scratchpad(fb, console_state);
+    }
 }
 
 
@@ -1753,11 +1792,15 @@ void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Leaves the ADS-B traffic settings body blank.
-/// @details Feed enable/host/coordinates values are shown around the bezel.
+/// @details Feed enable/host/coordinates values are shown around the bezel,
+/// except while the coordinate editor (issue #87) is open on this page.
 void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    (void)fb;
-    (void)console_state;
+    if (console_state.coordinate_editor_state.editing &&
+        console_state.coordinate_editor_state.field == coordinate_editor::Field::AirTraffic)
+    {
+        draw_coordinate_scratchpad(fb, console_state);
+    }
 }
 
 /// @brief Draws only active screen-saver editing UI.

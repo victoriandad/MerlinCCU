@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "coordinate_editor.h"
 #include "environment_sensor_manager.h"
 
 /// @brief Physical softkeys mounted beside the display.
@@ -533,6 +534,10 @@ enum class SoftKeyRoute : uint8_t
     GoScreenSaverSettings,
     EditScreenSaverTimeout,
     ConfirmScreenSaverTimeout,
+    EditAirTrafficCoordinates,
+    EditWeatherCoordinates,
+    AdvanceCoordinateEditAxis,
+    ConfirmCoordinateEdit,
     GoWeatherSources,
     GoTimeZoneSettings,
     GoKeypadDebug,
@@ -896,6 +901,11 @@ struct ConsoleState
     bool screen_saver_timeout_editing;
     uint16_t screen_saver_timeout_edit_minutes;
     bool screen_saver_timeout_replace_on_next_digit;
+    /// @brief State for the on-device latitude/longitude editor (issue #87).
+    /// The pure state machine lives in `coordinate_editor` so it can be
+    /// exercised from host tests without dragging in this (hardware-adjacent)
+    /// header's other dependencies.
+    coordinate_editor::State coordinate_editor_state;
     LetterMode letter_mode;
     AlertSeverity alert_severity;
     SystemTestState test_state;

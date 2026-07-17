@@ -237,11 +237,15 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 namespace
 {
 
-// core0's entire stack is a fixed 2048-byte region (RP2350 default linker
-// script, .stack_dummy section) -- separate from the .bss/.data RAM region,
-// with no configured override. These bound it.
+// core0's entire stack is a fixed 4096-byte region (CMakeLists.txt sets
+// PICO_STACK_SIZE=0x1000, doubling the SDK default; see that file for why)
+// living in the RP2350's dedicated SCRATCH_Y bank, separate from the
+// .bss/.data RAM region. These bound it.
+// These names are fixed by the SDK's linker script and cannot be renamed.
+// NOLINTBEGIN(bugprone-reserved-identifier,readability-identifier-naming)
 extern "C" uint32_t __StackBottom;
 extern "C" uint32_t __StackTop;
+// NOLINTEND(bugprone-reserved-identifier,readability-identifier-naming)
 
 constexpr uint32_t kStackFillPattern = 0xEEEEEEEEU;
 // Bytes below the stack pointer at fill time are skipped as a safety
@@ -257,6 +261,9 @@ void fill_stack_canary()
     uint32_t sp = 0;
     asm volatile("mov %0, sp" : "=r"(sp));
     auto* begin = &__StackBottom;
+    // sp is a raw register value from inline asm, not derived from an object
+    // pointer, so this cast is unavoidable here.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     auto* end = reinterpret_cast<uint32_t*>(sp - kStackFillSafetyMarginBytes);
     for (uint32_t* p = begin; p < end; ++p)
     {

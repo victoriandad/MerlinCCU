@@ -706,7 +706,7 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
         if (console_state.weather_source != WeatherSource::HomeAssistant &&
             console_state.home_assistant_status.state == HomeAssistantConnectionState::Unconfigured)
         {
-            weather_condition = "SET COORDS";
+            weather_condition = "SET LAT/LONG";
             if (console_state.home_assistant_status.weather_entity_id[0] != '\0')
             {
                 std::snprintf(direct_config_detail.data(), direct_config_detail.size(), "GOT %.32s",
@@ -715,7 +715,7 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
             }
             else
             {
-                weather_footer = "NO COORDS SAVED";
+                weather_footer = "NO LAT/LONG SAVED";
             }
         }
         else

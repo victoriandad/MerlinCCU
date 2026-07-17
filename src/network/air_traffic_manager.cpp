@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "config_manager.h"
+#include "geo_coordinates.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
 #include "lwip/dns.h"
@@ -95,64 +96,6 @@ struct TrackedAircraft
 
 std::array<TrackedAircraft, kAirTrafficEntryCapacity> g_tracked = {};
 
-/// @brief Scans forward for the next signed decimal number in `*cursor`.
-bool parse_next_double(const char** cursor, double* out_value)
-{
-    if (cursor == nullptr || *cursor == nullptr || out_value == nullptr)
-    {
-        return false;
-    }
-
-    const char* scan = *cursor;
-    while (*scan != '\0')
-    {
-        const bool could_start_number =
-            (*scan >= '0' && *scan <= '9') || *scan == '-' || *scan == '+' || *scan == '.';
-        if (could_start_number)
-        {
-            char* end = nullptr;
-            const double value = std::strtod(scan, &end);
-            if (end != scan)
-            {
-                *cursor = end;
-                *out_value = value;
-                return true;
-            }
-        }
-        ++scan;
-    }
-
-    return false;
-}
-
-/// @brief Parses a free-text "lat,lon" home-location string.
-bool parse_coordinates_text(const char* location_text, double* out_latitude, double* out_longitude)
-{
-    if (location_text == nullptr || location_text[0] == '\0' || out_latitude == nullptr ||
-        out_longitude == nullptr)
-    {
-        return false;
-    }
-
-    const char* cursor = location_text;
-    double latitude = 0.0;
-    double longitude = 0.0;
-    if (!parse_next_double(&cursor, &latitude) || !parse_next_double(&cursor, &longitude))
-    {
-        return false;
-    }
-
-    if (std::isnan(latitude) || std::isnan(longitude) || latitude < -90.0 || latitude > 90.0 ||
-        longitude < -180.0 || longitude > 180.0)
-    {
-        return false;
-    }
-
-    *out_latitude = latitude;
-    *out_longitude = longitude;
-    return true;
-}
-
 /// @brief Re-reads config and returns false if the feature isn't usable yet.
 bool refresh_config()
 {
@@ -162,8 +105,8 @@ bool refresh_config()
         return false;
     }
 
-    if (!parse_coordinates_text(config.air_traffic_coordinates.data(), &g_home_latitude,
-                                &g_home_longitude))
+    if (!geo_coordinates::parse_coordinates_text(config.air_traffic_coordinates.data(),
+                                                 &g_home_latitude, &g_home_longitude))
     {
         return false;
     }

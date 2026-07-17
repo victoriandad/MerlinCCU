@@ -13,6 +13,7 @@
 #include "date_time_math.h"
 #include "debug_logging.h"
 #include "framebuffer.h"
+#include "geo_coordinates.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 #include "panel_config.h"
@@ -467,6 +468,50 @@ bool append_option(char*& cursor, size_t& remaining, const char* value, const ch
                   std::strcmp(value, selected) == 0 ? " selected" : "", label);
 }
 
+/// @brief Emits a latitude/longitude entry pair (magnitude + hemisphere
+/// select, one row per axis) for one coordinate field, pre-filled from its
+/// current stored "lat,lon" text. Mirrors the on-device coordinate editor so
+/// the two entry paths can never disagree on format or ordering (issue #87).
+bool append_coordinate_fields(char*& cursor, size_t& remaining, const char* field_prefix,
+                              const char* label_prefix, const char* stored_text)
+{
+    double lat = 0.0;
+    double lon = 0.0;
+    double lat_magnitude = 0.0;
+    double lon_magnitude = 0.0;
+    char lat_hemisphere = 'N';
+    char lon_hemisphere = 'E';
+    if (geo_coordinates::parse_coordinates_text(stored_text, &lat, &lon))
+    {
+        (void)geo_coordinates::split_hemisphere(lat, /*is_latitude=*/true, &lat_magnitude,
+                                                &lat_hemisphere);
+        (void)geo_coordinates::split_hemisphere(lon, /*is_latitude=*/false, &lon_magnitude,
+                                                &lon_hemisphere);
+    }
+
+    const char lat_hemi_text[2] = {lat_hemisphere, '\0'};
+    const char lon_hemi_text[2] = {lon_hemisphere, '\0'};
+
+    bool ok = append(cursor, remaining,
+                     "<div class=\"row\"><div><label>%s latitude</label><input name=\"%s_lat\" "
+                     "type=\"number\" step=\"0.0001\" min=\"0\" max=\"90\" value=\"%.4f\">"
+                     "</div><div><label>N/S</label><select name=\"%s_lat_hemi\">",
+                     label_prefix, field_prefix, lat_magnitude, field_prefix);
+    ok = ok && append_option(cursor, remaining, "N", "North", lat_hemi_text);
+    ok = ok && append_option(cursor, remaining, "S", "South", lat_hemi_text);
+    ok = ok && append(cursor, remaining, "</select></div></div>");
+
+    ok = ok && append(cursor, remaining,
+                      "<div class=\"row\"><div><label>%s longitude</label><input name=\"%s_lon\" "
+                      "type=\"number\" step=\"0.0001\" min=\"0\" max=\"180\" value=\"%.4f\">"
+                      "</div><div><label>E/W</label><select name=\"%s_lon_hemi\">",
+                      label_prefix, field_prefix, lon_magnitude, field_prefix);
+    ok = ok && append_option(cursor, remaining, "E", "East", lon_hemi_text);
+    ok = ok && append_option(cursor, remaining, "W", "West", lon_hemi_text);
+    ok = ok && append(cursor, remaining, "</select></div></div>");
+    return ok;
+}
+
 /// @brief Identifies which of the CCU's web pages is currently being rendered.
 enum class ConfigWebPage : uint8_t
 {
@@ -516,13 +561,11 @@ void build_config_page(const char* message)
     std::array<char, 96> ha_self = {};
     std::array<char, 96> weather_entity = {};
     std::array<char, 96> sun_entity = {};
-    std::array<char, 96> weather_coordinates = {};
     std::array<char, 96> mqtt_host = {};
     std::array<char, 96> mqtt_user = {};
     std::array<char, 64> mqtt_prefix = {};
     std::array<char, 96> mqtt_topic = {};
     std::array<char, 96> air_traffic_host = {};
-    std::array<char, 96> air_traffic_coordinates = {};
     std::array<char, 160> escaped_message = {};
 
     html_escape(cfg.device_name.data(), device_name.data(), device_name.size());
@@ -535,15 +578,11 @@ void build_config_page(const char* message)
     html_escape(cfg.home_assistant_self_entity_id.data(), ha_self.data(), ha_self.size());
     html_escape(cfg.weather_entity_id.data(), weather_entity.data(), weather_entity.size());
     html_escape(cfg.sun_entity_id.data(), sun_entity.data(), sun_entity.size());
-    html_escape(cfg.weather_coordinates.data(), weather_coordinates.data(),
-               weather_coordinates.size());
     html_escape(cfg.mqtt_host.data(), mqtt_host.data(), mqtt_host.size());
     html_escape(cfg.mqtt_username.data(), mqtt_user.data(), mqtt_user.size());
     html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix.data(), mqtt_prefix.size());
     html_escape(cfg.mqtt_base_topic.data(), mqtt_topic.data(), mqtt_topic.size());
     html_escape(cfg.air_traffic_host.data(), air_traffic_host.data(), air_traffic_host.size());
-    html_escape(cfg.air_traffic_coordinates.data(), air_traffic_coordinates.data(),
-                air_traffic_coordinates.size());
     html_escape(message, escaped_message.data(), escaped_message.size());
 
     (void)append(
@@ -604,7 +643,7 @@ void build_config_page(const char* message)
 
     if (escaped_message[0] != '\0')
     {
-        const bool is_error = std::strncmp(message, "Configuration not saved", 24) == 0;
+        const bool is_error = std::strncmp(message, "Configuration not saved", 23) == 0;
         (void)append(cursor, remaining, "<p class=\"msg %s\">%s</p>", is_error ? "error" : "ok",
                     escaped_message.data());
     }
@@ -690,17 +729,18 @@ void build_config_page(const char* message)
         "value=\"%s\"><div class=\"row\"><div><label>Port</label><input name=\"air_traffic_port\" "
         "type=\"number\" min=\"1\" max=\"65535\" inputmode=\"numeric\" value=\"%u\"></div>"
         "<div><label>Search radius (nm)</label><input name=\"air_traffic_radius\" type=\"number\" "
-        "min=\"1\" max=\"250\" inputmode=\"numeric\" value=\"%u\"></div></div>"
-        "<label>Home coordinates</label><input name=\"air_traffic_coordinates\" maxlength=\"63\" "
-        "value=\"%s\"><p class=\"hint\">Latitude,longitude used as the search centre -- "
-        "same format as the direct weather coordinates above.</p>"
-        "<label>API key</label><input name=\"air_traffic_api_key\" type=\"password\" "
-        "placeholder=\"Leave blank to keep current\"><p class=\"hint\">Not required for "
-        "adsb.lol today; only needed if a provider starts gating access.</p>"
-        "</fieldset></section>",
+        "min=\"1\" max=\"250\" inputmode=\"numeric\" value=\"%u\"></div></div>",
         cfg.air_traffic_enabled ? "checked" : "", cfg.air_traffic_enabled ? "" : "disabled",
         air_traffic_host.data(), static_cast<unsigned>(cfg.air_traffic_port),
-        static_cast<unsigned>(cfg.air_traffic_radius_nm), air_traffic_coordinates.data());
+        static_cast<unsigned>(cfg.air_traffic_radius_nm));
+    (void)append_coordinate_fields(cursor, remaining, "air_traffic", "Home",
+                                   cfg.air_traffic_coordinates.data());
+    (void)append(cursor, remaining,
+                 "<p class=\"hint\">Used as the search centre -- see N/S/E/W above.</p>"
+                 "<label>API key</label><input name=\"air_traffic_api_key\" type=\"password\" "
+                 "placeholder=\"Leave blank to keep current\"><p class=\"hint\">Not required for "
+                 "adsb.lol today; only needed if a provider starts gating access.</p>"
+                 "</fieldset></section>");
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
@@ -715,12 +755,14 @@ void build_config_page(const char* message)
         "Home Assistant weather entity</label><input name=\"weather_entity\" maxlength=\"63\" "
         "value=\"%s\"></div><div><label>Home Assistant sun entity</label><input "
         "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div></fieldset>"
-        "<fieldset id=\"weather_direct_fields\" class=\"%s\"><label>Direct "
-        "weather coordinates</label><input name=\"weather_coordinates\" maxlength=\"63\" "
-        "value=\"%s\"><p class=\"hint\">Direct weather sources use this "
-        "latitude,longitude value independently of Home Assistant.</p></fieldset></section>",
+        "<fieldset id=\"weather_direct_fields\" class=\"%s\">",
         weather_is_home_assistant ? "" : "disabled", weather_entity.data(), sun_entity.data(),
-        weather_is_home_assistant ? "disabled" : "", weather_coordinates.data());
+        weather_is_home_assistant ? "disabled" : "");
+    (void)append_coordinate_fields(cursor, remaining, "weather", "Direct weather",
+                                   cfg.weather_coordinates.data());
+    (void)append(cursor, remaining,
+                 "<p class=\"hint\">Used by direct weather sources, independently of Home "
+                 "Assistant.</p></fieldset></section>");
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
@@ -2071,6 +2113,27 @@ bool parse_u16_field(const char* text, uint16_t min_value, uint16_t max_value, u
     return true;
 }
 
+/// @brief Parses a submitted latitude/longitude magnitude + hemisphere pair
+/// and combines them into a signed coordinate value (issue #87).
+bool parse_coordinate_field(const char* magnitude_text, const char* hemi_text, bool is_latitude,
+                            double* out_signed)
+{
+    if (magnitude_text == nullptr || magnitude_text[0] == '\0' || hemi_text == nullptr ||
+        hemi_text[0] == '\0' || out_signed == nullptr)
+    {
+        return false;
+    }
+
+    char* end = nullptr;
+    const double magnitude = std::strtod(magnitude_text, &end);
+    if (end == magnitude_text || *end != '\0')
+    {
+        return false;
+    }
+
+    return geo_coordinates::combine_hemisphere(magnitude, hemi_text[0], is_latitude, out_signed);
+}
+
 /// @brief Returns whether text can be stored as a short human-facing label.
 bool is_printable_config_text(const char* text)
 {
@@ -2405,16 +2468,39 @@ const char* handle_config_post(const char* body)
         }
         copy_text(cfg.sun_entity_id, value.data());
     }
-    if (get_form_value(body, "weather_coordinates", value.data(), value.size()))
     {
-        if (!validate_text_field(
-                "Direct weather coordinates", value.data(), cfg.weather_coordinates.size() - 1, false,
-                is_printable_config_text, validation_error, sizeof(validation_error)))
+        std::array<char, 16> lat_text = {};
+        std::array<char, 4> lat_hemi_text = {};
+        std::array<char, 16> lon_text = {};
+        std::array<char, 4> lon_hemi_text = {};
+        const bool has_lat = get_form_value(body, "weather_lat", lat_text.data(), lat_text.size());
+        const bool has_lat_hemi =
+            get_form_value(body, "weather_lat_hemi", lat_hemi_text.data(), lat_hemi_text.size());
+        const bool has_lon = get_form_value(body, "weather_lon", lon_text.data(), lon_text.size());
+        const bool has_lon_hemi =
+            get_form_value(body, "weather_lon_hemi", lon_hemi_text.data(), lon_hemi_text.size());
+
+        // The direct-weather fieldset is disabled (and its inputs excluded from the
+        // POST body) whenever the Home Assistant weather source is selected; only
+        // validate when the browser actually submitted these fields.
+        if (has_lat || has_lat_hemi || has_lon || has_lon_hemi)
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            double lat = 0.0;
+            double lon = 0.0;
+            if (!parse_coordinate_field(lat_text.data(), lat_hemi_text.data(), true, &lat) ||
+                !parse_coordinate_field(lon_text.data(), lon_hemi_text.data(), false, &lon))
+            {
+                std::printf("Web config save rejected: direct weather coordinates invalid\n");
+                return "Configuration not saved: direct weather latitude/longitude must be valid.";
+            }
+
+            std::array<char, 32> coordinates_text = {};
+            if (geo_coordinates::format_coordinates_text(lat, lon, coordinates_text.data(),
+                                                          coordinates_text.size()))
+            {
+                copy_text(cfg.weather_coordinates, coordinates_text.data());
+            }
         }
-        copy_text(cfg.weather_coordinates, value.data());
     }
     if (get_form_value(body, "weather_source", value.data(), value.size()))
     {
@@ -2520,16 +2606,39 @@ const char* handle_config_post(const char* body)
         }
         cfg.air_traffic_radius_nm = radius_nm;
     }
-    if (get_form_value(body, "air_traffic_coordinates", value.data(), value.size()))
     {
-        if (!validate_text_field(
-                "Air traffic coordinates", value.data(), cfg.air_traffic_coordinates.size() - 1, false,
-                is_printable_config_text, validation_error, sizeof(validation_error)))
+        std::array<char, 16> lat_text = {};
+        std::array<char, 4> lat_hemi_text = {};
+        std::array<char, 16> lon_text = {};
+        std::array<char, 4> lon_hemi_text = {};
+        const bool has_lat = get_form_value(body, "air_traffic_lat", lat_text.data(), lat_text.size());
+        const bool has_lat_hemi = get_form_value(body, "air_traffic_lat_hemi", lat_hemi_text.data(),
+                                                  lat_hemi_text.size());
+        const bool has_lon = get_form_value(body, "air_traffic_lon", lon_text.data(), lon_text.size());
+        const bool has_lon_hemi = get_form_value(body, "air_traffic_lon_hemi", lon_hemi_text.data(),
+                                                  lon_hemi_text.size());
+
+        // The air-traffic fieldset is disabled (and its inputs excluded from the
+        // POST body) whenever "Enable Local Traffic" is unchecked; only validate
+        // when the browser actually submitted these fields.
+        if (has_lat || has_lat_hemi || has_lon || has_lon_hemi)
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            double lat = 0.0;
+            double lon = 0.0;
+            if (!parse_coordinate_field(lat_text.data(), lat_hemi_text.data(), true, &lat) ||
+                !parse_coordinate_field(lon_text.data(), lon_hemi_text.data(), false, &lon))
+            {
+                std::printf("Web config save rejected: air traffic coordinates invalid\n");
+                return "Configuration not saved: air traffic latitude/longitude must be valid.";
+            }
+
+            std::array<char, 32> coordinates_text = {};
+            if (geo_coordinates::format_coordinates_text(lat, lon, coordinates_text.data(),
+                                                          coordinates_text.size()))
+            {
+                copy_text(cfg.air_traffic_coordinates, coordinates_text.data());
+            }
         }
-        copy_text(cfg.air_traffic_coordinates, value.data());
     }
     if (get_form_value(body, "air_traffic_api_key", value.data(), value.size()) && value[0] != '\0')
     {
