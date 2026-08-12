@@ -4425,6 +4425,20 @@ bool set_heap_status(const HeapStatus& status)
     return true;
 }
 
+/// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.
+bool set_stack_status(const StackStatus& status)
+{
+    if (g_console_state.stack_status.valid == status.valid &&
+        g_console_state.stack_status.free_bytes == status.free_bytes)
+    {
+        return false;
+    }
+
+    g_console_state.stack_status = status;
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(const DisplayTimingStatus& status)
 {

@@ -75,21 +75,64 @@ The Resources status page (`MenuPage::StatusResources`) is the live source of
 truth for size/RAM budget, not this document:
 
 - **Program flash** — linked binary size against `kProgramFlashBudgetBytes`.
-- **Static RAM** — `sizeof(ConsoleState)` plus the double UI framebuffer,
-  against the 520KB Pico 2 W SRAM total. This is the dominant static
-  allocation; anything added to `ConsoleState` shows up here directly.
+- **Static RAM** — real `.data`+`.bss` usage, read directly from the linked
+  image via the Pico SDK linker script's `__end__` symbol (end of `.bss`,
+  i.e. heap start) against `__StackLimit` (top of the linker's usable RAM
+  region), both resolved in `status_screens.cpp`'s `static_ram_bytes()`/
+  `total_ram_bytes()`. The usable RAM region is **512KiB, not the RP2350's
+  520KB physical SRAM total** -- SRAM8/SRAM9 (8KiB) sit outside the
+  contiguous `RAM` output section the default linker script maps, so they're
+  never linked into and don't count as usable static+heap+stack space.
+  (Previously this row only summed `sizeof(ConsoleState)` plus the double UI
+  framebuffer against a hardcoded "520KB" -- ~48KB against ~495KB actually
+  used, a nearly 10x undercount that made the page look like it had far more
+  headroom than it did. Fixed under issue #15; the `CONSOLE`/`UI BUFFERS`
+  rows still show that sub-breakdown, they just no longer stand in for the
+  total.) `tools/check_size_budget.py` reproduces the same figures from a
+  built `.elf`/`.map` outside the device, for a pre-flash/pre-merge check.
 - **Live heap** — `mallinfo()`'s `uordblks`/`arena`, sampled once a second in
   the main loop alongside the loop-load telemetry (`MerlinCCU.cpp`). Most of
   the firmware avoids the heap deliberately (static arrays throughout), so
   this mainly reflects lwIP/mbedtls allocations from Wi-Fi, MQTT, and the
-  (currently disabled) TLS share fetch.
-- **Stack headroom** — a canary-filled high-water-mark check, printed once a
-  second over serial (see the stack-pressure work from issue #58); not yet
-  folded into this status page.
+  (currently disabled) TLS share fetch. Now shown on the Resources page
+  (`HEAP LIVE` row) instead of only over serial.
+- **Stack headroom** — a canary-filled high-water-mark check
+  (`stack_high_water_free_bytes()` in `MerlinCCU.cpp`; see the stack-pressure
+  work from issue #58), sampled alongside heap/loop-load and now also shown
+  on the Resources page (`STACK FREE` row, exact bytes rather than
+  KiB-rounded since core-0's stack is only 4KB) as well as printed once a
+  second over serial.
 
-Numbers are load-bearing, not aspirational: check this page (or the serial
-stack print) after any change that adds meaningful static or dynamic memory,
-rather than assuming headroom exists.
+#### Major static buffers
+
+Read from `build/MerlinCCU.elf.map` (2026-08-12 build), largest first, everything
+2KB and over. This is a snapshot for orientation, not a live figure -- re-derive
+it from a fresh `.map` if it matters for a specific decision:
+
+| Buffer | Size | Notes |
+| --- | --- | --- |
+| `screensaver_life::g_life_a` + `g_life_b` | 39.4 KiB (2 x 19.7 KiB) | Conway's Life double-buffer; larger than `ConsoleState`, only live while that screensaver is selected. |
+| `web_config_server::g_response` | 24.0 KiB | Whole rendered HTML config page assembled in one buffer. |
+| `console_controller::g_console_state` | 27.0 KiB | The `ConsoleState` instance itself -- see the review rule below. |
+| `framebuffer::g_fb_a` + `g_fb_b` | 20.0 KiB (2 x 10.0 KiB) | Double UI framebuffer, 252x320 1bpp. |
+| `home_assistant_manager::g_response` | 16.0 KiB | Always reserved even when HA is disabled -- gated by `RuntimeConfig::home_assistant_enabled` (a runtime flag), not a `constexpr`, so the compiler can't prove the buffer unreachable and drop it. |
+| `air_traffic_manager::g_response` | 16.0 KiB | Same story as HA's buffer, gated by `air_traffic_enabled`. |
+| `air_traffic_manager::g_status` (`AirTrafficStatus`) | 2.0 KiB | Tracked-aircraft snapshot, `kAirTrafficEntryCapacity` entries. |
+| `environment_sensor_manager::g_status` | 2.1 KiB | BME280/SGP40 sensor history buffers. |
+
+Notably absent: `share_price_manager`'s `g_response`/`g_request` buffers
+(16KB + 768B in source) don't appear in `.bss` at all. `kEnableLiveShareFetch`
+is a `constexpr bool` set to `false`, so the compiler can prove the only code
+that touches those buffers is unreachable and drops both the code and the
+backing storage entirely -- unlike HA/ADS-B's runtime-gated equivalents
+above, a `constexpr`-gated feature costs nothing while disabled.
+
+Numbers are load-bearing, not aspirational: check this page (or run
+`tools/check_size_budget.py` against a fresh build) after any change that
+adds meaningful static or dynamic memory, rather than assuming headroom
+exists. Any new large static buffer (roughly 1KB+) is a deliberate review
+point per the rule above -- with the static-RAM figure now accurate, that
+check actually reflects reality.
 
 ## Multicore Notes
 
@@ -200,4 +243,5 @@ hardware headers to compile.
 | 2026-07-09 | Widened the ADS-B response buffer 8KB to 16KB; raised tracked/displayed aircraft from 10 to 24 with an 8-per-page Tabular view (paged via the cursor keys, mirroring the Alert list/`kAlertsPerPage` pattern, including the header's "ADS-B TRAFFIC N/M" convention borrowed from Settings/Alerts); added a Plot view (PPI-style range rings, compass tick, per-aircraft blips with a 10-refresh snail trail) toggled from the page's own `L5` softkey (`AirTrafficViewMode`, `ToggleAirTrafficViewMode`). Trail history is tracked in `air_traffic_manager.cpp` keyed by ICAO24 hex (`g_tracked`), independent of the display-facing top-N selection, and cleared whenever an aircraft drops out of a fetch cycle rather than decayed gradually. | User request, following on from the radius/truncation bug fix -- a wider radius is only useful if there's a way to see and page through more than 10 aircraft, and a spatial "where are they" view was requested as a second presentation alongside the existing table. | Total static RAM (`.bss`) is now ~498.5KB of the 520KB budget (~33.9KB free, down from ~45.6KB before this session) -- worth checking against the Resources page after future additions; the radar view has no aircraft-label decluttering (dense airspace + 24 blips can overlap), which is an accepted simplification for now. |
 | 2026-07-10 | Fixed a stack-overflow bug found via live hardware debugging: `console_controller::init()`'s `g_console_state = make_default_console_state();` returned the ~27KB `ConsoleState` by value into an *assignment* (not a direct-initialization the compiler can elide), which required materializing the full struct as a stack temporary -- disassembly confirmed a 27,636-byte stack frame against a 2KB (`PICO_STACK_SIZE`) stack. Converted `make_default_console_state()` to write into a `ConsoleState&` out-parameter instead; also doubled the core-0 stack (`PICO_STACK_SIZE=0x1000` in `CMakeLists.txt`, set before `pico_sdk_init()`) since the live stack-depth canary read exactly 0 bytes free even after the fix. | The CCU stopped booting entirely (silent hang, no serial output past config load) after the ADS-B Tabular/Plot session further grew `ConsoleState`, tipping a pre-existing latent bug into an actual failure. Root-caused via targeted `BOOT:`/`stdio_flush()` checkpoints added temporarily to MerlinCCU.cpp/config_manager.cpp (removed once the call site was found) and confirmed with `arm-none-eabi-objdump` disassembly, not guesswork. | The core-0 stack lives in a dedicated 4KB RP2350 scratch bank (`SCRATCH_Y`), not the general SRAM pool, so 0x1000 is the practical ceiling without custom linker-script surgery; re-check the stack-depth canary after any future change that adds deep call chains or large locals. Grep for other `= some_large_struct_by_value_function();` assignment patterns if a similar hang recurs elsewhere. |
 | 2026-08-12 | Made the shares watchlist user-configurable (issue #9): `WatchedShareConfig` (symbol + display name) and `watched_share_count` added to `RuntimeConfig`, edited via a new "Watched Shares" section on the web config form (up to `kMaxWatchedShares` = 6 rows, blank symbol removes a row); `share_price_manager` now seeds its placeholder rows from `config_manager::settings()` every tick instead of a hardcoded `BA.L`/"BAE SYSTEMS" single entry, and the on-device Shares page now builds one `SelectShareSlotN` softkey per configured share (was hardcoded to slot 0 only), matching the existing Pinter/Alert multi-slot softkey pattern. Config version bumped 2->3 with a new `LegacyRuntimeConfigV2`/`migrate_legacy_settings_v2` snapshot of the pre-#9 `RuntimeConfig` shape, since the struct had grown in place since v2 without a version bump (undocumented gap found while implementing this). | Share watching was previously hard-coded to a single stock with no add/remove path anywhere, and the Shares page's per-share softkey wiring only ever addressed slot 0 even though the underlying data model was already a 6-entry array. On-device text entry for arbitrary stock symbols was judged out of scope (no generic alpha keypad text-entry subsystem exists yet -- `LetterMode` only drives a header icon, it isn't wired to any editable buffer), so add/remove goes through the web form, consistent with how Wi-Fi/HA/MQTT/ADS-B config is already edited today. | Live multi-symbol fetching stays out of scope (tracked by #42's local-feed replacement); only watched_shares[0] is ever live-fetched if `kEnableLiveShareFetch` is turned back on. If an on-device add/remove flow is wanted later, it needs a generic keypad text-entry state machine first (the coordinate_editor.cpp pattern from #87 only handles numeric lat/long, not arbitrary alpha symbols). |
+| 2026-08-12 | Added RAM/size budget tracking (issue #15): the Resources status page's "STATIC RAM" figure now reads real linked `.data`+`.bss` usage from Pico SDK linker symbols (`__end__`, `__StackLimit`) instead of just `sizeof(ConsoleState)` plus the double UI framebuffer; the "HEAP LIVE" row (previously hardcoded `-` despite `HeapStatus` already being tracked) and a new "STACK FREE" row (from the existing `stack_high_water_free_bytes()` canary scan, now also sampled into `ConsoleState` alongside heap/loop-load) are both wired up; added `tools/check_size_budget.py` to reproduce the same flash/RAM figures from a built `.map` file outside the device, replacing the ad hoc `arm-none-eabi-size` runs previously pasted into this log by hand (see the 2026-07-05 and 2026-07-09 entries above). | The old static-RAM figure was a proxy that had drifted badly from reality: it showed ~48KB against a hardcoded "520KB" budget (implying ~91% free) when real `.data`+`.bss` usage was ~495KB -- a ~10x undercount that made the documented review rule ("check any new 1KB+ static buffer against the Resources page's tracked totals") check a number disconnected from the real constraint. Also found in the process: the RP2350's usable linked `RAM` region is 512KiB, not the chip's 520KB physical SRAM total -- SRAM8/SRAM9 (8KiB) sit outside the linker's contiguous `RAM` output section, so the long-used "520KB" budget denominator was never quite right either. | Real headroom as of this change is ~17.5KB free (506.7KB of 512KB, 96.7%) -- run `tools/check_size_budget.py` before adding any further static storage; several open issues (#10 weather icons, #56 core-1 raster regen buffers) plan meaningful new static allocation and will need to budget against this real number, not the old proxy. Stack headroom is now visible on-device too but still per-core-0 only; no equivalent exists for a future core-1 stack if #56 proceeds. |
 | YYYY-MM-DD |  |  |  |
