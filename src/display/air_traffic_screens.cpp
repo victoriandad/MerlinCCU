@@ -6,6 +6,7 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "pico/time.h"
 #include "screens_shared.h"
 
 namespace air_traffic_screens
@@ -45,10 +46,21 @@ void draw_table_row(uint8_t* fb, const AirTrafficEntry& entry, int row_y)
     framebuffer::draw_text(fb, kBearingX, row_y, entry.bearing_text.data(), true, kFont, 1);
 }
 
-/// @brief Draws the small provenance/coverage disclaimer at the page foot.
-void draw_footer_disclaimer(uint8_t* fb)
+/// @brief Draws the small provenance/coverage disclaimer, plus a data-freshness
+/// label, at the page foot -- issue #16's stale-data display policy.
+void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status)
 {
-    screens::draw_centered_text(fb, kUiWidth / 2, kFooterY, "ADS-B TRAFFIC ONLY", true,
+    // 4x air_traffic_manager.cpp's own 15-second kRefreshIntervalMs.
+    constexpr uint32_t kAirTrafficStaleAfterMs = 4U * 15U * 1000U;
+    char freshness_text[16] = {};
+    screens::build_data_freshness_text(status.data_valid, status.last_success_ms,
+                                       to_ms_since_boot(get_absolute_time()),
+                                       kAirTrafficStaleAfterMs, freshness_text,
+                                       sizeof(freshness_text));
+
+    char footer_text[32] = {};
+    std::snprintf(footer_text, sizeof(footer_text), "ADS-B TRAFFIC ONLY - %s", freshness_text);
+    screens::draw_centered_text(fb, kUiWidth / 2, kFooterY, footer_text, true,
                                 fonts::FontFace::Font5x7, 1);
 }
 
@@ -74,7 +86,7 @@ void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state)
     }
     screens::draw_page_navigation_arrows(fb, page_index > 0U,
                                         (page_index + 1U) < page_count);
-    draw_footer_disclaimer(fb);
+    draw_footer_disclaimer(fb, status);
 }
 
 /// @brief Integer midpoint-circle rings, matching the radar screensaver's algorithm.
@@ -184,7 +196,7 @@ void draw_plot_view(uint8_t* fb, const ConsoleState& console_state)
         draw_plot_blip(fb, status.aircraft[i], range_nm);
     }
 
-    draw_footer_disclaimer(fb);
+    draw_footer_disclaimer(fb, status);
 }
 
 } // namespace
@@ -224,7 +236,7 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
             screens::draw_centered_text(fb, kUiWidth / 2, 120, detail, true,
                                         fonts::FontFace::Font5x7, 1);
         }
-        draw_footer_disclaimer(fb);
+        draw_footer_disclaimer(fb, status);
         return;
     }
 

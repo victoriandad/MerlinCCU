@@ -8,6 +8,7 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "pico/time.h"
 #include "screens_shared.h"
 
 #if __has_include("weather_display_config.h")
@@ -417,9 +418,23 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
     constexpr int kFooterLineGap = 2;
+    // 4x the manager's own 5-minute refresh interval (home_assistant_manager.cpp
+    // kRefreshIntervalMs) -- issue #16's stale-data display policy.
+    constexpr uint32_t kWeatherStaleAfterMs = 4U * 5U * 60U * 1000U;
 
-    const screens::WrappedSoftkeyLabel kWrapped = screens::wrap_label_lines(
-        weather_source_label_text(console_state), kFooterFont, weather_source_footer_max_width(), 2);
+    char freshness_text[16] = {};
+    screens::build_data_freshness_text(
+        console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
+        console_state.home_assistant_status.weather_last_success_ms,
+        to_ms_since_boot(get_absolute_time()), kWeatherStaleAfterMs, freshness_text,
+        sizeof(freshness_text));
+
+    char footer_label[80] = {};
+    std::snprintf(footer_label, sizeof(footer_label), "%s - %s",
+                  weather_source_label_text(console_state), freshness_text);
+
+    const screens::WrappedSoftkeyLabel kWrapped =
+        screens::wrap_label_lines(footer_label, kFooterFont, weather_source_footer_max_width(), 2);
     const int kLineHeight = framebuffer::font_height(kFooterFont);
     const int kFirstLineY = weather_source_footer_bottom_y() -
                             ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));

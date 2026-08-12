@@ -2904,6 +2904,7 @@ void handle_http_status(int http_status)
         {
             copy_text(g_status.weather_source_hint, "Open-Meteo");
             g_status.last_http_status = http_status;
+            g_status.weather_last_success_ms = to_ms_since_boot(get_absolute_time());
             direct_weather_log("http=%d parse ok forecast=%u bytes=%u\n", http_status,
                                static_cast<unsigned>(g_status.weather_forecast_count),
                                static_cast<unsigned>(g_response_len));
@@ -2968,6 +2969,7 @@ void handle_http_status(int http_status)
             {
                 copy_text(g_status.weather_condition, friendly_weather_condition(raw_condition));
                 record_weather_condition_warning(raw_condition, " now");
+                g_status.weather_last_success_ms = to_ms_since_boot(get_absolute_time());
             }
             else
             {

@@ -15,6 +15,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/error.h"
+#include "pico/time.h"
 #include "screen_banners.h"
 #include "screens_shared.h"
 #include "status_screens.h"
@@ -245,6 +246,63 @@ void build_environment_pressure_text(
     std::snprintf(out, out_size, "%lu.%luhPa",
                   static_cast<unsigned long>(tenths_hpa / 10U),
                   static_cast<unsigned long>(tenths_hpa % 10U));
+}
+
+/// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
+void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size)
+{
+    const uint32_t elapsed_s = elapsed_ms / 1000U;
+    if (elapsed_s < 60U)
+    {
+        std::snprintf(out, out_size, "%lus", static_cast<unsigned long>(elapsed_s));
+        return;
+    }
+    const uint32_t elapsed_m = elapsed_s / 60U;
+    if (elapsed_m < 60U)
+    {
+        std::snprintf(out, out_size, "%lum", static_cast<unsigned long>(elapsed_m));
+        return;
+    }
+    std::snprintf(out, out_size, "%luh", static_cast<unsigned long>(elapsed_m / 60U));
+}
+
+/// @brief Formats one data-backed subsystem's freshness into a short, consistent
+/// label -- issue #16's stale-data display policy.
+/// @details `now_ms`/`last_success_ms` are boot-uptime milliseconds
+/// (`to_ms_since_boot`), matching the existing environment-sensor idiom
+/// (EnvironmentSensorStatus::bme_last_read_ms). `last_success_ms == 0` means
+/// "never succeeded" -> "NO DATA". `currently_valid` means the most recent
+/// fetch attempt succeeded (vs an error/timeout since the last good one).
+/// `stale_after_ms` is the subsystem's own staleness threshold, typically a
+/// small multiple of its own refresh interval.
+///
+/// Deliberately not used for deliberate placeholder/demo states (e.g. Shares
+/// before issue #42's local feed lands) -- those aren't a freshness problem,
+/// callers should show "DEMO" directly instead of calling this.
+void build_data_freshness_text(bool currently_valid, uint32_t last_success_ms, uint32_t now_ms,
+                               uint32_t stale_after_ms, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0U)
+    {
+        return;
+    }
+
+    if (last_success_ms == 0U)
+    {
+        std::snprintf(out, out_size, "NO DATA");
+        return;
+    }
+
+    const uint32_t age_ms = now_ms - last_success_ms;
+    if (currently_valid && age_ms < stale_after_ms)
+    {
+        std::snprintf(out, out_size, "LIVE");
+        return;
+    }
+
+    char age_text[16] = {};
+    build_elapsed_time_text(age_ms, age_text, sizeof(age_text));
+    std::snprintf(out, out_size, "STALE %s", age_text);
 }
 
 namespace
@@ -1599,11 +1657,32 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
 
     const ShareWatchEntry& share = console_state.watched_shares[console_state.selected_share_index];
     draw_share_history_graph(fb, share, console_state.share_period);
+
+    // last_success_ms stays 0 for as long as live fetching is disabled
+    // (kEnableLiveShareFetch in share_price_manager.cpp) -- that's a
+    // deliberate placeholder, not a freshness problem, so it gets its own
+    // "DEMO" label rather than running through the shared freshness helper.
+    // See issue #16's stale-data display policy.
+    char data_text[16] = {};
+    if (console_state.share_data_last_success_ms == 0U)
+    {
+        std::snprintf(data_text, sizeof(data_text), "DEMO");
+    }
+    else
+    {
+        // 4x share_price_manager.cpp's own 5-minute kRefreshIntervalMs.
+        constexpr uint32_t kShareStaleAfterMs = 4U * 5U * 60U * 1000U;
+        build_data_freshness_text(console_state.share_data_valid,
+                                  console_state.share_data_last_success_ms,
+                                  to_ms_since_boot(get_absolute_time()), kShareStaleAfterMs,
+                                  data_text, sizeof(data_text));
+    }
+
     const DetailRow rows[] = {
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
         {"PERIOD", share_period_text(console_state.share_period)},
-        {"DATA", console_state.share_data_valid ? "Live" : "Demo"},
+        {"DATA", data_text},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},
     };

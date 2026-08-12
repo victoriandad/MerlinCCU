@@ -358,6 +358,7 @@ void finish_success(int http_status)
     g_status.data_valid = true;
     g_status.last_error = 0;
     g_status.last_http_status = http_status;
+    g_status.last_success_ms = to_ms_since_boot(get_absolute_time());
     schedule_next_attempt(kRefreshIntervalMs);
 }
 
