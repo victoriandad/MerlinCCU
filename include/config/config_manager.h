@@ -5,6 +5,14 @@
 
 #include "console_model.h"
 
+/// @brief One user-configured watchlist entry, stored independently of the
+/// live/placeholder quote data share_price_manager attaches at runtime.
+struct WatchedShareConfig
+{
+    std::array<char, 10> symbol;
+    std::array<char, 24> display_name;
+};
+
 /// @brief Persistent runtime configuration for one Merlin CCU.
 /// @details The structure is deliberately fixed-size so it can be stored
 /// directly in flash with simple versioning and CRC checks. Empty strings mean
@@ -49,6 +57,9 @@ struct RuntimeConfig
     TimeZoneSelection time_zone;
     ScreenSaverSelection screen_saver;
     uint16_t screen_saver_timeout_minutes;
+
+    uint8_t watched_share_count;
+    std::array<WatchedShareConfig, kMaxWatchedShares> watched_shares;
 };
 
 namespace config_manager

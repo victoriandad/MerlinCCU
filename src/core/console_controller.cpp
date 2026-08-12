@@ -3030,13 +3030,26 @@ void update_softkeys_from_state()
         break;
     }
     case MenuPage::Shares:
-        if (g_console_state.share_count > 0U)
+    {
+        constexpr std::array<SoftKeyId, kMaxWatchedShares> slots = {
+            SoftKeyId::Left1, SoftKeyId::Left2, SoftKeyId::Left3,
+            SoftKeyId::Left4, SoftKeyId::Left5, SoftKeyId::Right3};
+        constexpr std::array<SoftKeyRoute, kMaxWatchedShares> routes = {
+            SoftKeyRoute::SelectShareSlot1, SoftKeyRoute::SelectShareSlot2,
+            SoftKeyRoute::SelectShareSlot3, SoftKeyRoute::SelectShareSlot4,
+            SoftKeyRoute::SelectShareSlot5, SoftKeyRoute::SelectShareSlot6};
+
+        for (size_t i = 0U; i < slots.size(); ++i)
         {
-            const ShareWatchEntry& share = g_console_state.watched_shares[0];
-            softkeys[softkey_index(SoftKeyId::Left1)] = {
-                build_selection_softkey_label(SoftKeyId::Left1, share.display_name.data(),
+            if (i >= g_console_state.share_count)
+            {
+                break;
+            }
+            const ShareWatchEntry& share = g_console_state.watched_shares[i];
+            softkeys[softkey_index(slots[i])] = {
+                build_selection_softkey_label(slots[i], share.display_name.data(),
                                               share.price_text.data()),
-                SoftKeyRoute::SelectShareSlot1,
+                routes[i],
                 true,
             };
         }
@@ -3044,6 +3057,7 @@ void update_softkeys_from_state()
             "HISTORY", SoftKeyRoute::GoSelectedShareDetail, g_console_state.share_count > 0U};
         softkeys[softkey_index(SoftKeyId::Right2)] = {"REMOVE", SoftKeyRoute::None, false};
         break;
+    }
     case MenuPage::ShareDetail:
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
@@ -3923,6 +3937,16 @@ bool apply_softkey_route(SoftKeyRoute route)
         return cycle_weather_period();
     case SoftKeyRoute::SelectShareSlot1:
         return select_share_slot(0U);
+    case SoftKeyRoute::SelectShareSlot2:
+        return select_share_slot(1U);
+    case SoftKeyRoute::SelectShareSlot3:
+        return select_share_slot(2U);
+    case SoftKeyRoute::SelectShareSlot4:
+        return select_share_slot(3U);
+    case SoftKeyRoute::SelectShareSlot5:
+        return select_share_slot(4U);
+    case SoftKeyRoute::SelectShareSlot6:
+        return select_share_slot(5U);
     case SoftKeyRoute::CycleSharePeriod:
         return cycle_share_period();
     case SoftKeyRoute::ToggleAirTrafficViewMode:

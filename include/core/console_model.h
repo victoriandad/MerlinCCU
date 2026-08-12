@@ -614,6 +614,11 @@ enum class SoftKeyRoute : uint8_t
     ConfirmPinterStart,
     GoShares,
     SelectShareSlot1,
+    SelectShareSlot2,
+    SelectShareSlot3,
+    SelectShareSlot4,
+    SelectShareSlot5,
+    SelectShareSlot6,
     CycleSharePeriod,
     GoAirTraffic,
     ToggleAirTrafficViewMode,
@@ -648,6 +653,9 @@ struct ActiveAlert
     std::array<char, 320> detail;
 };
 
+/// @brief Maximum number of shares a user can watch simultaneously.
+inline constexpr size_t kMaxWatchedShares = 6U;
+
 /// @brief One watched share shown by the CCU shares workflow.
 struct ShareWatchEntry
 {
@@ -680,7 +688,7 @@ struct ShareMarketStatus
     int last_http_status;
     SharePeriod period;
     uint8_t share_count;
-    std::array<ShareWatchEntry, 6> watched_shares;
+    std::array<ShareWatchEntry, kMaxWatchedShares> watched_shares;
 };
 
 /// @brief Maximum nearby aircraft tracked and rendered on the Local Traffic page.
@@ -931,7 +939,7 @@ struct ConsoleState
     std::array<ActiveAlert, kActiveAlertCapacity> active_alerts;
     std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
     std::array<PinterStatus, kPinterCount> pinters;
-    std::array<ShareWatchEntry, 6> watched_shares;
+    std::array<ShareWatchEntry, kMaxWatchedShares> watched_shares;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };
