@@ -76,6 +76,9 @@ bool set_main_loop_load_status(const MainLoopLoadStatus& status);
 /// @brief Copies live newlib heap usage telemetry into the UI state.
 bool set_heap_status(const HeapStatus& status);
 
+/// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.
+bool set_stack_status(const StackStatus& status);
+
 /// @brief Updates the panel scanout timing telemetry snapshot.
 bool set_display_timing_status(const DisplayTimingStatus& status);
 

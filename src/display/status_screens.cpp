@@ -27,7 +27,21 @@ extern "C"
 {
 extern const uint8_t __flash_binary_start;
 extern const uint8_t __flash_binary_end;
+// Provided by the Pico SDK's default linker script: __end__ is the end of
+// .data+.bss (the heap start), __StackLimit is the top of the linker's
+// contiguous RAM region (ORIGIN(RAM)+LENGTH(RAM)). Reading these directly
+// keeps the Resources page's static-RAM figure accurate to what actually
+// got linked instead of a hand-maintained guess -- see the "Memory budget
+// tracking" note in docs/architecture.md for why that guess drifted before.
+extern const uint8_t __end__;
+extern const uint8_t __StackLimit;
 }
+
+// RP2040/RP2350 SRAM is architecturally mapped at this fixed base for every
+// Pico/Pico W/Pico 2/Pico 2 W board; there is no linker symbol for the
+// region's own origin (only its length), so this is paired with
+// __StackLimit above to recover the true usable RAM size.
+constexpr uintptr_t kRamBaseAddress = 0x20000000U;
 
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)
@@ -258,6 +272,27 @@ size_t program_flash_bytes()
     return (end > start) ? static_cast<size_t>(end - start) : 0U;
 }
 
+/// @brief Returns total static RAM used by the linked image (.data+.bss),
+/// i.e. everything below the heap start -- the real figure the "Any new
+/// large static buffer is a deliberate review point" rule in
+/// docs/architecture.md is meant to be checked against.
+size_t static_ram_bytes()
+{
+    const uintptr_t end = reinterpret_cast<uintptr_t>(&__end__);
+    return (end > kRamBaseAddress) ? static_cast<size_t>(end - kRamBaseAddress) : 0U;
+}
+
+/// @brief Returns the linker's usable contiguous RAM region size.
+/// @details This is the RP2350's main 512KiB SRAM bank as mapped by the
+/// default Pico SDK linker script; it is 8KiB smaller than the chip's full
+/// 520KB physical SRAM total since SRAM8/SRAM9 sit outside this contiguous
+/// region and are not part of the linked `RAM` output section.
+size_t total_ram_bytes()
+{
+    const uintptr_t limit = reinterpret_cast<uintptr_t>(&__StackLimit);
+    return (limit > kRamBaseAddress) ? static_cast<size_t>(limit - kRamBaseAddress) : 0U;
+}
+
 /// @brief Returns the REST status label used by status subpages.
 const char* home_assistant_rest_state_text(const ConsoleState& console_state,
                                            const RuntimeConfig& config)
@@ -352,8 +387,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr size_t kConsoleStateBytes = sizeof(ConsoleState);
     constexpr size_t kUiFramebufferBytes = static_cast<size_t>(kUiFbSize) * 2U;
-    constexpr size_t kStaticRamBytes = kConsoleStateBytes + kUiFramebufferBytes;
-    constexpr size_t kPico2WSramBytes = 520U * 1024U;
+    const size_t static_ram = static_ram_bytes();
+    const size_t total_ram = total_ram_bytes();
 
     const size_t program_flash = program_flash_bytes();
 
@@ -363,6 +398,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char flash_budget_text[16] = {};
     char reserved_flash_text[16] = {};
     char static_ram_text[16] = {};
+    char ram_budget_text[16] = {};
     char console_text[16] = {};
     char framebuffer_text[16] = {};
     char loop_load_text[16] = {};
@@ -370,15 +406,53 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char frame_rate_text[16] = {};
     char rebuild_time_text[16] = {};
     char present_skipped_text[16] = {};
+    char heap_text[16] = {};
+    char stack_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
     build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
     build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
-    build_kib_text(kStaticRamBytes, static_ram_text, sizeof(static_ram_text));
+    build_kib_text(static_ram, static_ram_text, sizeof(static_ram_text));
+    build_kib_text(total_ram, ram_budget_text, sizeof(ram_budget_text));
     build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
     build_kib_text(kUiFramebufferBytes, framebuffer_text, sizeof(framebuffer_text));
     std::snprintf(flash_value_text, sizeof(flash_value_text), "%s/%s", program_flash_text,
                   flash_budget_text);
-    std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/520K", static_ram_text);
+    std::snprintf(ram_value_text, sizeof(ram_value_text), "%s/%s", static_ram_text,
+                  ram_budget_text);
+    if (console_state.heap_status.valid)
+    {
+        char heap_used_text[16] = {};
+        build_kib_text(console_state.heap_status.used_bytes, heap_used_text,
+                       sizeof(heap_used_text));
+        if (console_state.heap_status.arena_bytes > 0U)
+        {
+            char heap_arena_text[16] = {};
+            build_kib_text(console_state.heap_status.arena_bytes, heap_arena_text,
+                           sizeof(heap_arena_text));
+            std::snprintf(heap_text, sizeof(heap_text), "%s/%s", heap_used_text, heap_arena_text);
+        }
+        else
+        {
+            std::snprintf(heap_text, sizeof(heap_text), "%s", heap_used_text);
+        }
+    }
+    else
+    {
+        std::snprintf(heap_text, sizeof(heap_text), "-");
+    }
+    if (console_state.stack_status.valid)
+    {
+        // Core-0's stack is only 4KB (PICO_STACK_SIZE) -- shown as exact
+        // bytes, not KiB-rounded, since build_kib_text's ceiling rounding
+        // would mask a near-overflow (e.g. 100 bytes free rounding up to a
+        // reassuring-looking "1K").
+        std::snprintf(stack_text, sizeof(stack_text), "%luB",
+                      static_cast<unsigned long>(console_state.stack_status.free_bytes));
+    }
+    else
+    {
+        std::snprintf(stack_text, sizeof(stack_text), "-");
+    }
     if (console_state.main_loop_load_status.valid)
     {
         std::snprintf(loop_load_text, sizeof(loop_load_text), "%u%%",
@@ -408,8 +482,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 
     draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
                       "PROGRAM FLASH", flash_value_text);
-    draw_resource_bar(fb, 54, 96, 160, 20, kStaticRamBytes, kPico2WSramBytes, "STATIC RAM",
-                      ram_value_text);
+    draw_resource_bar(fb, 54, 96, 160, 20, static_ram, total_ram, "STATIC RAM", ram_value_text);
 
     const screens::DetailRow rows[] = {
         {"PROG FLASH", flash_value_text},
@@ -422,7 +495,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         {"FRAME RATE", frame_rate_text},
         {"RASTER BUILD", rebuild_time_text},
         {"PRESENT SKIP", present_skipped_text},
-        {"HEAP LIVE", "-"},
+        {"HEAP LIVE", heap_text},
+        {"STACK FREE", stack_text},
     };
 
     screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);

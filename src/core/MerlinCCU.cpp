@@ -671,7 +671,12 @@ int main()
                 .arena_bytes = static_cast<uint32_t>(heap_info.arena),
             };
             const bool heap_status_changed = console_controller::set_heap_status(heap_status);
-            if ((loop_load_changed || heap_status_changed) &&
+            const StackStatus stack_status = {
+                .valid = true,
+                .free_bytes = stack_high_water_free_bytes(),
+            };
+            const bool stack_status_changed = console_controller::set_stack_status(stack_status);
+            if ((loop_load_changed || heap_status_changed || stack_status_changed) &&
                 console_controller::state().active_page == MenuPage::StatusResources &&
                 active_mode != ScreenMode::LifeScreensaver)
             {

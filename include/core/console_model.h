@@ -850,6 +850,17 @@ struct HeapStatus
     uint32_t arena_bytes;
 };
 
+/// @brief Worst-case core-0 stack headroom shown on the Resources status page.
+/// @details Sourced from the boot-time canary fill / high-water-mark scan in
+/// MerlinCCU.cpp (see stack_high_water_free_bytes()) -- a measured near-miss,
+/// not a guess. Only ever decreases across a boot, so this is a worst-case
+/// figure, not a live instantaneous one.
+struct StackStatus
+{
+    bool valid;
+    uint32_t free_bytes;
+};
+
 /// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`
 /// and `display::last_rebuild_us()`.
 /// @details Exists to measure actual hardware timing before committing to any
@@ -925,6 +936,7 @@ struct ConsoleState
     TimeStatus time_status;
     MainLoopLoadStatus main_loop_load_status;
     HeapStatus heap_status;
+    StackStatus stack_status;
     DisplayTimingStatus display_timing_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
