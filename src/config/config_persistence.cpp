@@ -57,6 +57,68 @@ bool validate_legacy_slot_v1(const LegacyConfigSlotV1& slot)
     return slot.crc32 == expected;
 }
 
+bool validate_legacy_slot_v2(const LegacyConfigSlotV2& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV2 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV2))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV2));
+    return slot.crc32 == expected;
+}
+
+std::array<WatchedShareConfig, kMaxWatchedShares> default_watched_shares()
+{
+    std::array<WatchedShareConfig, kMaxWatchedShares> shares = {};
+    copy_text(shares[0].symbol, "BA.L");
+    copy_text(shares[0].display_name, "BAE SYSTEMS");
+    return shares;
+}
+
+RuntimeConfig migrate_legacy_settings_v2(const LegacyRuntimeConfigV2& legacy)
+{
+    RuntimeConfig migrated = {};
+    migrated.device_name = legacy.device_name;
+    migrated.device_label = legacy.device_label;
+    migrated.location = legacy.location;
+    migrated.room = legacy.room;
+    migrated.remote_config_enabled = legacy.remote_config_enabled;
+    migrated.wifi_ssid = legacy.wifi_ssid;
+    migrated.wifi_password = legacy.wifi_password;
+    migrated.home_assistant_enabled = legacy.home_assistant_enabled;
+    migrated.home_assistant_host = legacy.home_assistant_host;
+    migrated.home_assistant_port = legacy.home_assistant_port;
+    migrated.home_assistant_token = legacy.home_assistant_token;
+    migrated.home_assistant_entity_id = legacy.home_assistant_entity_id;
+    migrated.home_assistant_self_entity_id = legacy.home_assistant_self_entity_id;
+    migrated.weather_entity_id = legacy.weather_entity_id;
+    migrated.sun_entity_id = legacy.sun_entity_id;
+    migrated.weather_coordinates = legacy.weather_coordinates;
+    migrated.mqtt_enabled = legacy.mqtt_enabled;
+    migrated.mqtt_host = legacy.mqtt_host;
+    migrated.mqtt_port = legacy.mqtt_port;
+    migrated.mqtt_username = legacy.mqtt_username;
+    migrated.mqtt_password = legacy.mqtt_password;
+    migrated.mqtt_discovery_prefix = legacy.mqtt_discovery_prefix;
+    migrated.mqtt_base_topic = legacy.mqtt_base_topic;
+    migrated.air_traffic_enabled = legacy.air_traffic_enabled;
+    migrated.air_traffic_host = legacy.air_traffic_host;
+    migrated.air_traffic_port = legacy.air_traffic_port;
+    migrated.air_traffic_api_key = legacy.air_traffic_api_key;
+    migrated.air_traffic_coordinates = legacy.air_traffic_coordinates;
+    migrated.air_traffic_radius_nm = legacy.air_traffic_radius_nm;
+    migrated.weather_source = legacy.weather_source;
+    migrated.time_zone = legacy.time_zone;
+    migrated.screen_saver = legacy.screen_saver;
+    migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
+    migrated.watched_share_count = 1U;
+    migrated.watched_shares = default_watched_shares();
+    return migrated;
+}
+
 RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
 {
     RuntimeConfig migrated = {};
@@ -87,6 +149,8 @@ RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
     migrated.time_zone = legacy.time_zone;
     migrated.screen_saver = legacy.screen_saver;
     migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
+    migrated.watched_share_count = 1U;
+    migrated.watched_shares = default_watched_shares();
     return migrated;
 }
 
@@ -131,7 +195,39 @@ RuntimeConfig make_default_settings()
     settings.time_zone = TimeZoneSelection::EuropeLondon;
     settings.screen_saver = ScreenSaverSelection::Life;
     settings.screen_saver_timeout_minutes = 5;
+
+    settings.watched_share_count = 1U;
+    settings.watched_shares = default_watched_shares();
     return settings;
+}
+
+/// @brief Drops blank-symbol rows and clamps the count to what remains.
+/// @details The web config form can post a sparse list (a row cleared out of
+/// the middle); compacting here keeps share_price_manager's consumer-side
+/// loop simple -- it only ever needs to trust watched_share_count.
+void compact_watched_shares(RuntimeConfig& settings)
+{
+    std::array<WatchedShareConfig, kMaxWatchedShares> compacted = {};
+    uint8_t compacted_count = 0U;
+    const uint8_t scan_count =
+        std::min(settings.watched_share_count, static_cast<uint8_t>(kMaxWatchedShares));
+    for (uint8_t i = 0U; i < scan_count; ++i)
+    {
+        if (settings.watched_shares[i].symbol[0] == '\0')
+        {
+            continue;
+        }
+        compacted[compacted_count] = settings.watched_shares[i];
+        if (compacted[compacted_count].display_name[0] == '\0')
+        {
+            copy_text(compacted[compacted_count].display_name,
+                      compacted[compacted_count].symbol.data());
+        }
+        ++compacted_count;
+    }
+
+    settings.watched_shares = compacted;
+    settings.watched_share_count = compacted_count;
 }
 
 bool should_auto_enable_home_assistant(const RuntimeConfig& settings)
@@ -174,6 +270,7 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
     {
         sanitized.home_assistant_enabled = true;
     }
+    compact_watched_shares(sanitized);
     return sanitized;
 }
 

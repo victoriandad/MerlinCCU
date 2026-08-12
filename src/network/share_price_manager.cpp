@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "config_manager.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
 #include "lwip/altcp_tls.h"
@@ -38,7 +39,6 @@ constexpr size_t kRequestBufferSize = 768U;
 // while avoiding unnecessary pressure on shared heap headroom.
 constexpr size_t kResponseBufferSize = 16384U;
 constexpr size_t kMaxParsedHistoryValues = 256U;
-constexpr const char* kWatchedSymbol = "BA.L";
 /// @brief Keeps direct third-party fetching off the Pico while the local feed is designed.
 constexpr bool kEnableLiveShareFetch = false;
 
@@ -104,12 +104,18 @@ void seed_placeholder_quote(ShareWatchEntry& share)
     copy_text(share.change_text, "No live");
 }
 
-/// @brief Seeds the first watched row so the UI has stable labels before Wi-Fi is ready.
-void seed_bae_placeholder(ShareMarketStatus& status)
+/// @brief Rebuilds the watchlist from the user-configured symbols so the UI
+/// reflects the current watched_share_count/watched_shares config on every
+/// tick, matching how init() and update() both need to see config edits.
+void seed_from_config(ShareMarketStatus& status)
 {
-    status.share_count = 1U;
-    for (auto& share : status.watched_shares)
+    const RuntimeConfig& config = config_manager::settings();
+    const uint8_t count =
+        std::min(config.watched_share_count, static_cast<uint8_t>(kMaxWatchedShares));
+    status.share_count = count;
+    for (size_t i = 0U; i < status.watched_shares.size(); ++i)
     {
+        ShareWatchEntry& share = status.watched_shares[i];
         share.display_name.fill('\0');
         share.symbol.fill('\0');
         share.exchange.fill('\0');
@@ -117,15 +123,16 @@ void seed_bae_placeholder(ShareMarketStatus& status)
         share.price_text.fill('\0');
         share.change_text.fill('\0');
         share.history_points.fill(0U);
-    }
+        if (i >= count)
+        {
+            continue;
+        }
 
-    ShareWatchEntry& bae = status.watched_shares[0];
-    copy_text(bae.display_name, "BAE SYSTEMS");
-    copy_text(bae.symbol, kWatchedSymbol);
-    copy_text(bae.exchange, "LSE");
-    copy_text(bae.currency, "GBX");
-    seed_placeholder_quote(bae);
-    seed_placeholder_history(bae, status.period);
+        copy_text(share.symbol, config.watched_shares[i].symbol.data());
+        copy_text(share.display_name, config.watched_shares[i].display_name.data());
+        seed_placeholder_quote(share);
+        seed_placeholder_history(share, status.period);
+    }
 }
 
 /// @brief Returns legacy Yahoo chart range/interval parameters for one CCU period.
@@ -560,7 +567,10 @@ bool parse_close_history(const char* json, ShareWatchEntry& share, double fallba
     return value_count > 0U;
 }
 
-/// @brief Parses Yahoo chart JSON into the single watched BAE Systems row.
+/// @brief Parses Yahoo chart JSON into the first watched row's slot.
+/// @details Only the first configured symbol is ever live-fetched; matching
+/// the pre-#9 scope, additional watched shares stay placeholder-only until
+/// the local-feed replacement (issue #42) adds real multi-symbol fetching.
 bool parse_yahoo_chart_response()
 {
     const char* body = normalised_response_body();
@@ -582,34 +592,21 @@ bool parse_yahoo_chart_response()
     }
 
     ShareWatchEntry& share = g_status.watched_shares[0];
-    copy_text(share.display_name, "BAE SYSTEMS");
 
     char text[32] = {};
     if (extract_json_string(body, "\"symbol\"", text, sizeof(text)))
     {
         copy_text(share.symbol, text);
     }
-    else
-    {
-        copy_text(share.symbol, kWatchedSymbol);
-    }
 
     if (extract_json_string(body, "\"exchangeName\"", text, sizeof(text)))
     {
         copy_text(share.exchange, text);
     }
-    else
-    {
-        copy_text(share.exchange, "LSE");
-    }
 
     if (extract_json_string(body, "\"currency\"", text, sizeof(text)))
     {
         copy_text(share.currency, std::strcmp(text, "GBp") == 0 ? "GBX" : text);
-    }
-    else
-    {
-        copy_text(share.currency, "GBX");
     }
 
     format_price_text(price, share.price_text);
@@ -618,19 +615,26 @@ bool parse_yahoo_chart_response()
 }
 
 /// @brief Builds the HTTPS request for the selected Yahoo chart period.
+/// @details Only fetches the first configured watched share; see
+/// parse_yahoo_chart_response() for why.
 bool build_request()
 {
-    const int target_len =
-        std::snprintf(g_request, sizeof(g_request),
-                      "GET /v8/finance/chart/%s?%s HTTP/1.1\r\n"
-                      "Host: %s\r\n"
-                      "User-Agent: MerlinCCU/0.1 "
-                      "(https://github.com/victoriandad/MerlinCCU)\r\n"
-                      "Accept: application/json\r\n"
-                      "Accept-Encoding: identity\r\n"
-                      "Connection: close\r\n"
-                      "\r\n",
-                      kWatchedSymbol, period_query(g_inflight_period), kProviderHost);
+    if (g_status.share_count == 0U || g_status.watched_shares[0].symbol[0] == '\0')
+    {
+        return false;
+    }
+
+    const int target_len = std::snprintf(
+        g_request, sizeof(g_request),
+        "GET /v8/finance/chart/%s?%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "User-Agent: MerlinCCU/0.1 "
+        "(https://github.com/victoriandad/MerlinCCU)\r\n"
+        "Accept: application/json\r\n"
+        "Accept-Encoding: identity\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        g_status.watched_shares[0].symbol.data(), period_query(g_inflight_period), kProviderHost);
     return target_len > 0 && static_cast<size_t>(target_len) < sizeof(g_request);
 }
 
@@ -931,7 +935,7 @@ void init()
     g_status.last_error = 0;
     g_status.last_http_status = 0;
     g_status.period = SharePeriod::Today;
-    seed_bae_placeholder(g_status);
+    seed_from_config(g_status);
     reset_attempt_state();
     g_inflight_period = g_status.period;
     g_next_attempt = nil_time;
@@ -976,8 +980,7 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
         reset_attempt_state();
         g_request_attempted = false;
         g_next_attempt = nil_time;
-        seed_placeholder_quote(g_status.watched_shares[0]);
-        seed_placeholder_history(g_status.watched_shares[0], g_status.period);
+        seed_from_config(g_status);
         g_status.data_valid = false;
         g_status.last_error = 0;
         g_status.last_http_status = 0;

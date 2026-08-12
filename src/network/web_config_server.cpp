@@ -700,6 +700,28 @@ void build_config_page(const char* message)
         static_cast<unsigned>(cfg.air_traffic_radius_nm), air_traffic_coordinates);
 
     (void)append(cursor, remaining,
+                 "<section class=\"card\"><h2>Watched Shares</h2><p class=\"hint\">Up to %u "
+                 "symbols shown on the Shares page. Leave Symbol blank to remove a row; live "
+                 "quotes are demo-only until issue #42's local feed replaces the direct "
+                 "provider fetch.</p>",
+                 static_cast<unsigned>(kMaxWatchedShares));
+    for (size_t i = 0; i < kMaxWatchedShares; ++i)
+    {
+        char symbol[24] = {};
+        char share_name[64] = {};
+        html_escape(cfg.watched_shares[i].symbol.data(), symbol, sizeof(symbol));
+        html_escape(cfg.watched_shares[i].display_name.data(), share_name, sizeof(share_name));
+        (void)append(cursor, remaining,
+                     "<div class=\"row\"><div><label>Symbol %u</label><input "
+                     "name=\"share%u_symbol\" maxlength=\"9\" value=\"%s\"></div>"
+                     "<div><label>Display name %u</label><input name=\"share%u_name\" "
+                     "maxlength=\"23\" value=\"%s\"></div></div>",
+                     static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1), symbol,
+                     static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1), share_name);
+    }
+    (void)append(cursor, remaining, "</section>");
+
+    (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
                  "<select name=\"weather_source\" id=\"weather_source_select\">");
     const char* selected_weather = weather_token(cfg.weather_source);
@@ -2541,6 +2563,40 @@ const char* handle_config_post(const char* body)
         }
         copy_text(cfg.air_traffic_api_key, value);
     }
+
+    for (size_t i = 0; i < kMaxWatchedShares; ++i)
+    {
+        char field_name[24] = {};
+        std::snprintf(field_name, sizeof(field_name), "share%u_symbol",
+                     static_cast<unsigned>(i + 1));
+        if (get_form_value(body, field_name, value, sizeof(value)))
+        {
+            if (!validate_text_field("Share symbol", value,
+                                     cfg.watched_shares[i].symbol.size() - 1, false,
+                                     is_printable_config_text, validation_error,
+                                     sizeof(validation_error)))
+            {
+                std::printf("Web config save rejected: %s\n", validation_error);
+                return validation_error;
+            }
+            copy_text(cfg.watched_shares[i].symbol, value);
+        }
+
+        std::snprintf(field_name, sizeof(field_name), "share%u_name", static_cast<unsigned>(i + 1));
+        if (get_form_value(body, field_name, value, sizeof(value)))
+        {
+            if (!validate_text_field("Share display name", value,
+                                     cfg.watched_shares[i].display_name.size() - 1, false,
+                                     is_printable_config_text, validation_error,
+                                     sizeof(validation_error)))
+            {
+                std::printf("Web config save rejected: %s\n", validation_error);
+                return validation_error;
+            }
+            copy_text(cfg.watched_shares[i].display_name, value);
+        }
+    }
+    cfg.watched_share_count = static_cast<uint8_t>(kMaxWatchedShares);
 
     if (get_form_value(body, "time_zone", value, sizeof(value)))
     {

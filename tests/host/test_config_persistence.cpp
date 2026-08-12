@@ -1,5 +1,6 @@
 #include "config_persistence.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "test_framework.h"
@@ -8,7 +9,9 @@
 using config_persistence::ConfigCandidate;
 using config_persistence::ConfigSlot;
 using config_persistence::LegacyConfigSlotV1;
+using config_persistence::LegacyConfigSlotV2;
 using config_persistence::LegacyRuntimeConfigV1;
+using config_persistence::LegacyRuntimeConfigV2;
 
 namespace
 {
@@ -136,6 +139,108 @@ HOST_TEST(migrate_legacy_settings_carries_every_field_forward)
     // A field that did not exist in v1 must come back as an explicit, safe
     // default rather than leftover/uninitialized memory.
     EXPECT_EQ(migrated.weather_coordinates[0], '\0');
+    // Watched shares did not exist in v1 either; migration must seed the same
+    // single-share demo watchlist a fresh install gets, not an empty list.
+    EXPECT_EQ(migrated.watched_share_count, 1U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].symbol.data(), "BA.L") == 0);
+}
+
+HOST_TEST(migrate_legacy_settings_v2_carries_every_field_forward)
+{
+    LegacyRuntimeConfigV2 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName2");
+    text_utils::copy_text(legacy.wifi_ssid, "OldWifi2");
+    text_utils::copy_text(legacy.air_traffic_host, "api.adsb.lol");
+    legacy.air_traffic_enabled = true;
+    legacy.air_traffic_port = 80;
+    legacy.air_traffic_radius_nm = 40;
+    legacy.mqtt_port = 1885;
+    legacy.screen_saver_timeout_minutes = 17;
+    legacy.weather_source = WeatherSource::OpenMeteo;
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v2(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName2") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.wifi_ssid.data(), "OldWifi2") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.air_traffic_host.data(), "api.adsb.lol") == 0);
+    EXPECT_TRUE(migrated.air_traffic_enabled);
+    EXPECT_EQ(migrated.air_traffic_radius_nm, 40U);
+    EXPECT_EQ(migrated.mqtt_port, 1885U);
+    EXPECT_EQ(migrated.screen_saver_timeout_minutes, 17U);
+    EXPECT_TRUE(migrated.weather_source == WeatherSource::OpenMeteo);
+    // Watched shares did not exist in v2 either; same fresh-install default applies.
+    EXPECT_EQ(migrated.watched_share_count, 1U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].symbol.data(), "BA.L") == 0);
+}
+
+HOST_TEST(validate_legacy_slot_v2_accepts_a_correctly_built_slot)
+{
+    LegacyRuntimeConfigV2 legacy = {};
+    text_utils::copy_text(legacy.device_name, "V2Device");
+    LegacyConfigSlotV2 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV2;
+    slot.sequence = 3U;
+    slot.payload_size = sizeof(LegacyRuntimeConfigV2);
+    slot.settings = legacy;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(LegacyRuntimeConfigV2));
+
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v2(slot));
+}
+
+HOST_TEST(sanitize_settings_drops_blank_symbol_rows_and_compacts_the_count)
+{
+    RuntimeConfig settings = config_persistence::make_default_settings();
+    settings.watched_share_count = 3U;
+    text_utils::copy_text(settings.watched_shares[0].symbol, "AAA");
+    text_utils::copy_text(settings.watched_shares[0].display_name, "Alpha");
+    settings.watched_shares[1].symbol.fill('\0');
+    text_utils::copy_text(settings.watched_shares[2].symbol, "CCC");
+    text_utils::copy_text(settings.watched_shares[2].display_name, "Charlie");
+
+    const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
+
+    EXPECT_EQ(sanitized.watched_share_count, 2U);
+    EXPECT_TRUE(std::strcmp(sanitized.watched_shares[0].symbol.data(), "AAA") == 0);
+    EXPECT_TRUE(std::strcmp(sanitized.watched_shares[1].symbol.data(), "CCC") == 0);
+}
+
+HOST_TEST(sanitize_settings_fills_blank_display_name_from_symbol)
+{
+    RuntimeConfig settings = config_persistence::make_default_settings();
+    settings.watched_share_count = 1U;
+    text_utils::copy_text(settings.watched_shares[0].symbol, "MSFT");
+    settings.watched_shares[0].display_name.fill('\0');
+
+    const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
+
+    EXPECT_TRUE(std::strcmp(sanitized.watched_shares[0].display_name.data(), "MSFT") == 0);
+}
+
+HOST_TEST(sanitize_settings_clamps_watched_share_count_to_the_array_capacity)
+{
+    RuntimeConfig settings = config_persistence::make_default_settings();
+    settings.watched_share_count = 255U;
+    for (size_t i = 0; i < settings.watched_shares.size(); ++i)
+    {
+        char symbol[8] = {};
+        std::snprintf(symbol, sizeof(symbol), "S%zu", i);
+        text_utils::copy_text(settings.watched_shares[i].symbol, symbol);
+    }
+
+    const RuntimeConfig sanitized = config_persistence::sanitize_settings(settings);
+
+    EXPECT_EQ(sanitized.watched_share_count, settings.watched_shares.size());
+}
+
+HOST_TEST(make_default_settings_seeds_the_demo_watchlist)
+{
+    const RuntimeConfig settings = config_persistence::make_default_settings();
+
+    EXPECT_EQ(settings.watched_share_count, 1U);
+    EXPECT_TRUE(std::strcmp(settings.watched_shares[0].symbol.data(), "BA.L") == 0);
+    EXPECT_TRUE(std::strcmp(settings.watched_shares[0].display_name.data(), "BAE SYSTEMS") == 0);
 }
 
 HOST_TEST(sanitize_settings_fills_empty_device_name)

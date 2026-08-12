@@ -1452,7 +1452,7 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
     if (console_state.share_count == 0U)
     {
         draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true, fonts::FontFace::Font8x12, 1);
-        draw_centered_text(fb, kUiWidth / 2, 142, "ADD FLOW PENDING", true,
+        draw_centered_text(fb, kUiWidth / 2, 142, "ADD VIA WEB CONFIG", true,
                            fonts::FontFace::Font5x7, 1);
         return;
     }
