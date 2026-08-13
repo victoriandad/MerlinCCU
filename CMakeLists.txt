@@ -62,6 +62,7 @@ add_executable(MerlinCCU
     src/display/display.cpp
     src/display/framebuffer.cpp
     src/display/air_traffic_screens.cpp
+    src/display/calendar_screens.cpp
     src/display/screen_banners.cpp
     src/display/screens.cpp
     src/display/status_screens.cpp
