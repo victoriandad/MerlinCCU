@@ -60,6 +60,7 @@ add_executable(MerlinCCU
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp
     src/core/pinter_store.cpp
+    src/core/settings_controller.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/display/display.cpp
