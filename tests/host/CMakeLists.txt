@@ -24,6 +24,12 @@ add_executable(host_tests
     test_pinter_persistence.cpp
     test_calendar_navigation.cpp
     test_http_response.cpp
+    test_weather_json_scan.cpp
+    test_weather_normalisation.cpp
+    test_weather_forecast_parser.cpp
+    test_home_assistant_weather_parser.cpp
+    test_open_meteo_parser.cpp
+    stubs/time_manager_stub.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
     ${MERLIN_ROOT}/src/config/config_persistence.cpp
     ${MERLIN_ROOT}/src/network/date_time_math.cpp
@@ -31,6 +37,11 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/pinter_persistence.cpp
     ${MERLIN_ROOT}/src/core/calendar_navigation.cpp
     ${MERLIN_ROOT}/src/network/http_response.cpp
+    ${MERLIN_ROOT}/src/network/weather_json_scan.cpp
+    ${MERLIN_ROOT}/src/network/weather_normalisation.cpp
+    ${MERLIN_ROOT}/src/network/weather_forecast_parser.cpp
+    ${MERLIN_ROOT}/src/network/home_assistant_weather_parser.cpp
+    ${MERLIN_ROOT}/src/network/open_meteo_parser.cpp
 )
 
 target_include_directories(host_tests PRIVATE

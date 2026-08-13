@@ -273,6 +273,76 @@ converged copies of the same HTTP response parsing in
     dechunking it previously didn't have at all) without touching *when* or
     *how* each one decides a fetch is done.
 
+## Weather Parsing Ownership Boundary
+
+Issue #47 split `home_assistant_manager.cpp` (previously ~3550 lines mixing
+Home Assistant REST sequencing, direct Open-Meteo fetching, HTTP framing
+(already extracted per #46), JSON extraction, unit/condition normalisation,
+and forecast/alert-metric aggregation) into five pure, host-testable modules
+plus the transport file itself:
+
+- **`weather_json_scan.h`/`.cpp`** -- generic-shaped JSON scanning primitives
+  used by both weather providers: quoted-string/scalar field extraction,
+  brace-matching (string-aware, so descriptive text containing `{`/`}`
+  doesn't confuse it), and array element lookup by index. Not a JSON library
+  -- it scans a flat or lightly-nested payload for one named field/array at a
+  time, matching what these providers' responses actually look like.
+- **`weather_normalisation.h`/`.cpp`** -- provider-neutral unit conversion
+  (temperature C/F, wind speed km/h-m/s-ft/s-kn-Beaufort all to mph),
+  condition-code-to-label mapping for *both* providers
+  (`friendly_weather_condition` for Home Assistant's string codes,
+  `open_meteo_condition_from_code` for Open-Meteo's numeric ones -- kept as
+  two functions since the vocabularies don't overlap), and display text
+  formatting (compass bearings, compact wind/temperature-range strings, hour/
+  date extraction from ISO datetimes).
+- **`weather_forecast_parser.h`/`.cpp`** -- forecast/alert-metric aggregation
+  operating on an explicit `HomeAssistantStatus&`: the `WeatherMetrics`/
+  `WeatherAlertStatus` side-channel used by threshold alerts (min/max
+  temperature, max wind speed, severe-condition warnings), plus Home
+  Assistant's own `forecast` attribute-array parsing (hourly and daily
+  variants -- Open-Meteo's forecast parsing is separate, see below).
+- **`home_assistant_weather_parser.h`/`.cpp`** -- Home Assistant-specific:
+  weather-source-hint derivation (attribution/friendly_name), sun entity
+  parsing, and `parse_current_weather_entity()`. That last one is notable:
+  unlike Open-Meteo's parsing (which was already a dedicated function), HA's
+  current-weather-entity parsing had no function of its own at all -- it was
+  ~90 lines inlined directly inside `handle_http_status()`, the transport
+  file's lwIP receive-completion callback. Issue #47 pulled it out into a
+  real function; `handle_http_status()` now just calls it and stamps
+  `weather_last_success_ms` (a hardware-clock read, deliberately kept in the
+  transport file so the parser itself stays host-testable) based on its
+  return value.
+- **`open_meteo_parser.h`/`.cpp`** -- `open_meteo::parse_weather()`, the
+  combined current+hourly+daily Open-Meteo response parser. Kept as its own
+  module rather than merged with the Home Assistant parser (issue #47's own
+  scoping) since the two providers' payload shapes and unit-handling only
+  partially overlap; both share the primitives above instead.
+
+All five take explicit parameters (`HomeAssistantStatus&`, unit-marker
+chars/buffers) instead of reading `home_assistant_manager.cpp`'s file-static
+globals, and none depend on lwIP/Pico SDK headers -- host-tested in
+`tests/host/test_weather_*.cpp`. One exception worth noting:
+`weather_normalisation::format_hour_text()` calls
+`time_manager::format_local_time_from_iso8601()` to preserve the original
+local-time-conversion-first behaviour exactly; `time_manager.cpp` itself
+isn't host-buildable (it includes `pico/stdlib.h`), so
+`tests/host/stubs/time_manager_stub.cpp` provides a host-only stand-in that
+always reports "not converted," which exercises `format_hour_text()`'s real
+documented UTC-fallback path rather than faking anything.
+
+`home_assistant_manager.cpp` itself kept: the connect/send/recv/retry state
+machine, HTTP status-line/header wrappers (from #46), request-kind
+sequencing, endpoint configuration, and `clear_runtime_data()` (an
+orchestration function that clears connection-lifecycle state alongside
+calling into the parsing modules' own clear functions -- it stayed here
+since it's fundamentally about *when* to forget stale data on disconnect, not
+about parsing). After the split, roughly 30 of the ~50 wrapper-style
+functions this file used to define were themselves deleted rather than kept
+as unused pass-throughs, once their only callers turned out to be the code
+that moved into the new modules -- see the 2026-08-13 (#47) Decision Log
+entry for why that's a larger diff than issue #46's all-wrappers-kept
+precedent.
+
 ## Multicore Admission Checklist
 
 Do not move work to core 1 until these are true:
@@ -351,4 +421,5 @@ hardware headers to compile.
 | 2026-08-13 | Added a consistent stale-data display policy across Weather, Shares, Air Traffic, and the Status Integrations/Sensors pages (issue #16): one shared `screens::build_data_freshness_text()` helper producing "LIVE"/"STALE Xm"/"NO DATA"; new boot-uptime `last_success_ms`-style timestamp fields on `HomeAssistantStatus`/`ShareMarketStatus`/`AirTrafficStatus`, stamped at each manager's genuine success point; a new 30s `next_freshness_redraw` tick in `MerlinCCU.cpp` so the age text keeps advancing even when no other field changes. See the new "Stale-Data Display Policy" doc section above for the full contract. | Before this, four different pages used four different vocabularies for the same underlying problem ("Live"/"Demo", "Valid"/"-", "WAITING FOR DATA"/"NO AIRCRAFT NEARBY", and Weather showing no staleness indicator at all -- a silently-stuck feed looked identical to a live one). Scoped as the "full policy" option rather than a smaller MVP after user confirmation, since a partial fix would have left the same inconsistency for whichever subsystem was skipped. | MQTT was deliberately left out (connection-state concept, not a data-freshness one). Shares' freshness plumbing is currently inert in practice -- `last_success_ms` only advances once `kEnableLiveShareFetch` is re-enabled (#42) -- but the wiring is in place so that transition doesn't need a second pass through every display page. |
 | 2026-08-13 | Implemented the local Home Assistant share-price feed (issue #42), replacing the dead Yahoo TLS fetch path in `share_price_manager.cpp` with a plain-TCP local-endpoint client modeled on `air_traffic_manager.cpp`'s connect/request/parse skeleton (no TLS needed for a local fetch). Reuses `home_assistant_host`/`home_assistant_port` per the issue's proposed contract, gated by a new independent `shares_feed_enabled`/`shares_feed_token` config pair (mirroring how `air_traffic_enabled`/`air_traffic_api_key` stay independent of the HA section). Parses `{"shares":[...]}` with the same bounded, string-aware JSON-array approach `air_traffic_manager.cpp` already uses for `{"ac":[...]}`, matching by `symbol` against the issue #9 watchlist so every configured share updates from one request, not just index 0 as the old Yahoo path did. `ShareMarketStatus::last_success_ms` (added for issue #16) now becomes live once a fetch actually succeeds, so the Weather/Shares/Integrations freshness UI needed no further changes. Config version bumped 3->4 with a `LegacyRuntimeConfigV3` snapshot. See `docs/share-feed-design.md` for the full endpoint contract, Home Assistant setup sketch, and provider recommendations. | Direct third-party fetching (the original Yahoo path) caused a share-detail lockup (#19) and was disabled pending exactly this replacement -- see the 2026-07-04 decision entry above. `air_traffic_manager.cpp` was the better template than `home_assistant_manager.cpp` for a NEW plain-HTTP client: no TLS complexity, no dual-mode (HA-entity vs direct-provider) branching to thread through, and it already had the exact bounded-JSON-array parsing shape (`find_object_end`, bounded `extract_bounded_string`/`extract_bounded_number`) this needed for a `{"shares":[...]}` array instead of the old single-object Yahoo response. | Duplicates the bounded-JSON helpers `air_traffic_manager.cpp` already has rather than sharing them -- deliberate, since issue #46 ("Extract Shared Bounded HTTP Client And Response Parser") is the tracked follow-up for that consolidation, and doing it as a drive-by here would have coupled two otherwise-independent changes. Also shrunk `share_price_manager.cpp`'s response buffer 16KB->4KB (the old Yahoo chart payload needed the headroom, the new compact multi-share JSON doesn't) to help the tight RAM budget from #15, but total static RAM still grew ~5.7KB net on this branch (new config/manager fields elsewhere) -- not fully root-caused per-symbol, but `tools/check_size_budget.py` confirms it stays within budget (~11.9KB free of 512KB). Freshness is tracked per-fetch-cycle, not per-share (see share-feed-design.md's Known Limitations) -- a share the feed silently stops reporting on will still show "LIVE" alongside shares that are genuinely fresh, until a future change adds per-share timestamps if that proves to matter in practice. |
 | 2026-08-13 | Extracted shared HTTP response parsing (issue #46) into `http_response.h`/`.cpp` from three independently-converged copies in `home_assistant_manager.cpp`, `air_traffic_manager.cpp`, and `share_price_manager.cpp`, standardizing on Home Assistant's implementation (the most mature: proper case-insensitive header lookup, `Content-Length` parsing, buffered-completion detection) rather than the other two managers' simpler raw-substring versions. `air_traffic_manager.cpp` gained chunked-body dechunking it didn't previously have at all, and both `air_traffic_manager.cpp`/`share_price_manager.cpp` gained early completion detection via `Content-Length` (previously only chunked responses could complete before connection close). New pure functions are host-tested (`tests/host/test_http_response.cpp`). See the new "Network Helper Ownership Boundary" section above for exactly what did and didn't move. | User explicitly chose the fuller-risk option after being asked: a partial extraction (pure functions only, one manager's behavior unchanged) was on the table given all three managers involved have a real lockup incident in their history (#19) and none of this could be verified on real hardware in this session. Discovered mid-implementation that the three managers' HTTP handling wasn't just duplicated but different in quality and in completion-handling *shape* (HA processes inline from the recv callback; the other two defer to `update()` specifically to avoid PCB-reentrancy issues) -- unifying the parsing was judged safe and valuable; unifying the completion-handling architecture was judged out of scope for this pass (see the ownership-boundary doc's reasoning). | JSON body parsing remains duplicated between `air_traffic_manager.cpp` and `share_price_manager.cpp` (`find_object_end`/`extract_bounded_string`/`extract_bounded_number`) -- deliberately deferred, not forgotten; a future pass can fold it into `http_response` or a sibling module if it's still worth doing. The inline-vs-deferred completion-handling question above is unresolved, not just deferred -- worth a dedicated look if HA's manager is ever extended in a way that makes its reentrancy window realistic (e.g. adding an in-flight period/parameter change the way shares has). None of this was exercised against a real HTTP server in this session; verify on hardware before trusting the early-completion behavior change under real network conditions. |
+| 2026-08-13 | Split weather/Home Assistant parsing out of `home_assistant_manager.cpp`'s network transport (issue #47) into five pure modules -- `weather_json_scan`, `weather_normalisation`, `weather_forecast_parser`, `home_assistant_weather_parser`, `open_meteo_parser` -- taking the "full split" scope the issue itself proposed rather than a narrower first slice. Notably pulled Home Assistant's current-weather-entity parsing out of `handle_http_status()` (the transport file's lwIP receive callback), where it had been inlined with no dedicated function at all, unlike Open-Meteo's equivalent. New pure functions are host-tested (37 new cases across `tests/host/test_weather_*.cpp`). See the new "Weather Parsing Ownership Boundary" section above. | User was asked whether to take the full issue-scoped split or a safer slice (JSON primitives + Open-Meteo only, leaving the trickier inline-HA-entity extraction for a follow-up issue) given the file's size (3546 lines) and complete lack of existing host coverage; chose the full split. | Once the inline HA-entity block was extracted, ~30 of this file's own wrapper-style functions (kept in #46's extraction as thin pass-throughs) turned out to have no remaining caller in this file and were deleted rather than left as dead code -- a larger diff than #46's "every wrapper stays" precedent, but correct once the only call site moved into a module. `time_manager.cpp` is still not host-buildable (Pico SDK dependency), papered over for this one call site via a host-only stub (see the ownership-boundary section); a real fix would need `time_manager`'s own ISO-datetime-to-local-time conversion extracted into something host-testable, out of scope here. None of this was exercised against a real Home Assistant or Open-Meteo server in this session -- verify on hardware before trusting the extracted HA-entity parsing (previously untested even implicitly, since it lived inline in a callback) against real API responses. |
 | YYYY-MM-DD |  |  |  |
