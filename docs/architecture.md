@@ -223,6 +223,56 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   coarse enough to add no meaningful redraw churn, fine enough that the age
   label doesn't look frozen.
 
+## Network Helper Ownership Boundary
+
+Issue #46 extracted `include/network/http_response.h` /
+`src/network/http_response.cpp` from what used to be three independently-
+converged copies of the same HTTP response parsing in
+`home_assistant_manager.cpp`, `air_traffic_manager.cpp`, and
+`share_price_manager.cpp`. The boundary is deliberately narrow:
+
+- **In `http_response`:** status-line parsing (`partial_status`), header
+  block detection (`headers_end`/`body`), named-header lookup
+  (`find_header_value`/`header_has_token`), `Content-Length` parsing
+  (`parse_content_length`), chunked-transfer decoding (`decode_chunked_body`),
+  and buffered-completion detection (`is_complete`, letting a manager act as
+  soon as `Content-Length` or a terminated chunked body is present instead of
+  waiting for the connection to close). Every function takes an explicit
+  buffer and length rather than reading a manager's own global response
+  buffer -- host-tested in `tests/host/test_http_response.cpp`, no lwIP/Pico
+  SDK dependency.
+- **Explicitly NOT here, and why:**
+  - **TLS trust policy** -- covered by issue #17, not this one.
+  - **Provider-specific JSON body parsing** (`extract_json_string`-style
+    functions, and the bounded array-scanning helpers
+    `find_object_end`/`extract_bounded_string`/`extract_bounded_number`
+    duplicated between `air_traffic_manager.cpp` and
+    `share_price_manager.cpp`) -- deliberately left alone. Consolidating
+    those too would have coupled this change to a second, independent
+    refactor with its own risk; a future pass can revisit it if it's still
+    worth doing once more managers exist to compare against.
+  - **The socket/DNS/retry state machine and completion-handling shape** --
+    each manager keeps its own. `home_assistant_manager.cpp` processes a
+    completed response **inline** from within its `on_tcp_recv` callback
+    (calling `handle_http_status()` directly, including the PCB
+    teardown/reset that implies); `air_traffic_manager.cpp` and
+    `share_price_manager.cpp` instead **defer** completion
+    (`defer_completion()`/`g_completion_pending`) to the next `update()`
+    tick, with an explicit comment (predating this issue) that lwIP
+    callbacks must not close or replace the active PCB while lwIP is still
+    unwinding the callback -- a hard-won fix applied after the original
+    Yahoo-fetch lockup (#19). Unifying these two shapes was considered and
+    rejected for this pass: it isn't clear whether HA's inline path is safe
+    because HA's specific request sequencing never exercises the reentrancy
+    window, or whether it's a latent version of the same bug that just
+    hasn't been hit yet -- not something to resolve as a side effect of a
+    parsing-helper extraction. Each manager now gets more correct, shared
+    *parsing* (in particular, `air_traffic_manager.cpp` and
+    `share_price_manager.cpp` gained early buffered-completion detection via
+    `is_complete()`, and `air_traffic_manager.cpp` gained chunked-body
+    dechunking it previously didn't have at all) without touching *when* or
+    *how* each one decides a fetch is done.
+
 ## Multicore Admission Checklist
 
 Do not move work to core 1 until these are true:
@@ -300,4 +350,5 @@ hardware headers to compile.
 | 2026-08-12 | Added RAM/size budget tracking (issue #15): the Resources status page's "STATIC RAM" figure now reads real linked `.data`+`.bss` usage from Pico SDK linker symbols (`__end__`, `__StackLimit`) instead of just `sizeof(ConsoleState)` plus the double UI framebuffer; the "HEAP LIVE" row (previously hardcoded `-` despite `HeapStatus` already being tracked) and a new "STACK FREE" row (from the existing `stack_high_water_free_bytes()` canary scan, now also sampled into `ConsoleState` alongside heap/loop-load) are both wired up; added `tools/check_size_budget.py` to reproduce the same flash/RAM figures from a built `.map` file outside the device, replacing the ad hoc `arm-none-eabi-size` runs previously pasted into this log by hand (see the 2026-07-05 and 2026-07-09 entries above). | The old static-RAM figure was a proxy that had drifted badly from reality: it showed ~48KB against a hardcoded "520KB" budget (implying ~91% free) when real `.data`+`.bss` usage was ~495KB -- a ~10x undercount that made the documented review rule ("check any new 1KB+ static buffer against the Resources page's tracked totals") check a number disconnected from the real constraint. Also found in the process: the RP2350's usable linked `RAM` region is 512KiB, not the chip's 520KB physical SRAM total -- SRAM8/SRAM9 (8KiB) sit outside the linker's contiguous `RAM` output section, so the long-used "520KB" budget denominator was never quite right either. | Real headroom as of this change is ~17.5KB free (506.7KB of 512KB, 96.7%) -- run `tools/check_size_budget.py` before adding any further static storage; several open issues (#10 weather icons, #56 core-1 raster regen buffers) plan meaningful new static allocation and will need to budget against this real number, not the old proxy. Stack headroom is now visible on-device too but still per-core-0 only; no equivalent exists for a future core-1 stack if #56 proceeds. |
 | 2026-08-13 | Added a consistent stale-data display policy across Weather, Shares, Air Traffic, and the Status Integrations/Sensors pages (issue #16): one shared `screens::build_data_freshness_text()` helper producing "LIVE"/"STALE Xm"/"NO DATA"; new boot-uptime `last_success_ms`-style timestamp fields on `HomeAssistantStatus`/`ShareMarketStatus`/`AirTrafficStatus`, stamped at each manager's genuine success point; a new 30s `next_freshness_redraw` tick in `MerlinCCU.cpp` so the age text keeps advancing even when no other field changes. See the new "Stale-Data Display Policy" doc section above for the full contract. | Before this, four different pages used four different vocabularies for the same underlying problem ("Live"/"Demo", "Valid"/"-", "WAITING FOR DATA"/"NO AIRCRAFT NEARBY", and Weather showing no staleness indicator at all -- a silently-stuck feed looked identical to a live one). Scoped as the "full policy" option rather than a smaller MVP after user confirmation, since a partial fix would have left the same inconsistency for whichever subsystem was skipped. | MQTT was deliberately left out (connection-state concept, not a data-freshness one). Shares' freshness plumbing is currently inert in practice -- `last_success_ms` only advances once `kEnableLiveShareFetch` is re-enabled (#42) -- but the wiring is in place so that transition doesn't need a second pass through every display page. |
 | 2026-08-13 | Implemented the local Home Assistant share-price feed (issue #42), replacing the dead Yahoo TLS fetch path in `share_price_manager.cpp` with a plain-TCP local-endpoint client modeled on `air_traffic_manager.cpp`'s connect/request/parse skeleton (no TLS needed for a local fetch). Reuses `home_assistant_host`/`home_assistant_port` per the issue's proposed contract, gated by a new independent `shares_feed_enabled`/`shares_feed_token` config pair (mirroring how `air_traffic_enabled`/`air_traffic_api_key` stay independent of the HA section). Parses `{"shares":[...]}` with the same bounded, string-aware JSON-array approach `air_traffic_manager.cpp` already uses for `{"ac":[...]}`, matching by `symbol` against the issue #9 watchlist so every configured share updates from one request, not just index 0 as the old Yahoo path did. `ShareMarketStatus::last_success_ms` (added for issue #16) now becomes live once a fetch actually succeeds, so the Weather/Shares/Integrations freshness UI needed no further changes. Config version bumped 3->4 with a `LegacyRuntimeConfigV3` snapshot. See `docs/share-feed-design.md` for the full endpoint contract, Home Assistant setup sketch, and provider recommendations. | Direct third-party fetching (the original Yahoo path) caused a share-detail lockup (#19) and was disabled pending exactly this replacement -- see the 2026-07-04 decision entry above. `air_traffic_manager.cpp` was the better template than `home_assistant_manager.cpp` for a NEW plain-HTTP client: no TLS complexity, no dual-mode (HA-entity vs direct-provider) branching to thread through, and it already had the exact bounded-JSON-array parsing shape (`find_object_end`, bounded `extract_bounded_string`/`extract_bounded_number`) this needed for a `{"shares":[...]}` array instead of the old single-object Yahoo response. | Duplicates the bounded-JSON helpers `air_traffic_manager.cpp` already has rather than sharing them -- deliberate, since issue #46 ("Extract Shared Bounded HTTP Client And Response Parser") is the tracked follow-up for that consolidation, and doing it as a drive-by here would have coupled two otherwise-independent changes. Also shrunk `share_price_manager.cpp`'s response buffer 16KB->4KB (the old Yahoo chart payload needed the headroom, the new compact multi-share JSON doesn't) to help the tight RAM budget from #15, but total static RAM still grew ~5.7KB net on this branch (new config/manager fields elsewhere) -- not fully root-caused per-symbol, but `tools/check_size_budget.py` confirms it stays within budget (~11.9KB free of 512KB). Freshness is tracked per-fetch-cycle, not per-share (see share-feed-design.md's Known Limitations) -- a share the feed silently stops reporting on will still show "LIVE" alongside shares that are genuinely fresh, until a future change adds per-share timestamps if that proves to matter in practice. |
+| 2026-08-13 | Extracted shared HTTP response parsing (issue #46) into `http_response.h`/`.cpp` from three independently-converged copies in `home_assistant_manager.cpp`, `air_traffic_manager.cpp`, and `share_price_manager.cpp`, standardizing on Home Assistant's implementation (the most mature: proper case-insensitive header lookup, `Content-Length` parsing, buffered-completion detection) rather than the other two managers' simpler raw-substring versions. `air_traffic_manager.cpp` gained chunked-body dechunking it didn't previously have at all, and both `air_traffic_manager.cpp`/`share_price_manager.cpp` gained early completion detection via `Content-Length` (previously only chunked responses could complete before connection close). New pure functions are host-tested (`tests/host/test_http_response.cpp`). See the new "Network Helper Ownership Boundary" section above for exactly what did and didn't move. | User explicitly chose the fuller-risk option after being asked: a partial extraction (pure functions only, one manager's behavior unchanged) was on the table given all three managers involved have a real lockup incident in their history (#19) and none of this could be verified on real hardware in this session. Discovered mid-implementation that the three managers' HTTP handling wasn't just duplicated but different in quality and in completion-handling *shape* (HA processes inline from the recv callback; the other two defer to `update()` specifically to avoid PCB-reentrancy issues) -- unifying the parsing was judged safe and valuable; unifying the completion-handling architecture was judged out of scope for this pass (see the ownership-boundary doc's reasoning). | JSON body parsing remains duplicated between `air_traffic_manager.cpp` and `share_price_manager.cpp` (`find_object_end`/`extract_bounded_string`/`extract_bounded_number`) -- deliberately deferred, not forgotten; a future pass can fold it into `http_response` or a sibling module if it's still worth doing. The inline-vs-deferred completion-handling question above is unresolved, not just deferred -- worth a dedicated look if HA's manager is ever extended in a way that makes its reentrancy window realistic (e.g. adding an in-flight period/parameter change the way shares has). None of this was exercised against a real HTTP server in this session; verify on hardware before trusting the early-completion behavior change under real network conditions. |
 | YYYY-MM-DD |  |  |  |

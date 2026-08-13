@@ -76,6 +76,7 @@ add_executable(MerlinCCU
     src/network/date_time_math.cpp
     src/network/air_traffic_manager.cpp
     src/network/home_assistant_manager.cpp
+    src/network/http_response.cpp
     src/network/mqtt_manager.cpp
     src/network/share_price_manager.cpp
     src/network/time_manager.cpp
