@@ -6,7 +6,6 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
-#include "pico/time.h"
 #include "screens_shared.h"
 
 namespace air_traffic_screens
@@ -48,13 +47,12 @@ void draw_table_row(uint8_t* fb, const AirTrafficEntry& entry, int row_y)
 
 /// @brief Draws the small provenance/coverage disclaimer, plus a data-freshness
 /// label, at the page foot -- issue #16's stale-data display policy.
-void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status)
+void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status, uint32_t now_ms)
 {
     // 4x air_traffic_manager.cpp's own 15-second kRefreshIntervalMs.
     constexpr uint32_t kAirTrafficStaleAfterMs = 4U * 15U * 1000U;
     char freshness_text[16] = {};
-    screens::build_data_freshness_text(status.data_valid, status.last_success_ms,
-                                       to_ms_since_boot(get_absolute_time()),
+    screens::build_data_freshness_text(status.data_valid, status.last_success_ms, now_ms,
                                        kAirTrafficStaleAfterMs, freshness_text,
                                        sizeof(freshness_text));
 
@@ -65,7 +63,7 @@ void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status)
 }
 
 /// @brief Draws the paginated Callsign/Dist/Alt/Brg table view.
-void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state)
+void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     const AirTrafficStatus& status = console_state.air_traffic_status;
     const uint8_t page_count = static_cast<uint8_t>(
@@ -86,7 +84,7 @@ void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state)
     }
     screens::draw_page_navigation_arrows(fb, page_index > 0U,
                                         (page_index + 1U) < page_count);
-    draw_footer_disclaimer(fb, status);
+    draw_footer_disclaimer(fb, status, now_ms);
 }
 
 /// @brief Integer midpoint-circle rings, matching the radar screensaver's algorithm.
@@ -174,7 +172,7 @@ void draw_plot_blip(uint8_t* fb, const AirTrafficEntry& entry, uint16_t range_nm
 
 /// @brief Draws the ATC-style PPI plot: range rings, compass tick, home
 /// marker, and every tracked aircraft with its snail trail.
-void draw_plot_view(uint8_t* fb, const ConsoleState& console_state)
+void draw_plot_view(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     const AirTrafficStatus& status = console_state.air_traffic_status;
     const uint16_t range_nm = (status.configured_radius_nm != 0U) ? status.configured_radius_nm : 30U;
@@ -196,12 +194,12 @@ void draw_plot_view(uint8_t* fb, const ConsoleState& console_state)
         draw_plot_blip(fb, status.aircraft[i], range_nm);
     }
 
-    draw_footer_disclaimer(fb, status);
+    draw_footer_disclaimer(fb, status, now_ms);
 }
 
 } // namespace
 
-void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     const AirTrafficStatus& status = console_state.air_traffic_status;
 
@@ -236,17 +234,17 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state)
             screens::draw_centered_text(fb, kUiWidth / 2, 120, detail, true,
                                         fonts::FontFace::Font5x7, 1);
         }
-        draw_footer_disclaimer(fb, status);
+        draw_footer_disclaimer(fb, status, now_ms);
         return;
     }
 
     if (console_state.air_traffic_view_mode == AirTrafficViewMode::Plot)
     {
-        draw_plot_view(fb, console_state);
+        draw_plot_view(fb, console_state, now_ms);
     }
     else
     {
-        draw_tabular_view(fb, console_state);
+        draw_tabular_view(fb, console_state, now_ms);
     }
 }
 

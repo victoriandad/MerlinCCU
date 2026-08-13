@@ -8,7 +8,6 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
-#include "pico/time.h"
 #include "screens_shared.h"
 
 #if __has_include("weather_display_config.h")
@@ -414,7 +413,7 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 /// @brief Draws the weather-source attribution footer.
 /// @details Provenance stays visible even on summary views so it is obvious
 /// which backend is driving the weather data on the screen.
-void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
+void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
     constexpr int kFooterLineGap = 2;
@@ -425,9 +424,8 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state)
     char freshness_text[16] = {};
     screens::build_data_freshness_text(
         console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
-        console_state.home_assistant_status.weather_last_success_ms,
-        to_ms_since_boot(get_absolute_time()), kWeatherStaleAfterMs, freshness_text,
-        sizeof(freshness_text));
+        console_state.home_assistant_status.weather_last_success_ms, now_ms, kWeatherStaleAfterMs,
+        freshness_text, sizeof(freshness_text));
 
     char footer_label[80] = {};
     std::snprintf(footer_label, sizeof(footer_label), "%s - %s",
@@ -690,7 +688,7 @@ bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state
 
 } // namespace
 
-void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_weather_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     if (weather_source_is_stub(console_state.weather_source))
     {
@@ -785,7 +783,7 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
         }
         if (kWeatherConfigured)
         {
-            draw_weather_source_footer(fb, console_state);
+            draw_weather_source_footer(fb, console_state, now_ms);
         }
         return;
     }
@@ -806,7 +804,7 @@ void draw_weather_page(uint8_t* fb, const ConsoleState& console_state)
 
     if (kWeatherConfigured)
     {
-        draw_weather_source_footer(fb, console_state);
+        draw_weather_source_footer(fb, console_state, now_ms);
     }
 }
 

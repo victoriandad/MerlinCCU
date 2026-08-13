@@ -895,6 +895,30 @@ struct DisplayTimingStatus
     bool valid;
     uint16_t frame_rate_hz;
     uint32_t last_rebuild_us;
+    /// @brief `display::present_skipped_count()` at the same sample point.
+    /// Sampled here (issue #71) rather than read directly by
+    /// status_screens.cpp's Resources page, so that file stays free of
+    /// `display.h`'s `hardware/pio.h` dependency and is host-testable.
+    uint32_t present_skipped_count;
+};
+
+/// @brief Linked-image flash/RAM footprint, shown on the Resources status
+/// page.
+/// @details Sampled exactly once, in `make_default_console_state()` --
+/// unlike `HeapStatus`/`StackStatus`, these figures come from linker symbols
+/// fixed at build time, so they never change across a boot and don't need
+/// the periodic re-sampling those two get in `MerlinCCU.cpp`. Keeping the
+/// linker-symbol reads out of `screens.cpp`/`status_screens.cpp` entirely
+/// (issue #71) is what makes those files host-testable: the render layer
+/// just reads these plain fields instead of calling into `hardware/flash.h`.
+struct ImageFootprintStatus
+{
+    bool valid;
+    uint32_t program_flash_bytes;
+    uint32_t flash_budget_bytes;
+    uint32_t reserved_flash_bytes;
+    uint32_t static_ram_bytes;
+    uint32_t total_ram_bytes;
 };
 
 /// @brief One manually tracked Pinter vessel in the home brewing workflow.
@@ -964,6 +988,7 @@ struct ConsoleState
     MainLoopLoadStatus main_loop_load_status;
     HeapStatus heap_status;
     StackStatus stack_status;
+    ImageFootprintStatus image_footprint_status;
     DisplayTimingStatus display_timing_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;

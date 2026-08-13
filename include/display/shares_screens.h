@@ -15,6 +15,9 @@ namespace shares_screens
 void draw_shares_page(uint8_t* fb, const ConsoleState& console_state);
 
 /// @brief Draws one watched share's detail page.
-void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state);
+/// @details `now_ms` is the caller's boot-uptime sample (`to_ms_since_boot`)
+/// used for the data-freshness text -- passed in rather than read here so
+/// this file has no Pico SDK dependency (issue #71).
+void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms);
 
 } // namespace shares_screens

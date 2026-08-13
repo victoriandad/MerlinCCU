@@ -373,7 +373,8 @@ int main()
     }
     else if (active_mode == ScreenMode::Menu)
     {
-        screens::draw_menu_screen(framebuffer::back(), console_controller::state());
+        screens::draw_menu_screen(framebuffer::back(), console_controller::state(),
+                                  to_ms_since_boot(get_absolute_time()));
     }
     else
     {
@@ -405,7 +406,8 @@ int main()
     }
     else if (active_mode == ScreenMode::Menu)
     {
-        screens::draw_menu_screen(framebuffer::back(), console_controller::state());
+        screens::draw_menu_screen(framebuffer::back(), console_controller::state(),
+                                  to_ms_since_boot(get_absolute_time()));
         framebuffer::swap();
         display::present(framebuffer::front());
     }
@@ -626,7 +628,8 @@ int main()
             // unnecessary raster rebuilds while the screen is otherwise static.
             if (console_changed)
             {
-                screens::draw_menu_screen(framebuffer::back(), console_controller::state());
+                screens::draw_menu_screen(framebuffer::back(), console_controller::state(),
+                                  to_ms_since_boot(get_absolute_time()));
                 framebuffer::swap();
                 display::present(framebuffer::front());
             }
@@ -719,6 +722,7 @@ int main()
                         static_cast<uint64_t>(window_us),
                     UINT16_MAX)),
                 .last_rebuild_us = display::last_rebuild_us(),
+                .present_skipped_count = display::present_skipped_count(),
             };
             const bool timing_changed = console_controller::set_display_timing_status(timing_status);
             if (timing_changed &&

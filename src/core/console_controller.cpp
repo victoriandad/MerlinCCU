@@ -4457,7 +4457,9 @@ bool set_display_timing_status(const DisplayTimingStatus& status)
 {
     if (g_console_state.display_timing_status.valid == status.valid &&
         g_console_state.display_timing_status.frame_rate_hz == status.frame_rate_hz &&
-        g_console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us)
+        g_console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us &&
+        g_console_state.display_timing_status.present_skipped_count ==
+            status.present_skipped_count)
     {
         return false;
     }

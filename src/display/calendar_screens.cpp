@@ -5,7 +5,6 @@
 #include <cstdio>
 
 #include "console_model.h"
-#include "display.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"

@@ -6,12 +6,8 @@
 
 #include "config_manager.h"
 #include "console_model.h"
-#include "display.h"
 #include "framebuffer.h"
-#include "hardware/flash.h"
 #include "panel_config.h"
-#include "pico/time.h"
-#include "pinter_store.h"
 #include "screens_shared.h"
 
 namespace status_screens
@@ -19,30 +15,6 @@ namespace status_screens
 
 namespace
 {
-
-constexpr size_t kReservedFlashBytes =
-    config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes;
-constexpr size_t kProgramFlashBudgetBytes = PICO_FLASH_SIZE_BYTES - kReservedFlashBytes;
-
-extern "C"
-{
-extern const uint8_t __flash_binary_start;
-extern const uint8_t __flash_binary_end;
-// Provided by the Pico SDK's default linker script: __end__ is the end of
-// .data+.bss (the heap start), __StackLimit is the top of the linker's
-// contiguous RAM region (ORIGIN(RAM)+LENGTH(RAM)). Reading these directly
-// keeps the Resources page's static-RAM figure accurate to what actually
-// got linked instead of a hand-maintained guess -- see the "Memory budget
-// tracking" note in docs/architecture.md for why that guess drifted before.
-extern const uint8_t __end__;
-extern const uint8_t __StackLimit;
-}
-
-// RP2040/RP2350 SRAM is architecturally mapped at this fixed base for every
-// Pico/Pico W/Pico 2/Pico 2 W board; there is no linker symbol for the
-// region's own origin (only its length), so this is paired with
-// __StackLimit above to recover the true usable RAM size.
-constexpr uintptr_t kRamBaseAddress = 0x20000000U;
 
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)
@@ -265,35 +237,6 @@ void build_kib_text(size_t bytes, char* out, size_t out_size)
     std::snprintf(out, out_size, "%zuK", kib);
 }
 
-/// @brief Returns the linked image footprint that occupies programme flash.
-size_t program_flash_bytes()
-{
-    const uintptr_t start = reinterpret_cast<uintptr_t>(&__flash_binary_start);
-    const uintptr_t end = reinterpret_cast<uintptr_t>(&__flash_binary_end);
-    return (end > start) ? static_cast<size_t>(end - start) : 0U;
-}
-
-/// @brief Returns total static RAM used by the linked image (.data+.bss),
-/// i.e. everything below the heap start -- the real figure the "Any new
-/// large static buffer is a deliberate review point" rule in
-/// docs/architecture.md is meant to be checked against.
-size_t static_ram_bytes()
-{
-    const uintptr_t end = reinterpret_cast<uintptr_t>(&__end__);
-    return (end > kRamBaseAddress) ? static_cast<size_t>(end - kRamBaseAddress) : 0U;
-}
-
-/// @brief Returns the linker's usable contiguous RAM region size.
-/// @details This is the RP2350's main 512KiB SRAM bank as mapped by the
-/// default Pico SDK linker script; it is 8KiB smaller than the chip's full
-/// 520KB physical SRAM total since SRAM8/SRAM9 sit outside this contiguous
-/// region and are not part of the linked `RAM` output section.
-size_t total_ram_bytes()
-{
-    const uintptr_t limit = reinterpret_cast<uintptr_t>(&__StackLimit);
-    return (limit > kRamBaseAddress) ? static_cast<size_t>(limit - kRamBaseAddress) : 0U;
-}
-
 /// @brief Returns the REST status label used by status subpages.
 const char* home_assistant_rest_state_text(const ConsoleState& console_state,
                                            const RuntimeConfig& config)
@@ -388,10 +331,12 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 {
     constexpr size_t kConsoleStateBytes = sizeof(ConsoleState);
     constexpr size_t kUiFramebufferBytes = static_cast<size_t>(kUiFbSize) * 2U;
-    const size_t static_ram = static_ram_bytes();
-    const size_t total_ram = total_ram_bytes();
-
-    const size_t program_flash = program_flash_bytes();
+    const ImageFootprintStatus& footprint = console_state.image_footprint_status;
+    const size_t static_ram = footprint.static_ram_bytes;
+    const size_t total_ram = footprint.total_ram_bytes;
+    const size_t program_flash = footprint.program_flash_bytes;
+    const size_t flash_budget = footprint.flash_budget_bytes;
+    const size_t reserved_flash = footprint.reserved_flash_bytes;
 
     char flash_value_text[24] = {};
     char ram_value_text[24] = {};
@@ -410,8 +355,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     char heap_text[16] = {};
     char stack_text[16] = {};
     build_kib_text(program_flash, program_flash_text, sizeof(program_flash_text));
-    build_kib_text(kProgramFlashBudgetBytes, flash_budget_text, sizeof(flash_budget_text));
-    build_kib_text(kReservedFlashBytes, reserved_flash_text, sizeof(reserved_flash_text));
+    build_kib_text(flash_budget, flash_budget_text, sizeof(flash_budget_text));
+    build_kib_text(reserved_flash, reserved_flash_text, sizeof(reserved_flash_text));
     build_kib_text(static_ram, static_ram_text, sizeof(static_ram_text));
     build_kib_text(total_ram, ram_budget_text, sizeof(ram_budget_text));
     build_kib_text(kConsoleStateBytes, console_text, sizeof(console_text));
@@ -479,10 +424,11 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(rebuild_time_text, sizeof(rebuild_time_text), "-");
     }
     std::snprintf(present_skipped_text, sizeof(present_skipped_text), "%lu",
-                  static_cast<unsigned long>(display::present_skipped_count()));
+                  static_cast<unsigned long>(
+                      console_state.display_timing_status.present_skipped_count));
 
-    draw_resource_bar(fb, 54, 46, 160, 20, program_flash, kProgramFlashBudgetBytes,
-                      "PROGRAM FLASH", flash_value_text);
+    draw_resource_bar(fb, 54, 46, 160, 20, program_flash, flash_budget, "PROGRAM FLASH",
+                      flash_value_text);
     draw_resource_bar(fb, 54, 96, 160, 20, static_ram, total_ram, "STATIC RAM", ram_value_text);
 
     const screens::DetailRow rows[] = {
@@ -504,7 +450,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Draws local sensor health and readings.
-void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     char sensor_bus_text[24] = {};
     build_environment_bus_text(console_state.environment_sensor_status, sensor_bus_text,
@@ -529,7 +475,6 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
         // True elapsed age (issue #16's stale-data display policy), not the
         // raw boot-uptime timestamp this used to show -- that read like an
         // ever-growing "age" even seconds after a fresh scan.
-        const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
         const uint32_t scan_ms = console_state.environment_sensor_status.last_scan_ms;
         screens::build_elapsed_time_text(now_ms > scan_ms ? now_ms - scan_ms : 0U, sensor_scan_text,
                                          sizeof(sensor_scan_text));
@@ -565,7 +510,8 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Draws external integration state.
-void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_state,
+                                   uint32_t now_ms)
 {
     const RuntimeConfig& config = config_manager::settings();
     char http_text[12] = {};
@@ -593,7 +539,6 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     // Issue #16's stale-data display policy: same helper and "DEMO vs
     // freshness" split used by the Weather/Shares/Air Traffic pages, so this
     // summary page reads consistently with the pages it's summarizing.
-    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
     char weather_data_text[16] = {};
     screens::build_data_freshness_text(
         console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
@@ -632,7 +577,7 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
 
 } // namespace
 
-void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_status_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     switch (console_state.active_page)
     {
@@ -649,10 +594,10 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state)
         draw_status_resources_page(fb, console_state);
         break;
     case MenuPage::StatusSensors:
-        draw_status_sensors_page(fb, console_state);
+        draw_status_sensors_page(fb, console_state, now_ms);
         break;
     case MenuPage::StatusIntegrations:
-        draw_status_integrations_page(fb, console_state);
+        draw_status_integrations_page(fb, console_state, now_ms);
         break;
     default:
         break;

@@ -387,6 +387,90 @@ mismatches, a truncated final object, an empty array), per issue #72's
 acceptance criteria. The weather/HA and HTTP-framing parsers already had
 this kind of coverage from #46/#47 and weren't revisited.
 
+## Golden-Image Rendering Tests
+
+Issue #71 made `screens.cpp` and its eight page-family files
+(`status_screens.cpp`, `weather_screens.cpp`, `calendar_screens.cpp`,
+`shares_screens.cpp`, `pinter_screens.cpp`, `settings_screens.cpp`,
+`alert_screens.cpp`, `air_traffic_screens.cpp`) host-testable, and added
+pixel-snapshot regression tests so a layout bug (a softkey label overlapping
+content, a margin collision) fails a test run instead of needing a human to
+spot it on a screenshot -- the project's actual bug history per the issue.
+
+**What was blocking host-compilation, and how each was resolved:**
+
+- **`program_flash_bytes()`/`static_ram_bytes()`/`total_ram_bytes()`**
+  (`status_screens.cpp`, reading `hardware/flash.h`'s `PICO_FLASH_SIZE_BYTES`
+  and linker symbols `__flash_binary_start/end`, `__end__`, `__StackLimit`
+  directly during render) -- moved into a new `ImageFootprintStatus` field on
+  `ConsoleState`, computed exactly once in `make_default_console_state()`
+  (`console_model.cpp`, not itself host-compiled). Unlike `HeapStatus`/
+  `StackStatus`, these figures are fixed at link time, so a single
+  construction-time read is correct, not a periodic re-sample.
+- **`display::present_skipped_count()`** (`status_screens.cpp`, and
+  transitively `display.h`'s `hardware/pio.h`) -- added as a third field on
+  the existing `DisplayTimingStatus` (which already periodically samples
+  `frame_count()`/`last_rebuild_us()` in `MerlinCCU.cpp`), so
+  `status_screens.cpp` no longer includes `display.h` at all.
+- **`to_ms_since_boot(get_absolute_time())`** (5 call sites across
+  `status_screens.cpp`, `weather_screens.cpp`, `shares_screens.cpp`,
+  `air_traffic_screens.cpp`, each computing "now" for data-freshness text) --
+  threaded as an explicit `now_ms` parameter from `screens::draw_menu_screen()`
+  down through each page family's public entry point, matching
+  `build_data_freshness_text()`'s own existing `now_ms` parameter. The one
+  real caller (`MerlinCCU.cpp`) now passes `to_ms_since_boot(get_absolute_time())`
+  at the call site instead of each renderer reading it independently -- and
+  golden tests get a deterministic, caller-chosen timestamp instead of real
+  wall-clock time, which pixel-snapshot tests need to be reproducible at all.
+- **`PICO_ERROR_NONE`** (`screens.cpp`, one comparison in the Local
+  Conditions air-quality metric) -- replaced with a locally named
+  `kNoErrorCode = 0`; that constant is stable across the Pico SDK, so this
+  isn't a behaviour change, just removing a header dependency for one literal.
+- **`uint` in `panel_config.h`** (`kPinBase`, needing `pico/stdlib.h` purely
+  for that typedef) -- changed to `unsigned int` (the same type). This let
+  `panel_config.h` -- and therefore `kUiWidth`/`kUiHeight`/`kUiStride`/
+  `kUiFbSize`, which every rendering file depends on -- drop its Pico SDK
+  include entirely.
+- **`config_manager::settings()`** (called by `screen_banners.cpp`, which
+  every page renders through, plus two Status subpages) and
+  **`environment_sensor_manager::air_quality_band_text()`** (a pure
+  score-to-label mapping embedded in the I2C-driving sensor manager, linked
+  in via `screens.cpp`'s Local Conditions renderer even though no golden test
+  exercises that page) -- both have real implementations that pull in
+  `hardware/*`/`pico/*` headers with no small pure slice worth extracting for
+  this issue alone, so both got host-only stub implementations in
+  `tests/host/stubs/`, matching the `time_manager_stub.cpp` precedent from
+  issue #47. The `config_manager` stub returns a default-constructed
+  `RuntimeConfig`; the `environment_sensor_manager` stub is a byte-for-byte
+  copy of the real banding thresholds/labels (kept in sync by hand, not a
+  fake, since it's small and rarely changes).
+- **A stray `#include "display.h"`** in `calendar_screens.cpp` (unused --
+  left over from issue #45's split) and **`screens.cpp`'s own unused
+  `#include "display.h"`** were both just deleted.
+
+**The golden-image harness itself** (`tests/host/golden_test_support.h/.cpp`,
+`tests/host/test_golden_screens.cpp`): a golden is a `P4` (binary) PBM file
+under `tests/host/golden/<name>.pbm` -- the UI framebuffer's own row-major,
+MSB-first 1bpp packing (`panel_config.h`'s `kUiStride`) is already a valid
+PBM bitplane, so a golden file is just that raw buffer with a `P4\n<width>
+<height>\n` text header prepended, making it directly openable in any
+PBM-aware image viewer. `golden_test::check_golden(name, fb)` compares
+byte-for-byte; on mismatch it reports the first differing pixel's (x, y) and
+writes the actual render alongside the golden as `<name>.actual.pbm`
+(git-ignored) for inspection. **Regenerating goldens after a deliberate
+layout change** is one command: `MERLINCCU_REGENERATE_GOLDEN=1` (any
+non-empty value) in the environment before running `host_tests` rewrites
+every golden the run touches -- inspect the diff before committing it, same
+as any other generated-file review.
+
+Covers the issue's named pages (Calendar, Calendar Detail, Status Resources,
+Share Detail, Settings, Keypad Debug) -- 6 `HOST_TEST` cases, each building a
+minimal but deterministic `ConsoleState` fixture and rendering through the
+real `screens::draw_menu_screen()` dispatch, not a shortcut. Verified the
+harness actually catches a regression (not just a pass-through) by
+temporarily shifting `shares_screens.cpp`'s detail-row `start_y` by 16px --
+it failed at the exact expected pixel, then was reverted before committing.
+
 ## Multicore Admission Checklist
 
 Do not move work to core 1 until these are true:
@@ -470,4 +554,5 @@ hardware headers to compile.
 | 2026-08-13 | Fixed a two-part proportions regression in the web Display Preview page (`web_config_server.cpp`'s `build_preview_page()`) left over from issue #79's pixel-for-pixel canvas fix. Part one: `--rect-key-w`/`--rect-key-h`/`--font-small`/`--font-large` (top-row and A-Z keypad matrix buttons) were never scaled down when the display panel shrank ~25% (358x450 -> 270x338) to render at native resolution, so the keys read as oversized; `.display-shell` also had no `justify-content`, so the now-narrower display+softkey column left-aligned within `.display-bay` while the (justify-content:center) top-row/keypad stayed centered, reading as the whole preview shifted left -- fixed by scaling the four CSS variables by the same ~0.75 factor (78/56/12/18px -> 59/42/9/14px) and adding `justify-content:center` to `.display-shell`. Part two, found from a follow-up screenshot after part one shipped: with the keypad/display now genuinely smaller, the outer `.ccu`/`.ccu-fixed` panel (still hardcoded to the original 560px) and the `.display-bay`/`.keybed` background boxes (both stretching to fill their block-level parent's full width by default) left a large empty margin around the shrunk content -- fixed by shrinking `.ccu`/`.ccu-fixed` to 472px (keeping the same ~18px slack around the widest row, `.display-shell` at 426px, that the original 560px/514px pairing had) and giving `.display-bay`/`.keybed` `width:fit-content;margin:...auto 0` so they hug their content instead of stretching. | User reported the regression with a screenshot after this session's #72 work merged, then reported a second, related regression ("now the ccu is too wide") from a follow-up screenshot once part one was pushed -- both root-caused via reading the actual CSS box model rather than guesswork, tracing the underlying cause to the same commit `02eb726` (#79) leaving several sibling elements unscaled/unstretched when it shrank the display panel. | Not visually verified in a browser this session -- no way to run the Pico's actual HTTP server or a dev-server equivalent for this embedded page locally; both fixes are CSS-only, worked out by hand from the exact box-model math and verified by clean firmware rebuilds only. Ask the user to confirm the preview looks right before considering issue #79 fully closed -- a third round of adjustment wouldn't be surprising given the first two both missed a sibling element. |
 | 2026-08-13 | Split the Calendar page family (shared calendar overview, event-detail page) out of `screens.cpp` into `calendar_screens.cpp`, continuing issue #45's staged split (Status: 2026-07-08, Weather: 2026-07-09). Owner-label lookup, weekday/relative-day text formatting, and the footer arrow drawing all moved together since they're Calendar-only; the shared `screens_shared.h` primitives (`DetailRow`/`draw_compact_detail_rows`/`draw_centered_text`) stayed put and are called through the `screens::` qualifier, matching the Status/Weather precedent. `screens.cpp` dropped from 2195 to 1950 lines with no rendering change (verified via clean firmware rebuild). | Continues the staged `screens.cpp` split rather than attempting Shares/Pinter/Settings/Alerts in the same pass -- picked Calendar as the next candidate since it was fully self-contained (no helpers shared with any other still-in-file page family, unlike Shares' graph-plotting helpers which Local Conditions Graph also needs). | Shares, Pinter, Settings, and Alerts remain in `screens.cpp`. Settings in particular bundles 11 `MenuPage` sub-pages (Device/Wifi/HomeAssistant/Mqtt/AirTraffic/ScreenSaver/WeatherSources/TimeZone/Alignment/KeypadDebug/GreyscaleTest) behind mostly-stub bodies and is a worse first pick than the others -- likely worth its own scoped follow-up rather than one more "move everything" pass. Local Conditions/Local Conditions Graph also still live in `screens.cpp`, sharing graph-plotting helpers with the not-yet-split Shares detail page; whichever of the two moves first will need to promote those helpers into `screens_shared.h`. |
 | 2026-08-13 | Finished issue #45's staged `screens.cpp` split: Pinter, Shares, Settings, and Alert pages moved into `pinter_screens.cpp`, `shares_screens.cpp`, `settings_screens.cpp`, and `alert_screens.cpp` respectively, following the same pattern as the earlier Status/Weather/Calendar splits. Two helper groups needed promoting into `screens_shared.h` first since code on both sides of a split needed them: the graph-plotting primitives (`GraphPlotArea`/`draw_graph_plot_border`/`graph_plot_x`/`graph_plot_y`, needed by both the moved Shares history graph and the still-in-file Local Conditions history graph) and the softkey-bracket-drawing primitive (`draw_softkey_selection_brackets`, needed by both the core softkey-label renderer that stays in `screens.cpp` and Settings' screen-saver timeout scratchpad that moved out). `screens.cpp`: 1950 -> 1455 lines (3319 -> 1455 across the whole staged effort since 2026-07-08, a 56% reduction). No rendering change -- pure code motion, verified via full clean firmware rebuild. Closes #45. | User explicitly asked to keep splitting until the issue could be closed, after the Calendar-only PR left it open. Settings had been flagged as the worst next candidate (11 mostly-stub sub-pages) in the prior entry, but turned out mechanically straightforward once actually attempted -- the placeholder bodies meant most of its bulk was `(void)fb; (void)console_state;` pairs, not real logic to untangle. | Local Conditions and Local Conditions Graph remain in `screens.cpp` -- deliberately, since the issue's own scope list never named them, and they share the newly-promoted graph-plotting helpers with Shares rather than needing their own split. `screens.cpp` is now down to: shared/exposed primitives, `menu_page_title`, the Home page, `draw_demo_screen`/`draw_calibration_screen` (non-menu diagnostic screens), and `draw_menu_screen`'s dispatch -- a reasonable long-term shape per the issue's acceptance criteria ("reduced to shared helpers and dispatch, or otherwise materially smaller"). |
+| 2026-08-13 | Added golden-image (pixel snapshot) regression tests for `screens.cpp` rendering (issue #71). Made the whole render layer host-testable first: moved `program_flash_bytes`/`static_ram_bytes`/`total_ram_bytes` (previously read live from linker symbols during every Resources-page render) into a new `ImageFootprintStatus` field on `ConsoleState`, sampled once at construction; added `present_skipped_count` to the existing `DisplayTimingStatus`; threaded an explicit `now_ms` parameter through `screens::draw_menu_screen()` and the 5 call sites that previously called `to_ms_since_boot(get_absolute_time())` directly; dropped `panel_config.h`'s `pico/stdlib.h` dependency (one `uint` typedef, changed to `unsigned int`); stubbed `config_manager::settings()` and `environment_sensor_manager::air_quality_band_text()` for the host build (both have real implementations with real hardware dependencies not worth extracting for this issue alone). Added `tests/host/golden_test_support.h/.cpp` (PBM-based goldens, byte-compare with pixel-coordinate diagnostics on mismatch, `MERLINCCU_REGENERATE_GOLDEN=1` to regenerate) and `test_golden_screens.cpp` covering Calendar, Calendar Detail, Status Resources, Share Detail, Settings, and Keypad Debug. Bumped `tests/host/`'s C++ standard to 20 (MSVC has no GNU-extensions mode, and the firmware's `-std=gnu++17` accepts designated initializers -- several `ConsoleState`-adjacent structs use them -- that strict C++17 doesn't). See the new "Golden-Image Rendering Tests" section above for the full list of what was blocking host-compilation and how each was resolved. | User asked to look closer at the exact blocking call sites before choosing between a clean refactor (inject dependencies, sample linker-symbol reads once) and host-only stub headers; the closer look found more blockers than the issue's own text described (3 linker-symbol-reading functions, not 1, plus `present_skipped_count`, `config_manager::settings()`, and a stray unused `#include "display.h"` inherited from issue #45's split) -- proceeded with the clean-refactor approach throughout except where the real implementation was itself hardware-bound (`config_manager`, `environment_sensor_manager`), which got stubs matching the issue #47 precedent instead. | Verified the harness catches real regressions, not just passes trivially, by deliberately shifting a coordinate in `shares_screens.cpp` and confirming the golden test failed at the exact expected pixel before reverting. Local Conditions/Local Conditions Graph and the remaining ~19 renderer functions have no golden coverage yet -- the issue's acceptance criteria named 4 pages as the minimum ("at least"), not full coverage; extending to more pages is straightforward now that the host-compilation blockers are cleared, just needs fixture data per page. None of this was run against real hardware -- the goldens are pixel-exact captures of *this session's* render output, not independently verified against a physical panel photograph. |
 | YYYY-MM-DD |  |  |  |

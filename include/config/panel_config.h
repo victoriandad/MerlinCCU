@@ -1,7 +1,5 @@
 #pragma once
 
-#include "pico/stdlib.h"
-
 /// @brief Describes one panel mounting and timing setup.
 /// @details The firmware works with two coordinate systems:
 /// - UI space: portrait-oriented coordinates used by drawing code.
@@ -33,7 +31,11 @@ struct PanelConfig
 };
 
 /// @brief GPIO2..GPIO5 = VID,VCLK,HS,VS.
-inline constexpr uint kPinBase = 2;
+/// @details `unsigned int` rather than the Pico SDK's `uint` typedef (an
+/// identical type) so this header has no Pico SDK dependency -- it's
+/// otherwise pure UI/panel geometry and needs to stay host-includable
+/// (issue #71).
+inline constexpr unsigned int kPinBase = 2;
 
 /// @brief Panel timing and geometry for the current EL320 portrait mounting.
 /// @details These values are the empirically stable timing neighborhood used

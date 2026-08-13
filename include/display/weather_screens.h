@@ -12,6 +12,9 @@ namespace weather_screens
 {
 
 /// @brief Draws the live weather page reached directly from Home.
-void draw_weather_page(uint8_t* fb, const ConsoleState& console_state);
+/// @details `now_ms` is the caller's boot-uptime sample (`to_ms_since_boot`)
+/// used for the source footer's data-freshness text -- passed in rather than
+/// read here so this file has no Pico SDK dependency (issue #71).
+void draw_weather_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms);
 
 } // namespace weather_screens
