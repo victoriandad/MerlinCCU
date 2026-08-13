@@ -702,8 +702,8 @@ void build_config_page(const char* message)
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Watched Shares</h2><p class=\"hint\">Up to %u "
                  "symbols shown on the Shares page. Leave Symbol blank to remove a row; live "
-                 "quotes are demo-only until issue #42's local feed replaces the direct "
-                 "provider fetch.</p>",
+                 "quotes are demo-only until the Share Price Feed below is enabled and a fetch "
+                 "succeeds.</p>",
                  static_cast<unsigned>(kMaxWatchedShares));
     for (size_t i = 0; i < kMaxWatchedShares; ++i)
     {
@@ -720,6 +720,21 @@ void build_config_page(const char* message)
                      static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1), share_name);
     }
     (void)append(cursor, remaining, "</section>");
+
+    (void)append(
+        cursor, remaining,
+        "<section class=\"card\"><h2>Share Price Feed</h2><input type=\"hidden\" "
+        "name=\"shares_feed_enabled_present\" value=\"1\"><label class=\"check\"><input "
+        "type=\"checkbox\" name=\"shares_feed_enabled\" %s>Enable local share feed</label>"
+        "<p class=\"hint\">Reuses the Home Assistant host/port configured above -- expects a "
+        "small local endpoint at <code>GET /api/merlinccu/shares?period=...</code>, typically a "
+        "Home Assistant REST command or template. See docs/share-feed-design.md for the full "
+        "contract and setup options.</p><label>Feed token (optional)</label><input "
+        "name=\"shares_feed_token\" type=\"password\" placeholder=\"Leave blank to keep "
+        "current\"><p class=\"hint\">Sent as an Authorization: Bearer header if set -- separate "
+        "from the Home Assistant token above since it authorizes a different endpoint.</p>"
+        "</section>",
+        cfg.shares_feed_enabled ? "checked" : "");
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
@@ -2270,7 +2285,8 @@ const char* handle_config_post(const char* body)
     if (!form_has_key(body, "config_form_marker") ||
         !form_has_key(body, "remote_config_present") || !form_has_key(body, "ha_enabled_present") ||
         !form_has_key(body, "mqtt_enabled_present") ||
-        !form_has_key(body, "air_traffic_enabled_present"))
+        !form_has_key(body, "air_traffic_enabled_present") ||
+        !form_has_key(body, "shares_feed_enabled_present"))
     {
         std::printf("Web config save rejected: incomplete form payload; reload required\n");
         return "Configuration not saved: configuration page was incomplete. Reload and try again.";
@@ -2597,6 +2613,19 @@ const char* handle_config_post(const char* body)
         }
     }
     cfg.watched_share_count = static_cast<uint8_t>(kMaxWatchedShares);
+
+    cfg.shares_feed_enabled = form_has_key(body, "shares_feed_enabled");
+    if (get_form_value(body, "shares_feed_token", value, sizeof(value)) && value[0] != '\0')
+    {
+        if (!validate_text_field("Share feed token", value, cfg.shares_feed_token.size() - 1, true,
+                                 is_printable_config_text, validation_error,
+                                 sizeof(validation_error)))
+        {
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        copy_text(cfg.shares_feed_token, value);
+    }
 
     if (get_form_value(body, "time_zone", value, sizeof(value)))
     {

@@ -17,9 +17,10 @@ namespace config_persistence
 {
 
 inline constexpr uint32_t kConfigMagic = 0x4D434355U; // "MCCU"
-inline constexpr uint16_t kConfigVersion = 3;
+inline constexpr uint16_t kConfigVersion = 4;
 inline constexpr uint16_t kLegacyConfigVersion = 1;
 inline constexpr uint16_t kLegacyConfigVersionV2 = 2;
+inline constexpr uint16_t kLegacyConfigVersionV3 = 3;
 inline constexpr uint16_t kMaxScreenSaverTimeoutMinutes = 120U;
 /// @brief Widest ADS-B search radius accepted, matching common provider limits.
 inline constexpr uint16_t kMaxAirTrafficRadiusNm = 250U;
@@ -146,6 +147,67 @@ struct LegacyConfigSlotV2
     LegacyRuntimeConfigV2 settings;
 };
 
+/// @brief Runtime configuration layout used by config version 3.
+/// @details This mirrors the RuntimeConfig payload as it existed immediately
+/// before the local share-price feed fields were added (issue #42), so
+/// existing saved settings -- including the issue #9 watchlist -- migrate
+/// forward without loss.
+struct LegacyRuntimeConfigV3
+{
+    std::array<char, 32> device_name;
+    std::array<char, 32> device_label;
+    std::array<char, 32> location;
+    std::array<char, 32> room;
+    bool remote_config_enabled;
+
+    std::array<char, 33> wifi_ssid;
+    std::array<char, 64> wifi_password;
+
+    bool home_assistant_enabled;
+    std::array<char, 64> home_assistant_host;
+    uint16_t home_assistant_port;
+    std::array<char, 128> home_assistant_token;
+    std::array<char, 64> home_assistant_entity_id;
+    std::array<char, 64> home_assistant_self_entity_id;
+    std::array<char, 64> weather_entity_id;
+    std::array<char, 64> sun_entity_id;
+    std::array<char, 64> weather_coordinates;
+
+    bool mqtt_enabled;
+    std::array<char, 64> mqtt_host;
+    uint16_t mqtt_port;
+    std::array<char, 64> mqtt_username;
+    std::array<char, 64> mqtt_password;
+    std::array<char, 32> mqtt_discovery_prefix;
+    std::array<char, 64> mqtt_base_topic;
+
+    bool air_traffic_enabled;
+    std::array<char, 64> air_traffic_host;
+    uint16_t air_traffic_port;
+    std::array<char, 128> air_traffic_api_key;
+    std::array<char, 64> air_traffic_coordinates;
+    uint16_t air_traffic_radius_nm;
+
+    WeatherSource weather_source;
+    TimeZoneSelection time_zone;
+    ScreenSaverSelection screen_saver;
+    uint16_t screen_saver_timeout_minutes;
+
+    uint8_t watched_share_count;
+    std::array<WatchedShareConfig, kMaxWatchedShares> watched_shares;
+};
+
+struct LegacyConfigSlotV3
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint32_t sequence;
+    uint32_t payload_size;
+    uint32_t crc32;
+    LegacyRuntimeConfigV3 settings;
+};
+
 /// @brief One configuration candidate read from a flash slot, valid or not.
 struct ConfigCandidate
 {
@@ -166,11 +228,17 @@ bool validate_legacy_slot_v1(const LegacyConfigSlotV1& slot);
 /// @brief Returns true when a stored legacy (v2) slot header and payload are valid.
 bool validate_legacy_slot_v2(const LegacyConfigSlotV2& slot);
 
+/// @brief Returns true when a stored legacy (v3) slot header and payload are valid.
+bool validate_legacy_slot_v3(const LegacyConfigSlotV3& slot);
+
 /// @brief Converts a validated legacy (v1) settings payload to the current layout.
 RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy);
 
 /// @brief Converts a validated legacy (v2) settings payload to the current layout.
 RuntimeConfig migrate_legacy_settings_v2(const LegacyRuntimeConfigV2& legacy);
+
+/// @brief Converts a validated legacy (v3) settings payload to the current layout.
+RuntimeConfig migrate_legacy_settings_v3(const LegacyRuntimeConfigV3& legacy);
 
 /// @brief Returns the default watchlist seeded for new/migrated configurations.
 /// @details Reproduces the single BAE Systems placeholder watched pre-#9, so

@@ -10,8 +10,10 @@ using config_persistence::ConfigCandidate;
 using config_persistence::ConfigSlot;
 using config_persistence::LegacyConfigSlotV1;
 using config_persistence::LegacyConfigSlotV2;
+using config_persistence::LegacyConfigSlotV3;
 using config_persistence::LegacyRuntimeConfigV1;
 using config_persistence::LegacyRuntimeConfigV2;
+using config_persistence::LegacyRuntimeConfigV3;
 
 namespace
 {
@@ -187,6 +189,59 @@ HOST_TEST(validate_legacy_slot_v2_accepts_a_correctly_built_slot)
                                           sizeof(LegacyRuntimeConfigV2));
 
     EXPECT_TRUE(config_persistence::validate_legacy_slot_v2(slot));
+}
+
+HOST_TEST(migrate_legacy_settings_v3_carries_every_field_forward)
+{
+    LegacyRuntimeConfigV3 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName3");
+    text_utils::copy_text(legacy.home_assistant_host, "ha3.local");
+    legacy.watched_share_count = 2U;
+    text_utils::copy_text(legacy.watched_shares[0].symbol, "AAA");
+    text_utils::copy_text(legacy.watched_shares[0].display_name, "Alpha Co");
+    text_utils::copy_text(legacy.watched_shares[1].symbol, "BBB");
+    legacy.mqtt_port = 1886;
+    legacy.screen_saver_timeout_minutes = 9;
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v3(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName3") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_host.data(), "ha3.local") == 0);
+    EXPECT_EQ(migrated.watched_share_count, 2U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].symbol.data(), "AAA") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].display_name.data(), "Alpha Co") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[1].symbol.data(), "BBB") == 0);
+    EXPECT_EQ(migrated.mqtt_port, 1886U);
+    EXPECT_EQ(migrated.screen_saver_timeout_minutes, 9U);
+    // The share feed did not exist in v3 either; migration must come back
+    // with an explicit, safe default (disabled, no token) rather than
+    // leftover/uninitialized memory.
+    EXPECT_FALSE(migrated.shares_feed_enabled);
+    EXPECT_EQ(migrated.shares_feed_token[0], '\0');
+}
+
+HOST_TEST(validate_legacy_slot_v3_accepts_a_correctly_built_slot)
+{
+    LegacyRuntimeConfigV3 legacy = {};
+    text_utils::copy_text(legacy.device_name, "V3Device");
+    LegacyConfigSlotV3 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV3;
+    slot.sequence = 4U;
+    slot.payload_size = sizeof(LegacyRuntimeConfigV3);
+    slot.settings = legacy;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(LegacyRuntimeConfigV3));
+
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v3(slot));
+}
+
+HOST_TEST(make_default_settings_disables_the_shares_feed_by_default)
+{
+    const RuntimeConfig settings = config_persistence::make_default_settings();
+
+    EXPECT_FALSE(settings.shares_feed_enabled);
+    EXPECT_EQ(settings.shares_feed_token[0], '\0');
 }
 
 HOST_TEST(sanitize_settings_drops_blank_symbol_rows_and_compacts_the_count)

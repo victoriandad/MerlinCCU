@@ -10,11 +10,9 @@
 #include "config_manager.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
-#include "lwip/altcp_tls.h"
 #include "lwip/dns.h"
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
-#include "mbedtls/ssl.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "text_utils.h"
@@ -25,29 +23,32 @@ namespace share_price_manager
 namespace
 {
 
-// Legacy direct provider endpoint. Keep disabled until replaced by the
-// Home Assistant/local share-feed client tracked in issue #42.
-constexpr char kProviderHost[] = "query1.finance.yahoo.com";
-constexpr uint16_t kProviderPort = 443U;
 constexpr uint32_t kResolveTimeoutMs = 4000U;
-constexpr uint32_t kConnectTimeoutMs = 6000U;
-constexpr uint32_t kIoTimeoutMs = 6000U;
+constexpr uint32_t kConnectTimeoutMs = 5000U;
+constexpr uint32_t kIoTimeoutMs = 5000U;
 constexpr uint32_t kRetryDelayMs = 60U * 1000U;
 constexpr uint32_t kRefreshIntervalMs = 5U * 60U * 1000U;
-constexpr size_t kRequestBufferSize = 768U;
-// Keep the response buffer comfortably above one-symbol chart payload sizes
-// while avoiding unnecessary pressure on shared heap headroom.
-constexpr size_t kResponseBufferSize = 16384U;
+constexpr size_t kRequestBufferSize = 512U;
+// The local feed's compact multi-share JSON (issue #42) is far smaller than
+// Yahoo's single-symbol chart payload was; shrunk from 16KB to reclaim
+// static RAM -- see docs/architecture.md's Memory budget tracking, headroom
+// is tight.
+constexpr size_t kResponseBufferSize = 4096U;
 constexpr size_t kMaxParsedHistoryValues = 256U;
-/// @brief Keeps direct third-party fetching off the Pico while the local feed is designed.
-constexpr bool kEnableLiveShareFetch = false;
+constexpr uint16_t kDefaultPort = 8123U; // Home Assistant's default port
 
 ShareMarketStatus g_status = {};
+char g_configured_host[64] = {};
+uint16_t g_configured_port = kDefaultPort;
+char g_configured_token[128] = {};
+uint8_t g_configured_share_count = 0U;
+std::array<WatchedShareConfig, kMaxWatchedShares> g_configured_watched_shares = {};
+bool g_config_valid = false;
+
 ip_addr_t g_resolved_ip = {};
 bool g_dns_pending = false;
 bool g_dns_resolved = false;
 altcp_pcb* g_pcb = nullptr;
-struct altcp_tls_config* g_tls_config = nullptr;
 size_t g_request_sent = 0U;
 size_t g_response_len = 0U;
 char g_request[kRequestBufferSize] = {};
@@ -106,7 +107,11 @@ void seed_placeholder_quote(ShareWatchEntry& share)
 
 /// @brief Rebuilds the watchlist from the user-configured symbols so the UI
 /// reflects the current watched_share_count/watched_shares config on every
-/// tick, matching how init() and update() both need to see config edits.
+/// tick while the local feed is disabled or unconfigured. Once the feed is
+/// active, symbol/display_name changes are instead picked up through
+/// runtime_config_changed() -> init(), so a live fetch's real price/history
+/// isn't wiped between successful refreshes -- see update()'s "!g_config_valid"
+/// branch and the comment on g_configured_watched_shares.
 void seed_from_config(ShareMarketStatus& status)
 {
     const RuntimeConfig& config = config_manager::settings();
@@ -135,27 +140,79 @@ void seed_from_config(ShareMarketStatus& status)
     }
 }
 
-/// @brief Returns legacy Yahoo chart range/interval parameters for one CCU period.
-const char* period_query(SharePeriod period)
+/// @brief Returns the local feed's period query-string value for one CCU period.
+const char* period_query_value(SharePeriod period)
 {
     switch (period)
     {
     case SharePeriod::Today:
-        return "range=1d&interval=5m";
+        return "today";
     case SharePeriod::Week:
-        return "range=5d&interval=15m";
+        return "week";
     case SharePeriod::Month:
-        return "range=1mo&interval=1d";
+        return "month";
     case SharePeriod::Year:
-        return "range=1y&interval=1wk";
+        return "year";
     case SharePeriod::AllTime:
-        return "range=max&interval=1mo";
+        return "all_time";
     }
 
-    return "range=1d&interval=5m";
+    return "today";
 }
 
-/// @brief Removes callbacks from the current TCP/TLS control block before close/abort.
+/// @brief Re-reads config and returns false if the feature isn't usable yet.
+/// @details Reuses the configured Home Assistant host/port (issue #42's
+/// proposed contract) rather than a dedicated host field -- the feed is
+/// expected to live on the same box as Home Assistant (a REST command,
+/// template, or small local proxy), not a separate third-party endpoint.
+bool refresh_config()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    g_configured_share_count = config.watched_share_count;
+    g_configured_watched_shares = config.watched_shares;
+    if (!config.shares_feed_enabled || config.home_assistant_host[0] == '\0')
+    {
+        return false;
+    }
+
+    std::snprintf(g_configured_host, sizeof(g_configured_host), "%s",
+                  config.home_assistant_host.data());
+    g_configured_port =
+        (config.home_assistant_port != 0U) ? config.home_assistant_port : kDefaultPort;
+    std::snprintf(g_configured_token, sizeof(g_configured_token), "%s",
+                  config.shares_feed_token.data());
+    return true;
+}
+
+/// @brief Returns whether the active config differs from what was last used.
+/// @details Also fires on a watchlist edit (issue #9), not just host/token
+/// changes -- symbol/display_name are only re-seeded from config through
+/// init(), see seed_from_config()'s comment.
+bool runtime_config_changed()
+{
+    const RuntimeConfig& config = config_manager::settings();
+    const bool was_configured = g_config_valid;
+    const bool now_configured = config.shares_feed_enabled && config.home_assistant_host[0] != '\0';
+    if (was_configured != now_configured)
+    {
+        return true;
+    }
+    if (config.watched_share_count != g_configured_share_count ||
+        config.watched_shares != g_configured_watched_shares)
+    {
+        return true;
+    }
+    if (!now_configured)
+    {
+        return false;
+    }
+
+    return std::strcmp(g_configured_host, config.home_assistant_host.data()) != 0 ||
+           g_configured_port != config.home_assistant_port ||
+           std::strcmp(g_configured_token, config.shares_feed_token.data()) != 0;
+}
+
+/// @brief Removes callbacks from the current TCP control block before close/abort.
 void clear_connection_callbacks(altcp_pcb* pcb)
 {
     if (pcb == nullptr)
@@ -170,16 +227,11 @@ void clear_connection_callbacks(altcp_pcb* pcb)
     altcp_poll(pcb, nullptr, 0);
 }
 
-/// @brief Closes the active socket and releases its TLS configuration.
+/// @brief Closes the active socket, if any.
 void close_pcb()
 {
     if (g_pcb == nullptr)
     {
-        if (g_tls_config != nullptr)
-        {
-            altcp_tls_free_config(g_tls_config);
-            g_tls_config = nullptr;
-        }
         return;
     }
 
@@ -193,12 +245,6 @@ void close_pcb()
         altcp_abort(pcb);
     }
     cyw43_arch_lwip_end();
-
-    if (g_tls_config != nullptr)
-    {
-        altcp_tls_free_config(g_tls_config);
-        g_tls_config = nullptr;
-    }
 }
 
 /// @brief Resets one in-flight network attempt while preserving the last data snapshot.
@@ -279,9 +325,10 @@ bool chunked_response_complete()
 }
 
 /// @brief Decodes an HTTP chunked response body in-place.
-/// @details Yahoo currently returns chart JSON with `Transfer-Encoding:
-/// chunked`. The Pico parser wants a contiguous JSON body, so this strips the
-/// chunk framing once the connection closes.
+/// @details Home Assistant's REST/template responses commonly use
+/// `Transfer-Encoding: chunked` rather than a fixed Content-Length, so this
+/// stays provider-agnostic infrastructure rather than something specific to
+/// the old Yahoo path it was written for.
 char* normalised_response_body()
 {
     char* body = const_cast<char*>(response_body());
@@ -363,7 +410,7 @@ void finish_success(int http_status)
 }
 
 /// @brief Defers request completion until the main update loop is back in control.
-/// @details lwIP callbacks must not close or replace the active TLS PCB while
+/// @details lwIP callbacks must not close or replace the active PCB while
 /// lwIP is still unwinding the callback. Period changes make that re-entrancy
 /// much more likely, so callbacks only record the outcome here.
 void defer_completion(bool success, err_t err, int http_status)
@@ -386,37 +433,59 @@ const char* skip_json_space(const char* cursor)
     return cursor;
 }
 
-/// @brief Extracts one unescaped JSON string scalar by key.
-bool extract_json_string(const char* json, const char* key, char* out, size_t out_size)
+/// @brief Finds the first occurrence of `key` within `[start, end)`.
+const char* find_bounded(const char* start, const char* end, const char* key)
 {
-    if (json == nullptr || key == nullptr || out == nullptr || out_size == 0U)
+    const size_t key_len = std::strlen(key);
+    if (key_len == 0U || end <= start)
     {
-        return false;
+        return nullptr;
     }
 
-    const char* cursor = std::strstr(json, key);
+    const size_t range_len = static_cast<size_t>(end - start);
+    if (key_len > range_len)
+    {
+        return nullptr;
+    }
+
+    for (const char* p = start; p <= end - key_len; ++p)
+    {
+        if (std::strncmp(p, key, key_len) == 0)
+        {
+            return p;
+        }
+    }
+
+    return nullptr;
+}
+
+/// @brief Extracts one bounded JSON string scalar by key.
+bool extract_bounded_string(const char* start, const char* end, const char* key, char* out,
+                            size_t out_size)
+{
+    const char* cursor = find_bounded(start, end, key);
     if (cursor == nullptr)
     {
         return false;
     }
 
     cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr)
+    if (cursor == nullptr || cursor >= end)
     {
         return false;
     }
 
     cursor = skip_json_space(cursor + 1);
-    if (cursor == nullptr || *cursor != '"')
+    if (cursor == nullptr || cursor >= end || *cursor != '"')
     {
         return false;
     }
 
     ++cursor;
     size_t write_index = 0U;
-    while (*cursor != '\0' && *cursor != '"' && write_index + 1U < out_size)
+    while (cursor < end && *cursor != '"' && write_index + 1U < out_size)
     {
-        if (*cursor == '\\' && cursor[1] != '\0')
+        if (*cursor == '\\' && (cursor + 1) < end)
         {
             ++cursor;
         }
@@ -427,36 +496,84 @@ bool extract_json_string(const char* json, const char* key, char* out, size_t ou
     return write_index > 0U;
 }
 
-/// @brief Extracts one JSON numeric scalar by key.
-bool extract_json_number(const char* json, const char* key, double* out_value)
+/// @brief Extracts one bounded JSON numeric scalar by key.
+bool extract_bounded_number(const char* start, const char* end, const char* key, double* out_value)
 {
-    if (json == nullptr || key == nullptr || out_value == nullptr)
-    {
-        return false;
-    }
-
-    const char* cursor = std::strstr(json, key);
+    const char* cursor = find_bounded(start, end, key);
     if (cursor == nullptr)
     {
         return false;
     }
 
     cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr)
+    if (cursor == nullptr || cursor >= end)
     {
         return false;
     }
 
     cursor = skip_json_space(cursor + 1);
-    char* end = nullptr;
-    const double value = std::strtod(cursor, &end);
-    if (end == cursor)
+    if (cursor == nullptr || cursor >= end || *cursor == '"')
+    {
+        return false;
+    }
+
+    char* parse_end = nullptr;
+    const double value = std::strtod(cursor, &parse_end);
+    if (parse_end == cursor)
     {
         return false;
     }
 
     *out_value = value;
     return true;
+}
+
+/// @brief Finds the closing `}` matching the `{` at `obj_start`, string-aware
+/// so a brace inside a quoted value cannot desync the depth count.
+const char* find_object_end(const char* obj_start, const char* buffer_end)
+{
+    if (obj_start >= buffer_end || *obj_start != '{')
+    {
+        return nullptr;
+    }
+
+    int depth = 0;
+    bool in_string = false;
+    for (const char* p = obj_start; p < buffer_end; ++p)
+    {
+        if (in_string)
+        {
+            if (*p == '\\' && (p + 1) < buffer_end)
+            {
+                ++p;
+                continue;
+            }
+            if (*p == '"')
+            {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (*p == '"')
+        {
+            in_string = true;
+        }
+        else if (*p == '{')
+        {
+            ++depth;
+        }
+        else if (*p == '}')
+        {
+            --depth;
+            if (depth == 0)
+            {
+                return p;
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 /// @brief Formats a price compactly enough for one bracketed softkey line.
@@ -475,20 +592,6 @@ void format_price_text(double price, std::array<char, 12>& out)
     }
 
     std::snprintf(out.data(), out.size(), "%.1f", price);
-}
-
-/// @brief Formats percentage movement from current price and previous close.
-void format_change_text(double price, double previous_close, std::array<char, 12>& out)
-{
-    out.fill('\0');
-    if (previous_close <= 0.0)
-    {
-        std::snprintf(out.data(), out.size(), "%s", "-");
-        return;
-    }
-
-    const double change_percent = ((price - previous_close) / previous_close) * 100.0;
-    std::snprintf(out.data(), out.size(), "%+.1f%%", change_percent);
 }
 
 /// @brief Converts a parsed price into the uint16 graph range used by the renderer.
@@ -524,30 +627,31 @@ void copy_history_points(size_t count, ShareWatchEntry& share, uint16_t fallback
     }
 }
 
-/// @brief Parses Yahoo's `indicators.quote[0].close` array into graph points.
-bool parse_close_history(const char* json, ShareWatchEntry& share, double fallback_price)
+/// @brief Parses one share object's bounded `"history":[...]` array into graph points.
+bool parse_bounded_history(const char* obj_start, const char* obj_end, ShareWatchEntry& share,
+                           double fallback_price)
 {
-    const char* cursor = std::strstr(json, "\"close\":[");
+    const char* cursor = find_bounded(obj_start, obj_end, "\"history\":[");
     if (cursor == nullptr)
     {
+        copy_history_points(0U, share, graph_value_from_price(fallback_price));
         return false;
     }
 
-    cursor += std::strlen("\"close\":[");
+    cursor += std::strlen("\"history\":[");
     size_t value_count = 0U;
     g_history_parse_values.fill(0U);
 
-    while (*cursor != '\0' && *cursor != ']')
+    while (cursor < obj_end)
     {
         cursor = skip_json_space(cursor);
+        if (cursor >= obj_end || *cursor == ']')
+        {
+            break;
+        }
         if (*cursor == ',')
         {
             ++cursor;
-            continue;
-        }
-        if (std::strncmp(cursor, "null", 4) == 0)
-        {
-            cursor += 4;
             continue;
         }
 
@@ -568,80 +672,176 @@ bool parse_close_history(const char* json, ShareWatchEntry& share, double fallba
     return value_count > 0U;
 }
 
-/// @brief Parses Yahoo chart JSON into the first watched row's slot.
-/// @details Only the first configured symbol is ever live-fetched; matching
-/// the pre-#9 scope, additional watched shares stay placeholder-only until
-/// the local-feed replacement (issue #42) adds real multi-symbol fetching.
-bool parse_yahoo_chart_response()
+/// @brief Finds the watched share entry matching `symbol`, or nullptr.
+ShareWatchEntry* find_watched_share(const char* symbol)
 {
-    const char* body = normalised_response_body();
+    if (symbol == nullptr || symbol[0] == '\0')
+    {
+        return nullptr;
+    }
+
+    for (uint8_t i = 0U; i < g_status.share_count; ++i)
+    {
+        if (std::strcmp(g_status.watched_shares[i].symbol.data(), symbol) == 0)
+        {
+            return &g_status.watched_shares[i];
+        }
+    }
+
+    return nullptr;
+}
+
+/// @brief Parses the `{"shares":[...]}` local-feed response (issue #42) and
+/// updates every configured watched share found in it.
+/// @details Only shares already present in the configured watchlist
+/// (config_manager -- issue #9) are updated; entries the feed doesn't mention
+/// keep whatever they last showed rather than being blanked, matching the
+/// "malformed/stale/missing fields must not block navigation" requirement. A
+/// per-share `"data_state"` other than `"live"` is treated the same as a
+/// missing entry -- the feed is explicitly saying this value isn't
+/// trustworthy right now, so the display is left alone rather than show it.
+/// `price` accepts either a raw JSON number or a quoted numeric string (the
+/// issue's own proposed contract shows the latter); `change` is copied
+/// through as-is since the contract shows it already formatted for display
+/// (e.g. "+0.02%"), unlike `price`, which is reformatted through
+/// format_price_text() for the same thousands-separator style the rest of
+/// the app uses.
+bool parse_shares_feed_response()
+{
+    char* body = normalised_response_body();
     if (body == nullptr)
     {
         return false;
     }
 
-    double price = 0.0;
-    if (!extract_json_number(body, "\"regularMarketPrice\"", &price))
+    const char* array_marker = std::strstr(body, "\"shares\":[");
+    if (array_marker == nullptr)
     {
         return false;
     }
 
-    double previous_close = 0.0;
-    if (!extract_json_number(body, "\"chartPreviousClose\"", &previous_close))
+    const char* buffer_end = g_response + g_response_len;
+    const char* cursor = array_marker + std::strlen("\"shares\":[");
+    bool updated_any = false;
+
+    while (cursor < buffer_end)
     {
-        (void)extract_json_number(body, "\"previousClose\"", &previous_close);
+        cursor = skip_json_space(cursor);
+        if (cursor >= buffer_end || *cursor == ']')
+        {
+            break;
+        }
+        if (*cursor == ',')
+        {
+            ++cursor;
+            continue;
+        }
+        if (*cursor != '{')
+        {
+            break;
+        }
+
+        const char* obj_end = find_object_end(cursor, buffer_end);
+        if (obj_end == nullptr)
+        {
+            // Truncated final object (response didn't fit) -- stop here and
+            // keep whatever shares were already parsed.
+            break;
+        }
+
+        char symbol[10] = {};
+        if (extract_bounded_string(cursor, obj_end, "\"symbol\"", symbol, sizeof(symbol)))
+        {
+            ShareWatchEntry* share = find_watched_share(symbol);
+            char data_state[16] = {};
+            const bool has_state =
+                extract_bounded_string(cursor, obj_end, "\"data_state\"", data_state,
+                                       sizeof(data_state));
+            if (share != nullptr && (!has_state || std::strcmp(data_state, "live") == 0))
+            {
+                char name[24] = {};
+                if (extract_bounded_string(cursor, obj_end, "\"name\"", name, sizeof(name)))
+                {
+                    copy_text(share->display_name, name);
+                }
+
+                char exchange[8] = {};
+                if (extract_bounded_string(cursor, obj_end, "\"exchange\"", exchange,
+                                           sizeof(exchange)))
+                {
+                    copy_text(share->exchange, exchange);
+                }
+
+                char currency[8] = {};
+                if (extract_bounded_string(cursor, obj_end, "\"currency\"", currency,
+                                           sizeof(currency)))
+                {
+                    copy_text(share->currency, currency);
+                }
+
+                double price = 0.0;
+                bool have_price = extract_bounded_number(cursor, obj_end, "\"price\"", &price);
+                if (!have_price)
+                {
+                    char price_text[16] = {};
+                    if (extract_bounded_string(cursor, obj_end, "\"price\"", price_text,
+                                               sizeof(price_text)))
+                    {
+                        char* end = nullptr;
+                        price = std::strtod(price_text, &end);
+                        have_price = end != price_text;
+                    }
+                }
+                if (have_price)
+                {
+                    format_price_text(price, share->price_text);
+                }
+
+                char change_text[12] = {};
+                if (extract_bounded_string(cursor, obj_end, "\"change\"", change_text,
+                                           sizeof(change_text)))
+                {
+                    copy_text(share->change_text, change_text);
+                }
+
+                parse_bounded_history(cursor, obj_end, *share, price);
+                updated_any = true;
+            }
+        }
+
+        cursor = obj_end + 1;
     }
 
-    ShareWatchEntry& share = g_status.watched_shares[0];
-
-    char text[32] = {};
-    if (extract_json_string(body, "\"symbol\"", text, sizeof(text)))
-    {
-        copy_text(share.symbol, text);
-    }
-
-    if (extract_json_string(body, "\"exchangeName\"", text, sizeof(text)))
-    {
-        copy_text(share.exchange, text);
-    }
-
-    if (extract_json_string(body, "\"currency\"", text, sizeof(text)))
-    {
-        copy_text(share.currency, std::strcmp(text, "GBp") == 0 ? "GBX" : text);
-    }
-
-    format_price_text(price, share.price_text);
-    format_change_text(price, previous_close, share.change_text);
-    return parse_close_history(body, share, price);
+    return updated_any;
 }
 
-/// @brief Builds the HTTPS request for the selected Yahoo chart period.
-/// @details Only fetches the first configured watched share; see
-/// parse_yahoo_chart_response() for why.
+/// @brief Builds the HTTP GET request for the configured period.
 bool build_request()
 {
-    if (g_status.share_count == 0U || g_status.watched_shares[0].symbol[0] == '\0')
+    char auth_header[176] = {};
+    if (g_configured_token[0] != '\0')
     {
-        return false;
+        std::snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s\r\n",
+                      g_configured_token);
     }
 
     const int target_len = std::snprintf(
         g_request, sizeof(g_request),
-        "GET /v8/finance/chart/%s?%s HTTP/1.1\r\n"
+        "GET /api/merlinccu/shares?period=%s HTTP/1.1\r\n"
         "Host: %s\r\n"
-        "User-Agent: MerlinCCU/0.1 "
-        "(https://github.com/victoriandad/MerlinCCU)\r\n"
+        "User-Agent: MerlinCCU/0.1 (https://github.com/victoriandad/MerlinCCU)\r\n"
         "Accept: application/json\r\n"
         "Accept-Encoding: identity\r\n"
+        "%s"
         "Connection: close\r\n"
         "\r\n",
-        g_status.watched_shares[0].symbol.data(), period_query(g_inflight_period), kProviderHost);
+        period_query_value(g_inflight_period), g_configured_host, auth_header);
     return target_len > 0 && static_cast<size_t>(target_len) < sizeof(g_request);
 }
 
 err_t try_send_request();
 
-/// @brief Handles completion of the TCP/TLS connect step.
+/// @brief Handles completion of the TCP connect step.
 err_t on_tcp_connected(void* arg, altcp_pcb* pcb, err_t err)
 {
     (void)arg;
@@ -664,11 +864,6 @@ void on_tcp_error(void* arg, err_t err)
 {
     (void)arg;
     g_pcb = nullptr;
-    if (g_tls_config != nullptr)
-    {
-        altcp_tls_free_config(g_tls_config);
-        g_tls_config = nullptr;
-    }
     g_dns_pending = false;
     g_dns_resolved = false;
     g_request_sent = 0U;
@@ -795,7 +990,10 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
 
     if (copy_len < received_len)
     {
-        defer_completion(false, ERR_BUF, partial_http_status());
+        // The response didn't fit in our fixed-size buffer. Not a hard
+        // failure -- parse_shares_feed_response() tolerates a truncated
+        // final object and keeps whatever complete shares it already found.
+        handle_response_complete();
         return ERR_OK;
     }
     if (chunked_response_complete())
@@ -839,7 +1037,7 @@ void dns_found(const char* name, const ip_addr_t* ipaddr, void* callback_arg)
     g_dns_resolved = true;
 }
 
-/// @brief Opens the TLS socket and starts the request connection phase.
+/// @brief Opens the plain TCP socket and starts the request connection phase.
 void start_socket_connect()
 {
     if (!build_request())
@@ -849,27 +1047,9 @@ void start_socket_connect()
     }
 
     cyw43_arch_lwip_begin();
-    g_tls_config = altcp_tls_create_config_client(nullptr, 0);
-    if (g_tls_config != nullptr)
-    {
-        g_pcb = altcp_tls_new(g_tls_config, IP_GET_TYPE(&g_resolved_ip));
-        if (g_pcb != nullptr)
-        {
-            auto* ssl = static_cast<mbedtls_ssl_context*>(altcp_tls_context(g_pcb));
-            if (ssl == nullptr || mbedtls_ssl_set_hostname(ssl, kProviderHost) != 0)
-            {
-                altcp_abort(g_pcb);
-                g_pcb = nullptr;
-            }
-        }
-    }
+    g_pcb = altcp_tcp_new_ip_type(IP_GET_TYPE(&g_resolved_ip));
     if (g_pcb == nullptr)
     {
-        if (g_tls_config != nullptr)
-        {
-            altcp_tls_free_config(g_tls_config);
-            g_tls_config = nullptr;
-        }
         cyw43_arch_lwip_end();
         finish_failure(ERR_MEM, 0);
         return;
@@ -882,7 +1062,7 @@ void start_socket_connect()
     altcp_poll(g_pcb, on_tcp_poll, 2);
     g_deadline = make_timeout_time_ms(kConnectTimeoutMs);
 
-    const err_t connect_rc = altcp_connect(g_pcb, &g_resolved_ip, kProviderPort, on_tcp_connected);
+    const err_t connect_rc = altcp_connect(g_pcb, &g_resolved_ip, g_configured_port, on_tcp_connected);
     cyw43_arch_lwip_end();
     if (connect_rc != ERR_OK)
     {
@@ -900,7 +1080,7 @@ void start_request()
     g_deadline = make_timeout_time_ms(kResolveTimeoutMs);
 
     cyw43_arch_lwip_begin();
-    const err_t dns_rc = dns_gethostbyname(kProviderHost, &g_resolved_ip, dns_found, nullptr);
+    const err_t dns_rc = dns_gethostbyname(g_configured_host, &g_resolved_ip, dns_found, nullptr);
     cyw43_arch_lwip_end();
     if (dns_rc == ERR_OK)
     {
@@ -936,6 +1116,7 @@ void init()
     g_status.last_error = 0;
     g_status.last_http_status = 0;
     g_status.period = SharePeriod::Today;
+    g_config_valid = false;
     seed_from_config(g_status);
     reset_attempt_state();
     g_inflight_period = g_status.period;
@@ -946,6 +1127,11 @@ void init()
 bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch_enabled)
 {
     const ShareMarketStatus previous = g_status;
+
+    if (runtime_config_changed())
+    {
+        init();
+    }
 
     if (g_status.period != active_period)
     {
@@ -958,7 +1144,7 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
     }
 
     // The share workflow can be isolated to its own pages. Pausing network
-    // traffic elsewhere avoids coupling unrelated menus to market-provider I/O.
+    // traffic elsewhere avoids coupling unrelated menus to feed I/O.
     if (!fetch_enabled)
     {
         const bool had_active_attempt = g_pcb != nullptr || g_dns_pending || g_dns_resolved ||
@@ -974,13 +1160,17 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
         return status_changed(previous, g_status);
     }
 
-    // Keep the share UI responsive while the live fetch path is being
-    // hardened. The placeholder row remains visible with static values.
-    if (!kEnableLiveShareFetch)
+    g_config_valid = refresh_config();
+    if (!g_config_valid)
     {
-        reset_attempt_state();
-        g_request_attempted = false;
-        g_next_attempt = nil_time;
+        // No feed configured (or disabled) -- keep the demo watchlist fresh
+        // and don't attempt any network I/O.
+        if (g_pcb != nullptr || g_dns_pending || g_completion_pending || g_request_attempted)
+        {
+            reset_attempt_state();
+            g_request_attempted = false;
+            g_next_attempt = nil_time;
+        }
         seed_from_config(g_status);
         g_status.data_valid = false;
         g_status.last_error = 0;
@@ -1009,7 +1199,7 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
             return status_changed(previous, g_status);
         }
 
-        if (g_completion_success && completed_http_status == 200 && parse_yahoo_chart_response())
+        if (g_completion_success && completed_http_status == 200 && parse_shares_feed_response())
         {
             finish_success(completed_http_status);
         }

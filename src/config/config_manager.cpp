@@ -18,6 +18,7 @@ using config_persistence::ConfigCandidate;
 using config_persistence::ConfigSlot;
 using config_persistence::LegacyConfigSlotV1;
 using config_persistence::LegacyConfigSlotV2;
+using config_persistence::LegacyConfigSlotV3;
 
 constexpr uint32_t kFlashSlotCount = 2;
 constexpr uint32_t kConfigStorageBytes = FLASH_SECTOR_SIZE * kFlashSlotCount;
@@ -48,6 +49,13 @@ ConfigCandidate read_candidate(uint32_t offset)
     if (config_persistence::validate_slot(*slot))
     {
         return {true, slot->sequence, slot->settings};
+    }
+
+    const auto* legacy_slot_v3 = reinterpret_cast<const LegacyConfigSlotV3*>(slot);
+    if (config_persistence::validate_legacy_slot_v3(*legacy_slot_v3))
+    {
+        return {true, legacy_slot_v3->sequence,
+                config_persistence::migrate_legacy_settings_v3(legacy_slot_v3->settings)};
     }
 
     const auto* legacy_slot_v2 = reinterpret_cast<const LegacyConfigSlotV2*>(slot);

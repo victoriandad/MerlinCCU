@@ -6,10 +6,11 @@ namespace share_price_manager
 {
 
 /// @brief Initialises share-price status and any enabled market-data fetcher.
-/// @details Direct external provider fetching is currently disabled after the
-/// Yahoo chart path caused share-page lockups. The intended live replacement is
-/// a bounded Home Assistant or local-proxy feed, with demo data used until that
-/// feed exists.
+/// @details Direct external provider fetching (the old Yahoo chart path,
+/// which caused share-page lockups -- see issue #19) has been replaced by a
+/// local Home Assistant/proxy feed (issue #42, see
+/// docs/share-feed-design.md). Demo data is shown until
+/// RuntimeConfig::shares_feed_enabled is turned on and a fetch succeeds.
 void init();
 
 /// @brief Advances the asynchronous market-data state machine.
