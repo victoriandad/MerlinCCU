@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "bounded_json.h"
 #include "config_manager.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
@@ -16,6 +17,7 @@
 #include "lwip/pbuf.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "share_feed_parser.h"
 #include "text_utils.h"
 
 namespace share_price_manager
@@ -35,7 +37,6 @@ constexpr size_t kRequestBufferSize = 512U;
 // static RAM -- see docs/architecture.md's Memory budget tracking, headroom
 // is tight.
 constexpr size_t kResponseBufferSize = 4096U;
-constexpr size_t kMaxParsedHistoryValues = 256U;
 constexpr uint16_t kDefaultPort = 8123U; // Home Assistant's default port
 
 ShareMarketStatus g_status = {};
@@ -54,7 +55,6 @@ size_t g_request_sent = 0U;
 size_t g_response_len = 0U;
 char g_request[kRequestBufferSize] = {};
 char g_response[kResponseBufferSize] = {};
-std::array<uint16_t, kMaxParsedHistoryValues> g_history_parse_values = {};
 absolute_time_t g_deadline = nil_time;
 absolute_time_t g_next_attempt = nil_time;
 bool g_request_attempted = false;
@@ -352,291 +352,12 @@ void defer_completion(bool success, err_t err, int http_status)
     g_completion_http_status = http_status;
 }
 
-/// @brief Skips JSON whitespace and returns the next meaningful character.
-const char* skip_json_space(const char* cursor)
-{
-    while (cursor != nullptr &&
-           (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n'))
-    {
-        ++cursor;
-    }
-
-    return cursor;
-}
-
-/// @brief Finds the first occurrence of `key` within `[start, end)`.
-const char* find_bounded(const char* start, const char* end, const char* key)
-{
-    const size_t key_len = std::strlen(key);
-    if (key_len == 0U || end <= start)
-    {
-        return nullptr;
-    }
-
-    const size_t range_len = static_cast<size_t>(end - start);
-    if (key_len > range_len)
-    {
-        return nullptr;
-    }
-
-    for (const char* p = start; p <= end - key_len; ++p)
-    {
-        if (std::strncmp(p, key, key_len) == 0)
-        {
-            return p;
-        }
-    }
-
-    return nullptr;
-}
-
-/// @brief Extracts one bounded JSON string scalar by key.
-bool extract_bounded_string(const char* start, const char* end, const char* key, char* out,
-                            size_t out_size)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_json_space(cursor + 1);
-    if (cursor == nullptr || cursor >= end || *cursor != '"')
-    {
-        return false;
-    }
-
-    ++cursor;
-    size_t write_index = 0U;
-    while (cursor < end && *cursor != '"' && write_index + 1U < out_size)
-    {
-        if (*cursor == '\\' && (cursor + 1) < end)
-        {
-            ++cursor;
-        }
-        out[write_index++] = *cursor++;
-    }
-
-    out[write_index] = '\0';
-    return write_index > 0U;
-}
-
-/// @brief Extracts one bounded JSON numeric scalar by key.
-bool extract_bounded_number(const char* start, const char* end, const char* key, double* out_value)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_json_space(cursor + 1);
-    if (cursor == nullptr || cursor >= end || *cursor == '"')
-    {
-        return false;
-    }
-
-    char* parse_end = nullptr;
-    const double value = std::strtod(cursor, &parse_end);
-    if (parse_end == cursor)
-    {
-        return false;
-    }
-
-    *out_value = value;
-    return true;
-}
-
-/// @brief Finds the closing `}` matching the `{` at `obj_start`, string-aware
-/// so a brace inside a quoted value cannot desync the depth count.
-const char* find_object_end(const char* obj_start, const char* buffer_end)
-{
-    if (obj_start >= buffer_end || *obj_start != '{')
-    {
-        return nullptr;
-    }
-
-    int depth = 0;
-    bool in_string = false;
-    for (const char* p = obj_start; p < buffer_end; ++p)
-    {
-        if (in_string)
-        {
-            if (*p == '\\' && (p + 1) < buffer_end)
-            {
-                ++p;
-                continue;
-            }
-            if (*p == '"')
-            {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if (*p == '"')
-        {
-            in_string = true;
-        }
-        else if (*p == '{')
-        {
-            ++depth;
-        }
-        else if (*p == '}')
-        {
-            --depth;
-            if (depth == 0)
-            {
-                return p;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
-/// @brief Formats a price compactly enough for one bracketed softkey line.
-void format_price_text(double price, std::array<char, 12>& out)
-{
-    out.fill('\0');
-    if (price >= 1000.0 && price < 10000.0)
-    {
-        const long tenths = std::lround(price * 10.0);
-        const int whole = static_cast<int>(tenths / 10L);
-        const int thousands = whole / 1000;
-        const int remainder = whole % 1000;
-        const int decimal = static_cast<int>(tenths % 10L);
-        std::snprintf(out.data(), out.size(), "%d,%03d.%d", thousands, remainder, decimal);
-        return;
-    }
-
-    std::snprintf(out.data(), out.size(), "%.1f", price);
-}
-
-/// @brief Converts a parsed price into the uint16 graph range used by the renderer.
-uint16_t graph_value_from_price(double price)
-{
-    const long rounded = std::lround(price);
-    if (rounded < 0L)
-    {
-        return 0U;
-    }
-    if (rounded > 65535L)
-    {
-        return 65535U;
-    }
-
-    return static_cast<uint16_t>(rounded);
-}
-
-/// @brief Downsamples arbitrary close values into the fixed 24-point CCU graph buffer.
-void copy_history_points(size_t count, ShareWatchEntry& share, uint16_t fallback_price)
-{
-    if (count == 0U)
-    {
-        share.history_points.fill(fallback_price);
-        return;
-    }
-
-    for (size_t i = 0U; i < share.history_points.size(); ++i)
-    {
-        const size_t source_index =
-            (count == 1U) ? 0U : ((i * (count - 1U)) / (share.history_points.size() - 1U));
-        share.history_points[i] = g_history_parse_values[source_index];
-    }
-}
-
-/// @brief Parses one share object's bounded `"history":[...]` array into graph points.
-bool parse_bounded_history(const char* obj_start, const char* obj_end, ShareWatchEntry& share,
-                           double fallback_price)
-{
-    const char* cursor = find_bounded(obj_start, obj_end, "\"history\":[");
-    if (cursor == nullptr)
-    {
-        copy_history_points(0U, share, graph_value_from_price(fallback_price));
-        return false;
-    }
-
-    cursor += std::strlen("\"history\":[");
-    size_t value_count = 0U;
-    g_history_parse_values.fill(0U);
-
-    while (cursor < obj_end)
-    {
-        cursor = skip_json_space(cursor);
-        if (cursor >= obj_end || *cursor == ']')
-        {
-            break;
-        }
-        if (*cursor == ',')
-        {
-            ++cursor;
-            continue;
-        }
-
-        char* end = nullptr;
-        const double value = std::strtod(cursor, &end);
-        if (end == cursor)
-        {
-            break;
-        }
-        if (value_count < g_history_parse_values.size())
-        {
-            g_history_parse_values[value_count++] = graph_value_from_price(value);
-        }
-        cursor = end;
-    }
-
-    copy_history_points(value_count, share, graph_value_from_price(fallback_price));
-    return value_count > 0U;
-}
-
-/// @brief Finds the watched share entry matching `symbol`, or nullptr.
-ShareWatchEntry* find_watched_share(const char* symbol)
-{
-    if (symbol == nullptr || symbol[0] == '\0')
-    {
-        return nullptr;
-    }
-
-    for (uint8_t i = 0U; i < g_status.share_count; ++i)
-    {
-        if (std::strcmp(g_status.watched_shares[i].symbol.data(), symbol) == 0)
-        {
-            return &g_status.watched_shares[i];
-        }
-    }
-
-    return nullptr;
-}
-
 /// @brief Parses the `{"shares":[...]}` local-feed response (issue #42) and
 /// updates every configured watched share found in it.
-/// @details Only shares already present in the configured watchlist
-/// (config_manager -- issue #9) are updated; entries the feed doesn't mention
-/// keep whatever they last showed rather than being blanked, matching the
-/// "malformed/stale/missing fields must not block navigation" requirement. A
-/// per-share `"data_state"` other than `"live"` is treated the same as a
-/// missing entry -- the feed is explicitly saying this value isn't
-/// trustworthy right now, so the display is left alone rather than show it.
-/// `price` accepts either a raw JSON number or a quoted numeric string (the
-/// issue's own proposed contract shows the latter); `change` is copied
-/// through as-is since the contract shows it already formatted for display
-/// (e.g. "+0.02%"), unlike `price`, which is reformatted through
-/// format_price_text() for the same thousands-separator style the rest of
-/// the app uses.
+/// @details Delegates to share_feed::parse_shares_feed_response() (issue
+/// #72) -- see that module's doc comment for the full field-handling
+/// contract (data_state gating, price accepting either a number or a quoted
+/// string, stale/missing shares left untouched rather than blanked).
 bool parse_shares_feed_response()
 {
     char* body = normalised_response_body();
@@ -645,105 +366,9 @@ bool parse_shares_feed_response()
         return false;
     }
 
-    const char* array_marker = std::strstr(body, "\"shares\":[");
-    if (array_marker == nullptr)
-    {
-        return false;
-    }
-
     const char* buffer_end = g_response + g_response_len;
-    const char* cursor = array_marker + std::strlen("\"shares\":[");
-    bool updated_any = false;
-
-    while (cursor < buffer_end)
-    {
-        cursor = skip_json_space(cursor);
-        if (cursor >= buffer_end || *cursor == ']')
-        {
-            break;
-        }
-        if (*cursor == ',')
-        {
-            ++cursor;
-            continue;
-        }
-        if (*cursor != '{')
-        {
-            break;
-        }
-
-        const char* obj_end = find_object_end(cursor, buffer_end);
-        if (obj_end == nullptr)
-        {
-            // Truncated final object (response didn't fit) -- stop here and
-            // keep whatever shares were already parsed.
-            break;
-        }
-
-        char symbol[10] = {};
-        if (extract_bounded_string(cursor, obj_end, "\"symbol\"", symbol, sizeof(symbol)))
-        {
-            ShareWatchEntry* share = find_watched_share(symbol);
-            char data_state[16] = {};
-            const bool has_state =
-                extract_bounded_string(cursor, obj_end, "\"data_state\"", data_state,
-                                       sizeof(data_state));
-            if (share != nullptr && (!has_state || std::strcmp(data_state, "live") == 0))
-            {
-                char name[24] = {};
-                if (extract_bounded_string(cursor, obj_end, "\"name\"", name, sizeof(name)))
-                {
-                    copy_text(share->display_name, name);
-                }
-
-                char exchange[8] = {};
-                if (extract_bounded_string(cursor, obj_end, "\"exchange\"", exchange,
-                                           sizeof(exchange)))
-                {
-                    copy_text(share->exchange, exchange);
-                }
-
-                char currency[8] = {};
-                if (extract_bounded_string(cursor, obj_end, "\"currency\"", currency,
-                                           sizeof(currency)))
-                {
-                    copy_text(share->currency, currency);
-                }
-
-                double price = 0.0;
-                bool have_price = extract_bounded_number(cursor, obj_end, "\"price\"", &price);
-                if (!have_price)
-                {
-                    char price_text[16] = {};
-                    if (extract_bounded_string(cursor, obj_end, "\"price\"", price_text,
-                                               sizeof(price_text)))
-                    {
-                        char* end = nullptr;
-                        price = std::strtod(price_text, &end);
-                        have_price = end != price_text;
-                    }
-                }
-                if (have_price)
-                {
-                    format_price_text(price, share->price_text);
-                }
-
-                char change_text[12] = {};
-                if (extract_bounded_string(cursor, obj_end, "\"change\"", change_text,
-                                           sizeof(change_text)))
-                {
-                    copy_text(share->change_text, change_text);
-                }
-
-                parse_bounded_history(cursor, obj_end, *share, price);
-                updated_any = true;
-            }
-        }
-
-        cursor = obj_end + 1;
-    }
-
-    return updated_any;
+    return share_feed::parse_shares_feed_response(body, buffer_end, g_status.watched_shares,
+                                                  g_status.share_count);
 }
 
 /// @brief Builds the HTTP GET request for the configured period.

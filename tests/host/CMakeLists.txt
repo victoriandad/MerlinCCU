@@ -29,6 +29,9 @@ add_executable(host_tests
     test_weather_forecast_parser.cpp
     test_home_assistant_weather_parser.cpp
     test_open_meteo_parser.cpp
+    test_bounded_json.cpp
+    test_share_feed_parser.cpp
+    test_air_traffic_response_parser.cpp
     stubs/time_manager_stub.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
     ${MERLIN_ROOT}/src/config/config_persistence.cpp
@@ -42,6 +45,9 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/network/weather_forecast_parser.cpp
     ${MERLIN_ROOT}/src/network/home_assistant_weather_parser.cpp
     ${MERLIN_ROOT}/src/network/open_meteo_parser.cpp
+    ${MERLIN_ROOT}/src/network/bounded_json.cpp
+    ${MERLIN_ROOT}/src/network/share_feed_parser.cpp
+    ${MERLIN_ROOT}/src/network/air_traffic_response_parser.cpp
 )
 
 target_include_directories(host_tests PRIVATE

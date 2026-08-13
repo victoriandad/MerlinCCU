@@ -75,11 +75,14 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_worms.cpp
     src/network/date_time_math.cpp
     src/network/air_traffic_manager.cpp
+    src/network/air_traffic_response_parser.cpp
+    src/network/bounded_json.cpp
     src/network/home_assistant_manager.cpp
     src/network/home_assistant_weather_parser.cpp
     src/network/http_response.cpp
     src/network/mqtt_manager.cpp
     src/network/open_meteo_parser.cpp
+    src/network/share_feed_parser.cpp
     src/network/share_price_manager.cpp
     src/network/time_manager.cpp
     src/network/weather_forecast_parser.cpp
