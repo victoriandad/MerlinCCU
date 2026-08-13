@@ -3,8 +3,57 @@
 #include <cstddef>
 #include <cstdio>
 
+#include "config_manager.h"
+#include "hardware/flash.h"
+#include "pinter_store.h"
+
 namespace
 {
+
+// Linker-provided symbols read once here (not in status_screens.cpp/
+// screens.cpp) so the render layer stays free of any hardware/linker
+// dependency -- issue #71. Flash/RAM totals are fixed at link time, so a
+// single read at console-state construction is correct, unlike the
+// HeapStatus/StackStatus periodic re-sampling in MerlinCCU.cpp.
+extern "C"
+{
+extern const uint8_t __flash_binary_start;
+extern const uint8_t __flash_binary_end;
+extern const uint8_t __end__;
+extern const uint8_t __StackLimit;
+}
+
+// RP2040/RP2350 SRAM is architecturally mapped at this fixed base for every
+// Pico/Pico W/Pico 2/Pico 2 W board; there is no linker symbol for the
+// region's own origin (only its length), so this is paired with
+// __StackLimit below to recover the true usable RAM size.
+constexpr uintptr_t kRamBaseAddress = 0x20000000U;
+
+/// @brief Returns the linked image footprint that occupies programme flash.
+uint32_t program_flash_bytes()
+{
+    const uintptr_t start = reinterpret_cast<uintptr_t>(&__flash_binary_start);
+    const uintptr_t end = reinterpret_cast<uintptr_t>(&__flash_binary_end);
+    return (end > start) ? static_cast<uint32_t>(end - start) : 0U;
+}
+
+/// @brief Returns total static RAM used by the linked image (.data+.bss).
+uint32_t static_ram_bytes()
+{
+    const uintptr_t end = reinterpret_cast<uintptr_t>(&__end__);
+    return (end > kRamBaseAddress) ? static_cast<uint32_t>(end - kRamBaseAddress) : 0U;
+}
+
+/// @brief Returns the linker's usable contiguous RAM region size.
+/// @details This is the RP2350's main 512KiB SRAM bank as mapped by the
+/// default Pico SDK linker script; it is 8KiB smaller than the chip's full
+/// 520KB physical SRAM total since SRAM8/SRAM9 sit outside this contiguous
+/// region and are not part of the linked `RAM` output section.
+uint32_t total_ram_bytes()
+{
+    const uintptr_t limit = reinterpret_cast<uintptr_t>(&__StackLimit);
+    return (limit > kRamBaseAddress) ? static_cast<uint32_t>(limit - kRamBaseAddress) : 0U;
+}
 
 /// @brief Maps each physical hard key to its primary and alternate panel legends.
 /// @details Keeping the legends in enum order lets the UI render the keypad labels without
@@ -401,4 +450,17 @@ void make_default_console_state(ConsoleState& out)
     // the whole state object as immediately usable after construction.
     out.lamps.fill(LampMode::Off);
     out.softkeys = kDefaultSoftkeys;
+
+    // Flash/RAM totals never change after linking, so this is computed once
+    // here rather than re-sampled every tick like HeapStatus/StackStatus --
+    // see ImageFootprintStatus's own comment.
+    constexpr uint32_t kReservedFlashBytes = config_manager::kReservedFlashBytes +
+                                             pinter_store::kReservedFlashBytes;
+    out.image_footprint_status.valid = true;
+    out.image_footprint_status.program_flash_bytes = program_flash_bytes();
+    out.image_footprint_status.flash_budget_bytes =
+        static_cast<uint32_t>(PICO_FLASH_SIZE_BYTES) - kReservedFlashBytes;
+    out.image_footprint_status.reserved_flash_bytes = kReservedFlashBytes;
+    out.image_footprint_status.static_ram_bytes = static_ram_bytes();
+    out.image_footprint_status.total_ram_bytes = total_ram_bytes();
 }

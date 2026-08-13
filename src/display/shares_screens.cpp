@@ -7,7 +7,6 @@
 #include "console_model.h"
 #include "framebuffer.h"
 #include "panel_config.h"
-#include "pico/time.h"
 #include "screens_shared.h"
 
 namespace shares_screens
@@ -166,7 +165,7 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Draws one watched share's detail page.
-void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     if (console_state.selected_share_index >= console_state.share_count)
     {
@@ -193,8 +192,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
         // 4x share_price_manager.cpp's own 5-minute kRefreshIntervalMs.
         constexpr uint32_t kShareStaleAfterMs = 4U * 5U * 60U * 1000U;
         screens::build_data_freshness_text(console_state.share_data_valid,
-                                           console_state.share_data_last_success_ms,
-                                           to_ms_since_boot(get_absolute_time()),
+                                           console_state.share_data_last_success_ms, now_ms,
                                            kShareStaleAfterMs, data_text, sizeof(data_text));
     }
 

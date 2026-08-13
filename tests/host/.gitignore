@@ -1,1 +1,5 @@
 build/
+
+# Diagnostic dumps written by golden_test_support.cpp on a mismatch --
+# reference goldens themselves (golden/*.pbm, without .actual) are checked in.
+golden/*.actual.pbm

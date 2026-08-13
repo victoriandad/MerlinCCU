@@ -13,11 +13,8 @@
 #include "calendar_screens.h"
 #include "config_manager.h"
 #include "console_model.h"
-#include "display.h"
 #include "framebuffer.h"
 #include "panel_config.h"
-#include "pico/error.h"
-#include "pico/time.h"
 #include "pinter_screens.h"
 #include "screen_banners.h"
 #include "screens_shared.h"
@@ -376,8 +373,12 @@ void build_local_condition_value_text(
     case LocalConditionMetric::AirQuality:
         if (!status.enabled || !status.air_quality_score_valid)
         {
+            // PICO_ERROR_NONE is stably 0 across the Pico SDK; named locally
+            // rather than including pico/error.h so this file has no Pico
+            // SDK dependency (issue #71).
+            constexpr int kNoErrorCode = 0;
             std::snprintf(out, out_size, "%s",
-                          status.air_quality_read_error == PICO_ERROR_NONE ? "-" : "ERR");
+                          status.air_quality_read_error == kNoErrorCode ? "-" : "ERR");
             return;
         }
         std::snprintf(out, out_size, "%s",
@@ -1292,7 +1293,7 @@ void draw_demo_screen(uint8_t* fb)
 /// @brief Draws the active menu page and contextual softkey labels.
 /// @details The shared frame and banner pass runs first so every menu page keeps
 /// the same shell while only the central content renderer changes.
-void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
+void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     framebuffer::clear(fb, false);
 
@@ -1313,10 +1314,10 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         calendar_screens::draw_calendar_detail_page(fb, console_state);
         break;
     case MenuPage::Weather:
-        weather_screens::draw_weather_page(fb, console_state);
+        weather_screens::draw_weather_page(fb, console_state, now_ms);
         break;
     case MenuPage::AirTraffic:
-        air_traffic_screens::draw_air_traffic_page(fb, console_state);
+        air_traffic_screens::draw_air_traffic_page(fb, console_state, now_ms);
         break;
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:
@@ -1327,7 +1328,7 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         shares_screens::draw_shares_page(fb, console_state);
         break;
     case MenuPage::ShareDetail:
-        shares_screens::draw_share_detail_page(fb, console_state);
+        shares_screens::draw_share_detail_page(fb, console_state, now_ms);
         break;
     case MenuPage::Status:
     case MenuPage::StatusOverview:
@@ -1335,7 +1336,7 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::StatusResources:
     case MenuPage::StatusSensors:
     case MenuPage::StatusIntegrations:
-        status_screens::draw_status_page(fb, console_state);
+        status_screens::draw_status_page(fb, console_state, now_ms);
         break;
     case MenuPage::LocalConditions:
         draw_local_conditions_page(fb, console_state);
