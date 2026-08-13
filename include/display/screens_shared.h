@@ -42,6 +42,17 @@ void build_environment_humidity_text(
 void build_environment_pressure_text(
     const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
 
+/// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
+void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size);
+
+/// @brief Formats one data-backed subsystem's freshness into a short,
+/// consistent label ("LIVE", "STALE 12m", "NO DATA") -- issue #16's
+/// stale-data display policy. See the definition in screens.cpp for the full
+/// contract, including why deliberate placeholder/demo states should not use
+/// this helper.
+void build_data_freshness_text(bool currently_valid, uint32_t last_success_ms, uint32_t now_ms,
+                               uint32_t stale_after_ms, char* out, size_t out_size);
+
 /// @brief Measures text through one shared helper so layout math stays consistent.
 int text_width(const char* text, fonts::FontFace font = fonts::FontFace::Font5x7, int spacing = 1);
 

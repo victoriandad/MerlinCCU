@@ -169,6 +169,60 @@ check actually reflects reality.
 - Future CCU alerts should be based on compact signals: board missing, stale
   readings, failed compensation, or operator-relevant thresholds.
 
+## Stale-Data Display Policy
+
+Every data-backed page (Weather, Shares, Air Traffic, the Status Integrations
+and Sensors pages) shows freshness the same way, through one shared helper --
+issue #16. Before this, each page had invented its own vocabulary: shares said
+"Live"/"Demo", the Integrations page said "Valid"/"-", Air Traffic said
+"WAITING FOR DATA"/"NO AIRCRAFT NEARBY", and Weather showed no staleness
+indicator at all -- a silently-stuck feed looked identical to a live one.
+
+- **`screens::build_data_freshness_text(currently_valid, last_success_ms,
+  now_ms, stale_after_ms, out, out_size)`** (`screens.cpp`, declared in
+  `screens_shared.h`) is the one place this vocabulary lives: `"LIVE"`,
+  `"STALE 12m"`, or `"NO DATA"`. `last_success_ms`/`now_ms` are boot-uptime
+  milliseconds (`to_ms_since_boot`), matching the pre-existing
+  `EnvironmentSensorStatus::bme_last_read_ms` idiom -- not wall-clock, so it
+  works before time sync. `stale_after_ms` is each subsystem's own threshold
+  (this codebase uses 4x that subsystem's own refresh interval throughout).
+  A companion `screens::build_elapsed_time_text(elapsed_ms, out, out_size)`
+  formats the compact "Xs"/"Xm"/"Xh" age text on its own, reused by the
+  Sensors page's `ENV SCAN` row (previously showed a raw uptime timestamp,
+  not an actual age -- fixed as part of the same pass).
+- Each of `HomeAssistantStatus` (`weather_last_success_ms`),
+  `ShareMarketStatus` (`last_success_ms`), and `AirTrafficStatus`
+  (`last_success_ms`) gained a boot-uptime timestamp, stamped at the genuine
+  success point in each manager (e.g. only once weather condition JSON
+  actually parses, not on every HTTP 200). MQTT was deliberately left out --
+  it is a publish target with a connection-state concept, not a
+  freshness/data-received one, so its existing Connected/Disconnected state
+  already covers "unavailability" per the issue's requirement.
+- **Deliberate placeholder data does not use this helper.** Shares before
+  issue #42's local feed lands always show `"DEMO"` (detected by
+  `last_success_ms == 0`, i.e. the live path has never run since
+  `kEnableLiveShareFetch` is `false`) -- that's an intentional deployment
+  state, not an outage, and conflating it with "NO DATA" would be misleading
+  in the other direction.
+- **Timestamp fields are excluded from every status struct's change
+  comparator** (`operator==` in `console_model.h`, or the equivalent
+  hand-written comparator in `share_price_manager.cpp`) so a timestamp
+  advancing alone doesn't force a redraw on every single main-loop tick.
+  That means the setters that mirror manager status into `ConsoleState`
+  (`console_controller.cpp`'s `set_home_assistant_status()`,
+  `set_air_traffic_status()`, `set_share_market_status()`) must copy the
+  timestamp field through unconditionally, *before* the change-detection
+  early return -- otherwise it would never reach `ConsoleState` on ticks
+  where nothing else changed. Follow that same shape for any future status
+  struct that adds a freshness timestamp.
+- Since freshness pages can go stale with zero other field changes, they
+  need a redraw even when nothing else moved. `MerlinCCU.cpp` has a 30-second
+  `next_freshness_redraw` tick (matching the existing 30s heartbeat's
+  granularity) that requests a redraw while the active page is one of
+  Weather/Shares/ShareDetail/AirTraffic/StatusIntegrations/StatusSensors --
+  coarse enough to add no meaningful redraw churn, fine enough that the age
+  label doesn't look frozen.
+
 ## Multicore Admission Checklist
 
 Do not move work to core 1 until these are true:
@@ -244,4 +298,5 @@ hardware headers to compile.
 | 2026-07-10 | Fixed a stack-overflow bug found via live hardware debugging: `console_controller::init()`'s `g_console_state = make_default_console_state();` returned the ~27KB `ConsoleState` by value into an *assignment* (not a direct-initialization the compiler can elide), which required materializing the full struct as a stack temporary -- disassembly confirmed a 27,636-byte stack frame against a 2KB (`PICO_STACK_SIZE`) stack. Converted `make_default_console_state()` to write into a `ConsoleState&` out-parameter instead; also doubled the core-0 stack (`PICO_STACK_SIZE=0x1000` in `CMakeLists.txt`, set before `pico_sdk_init()`) since the live stack-depth canary read exactly 0 bytes free even after the fix. | The CCU stopped booting entirely (silent hang, no serial output past config load) after the ADS-B Tabular/Plot session further grew `ConsoleState`, tipping a pre-existing latent bug into an actual failure. Root-caused via targeted `BOOT:`/`stdio_flush()` checkpoints added temporarily to MerlinCCU.cpp/config_manager.cpp (removed once the call site was found) and confirmed with `arm-none-eabi-objdump` disassembly, not guesswork. | The core-0 stack lives in a dedicated 4KB RP2350 scratch bank (`SCRATCH_Y`), not the general SRAM pool, so 0x1000 is the practical ceiling without custom linker-script surgery; re-check the stack-depth canary after any future change that adds deep call chains or large locals. Grep for other `= some_large_struct_by_value_function();` assignment patterns if a similar hang recurs elsewhere. |
 | 2026-08-12 | Made the shares watchlist user-configurable (issue #9): `WatchedShareConfig` (symbol + display name) and `watched_share_count` added to `RuntimeConfig`, edited via a new "Watched Shares" section on the web config form (up to `kMaxWatchedShares` = 6 rows, blank symbol removes a row); `share_price_manager` now seeds its placeholder rows from `config_manager::settings()` every tick instead of a hardcoded `BA.L`/"BAE SYSTEMS" single entry, and the on-device Shares page now builds one `SelectShareSlotN` softkey per configured share (was hardcoded to slot 0 only), matching the existing Pinter/Alert multi-slot softkey pattern. Config version bumped 2->3 with a new `LegacyRuntimeConfigV2`/`migrate_legacy_settings_v2` snapshot of the pre-#9 `RuntimeConfig` shape, since the struct had grown in place since v2 without a version bump (undocumented gap found while implementing this). | Share watching was previously hard-coded to a single stock with no add/remove path anywhere, and the Shares page's per-share softkey wiring only ever addressed slot 0 even though the underlying data model was already a 6-entry array. On-device text entry for arbitrary stock symbols was judged out of scope (no generic alpha keypad text-entry subsystem exists yet -- `LetterMode` only drives a header icon, it isn't wired to any editable buffer), so add/remove goes through the web form, consistent with how Wi-Fi/HA/MQTT/ADS-B config is already edited today. | Live multi-symbol fetching stays out of scope (tracked by #42's local-feed replacement); only watched_shares[0] is ever live-fetched if `kEnableLiveShareFetch` is turned back on. If an on-device add/remove flow is wanted later, it needs a generic keypad text-entry state machine first (the coordinate_editor.cpp pattern from #87 only handles numeric lat/long, not arbitrary alpha symbols). |
 | 2026-08-12 | Added RAM/size budget tracking (issue #15): the Resources status page's "STATIC RAM" figure now reads real linked `.data`+`.bss` usage from Pico SDK linker symbols (`__end__`, `__StackLimit`) instead of just `sizeof(ConsoleState)` plus the double UI framebuffer; the "HEAP LIVE" row (previously hardcoded `-` despite `HeapStatus` already being tracked) and a new "STACK FREE" row (from the existing `stack_high_water_free_bytes()` canary scan, now also sampled into `ConsoleState` alongside heap/loop-load) are both wired up; added `tools/check_size_budget.py` to reproduce the same flash/RAM figures from a built `.map` file outside the device, replacing the ad hoc `arm-none-eabi-size` runs previously pasted into this log by hand (see the 2026-07-05 and 2026-07-09 entries above). | The old static-RAM figure was a proxy that had drifted badly from reality: it showed ~48KB against a hardcoded "520KB" budget (implying ~91% free) when real `.data`+`.bss` usage was ~495KB -- a ~10x undercount that made the documented review rule ("check any new 1KB+ static buffer against the Resources page's tracked totals") check a number disconnected from the real constraint. Also found in the process: the RP2350's usable linked `RAM` region is 512KiB, not the chip's 520KB physical SRAM total -- SRAM8/SRAM9 (8KiB) sit outside the linker's contiguous `RAM` output section, so the long-used "520KB" budget denominator was never quite right either. | Real headroom as of this change is ~17.5KB free (506.7KB of 512KB, 96.7%) -- run `tools/check_size_budget.py` before adding any further static storage; several open issues (#10 weather icons, #56 core-1 raster regen buffers) plan meaningful new static allocation and will need to budget against this real number, not the old proxy. Stack headroom is now visible on-device too but still per-core-0 only; no equivalent exists for a future core-1 stack if #56 proceeds. |
+| 2026-08-13 | Added a consistent stale-data display policy across Weather, Shares, Air Traffic, and the Status Integrations/Sensors pages (issue #16): one shared `screens::build_data_freshness_text()` helper producing "LIVE"/"STALE Xm"/"NO DATA"; new boot-uptime `last_success_ms`-style timestamp fields on `HomeAssistantStatus`/`ShareMarketStatus`/`AirTrafficStatus`, stamped at each manager's genuine success point; a new 30s `next_freshness_redraw` tick in `MerlinCCU.cpp` so the age text keeps advancing even when no other field changes. See the new "Stale-Data Display Policy" doc section above for the full contract. | Before this, four different pages used four different vocabularies for the same underlying problem ("Live"/"Demo", "Valid"/"-", "WAITING FOR DATA"/"NO AIRCRAFT NEARBY", and Weather showing no staleness indicator at all -- a silently-stuck feed looked identical to a live one). Scoped as the "full policy" option rather than a smaller MVP after user confirmation, since a partial fix would have left the same inconsistency for whichever subsystem was skipped. | MQTT was deliberately left out (connection-state concept, not a data-freshness one). Shares' freshness plumbing is currently inert in practice -- `last_success_ms` only advances once `kEnableLiveShareFetch` is re-enabled (#42) -- but the wiring is in place so that transition doesn't need a second pass through every display page. |
 | YYYY-MM-DD |  |  |  |

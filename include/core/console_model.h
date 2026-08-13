@@ -359,12 +359,23 @@ struct HomeAssistantStatus
     WeatherMetrics weather_metrics;
     WeatherAlertStatus weather_alert_status;
     std::array<char, 48> self_entity_id;
+    /// @brief Boot-uptime (`to_ms_since_boot`) of the last genuinely successful
+    /// weather refresh (condition text actually parsed, not a "?" fallback), 0
+    /// if never. Used by the stale-data display policy (issue #16); see
+    /// screens::build_data_freshness_text(). Deliberately excluded from
+    /// operator== below so it doesn't force a redraw every tick -- see that
+    /// function's own comment.
+    uint32_t weather_last_success_ms;
 };
 
 /// @brief Compares two Home Assistant status snapshots field-by-field.
 /// @details Used to detect whether `update()` produced a UI-visible change
 /// without relying on `memcmp` over the whole struct, which is not immune to
-/// padding bytes.
+/// padding bytes. `weather_last_success_ms` is deliberately NOT compared here:
+/// it advances every successful refresh even when the displayed text is
+/// unchanged, and pages that show its derived age text get their own periodic
+/// redraw tick instead (see MerlinCCU.cpp) so the age can advance without
+/// this comparator forcing a redraw on every single main-loop tick.
 inline bool operator==(const HomeAssistantStatus& lhs, const HomeAssistantStatus& rhs)
 {
     return lhs.state == rhs.state && lhs.configured == rhs.configured &&
@@ -689,6 +700,12 @@ struct ShareMarketStatus
     SharePeriod period;
     uint8_t share_count;
     std::array<ShareWatchEntry, kMaxWatchedShares> watched_shares;
+    /// @brief Boot-uptime of the last successful live fetch, 0 if never (this
+    /// stays 0 for the whole time kEnableLiveShareFetch is false -- demo data
+    /// is a deliberate placeholder, not a freshness concept). Excluded from
+    /// share_price_manager.cpp's status_changed() for the same reason
+    /// HomeAssistantStatus::weather_last_success_ms is excluded there.
+    uint32_t last_success_ms;
 };
 
 /// @brief Maximum nearby aircraft tracked and rendered on the Local Traffic page.
@@ -757,9 +774,15 @@ struct AirTrafficStatus
     uint16_t configured_radius_nm;
     uint8_t aircraft_count;
     std::array<AirTrafficEntry, kAirTrafficEntryCapacity> aircraft;
+    /// @brief Boot-uptime of the last successful fetch, 0 if never. See
+    /// HomeAssistantStatus::weather_last_success_ms for why this is excluded
+    /// from operator== below.
+    uint32_t last_success_ms;
 };
 
 /// @brief Compares two air-traffic snapshots field-by-field.
+/// @details `last_success_ms` is deliberately excluded -- see
+/// HomeAssistantStatus::weather_last_success_ms's comment.
 inline bool operator==(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
 {
     return lhs.enabled == rhs.enabled && lhs.configured == rhs.configured &&
@@ -907,6 +930,10 @@ struct ConsoleState
     bool share_data_valid;
     int share_data_last_error;
     int share_data_last_http_status;
+    /// @brief Mirrors ShareMarketStatus::last_success_ms; see that field's
+    /// comment for why it's excluded from set_share_market_status()'s
+    /// change-detection in console_controller.cpp.
+    uint32_t share_data_last_success_ms;
     uint8_t share_count;
     uint8_t selected_share_index;
     uint8_t selected_pinter_index;

@@ -4270,12 +4270,17 @@ bool set_time_status(const TimeStatus& time_status)
 /// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
-    if (g_console_state.home_assistant_status == home_assistant_status)
+    // operator== deliberately excludes weather_last_success_ms (see its
+    // declaration) so that field alone doesn't count as a UI-visible change --
+    // but it must still be copied into g_console_state every call, or it would
+    // never reach the page that reads it on ticks where nothing else changed.
+    const bool changed = !(g_console_state.home_assistant_status == home_assistant_status);
+    g_console_state.home_assistant_status = home_assistant_status;
+    if (!changed)
     {
         return false;
     }
 
-    g_console_state.home_assistant_status = home_assistant_status;
     update_softkeys_from_state();
     return true;
 }
@@ -4296,12 +4301,15 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
 /// @brief Updates the cached local air-traffic snapshot in the console model.
 bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 {
-    if (g_console_state.air_traffic_status == air_traffic_status)
+    // See set_home_assistant_status() above: last_success_ms is deliberately
+    // excluded from operator== but must still always be copied through.
+    const bool changed = !(g_console_state.air_traffic_status == air_traffic_status);
+    g_console_state.air_traffic_status = air_traffic_status;
+    if (!changed)
     {
         return false;
     }
 
-    g_console_state.air_traffic_status = air_traffic_status;
     update_softkeys_from_state();
     return true;
 }
@@ -4316,6 +4324,11 @@ bool set_share_market_status(const ShareMarketStatus& share_market_status)
         g_console_state.share_data_last_http_status != share_market_status.last_http_status ||
         g_console_state.share_count != share_market_status.share_count ||
         g_console_state.watched_shares != share_market_status.watched_shares;
+
+    // last_success_ms is deliberately excluded from kChanged above (see its
+    // declaration) but must still always be copied through, or it would never
+    // reach the page that reads it on ticks where nothing else changed.
+    g_console_state.share_data_last_success_ms = share_market_status.last_success_ms;
 
     if (!kChanged)
     {

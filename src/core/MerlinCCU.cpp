@@ -310,6 +310,13 @@ int main()
     absolute_time_t next_life_stats = make_timeout_time_ms(1000);
     constexpr uint32_t kHeartbeatIntervalMs = 30000U;
     absolute_time_t next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
+    // Pages showing a data-freshness age label (issue #16) need a redraw even
+    // when the underlying data hasn't changed, purely so the "STALE Xm" text
+    // keeps advancing. 30s matches the heartbeat's granularity -- fine-grained
+    // enough that the label doesn't look frozen, coarse enough not to add
+    // meaningful redraw churn.
+    constexpr uint32_t kFreshnessRedrawIntervalMs = 30000U;
+    absolute_time_t next_freshness_redraw = make_timeout_time_ms(kFreshnessRedrawIntervalMs);
     absolute_time_t last_user_activity = get_absolute_time();
     ScreenSaverSelection active_screen_saver = ScreenSaverSelection::Life;
     const float current_clkdiv = kPanel.clkdiv;
@@ -648,6 +655,22 @@ int main()
                 std::printf("HEARTBEAT: alive, stack free (worst case since boot) = %lu bytes\n",
                             static_cast<unsigned long>(stack_high_water_free_bytes()));
                 next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
+            }
+
+            if (absolute_time_diff_us(get_absolute_time(), next_freshness_redraw) <= 0)
+            {
+                const MenuPage freshness_page = console_controller::state().active_page;
+                const bool page_shows_freshness =
+                    freshness_page == MenuPage::Weather || freshness_page == MenuPage::Shares ||
+                    freshness_page == MenuPage::ShareDetail ||
+                    freshness_page == MenuPage::AirTraffic ||
+                    freshness_page == MenuPage::StatusIntegrations ||
+                    freshness_page == MenuPage::StatusSensors;
+                if (page_shows_freshness && active_mode != ScreenMode::LifeScreensaver)
+                {
+                    console_controller::request_redraw();
+                }
+                next_freshness_redraw = make_timeout_time_ms(kFreshnessRedrawIntervalMs);
             }
 
             const uint64_t total_us = loop_load.active_us + loop_load.sleep_us;

@@ -10,6 +10,7 @@
 #include "framebuffer.h"
 #include "hardware/flash.h"
 #include "panel_config.h"
+#include "pico/time.h"
 #include "pinter_store.h"
 #include "screens_shared.h"
 
@@ -525,9 +526,13 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state)
     if (console_state.environment_sensor_status.enabled &&
         console_state.environment_sensor_status.last_scan_ms > 0U)
     {
-        std::snprintf(sensor_scan_text, sizeof(sensor_scan_text), "%lus",
-                      static_cast<unsigned long>(
-                          console_state.environment_sensor_status.last_scan_ms / 1000U));
+        // True elapsed age (issue #16's stale-data display policy), not the
+        // raw boot-uptime timestamp this used to show -- that read like an
+        // ever-growing "age" even seconds after a fresh scan.
+        const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        const uint32_t scan_ms = console_state.environment_sensor_status.last_scan_ms;
+        screens::build_elapsed_time_text(now_ms > scan_ms ? now_ms - scan_ms : 0U, sensor_scan_text,
+                                         sizeof(sensor_scan_text));
     }
     else
     {
@@ -585,6 +590,29 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
         std::snprintf(share_http_text, sizeof(share_http_text), "-");
     }
 
+    // Issue #16's stale-data display policy: same helper and "DEMO vs
+    // freshness" split used by the Weather/Shares/Air Traffic pages, so this
+    // summary page reads consistently with the pages it's summarizing.
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    char weather_data_text[16] = {};
+    screens::build_data_freshness_text(
+        console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
+        console_state.home_assistant_status.weather_last_success_ms, now_ms,
+        4U * 5U * 60U * 1000U, weather_data_text, sizeof(weather_data_text));
+
+    char share_data_text[16] = {};
+    if (console_state.share_data_last_success_ms == 0U)
+    {
+        std::snprintf(share_data_text, sizeof(share_data_text), "DEMO");
+    }
+    else
+    {
+        screens::build_data_freshness_text(console_state.share_data_valid,
+                                           console_state.share_data_last_success_ms, now_ms,
+                                           4U * 5U * 60U * 1000U, share_data_text,
+                                           sizeof(share_data_text));
+    }
+
     const screens::DetailRow rows[] = {
         {"HA REST", home_assistant_rest_state_text(console_state, config)},
         {"HA HOST", config.home_assistant_host[0] != '\0' ? config.home_assistant_host.data() : "-"},
@@ -592,9 +620,10 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
         {"WX HOST", console_state.home_assistant_status.host[0]
                         ? console_state.home_assistant_status.host.data()
                         : "-"},
+        {"WX DATA", weather_data_text},
         {"HTTP", http_text},
         {"SHARES", console_state.share_data_configured ? "Configured" : "Unconfig"},
-        {"SHARE DATA", console_state.share_data_valid ? "Valid" : "-"},
+        {"SHARE DATA", share_data_text},
         {"SHARE HTTP", share_http_text},
     };
 
