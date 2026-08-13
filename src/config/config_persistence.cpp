@@ -70,12 +70,68 @@ bool validate_legacy_slot_v2(const LegacyConfigSlotV2& slot)
     return slot.crc32 == expected;
 }
 
+bool validate_legacy_slot_v3(const LegacyConfigSlotV3& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV3 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV3))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV3));
+    return slot.crc32 == expected;
+}
+
 std::array<WatchedShareConfig, kMaxWatchedShares> default_watched_shares()
 {
     std::array<WatchedShareConfig, kMaxWatchedShares> shares = {};
     copy_text(shares[0].symbol, "BA.L");
     copy_text(shares[0].display_name, "BAE SYSTEMS");
     return shares;
+}
+
+RuntimeConfig migrate_legacy_settings_v3(const LegacyRuntimeConfigV3& legacy)
+{
+    RuntimeConfig migrated = {};
+    migrated.device_name = legacy.device_name;
+    migrated.device_label = legacy.device_label;
+    migrated.location = legacy.location;
+    migrated.room = legacy.room;
+    migrated.remote_config_enabled = legacy.remote_config_enabled;
+    migrated.wifi_ssid = legacy.wifi_ssid;
+    migrated.wifi_password = legacy.wifi_password;
+    migrated.home_assistant_enabled = legacy.home_assistant_enabled;
+    migrated.home_assistant_host = legacy.home_assistant_host;
+    migrated.home_assistant_port = legacy.home_assistant_port;
+    migrated.home_assistant_token = legacy.home_assistant_token;
+    migrated.home_assistant_entity_id = legacy.home_assistant_entity_id;
+    migrated.home_assistant_self_entity_id = legacy.home_assistant_self_entity_id;
+    migrated.weather_entity_id = legacy.weather_entity_id;
+    migrated.sun_entity_id = legacy.sun_entity_id;
+    migrated.weather_coordinates = legacy.weather_coordinates;
+    migrated.mqtt_enabled = legacy.mqtt_enabled;
+    migrated.mqtt_host = legacy.mqtt_host;
+    migrated.mqtt_port = legacy.mqtt_port;
+    migrated.mqtt_username = legacy.mqtt_username;
+    migrated.mqtt_password = legacy.mqtt_password;
+    migrated.mqtt_discovery_prefix = legacy.mqtt_discovery_prefix;
+    migrated.mqtt_base_topic = legacy.mqtt_base_topic;
+    migrated.air_traffic_enabled = legacy.air_traffic_enabled;
+    migrated.air_traffic_host = legacy.air_traffic_host;
+    migrated.air_traffic_port = legacy.air_traffic_port;
+    migrated.air_traffic_api_key = legacy.air_traffic_api_key;
+    migrated.air_traffic_coordinates = legacy.air_traffic_coordinates;
+    migrated.air_traffic_radius_nm = legacy.air_traffic_radius_nm;
+    migrated.weather_source = legacy.weather_source;
+    migrated.time_zone = legacy.time_zone;
+    migrated.screen_saver = legacy.screen_saver;
+    migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
+    migrated.watched_share_count = legacy.watched_share_count;
+    migrated.watched_shares = legacy.watched_shares;
+    migrated.shares_feed_enabled = false;
+    copy_text(migrated.shares_feed_token, "");
+    return migrated;
 }
 
 RuntimeConfig migrate_legacy_settings_v2(const LegacyRuntimeConfigV2& legacy)
@@ -116,6 +172,8 @@ RuntimeConfig migrate_legacy_settings_v2(const LegacyRuntimeConfigV2& legacy)
     migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
     migrated.watched_share_count = 1U;
     migrated.watched_shares = default_watched_shares();
+    migrated.shares_feed_enabled = false;
+    copy_text(migrated.shares_feed_token, "");
     return migrated;
 }
 
@@ -151,6 +209,8 @@ RuntimeConfig migrate_legacy_settings(const LegacyRuntimeConfigV1& legacy)
     migrated.screen_saver_timeout_minutes = legacy.screen_saver_timeout_minutes;
     migrated.watched_share_count = 1U;
     migrated.watched_shares = default_watched_shares();
+    migrated.shares_feed_enabled = false;
+    copy_text(migrated.shares_feed_token, "");
     return migrated;
 }
 
@@ -198,6 +258,9 @@ RuntimeConfig make_default_settings()
 
     settings.watched_share_count = 1U;
     settings.watched_shares = default_watched_shares();
+
+    settings.shares_feed_enabled = false;
+    copy_text(settings.shares_feed_token, "");
     return settings;
 }
 

@@ -13,6 +13,20 @@ struct WatchedShareConfig
     std::array<char, 24> display_name;
 };
 
+/// @brief Compares two watched-share config entries field-by-field.
+/// @details Needed so std::array<WatchedShareConfig, N>::operator== has an
+/// element comparison to call -- used by share_price_manager.cpp to detect a
+/// watchlist edit at runtime.
+inline bool operator==(const WatchedShareConfig& lhs, const WatchedShareConfig& rhs)
+{
+    return lhs.symbol == rhs.symbol && lhs.display_name == rhs.display_name;
+}
+
+inline bool operator!=(const WatchedShareConfig& lhs, const WatchedShareConfig& rhs)
+{
+    return !(lhs == rhs);
+}
+
 /// @brief Persistent runtime configuration for one Merlin CCU.
 /// @details The structure is deliberately fixed-size so it can be stored
 /// directly in flash with simple versioning and CRC checks. Empty strings mean
@@ -60,6 +74,14 @@ struct RuntimeConfig
 
     uint8_t watched_share_count;
     std::array<WatchedShareConfig, kMaxWatchedShares> watched_shares;
+
+    /// @brief Local share-price feed (issue #42), reusing home_assistant_host/
+    /// home_assistant_port -- kept as its own enable flag and token rather
+    /// than folded into the Home Assistant section, matching how
+    /// air_traffic_enabled/air_traffic_api_key stay independent of it even
+    /// though both are "local integrations". See docs/share-feed-design.md.
+    bool shares_feed_enabled;
+    std::array<char, 128> shares_feed_token;
 };
 
 namespace config_manager
