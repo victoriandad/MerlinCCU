@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include "console_model.h"
 #include "environment_sensor_manager.h"
@@ -12,6 +13,11 @@
 /// its sibling page-family translation units should include this.
 namespace screens
 {
+
+/// @brief Number of top-level Settings root pages, used both by the header's
+/// "SETTINGS N/M" title (screens.cpp) and Settings' own page-navigation
+/// arrows (settings_screens.cpp).
+inline constexpr uint8_t kSettingsPageCount = 2U;
 
 /// @brief Returns the Home Assistant state label used on diagnostics screens.
 const char* home_assistant_state_text(HomeAssistantConnectionState state);
@@ -84,5 +90,38 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count);
 
 /// @brief Draws shared left/right page-navigation arrows used by paged menus.
 void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right);
+
+/// @brief Bordered graph plot rect shared by every page-family history graph
+/// (Shares, Local Conditions), with a symmetric one-pixel inset on all sides.
+struct GraphPlotArea
+{
+    int x;
+    int y;
+    int width;
+    int height;
+    int inset;
+};
+
+/// @brief Draws a graph plot area's border rect.
+void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area);
+
+/// @brief Maps a 0-based point index across `point_count` evenly spaced points
+/// to an x pixel coordinate within the inset plot area.
+int graph_plot_x(const GraphPlotArea& area, int index, int point_count);
+
+/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
+/// coordinate within the inset plot area, zero at the bottom.
+/// @details `value` is clamped to the given range first, so callers whose data
+/// can exceed the display scale (e.g. local-condition history against its
+/// fixed axis range) do not need to clamp separately.
+int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value);
+
+/// @brief Draws one oversized square bracket pair around a softkey value.
+/// @details The brackets are rendered as simple line primitives so they stay
+/// readable even when the underlying bitmap font has tiny punctuation glyphs.
+/// Used both by the core softkey label renderer (screens.cpp) and by
+/// Settings' screen-saver timeout scratchpad.
+void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
+                                     int total_width, fonts::FontFace font, bool on);
 
 } // namespace screens

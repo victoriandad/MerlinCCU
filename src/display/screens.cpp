@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "air_traffic_screens.h"
+#include "alert_screens.h"
 #include "calendar_screens.h"
 #include "config_manager.h"
 #include "console_model.h"
@@ -17,8 +18,11 @@
 #include "panel_config.h"
 #include "pico/error.h"
 #include "pico/time.h"
+#include "pinter_screens.h"
 #include "screen_banners.h"
 #include "screens_shared.h"
+#include "settings_screens.h"
+#include "shares_screens.h"
 #include "status_screens.h"
 #include "weather_screens.h"
 
@@ -27,19 +31,6 @@ namespace screens
 
 namespace
 {
-
-constexpr uint8_t kSettingsPageCount = 2U;
-
-/// @brief Returns the number of pages required by a softkey-driven list.
-uint8_t list_page_count(size_t item_count, size_t visible_count)
-{
-    if (item_count == 0U || visible_count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((item_count + (visible_count - 1U)) / visible_count);
-}
 
 /// @brief Copies a label while forcing uppercase presentation for UI field names.
 /// @details This normalises label casing on rendered info/status pages without
@@ -360,45 +351,6 @@ void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
                            true, kAxisFont, 1);
 }
 
-/// @brief Bordered graph plot rect shared by the shares and local-conditions
-/// history graphs, with a symmetric one-pixel inset on all four sides.
-struct GraphPlotArea
-{
-    int x;
-    int y;
-    int width;
-    int height;
-    int inset;
-};
-
-/// @brief Draws a graph plot area's border rect.
-void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
-{
-    framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
-}
-
-/// @brief Maps a 0-based point index across `point_count` evenly spaced points
-/// to an x pixel coordinate within the inset plot area.
-int graph_plot_x(const GraphPlotArea& area, int index, int point_count)
-{
-    const int plot_width = area.width - (area.inset * 2) - 1;
-    return area.x + area.inset + (plot_width * index) / (point_count - 1);
-}
-
-/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
-/// coordinate within the inset plot area, zero at the bottom.
-/// @details `value` is clamped to the given range first, so callers whose data
-/// can exceed the display scale (e.g. local-condition history against its
-/// fixed axis range) do not need to clamp separately.
-int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value)
-{
-    const int64_t range = (max_value > min_value) ? (max_value - min_value) : 1;
-    const int plot_height = area.height - (area.inset * 2) - 1;
-    const int64_t clamped = std::clamp(value, min_value, max_value);
-    const int normalised = static_cast<int>(((clamped - min_value) * plot_height) / range);
-    return area.y + area.height - 1 - area.inset - normalised;
-}
-
 /// @brief Formats one local-condition value according to its stored fixed-point unit.
 void build_local_condition_value_text(
     LocalConditionMetric metric,
@@ -618,6 +570,37 @@ int text_width(const char* text, fonts::FontFace font, int spacing)
     }
 
     return framebuffer::measure_text(text, font, spacing);
+}
+
+/// @brief Draws a graph plot area's border rect.
+/// @details Declared in screens_shared.h -- shared by the Shares history
+/// graph (shares_screens.cpp) and the Local Conditions history graph (still
+/// in this file).
+void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
+{
+    framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
+}
+
+/// @brief Maps a 0-based point index across `point_count` evenly spaced points
+/// to an x pixel coordinate within the inset plot area.
+int graph_plot_x(const GraphPlotArea& area, int index, int point_count)
+{
+    const int plot_width = area.width - (area.inset * 2) - 1;
+    return area.x + area.inset + (plot_width * index) / (point_count - 1);
+}
+
+/// @brief Maps a value's position between `min_value`/`max_value` to a y pixel
+/// coordinate within the inset plot area, zero at the bottom.
+/// @details `value` is clamped to the given range first, so callers whose data
+/// can exceed the display scale (e.g. local-condition history against its
+/// fixed axis range) do not need to clamp separately.
+int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, int64_t max_value)
+{
+    const int64_t range = (max_value > min_value) ? (max_value - min_value) : 1;
+    const int plot_height = area.height - (area.inset * 2) - 1;
+    const int64_t clamped = std::clamp(value, min_value, max_value);
+    const int normalised = static_cast<int>(((clamped - min_value) * plot_height) / range);
+    return area.y + area.height - 1 - area.inset - normalised;
 }
 
 namespace
@@ -893,9 +876,6 @@ void draw_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int star
     }
 }
 
-void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
-                                     int total_width, fonts::FontFace font, bool on);
-
 } // namespace
 
 /// @brief Draws the standard row-based presentation used by information pages.
@@ -941,42 +921,48 @@ void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
 namespace
 {
 
-/// @brief Formats the current screen-saver timeout for labels and scratchpad text.
-void build_screen_saver_timeout_text(uint16_t minutes, char* buffer, size_t buffer_size)
+/// @brief Returns the bracket depth used around one rendered softkey selection.
+constexpr int softkey_bracket_depth(fonts::FontFace font)
 {
-    if (buffer == nullptr || buffer_size == 0)
+    switch (font)
     {
-        return;
+    case fonts::FontFace::Font5x7:
+        return 2;
+    case fonts::FontFace::FontTitle8x12:
+    case fonts::FontFace::Font8x12:
+    case fonts::FontFace::Font8x14:
+        return 3;
     }
 
-    const char* unit = (minutes == 1U) ? "min" : "mins";
-    std::snprintf(buffer, buffer_size, "%u %s", static_cast<unsigned>(minutes), unit);
+    return 2;
 }
 
-/// @brief Draws the bottom scratchpad used for screen-saver timeout entry.
-/// @details The original CCU scratchpad was a low, wide editing region, so this
-/// version keeps the same bottom-of-screen placement and bracketed treatment.
-void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state)
+} // namespace
+
+/// @brief Draws one oversized square bracket pair around a softkey value.
+/// @details The brackets are rendered as simple line primitives so they stay
+/// readable even when the underlying bitmap font has tiny punctuation glyphs.
+/// Declared in screens_shared.h -- used both by the core softkey label
+/// renderer below and by Settings' screen-saver timeout scratchpad
+/// (settings_screens.cpp).
+void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
+                                     int total_width, fonts::FontFace font, bool on)
 {
-    constexpr int kScratchpadWidth = 160;
-    constexpr int kScratchpadHeight = 15;
-    constexpr int kScratchpadLeftX = (kUiWidth - kScratchpadWidth) / 2;
-    constexpr int kScratchpadTopY = kUiHeight - kScratchpadHeight - 3;
-    constexpr int kTextInsetY = 4;
-    constexpr int kRightPadX = 10;
-    char timeout_text[16] = {};
-    build_screen_saver_timeout_text(console_state.screen_saver_timeout_edit_minutes, timeout_text,
-                                    sizeof(timeout_text));
-    const int kTextWidth = text_width(timeout_text, fonts::FontFace::Font5x7, 1);
-    const int kTextX = kScratchpadLeftX + kScratchpadWidth - kRightPadX - kTextWidth;
+    const int kDepth = softkey_bracket_depth(font);
+    const int kRightX = left_x + total_width - 1;
+    const int kBottomY = top_y + total_height - 1;
 
-    framebuffer::fill_rect(fb, kScratchpadLeftX + 1, kScratchpadTopY + 1, kScratchpadWidth - 2,
-                           kScratchpadHeight - 2, false);
-    draw_softkey_selection_brackets(fb, kScratchpadLeftX, kScratchpadTopY, kScratchpadHeight,
-                                    kScratchpadWidth, fonts::FontFace::Font5x7, true);
-    framebuffer::draw_text(fb, kTextX, kScratchpadTopY + kTextInsetY, timeout_text, true,
-                           fonts::FontFace::Font5x7, 1);
+    framebuffer::draw_vline(fb, left_x, top_y, kBottomY, on);
+    framebuffer::draw_hline(fb, left_x, left_x + kDepth, top_y, on);
+    framebuffer::draw_hline(fb, left_x, left_x + kDepth, kBottomY, on);
+
+    framebuffer::draw_vline(fb, kRightX, top_y, kBottomY, on);
+    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, top_y, on);
+    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, kBottomY, on);
 }
+
+namespace
+{
 
 /// @brief Extracts the inner text from a bracketed softkey value line.
 /// @details Selection labels are still authored as `[value]`, but the renderer
@@ -996,41 +982,6 @@ bool extract_bracketed_softkey_value(const char* line_text, char* out_value, siz
 
     copy_softkey_label_slice(out_value, out_size, line_text + 1, kLength - 2);
     return true;
-}
-
-/// @brief Returns the bracket depth used around one rendered softkey selection.
-constexpr int softkey_bracket_depth(fonts::FontFace font)
-{
-    switch (font)
-    {
-    case fonts::FontFace::Font5x7:
-        return 2;
-    case fonts::FontFace::FontTitle8x12:
-    case fonts::FontFace::Font8x12:
-    case fonts::FontFace::Font8x14:
-        return 3;
-    }
-
-    return 2;
-}
-
-/// @brief Draws one oversized square bracket pair around a softkey value.
-/// @details The brackets are rendered as simple line primitives so they stay
-/// readable even when the underlying bitmap font has tiny punctuation glyphs.
-void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
-                                     int total_width, fonts::FontFace font, bool on)
-{
-    const int kDepth = softkey_bracket_depth(font);
-    const int kRightX = left_x + total_width - 1;
-    const int kBottomY = top_y + total_height - 1;
-
-    framebuffer::draw_vline(fb, left_x, top_y, kBottomY, on);
-    framebuffer::draw_hline(fb, left_x, left_x + kDepth, top_y, on);
-    framebuffer::draw_hline(fb, left_x, left_x + kDepth, kBottomY, on);
-
-    framebuffer::draw_vline(fb, kRightX, top_y, kBottomY, on);
-    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, top_y, on);
-    framebuffer::draw_hline(fb, kRightX - kDepth, kRightX, kBottomY, on);
 }
 
 } // namespace
@@ -1223,228 +1174,6 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                            true, kHomeIpFont, 1);
 }
 
-/// @brief Draws only non-data navigation affordances for Pinter pages.
-void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    switch (console_state.active_page)
-    {
-    case MenuPage::PinterSelectBrew:
-    {
-        const uint8_t page_count =
-            list_page_count(kPinterBrewCatalogueCount, kPinterBrewListVisibleCount);
-        draw_page_navigation_arrows(fb, console_state.pinter_catalogue_page_index > 0U,
-                                    (console_state.pinter_catalogue_page_index + 1U) <
-                                        page_count);
-        return;
-    }
-    case MenuPage::Pinter:
-        // Centre data is otherwise intentionally blank on this page -- status is
-        // carried by the softkey labels -- except for this one case: when the
-        // primary action is blocked by a capacity limit, that reason goes here
-        // too, since a two-line softkey hint is easy to press right past.
-        if (console_state.pinter_block_reason[0] != '\0')
-        {
-            draw_centered_text(fb, kUiWidth / 2, 150, console_state.pinter_block_reason.data(),
-                               true, fonts::FontFace::Font5x7, 1);
-        }
-        return;
-    default:
-        break;
-    }
-
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Draws the share watchlist page.
-/// @details Shares are selected from the surrounding softkeys. The centre of the
-/// watchlist page intentionally stays clear so the selected share name and price
-/// are not duplicated beside the L1 label.
-void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    if (console_state.share_count == 0U)
-    {
-        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true, fonts::FontFace::Font8x12, 1);
-        draw_centered_text(fb, kUiWidth / 2, 142, "ADD VIA WEB CONFIG", true,
-                           fonts::FontFace::Font5x7, 1);
-        return;
-    }
-
-    (void)fb;
-}
-
-/// @brief Formats one graph-axis share value using compact thousands separators.
-void format_share_graph_value(uint16_t value, char* output, size_t output_size)
-{
-    if (output == nullptr || output_size == 0U)
-    {
-        return;
-    }
-
-    output[0] = '\0';
-    if (value >= 1000U && value < 10000U)
-    {
-        const unsigned thousands = value / 1000U;
-        const unsigned remainder = value % 1000U;
-        std::snprintf(output, output_size, "%u,%03u", thousands, remainder);
-        return;
-    }
-
-    std::snprintf(output, output_size, "%u", static_cast<unsigned>(value));
-}
-
-/// @brief Returns true when a share row has enough history to draw a useful graph.
-bool share_history_has_values(const ShareWatchEntry& share)
-{
-    for (uint16_t value : share.history_points)
-    {
-        if (value > 0U)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// @brief Draws one full-width share history graph in the centre detail region.
-void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
-{
-    constexpr int kGraphX = 42;
-    constexpr int kGraphY = 44;
-    const int kGraphWidth = kUiWidth - (kGraphX * 2);
-    constexpr int kGraphHeight = 94;
-    constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotInset = 1;
-    const int point_count = static_cast<int>(share.history_points.size());
-    if (point_count < 2 || !share_history_has_values(share))
-    {
-        draw_centered_text(fb, kUiWidth / 2, 106, "NO PRICE HISTORY", true,
-                           fonts::FontFace::Font8x12, 1);
-        return;
-    }
-
-    uint16_t min_value = share.history_points[0];
-    uint16_t max_value = share.history_points[0];
-    for (uint16_t value : share.history_points)
-    {
-        min_value = std::min(min_value, value);
-        max_value = std::max(max_value, value);
-    }
-
-    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kGraphPlotInset};
-    draw_graph_plot_border(fb, plot_area);
-    const int base_y = graph_plot_y(plot_area, min_value, min_value, max_value);
-    for (int i = 0; i < point_count; ++i)
-    {
-        const uint16_t value = share.history_points[static_cast<size_t>(i)];
-        const int x = graph_plot_x(plot_area, i, point_count);
-        const int y = graph_plot_y(plot_area, value, min_value, max_value);
-        framebuffer::draw_vline(fb, x, y, base_y, true);
-    }
-
-    const char* period_label = "TODAY";
-    switch (period)
-    {
-    case SharePeriod::Today:
-        period_label = "TODAY";
-        break;
-    case SharePeriod::Week:
-        period_label = "WEEK";
-        break;
-    case SharePeriod::Month:
-        period_label = "MONTH";
-        break;
-    case SharePeriod::Year:
-        period_label = "YEAR";
-        break;
-    case SharePeriod::AllTime:
-        period_label = "ALL-TIME";
-        break;
-    }
-    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
-                           1);
-
-    char min_value_text[16] = {};
-    char max_value_text[16] = {};
-    char min_label[24] = {};
-    char max_label[24] = {};
-    format_share_graph_value(min_value, min_value_text, sizeof(min_value_text));
-    format_share_graph_value(max_value, max_value_text, sizeof(max_value_text));
-    std::snprintf(min_label, sizeof(min_label), "MIN %s", min_value_text);
-    std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
-
-    const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
-    framebuffer::draw_text(fb, kGraphX, label_y, min_label, true, fonts::FontFace::Font5x7, 1);
-    const int max_label_width = text_width(max_label, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
-                           fonts::FontFace::Font5x7, 1);
-}
-
-/// @brief Returns a compact label for one share history period.
-const char* share_period_text(SharePeriod period)
-{
-    switch (period)
-    {
-    case SharePeriod::Today:
-        return "Today";
-    case SharePeriod::Week:
-        return "Week";
-    case SharePeriod::Month:
-        return "Month";
-    case SharePeriod::Year:
-        return "Year";
-    case SharePeriod::AllTime:
-        return "All-time";
-    }
-
-    return "Today";
-}
-
-/// @brief Draws one watched share's detail page.
-void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    if (console_state.selected_share_index >= console_state.share_count)
-    {
-        draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true, fonts::FontFace::Font8x12, 1);
-        return;
-    }
-
-    const ShareWatchEntry& share = console_state.watched_shares[console_state.selected_share_index];
-    draw_share_history_graph(fb, share, console_state.share_period);
-
-    // last_success_ms stays 0 for as long as live fetching is disabled
-    // (kEnableLiveShareFetch in share_price_manager.cpp) -- that's a
-    // deliberate placeholder, not a freshness problem, so it gets its own
-    // "DEMO" label rather than running through the shared freshness helper.
-    // See issue #16's stale-data display policy.
-    char data_text[16] = {};
-    if (console_state.share_data_last_success_ms == 0U)
-    {
-        std::snprintf(data_text, sizeof(data_text), "DEMO");
-    }
-    else
-    {
-        // 4x share_price_manager.cpp's own 5-minute kRefreshIntervalMs.
-        constexpr uint32_t kShareStaleAfterMs = 4U * 5U * 60U * 1000U;
-        build_data_freshness_text(console_state.share_data_valid,
-                                  console_state.share_data_last_success_ms,
-                                  to_ms_since_boot(get_absolute_time()), kShareStaleAfterMs,
-                                  data_text, sizeof(data_text));
-    }
-
-    const DetailRow rows[] = {
-        {"NAME", share.display_name.data()},
-        {"SYMBOL", share.symbol.data()},
-        {"PERIOD", share_period_text(console_state.share_period)},
-        {"DATA", data_text},
-        {"PRICE", share.price_text.data()},
-        {"CHANGE", share.change_text.data()},
-    };
-
-    draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 164, 14);
-}
-
 /// @brief Draws the local environment summary page.
 void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -1533,230 +1262,6 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
                            current_text, true, fonts::FontFace::Font8x12, 1);
 }
 
-/// @brief Draws the weather-source selection page under Settings.
-/// @details Settings subpages keep values on the surrounding softkeys so the
-/// centre of the display stays free of duplicate status text.
-void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Draws the top-level settings routing page.
-/// @details The root page intentionally leaves the centre clear. Section state
-/// belongs in the bracketed softkey labels; detailed values are shown only
-/// after the operator opens a focused settings subpage.
-void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    draw_page_navigation_arrows(fb, console_state.settings_page_index > 0U,
-                                (console_state.settings_page_index + 1U) < kSettingsPageCount);
-}
-
-/// @brief Leaves the device identity settings body blank.
-/// @details The surrounding softkeys carry each visible identity value.
-void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the network settings body blank.
-/// @details Configured Wi-Fi values are shown as softkey attributes only.
-void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the Home Assistant settings body blank.
-/// @details Integration settings are exposed as bracketed softkey attributes.
-void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the MQTT discovery settings body blank.
-/// @details Broker and discovery values are shown around the bezel.
-void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the ADS-B traffic settings body blank.
-/// @details Feed enable/host/coordinates values are shown around the bezel.
-void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Draws only active screen-saver editing UI.
-/// @details When not editing, the selected saver and timeout live on softkeys.
-void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    if (console_state.screen_saver_timeout_editing)
-    {
-        draw_screen_saver_scratchpad(fb, console_state);
-    }
-}
-
-/// @brief Leaves the time-zone settings body blank.
-/// @details Available zones are presented as softkey choices.
-void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Draws the keypad-debug diagnostics page.
-/// @details The goal here is still hardware bring-up, but the layout now uses
-/// the same clean row styling as the status page instead of a boxed panel.
-void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    char mask_text[16] = {};
-    std::snprintf(mask_text, sizeof(mask_text), "0x%04lX",
-                  static_cast<unsigned long>(console_state.keypad_debug_status.active_mask));
-    char lines_text[24] = {};
-    std::snprintf(lines_text, sizeof(lines_text), "%u/%u",
-                  static_cast<unsigned>(console_state.keypad_debug_status.active_count),
-                  static_cast<unsigned>(console_state.keypad_debug_status.configured_count));
-    char drive_text[16] = {};
-    if (console_state.keypad_debug_status.probe_drive_panel_pin != 0)
-    {
-        std::snprintf(
-            drive_text, sizeof(drive_text), "%u",
-            static_cast<unsigned>(console_state.keypad_debug_status.probe_drive_panel_pin));
-    }
-    else
-    {
-        std::snprintf(drive_text, sizeof(drive_text), "-");
-    }
-
-    const DetailRow rows[] = {
-        {"KEY PRESSED", console_state.keypad_debug_status.pressed_key_name[0]
-                            ? console_state.keypad_debug_status.pressed_key_name.data()
-                            : "-"},
-        {"ACTIVE PINS", console_state.keypad_debug_status.active_panel_pins[0]
-                            ? console_state.keypad_debug_status.active_panel_pins.data()
-                            : "-"},
-        {"ACTIVE MASK", mask_text},
-        {"ACTIVE LINES", lines_text},
-        {"PROBE DRIVE", drive_text},
-        {"PROBE SENSE", console_state.keypad_debug_status.probe_hit_panel_pins[0]
-                            ? console_state.keypad_debug_status.probe_hit_panel_pins.data()
-                            : "-"},
-    };
-
-    draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
-}
-
-/// @brief Placeholder for the future alignment menu page.
-/// @details The route already exists so menu navigation can stabilize before the
-/// dedicated alignment workflow is implemented.
-void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Draws the 2x2 ordered-dither greyscale test card.
-/// @details Five bands, one per brightness level (0-4 of every 2x2 pixel
-/// block lit), exercising `framebuffer::fill_rect_dithered` end-to-end on
-/// real hardware and the browser preview. See `docs/greyscale-investigation.md`
-/// and issue #54. Labels sit above each band on the plain background rather
-/// than overlaid on the dithered fill, since this is a 1-bit framebuffer and
-/// there is no intermediate pixel colour to guarantee label contrast against
-/// every level.
-void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)console_state;
-
-    constexpr int kMarginX = 8;
-    constexpr int kBandWidth = kUiWidth - (kMarginX * 2);
-    constexpr int kBandHeight = 30;
-    constexpr int kLabelHeight = 9;
-    constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 8;
-    constexpr int kStartY = 44;
-    constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
-
-    for (int level = 0; level <= 4; ++level)
-    {
-        const int kEntryY = kStartY + (level * (kEntryHeight + kEntryGap));
-        char label[16] = {};
-        std::snprintf(label, sizeof(label), "L%d  %d/4", level, level);
-        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, fonts::FontFace::Font5x7);
-        framebuffer::fill_rect_dithered(fb, kMarginX, kEntryY + kLabelHeight + kLabelToBandGap,
-                                        kBandWidth, kBandHeight, level);
-    }
-
-    const int kCaptionY = kStartY + (5 * (kEntryHeight + kEntryGap));
-    framebuffer::draw_text(fb, kMarginX, kCaptionY, "2X2 ORDERED DITHER", true,
-                           fonts::FontFace::Font5x7);
-}
-
-/// @brief Draws compact status lines for the alert-list page.
-void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    constexpr uint8_t kAlertsPerPage = 9U;
-    const uint8_t page_count = static_cast<uint8_t>(
-        (console_state.alert_count == 0U)
-            ? 1U
-            : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
-    draw_page_navigation_arrows(fb, console_state.alert_list_page_index > 0U,
-                                (console_state.alert_list_page_index + 1U) < page_count);
-    if (console_state.alert_count == 0U)
-    {
-        draw_centered_text(fb, kUiWidth / 2, 112, "NO ACTIVE ALERTS", true,
-                           fonts::FontFace::Font8x12, 1);
-    }
-}
-
-/// @brief Draws the selected alert detail text with line-based scrolling.
-void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    if (console_state.alert_detail_index >= console_state.alert_count)
-    {
-        framebuffer::draw_text(fb, 18, 44, "No alert selected", true, fonts::FontFace::Font8x12, 1);
-        return;
-    }
-
-    const ActiveAlert& alert = console_state.active_alerts[console_state.alert_detail_index];
-    constexpr int kTextX = 18;
-    constexpr int kStartY = 44;
-    constexpr int kPitch = 28;
-    constexpr int kVisibleLines = 8;
-    constexpr fonts::FontFace kFont = fonts::FontFace::Font8x12;
-    uint8_t logical_line = 0U;
-    const char* cursor = alert.detail.data();
-    int drawn = 0;
-    while (cursor != nullptr && cursor[0] != '\0' && drawn < kVisibleLines)
-    {
-        const char* eol = std::strchr(cursor, '\n');
-        char line[80] = {};
-        if (eol == nullptr)
-        {
-            std::snprintf(line, sizeof(line), "%s", cursor);
-        }
-        else
-        {
-            const size_t len = static_cast<size_t>(eol - cursor);
-            std::snprintf(line, sizeof(line), "%.*s", static_cast<int>(len), cursor);
-        }
-
-        if (logical_line >= console_state.alert_detail_scroll_line)
-        {
-            framebuffer::draw_text(fb, kTextX, kStartY + (drawn * kPitch), line, true, kFont, 1);
-            ++drawn;
-        }
-
-        ++logical_line;
-        cursor = (eol == nullptr) ? nullptr : (eol + 1);
-    }
-}
-
 } // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
@@ -1816,13 +1321,13 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:
     case MenuPage::PinterStartTiming:
-        draw_pinter_page(fb, console_state);
+        pinter_screens::draw_pinter_page(fb, console_state);
         break;
     case MenuPage::Shares:
-        draw_shares_page(fb, console_state);
+        shares_screens::draw_shares_page(fb, console_state);
         break;
     case MenuPage::ShareDetail:
-        draw_share_detail_page(fb, console_state);
+        shares_screens::draw_share_detail_page(fb, console_state);
         break;
     case MenuPage::Status:
     case MenuPage::StatusOverview:
@@ -1839,46 +1344,46 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state)
         draw_local_condition_history_graph(fb, console_state);
         break;
     case MenuPage::Settings:
-        draw_settings_page(fb, console_state);
+        settings_screens::draw_settings_page(fb, console_state);
         break;
     case MenuPage::DeviceSettings:
-        draw_device_settings_page(fb, console_state);
+        settings_screens::draw_device_settings_page(fb, console_state);
         break;
     case MenuPage::WifiSettings:
-        draw_wifi_settings_page(fb, console_state);
+        settings_screens::draw_wifi_settings_page(fb, console_state);
         break;
     case MenuPage::HomeAssistantSettings:
-        draw_home_assistant_settings_page(fb, console_state);
+        settings_screens::draw_home_assistant_settings_page(fb, console_state);
         break;
     case MenuPage::MqttSettings:
-        draw_mqtt_settings_page(fb, console_state);
+        settings_screens::draw_mqtt_settings_page(fb, console_state);
         break;
     case MenuPage::AirTrafficSettings:
-        draw_air_traffic_settings_page(fb, console_state);
+        settings_screens::draw_air_traffic_settings_page(fb, console_state);
         break;
     case MenuPage::ScreenSaverSettings:
-        draw_screen_saver_page(fb, console_state);
+        settings_screens::draw_screen_saver_page(fb, console_state);
         break;
     case MenuPage::WeatherSources:
-        draw_weather_sources_page(fb, console_state);
+        settings_screens::draw_weather_sources_page(fb, console_state);
         break;
     case MenuPage::TimeZoneSettings:
-        draw_time_zone_page(fb, console_state);
+        settings_screens::draw_time_zone_page(fb, console_state);
         break;
     case MenuPage::Alignment:
-        draw_alignment_page(fb, console_state);
+        settings_screens::draw_alignment_page(fb, console_state);
         break;
     case MenuPage::KeypadDebug:
-        draw_keypad_debug_page(fb, console_state);
+        settings_screens::draw_keypad_debug_page(fb, console_state);
         break;
     case MenuPage::GreyscaleTest:
-        draw_greyscale_test_card(fb, console_state);
+        settings_screens::draw_greyscale_test_card(fb, console_state);
         break;
     case MenuPage::AlertList:
-        draw_alert_list_page(fb, console_state);
+        alert_screens::draw_alert_list_page(fb, console_state);
         break;
     case MenuPage::AlertDetail:
-        draw_alert_detail_page(fb, console_state);
+        alert_screens::draw_alert_detail_page(fb, console_state);
         break;
     }
 }
