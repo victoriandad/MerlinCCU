@@ -1322,8 +1322,12 @@ bool build_preview_page()
         "text-transform:uppercase;letter-spacing:.05em}"
         ".state{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;min-width:"
         "88px;white-space:nowrap}"
-        ".ccu-fixed{width:560px;min-width:560px;max-width:560px;margin:0 auto}"
-        ".ccu{position:relative;width:560px;padding:14px;border:1px solid "
+        // 472px keeps the same ~18px slack around the widest row
+        // (.display-shell, 426px) that the original 560px/514px pairing had,
+        // now that the keypad/display shrank for issue #79's pixel-accuracy
+        // fix -- see the comment above .display-shell.
+        ".ccu-fixed{width:472px;min-width:472px;max-width:472px;margin:0 auto}"
+        ".ccu{position:relative;width:472px;padding:14px;border:1px solid "
         "#2f3336;border-radius:26px;"
         "background:linear-gradient(160deg,#2d3134 0%%,#121417 44%%,#0b0d0e 100%%);"
         "box-shadow:inset 0 1px 0 #59606766,0 14px 36px #0009}"
@@ -1358,7 +1362,11 @@ bool build_preview_page()
         "@keyframes labelBlinkFast{0%%,40%%{color:#f2cd41;text-shadow:0 0 7px #e5b416cc,0 0 2px "
         "#fff2a0cc}"
         "41%%,100%%{color:#31342e;text-shadow:0 1px 0 #000}}"
-        ".display-bay{margin-top:10px;padding:8px 7px "
+        // width:fit-content so this bordered bay hugs .display-shell's own
+        // (now narrower) width instead of stretching to fill .ccu's full
+        // content column and leaving a visible empty margin around the
+        // softkey arrows.
+        ".display-bay{width:fit-content;margin:10px auto 0;padding:8px 7px "
         "6px;border-radius:22px;background:linear-gradient(170deg,#1e2429,#0c1013);"
         "box-shadow:inset 0 1px 0 #6c758042,inset 0 -1px 0 #050709}"
         // Canvas is sized 1:1 with the native kUiWidth x kUiHeight bitmap
@@ -1392,7 +1400,8 @@ bool build_preview_page()
         ".soft-cell .tick{height:2px;background:#d9ddd7;border-radius:2px;opacity:.9;box-shadow:0 "
         "0 3px #ffffff80}"
         ".soft-cell .key{width:52px;height:52px;padding:6px 2px;border-radius:13px}"
-        ".keybed{margin-top:10px;padding:8px;border-radius:18px;background:linear-gradient(170deg,#"
+        ".keybed{width:fit-content;margin:10px auto 0;padding:8px;border-radius:18px;background:"
+        "linear-gradient(170deg,#"
         "1d2328,#0c1013);"
         "box-shadow:inset 0 1px 0 #6d778244,inset 0 -1px 0 #06090b}"
         ".nav-row{grid-template-columns:repeat(6,var(--rect-key-w));gap:8px;justify-content:center;"
