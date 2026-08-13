@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "config_manager.h"
+#include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
 #include "lwip/dns.h"
@@ -278,111 +279,41 @@ bool request_due()
             absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0);
 }
 
+// Status-line/header parsing, chunked decoding, and buffered-completion
+// detection are shared across every network manager -- see http_response.h
+// and docs/architecture.md's "Network helper ownership boundary" (issue
+// #46). These thin wrappers keep the call sites below unchanged.
+
 /// @brief Extracts the numeric HTTP status from the response head.
 int partial_http_status()
 {
-    if (g_response_len < 12U)
-    {
-        return 0;
-    }
-
-    const char* http = std::strstr(g_response, "HTTP/1.");
-    if (http == nullptr)
-    {
-        return 0;
-    }
-
-    const char* status_start = std::strchr(http, ' ');
-    if (status_start == nullptr)
-    {
-        return 0;
-    }
-
-    return std::atoi(status_start + 1);
+    return http_response::partial_status(g_response);
 }
 
-/// @brief Returns the start of the HTTP response body, if the headers are complete.
-const char* response_body()
-{
-    const char* separator = std::strstr(g_response, "\r\n\r\n");
-    return separator == nullptr ? nullptr : separator + 4;
-}
-
-/// @brief Returns true when the received headers announce chunked transfer encoding.
-bool response_uses_chunked_encoding()
-{
-    const char* header_end = std::strstr(g_response, "\r\n\r\n");
-    const char* chunked = std::strstr(g_response, "Transfer-Encoding: chunked");
-    return chunked != nullptr && (header_end == nullptr || chunked < header_end);
-}
-
-/// @brief Returns true when the final zero-length HTTP chunk has arrived.
-bool chunked_response_complete()
-{
-    const char* body = response_body();
-    return body != nullptr && response_uses_chunked_encoding() &&
-           std::strstr(body, "\r\n0\r\n") != nullptr;
-}
-
-/// @brief Decodes an HTTP chunked response body in-place.
+/// @brief Dechunks the buffered response in place if needed, returning a
+/// pointer to the (now contiguous) body, or nullptr if the headers aren't
+/// complete yet or the chunk framing is malformed/incomplete.
 /// @details Home Assistant's REST/template responses commonly use
 /// `Transfer-Encoding: chunked` rather than a fixed Content-Length, so this
 /// stays provider-agnostic infrastructure rather than something specific to
-/// the old Yahoo path it was written for.
+/// the old Yahoo path it was originally written for.
 char* normalised_response_body()
 {
-    char* body = const_cast<char*>(response_body());
-    if (body == nullptr)
+    const char* headers_end_ptr = http_response::headers_end(g_response);
+    if (headers_end_ptr == nullptr)
     {
         return nullptr;
     }
-
-    if (!response_uses_chunked_encoding())
+    if (!http_response::header_has_token(g_response, headers_end_ptr, "Transfer-Encoding:",
+                                         "chunked"))
     {
-        return body;
+        return const_cast<char*>(http_response::body(g_response));
     }
-
-    char* read = body;
-    char* write = body;
-    const char* response_end = g_response + g_response_len;
-    while (read < response_end)
+    if (!http_response::decode_chunked_body(g_response, &g_response_len))
     {
-        char* line_end = std::strstr(read, "\r\n");
-        if (line_end == nullptr || line_end > response_end)
-        {
-            return nullptr;
-        }
-
-        char* parse_end = nullptr;
-        const unsigned long chunk_size = std::strtoul(read, &parse_end, 16);
-        if (parse_end == read)
-        {
-            return nullptr;
-        }
-
-        char* chunk_data = line_end + 2;
-        if (chunk_size == 0UL)
-        {
-            *write = '\0';
-            g_response_len = static_cast<size_t>(write - g_response);
-            return body;
-        }
-
-        if (chunk_data + chunk_size > response_end)
-        {
-            return nullptr;
-        }
-
-        std::memmove(write, chunk_data, chunk_size);
-        write += chunk_size;
-        read = chunk_data + chunk_size;
-        if (read + 2 <= response_end && read[0] == '\r' && read[1] == '\n')
-        {
-            read += 2;
-        }
+        return nullptr;
     }
-
-    return nullptr;
+    return const_cast<char*>(http_response::body(g_response));
 }
 
 /// @brief Records a failed fetch without wiping the last displayed share values.
@@ -996,8 +927,12 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         handle_response_complete();
         return ERR_OK;
     }
-    if (chunked_response_complete())
+    if (http_response::is_complete(g_response, g_response_len))
     {
+        // Some local feeds don't close promptly after a complete response;
+        // acting as soon as the advertised body has arrived avoids idling
+        // until the I/O deadline. Covers both chunked and Content-Length
+        // delimited responses, not just the chunked case this used to check.
         handle_response_complete();
     }
     return ERR_OK;

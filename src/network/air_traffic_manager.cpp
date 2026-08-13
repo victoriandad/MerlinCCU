@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "config_manager.h"
+#include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
 #include "lwip/dns.h"
@@ -266,50 +267,40 @@ bool request_due()
             absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0);
 }
 
+// Status-line/header parsing, chunked decoding, and buffered-completion
+// detection are shared across every network manager -- see http_response.h
+// and docs/architecture.md's "Network helper ownership boundary" (issue
+// #46). These thin wrappers keep the call sites below unchanged.
+
 /// @brief Extracts the numeric HTTP status from the response head.
 int partial_http_status()
 {
-    if (g_response_len < 12U)
-    {
-        return 0;
-    }
-
-    const char* http = std::strstr(g_response, "HTTP/1.");
-    if (http == nullptr)
-    {
-        return 0;
-    }
-
-    const char* status_start = std::strchr(http, ' ');
-    if (status_start == nullptr)
-    {
-        return 0;
-    }
-
-    return std::atoi(status_start + 1);
+    return http_response::partial_status(g_response);
 }
 
 /// @brief Returns the start of the HTTP response body, if the headers are complete.
 const char* response_body()
 {
-    const char* separator = std::strstr(g_response, "\r\n\r\n");
-    return separator == nullptr ? nullptr : separator + 4;
+    return http_response::body(g_response);
 }
 
-/// @brief Returns true when the received headers announce chunked transfer encoding.
-bool response_uses_chunked_encoding()
+/// @brief Dechunks the buffered response in place if it's chunked; a no-op
+/// otherwise. Response parsing always reads from response_body() afterward,
+/// so this must run first or it would see raw chunk-size framing mixed into
+/// the JSON.
+bool prepare_response_for_parsing()
 {
-    const char* header_end = std::strstr(g_response, "\r\n\r\n");
-    const char* chunked = std::strstr(g_response, "Transfer-Encoding: chunked");
-    return chunked != nullptr && (header_end == nullptr || chunked < header_end);
-}
-
-/// @brief Returns true when the final zero-length HTTP chunk has arrived.
-bool chunked_response_complete()
-{
-    const char* body = response_body();
-    return body != nullptr && response_uses_chunked_encoding() &&
-           std::strstr(body, "\r\n0\r\n") != nullptr;
+    const char* headers_end_ptr = http_response::headers_end(g_response);
+    if (headers_end_ptr == nullptr)
+    {
+        return false;
+    }
+    if (!http_response::header_has_token(g_response, headers_end_ptr, "Transfer-Encoding:",
+                                         "chunked"))
+    {
+        return true;
+    }
+    return http_response::decode_chunked_body(g_response, &g_response_len);
 }
 
 /// @brief Skips JSON whitespace and returns the next meaningful character.
@@ -951,8 +942,13 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         handle_response_complete();
         return ERR_OK;
     }
-    if (chunked_response_complete())
+    if (http_response::is_complete(g_response, g_response_len))
     {
+        // Some servers don't close promptly after a complete response;
+        // acting as soon as the advertised body has arrived avoids idling
+        // until the I/O deadline. Covers both chunked and Content-Length
+        // delimited responses (adsb.lol/dump1090-family responses have used
+        // either in practice), not just the chunked case this used to check.
         handle_response_complete();
     }
     return ERR_OK;
@@ -1118,7 +1114,8 @@ bool update(const WifiStatus& wifi_status, bool fetch_enabled)
     if (g_completion_pending)
     {
         const int completed_http_status = g_completion_http_status;
-        if (g_completion_success && completed_http_status == 200 && parse_aircraft_response())
+        if (g_completion_success && completed_http_status == 200 &&
+            prepare_response_for_parsing() && parse_aircraft_response())
         {
             finish_success(completed_http_status);
         }

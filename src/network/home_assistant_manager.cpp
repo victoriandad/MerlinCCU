@@ -11,6 +11,7 @@
 
 #include "config_manager.h"
 #include "debug_logging.h"
+#include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
 #include "lwip/altcp_tls.h"
@@ -350,283 +351,55 @@ const char* request_kind_name(RequestKind kind)
     return "unknown";
 }
 
+// The primitives below (status-line parsing, header lookup, Content-Length,
+// chunked decoding, buffered-completion detection) are shared across every
+// network manager -- see http_response.h and docs/architecture.md's "Network
+// helper ownership boundary". These wrappers exist only to keep every call
+// site in this file unchanged (same names, same signatures); the actual
+// logic lives in src/network/http_response.cpp, extracted from what used to
+// be this file's own implementation (issue #46) since it was the most
+// mature of three independently-converged copies.
+
 /// @brief Returns a pointer to the start of the current HTTP response body.
 const char* response_body()
 {
-    const char* body = std::strstr(g_response, "\r\n\r\n");
-    return body ? (body + 4) : nullptr;
+    return http_response::body(g_response);
 }
 
 /// @brief Returns a pointer to the end of the current HTTP header block.
 const char* response_headers_end()
 {
-    return std::strstr(g_response, "\r\n\r\n");
+    return http_response::headers_end(g_response);
 }
 
 /// @brief Extracts the HTTP status code when only part of the response is available.
 int partial_http_status()
 {
-    const char* line_end = std::strstr(g_response, "\r\n");
-    if (line_end == nullptr)
-    {
-        return 0;
-    }
-
-    int http_status = 0;
-    if (std::sscanf(g_response, "HTTP/%*d.%*d %d", &http_status) != 1)
-    {
-        return 0;
-    }
-
-    return http_status;
-}
-
-/// @brief Performs an ASCII-only case-insensitive character comparison.
-bool ascii_iequals(char left, char right)
-{
-    return std::tolower(static_cast<unsigned char>(left)) ==
-           std::tolower(static_cast<unsigned char>(right));
-}
-
-/// @brief Returns whether a string starts with the given ASCII prefix ignoring case.
-bool ascii_starts_with_case_insensitive(const char* text, const char* prefix)
-{
-    if (text == nullptr || prefix == nullptr)
-    {
-        return false;
-    }
-
-    while (*prefix != '\0')
-    {
-        if (*text == '\0' || !ascii_iequals(*text, *prefix))
-        {
-            return false;
-        }
-        ++text;
-        ++prefix;
-    }
-
-    return true;
-}
-
-/// @brief Returns the start of the next HTTP header line within the buffer.
-const char* next_header_line(const char* line, const char* headers_end)
-{
-    if (line == nullptr || headers_end == nullptr || line >= headers_end)
-    {
-        return nullptr;
-    }
-
-    const char* line_end = std::strstr(line, "\r\n");
-    if (line_end == nullptr || line_end >= headers_end)
-    {
-        return nullptr;
-    }
-
-    const char* next = line_end + 2;
-    return (next < headers_end) ? next : nullptr;
+    return http_response::partial_status(g_response);
 }
 
 /// @brief Finds the value for a named HTTP response header.
 const char* find_response_header_value(const char* header_name)
 {
-    if (header_name == nullptr || header_name[0] == '\0')
-    {
-        return nullptr;
-    }
-
-    const char* headers_end = response_headers_end();
-    const char* line = std::strstr(g_response, "\r\n");
-    if (headers_end == nullptr || line == nullptr)
-    {
-        return nullptr;
-    }
-
-    for (line += 2; line != nullptr && line < headers_end;
-         line = next_header_line(line, headers_end))
-    {
-        while (*line == ' ' || *line == '\t')
-        {
-            ++line;
-        }
-
-        if (ascii_starts_with_case_insensitive(line, header_name))
-        {
-            const char* value = line + std::strlen(header_name);
-            while (*value == ' ' || *value == '\t')
-            {
-                ++value;
-            }
-            return value;
-        }
-    }
-
-    return nullptr;
+    return http_response::find_header_value(g_response, response_headers_end(), header_name);
 }
 
 /// @brief Parses the `Content-Length` header from the current response.
 bool parse_response_content_length(size_t* out_length)
 {
-    if (out_length == nullptr)
-    {
-        return false;
-    }
-
-    const char* value = find_response_header_value("Content-Length:");
-    if (value == nullptr)
-    {
-        return false;
-    }
-
-    char* parse_end = nullptr;
-    const unsigned long parsed = std::strtoul(value, &parse_end, 10);
-    if (parse_end == value)
-    {
-        return false;
-    }
-
-    while (parse_end != nullptr && (*parse_end == ' ' || *parse_end == '\t'))
-    {
-        ++parse_end;
-    }
-
-    if (parse_end == nullptr || (*parse_end != '\0' && std::strncmp(parse_end, "\r\n", 2) != 0))
-    {
-        return false;
-    }
-
-    *out_length = static_cast<size_t>(parsed);
-    return true;
+    return http_response::parse_content_length(g_response, response_headers_end(), out_length);
 }
 
 /// @brief Returns whether a named header contains the requested token text.
 bool response_header_has_token(const char* header_name, const char* token)
 {
-    if (header_name == nullptr || token == nullptr || token[0] == '\0')
-    {
-        return false;
-    }
-
-    const char* value = find_response_header_value(header_name);
-    if (value == nullptr)
-    {
-        return false;
-    }
-
-    const size_t token_len = std::strlen(token);
-    const char* headers_end = response_headers_end();
-    const char* line_end = std::strstr(value, "\r\n");
-    if (headers_end != nullptr && (line_end == nullptr || line_end > headers_end))
-    {
-        line_end = headers_end;
-    }
-    if (line_end == nullptr)
-    {
-        return false;
-    }
-
-    for (const char* cursor = value; cursor + token_len <= line_end; ++cursor)
-    {
-        size_t i = 0;
-        while (i < token_len && ascii_iequals(cursor[i], token[i]))
-        {
-            ++i;
-        }
-        if (i == token_len)
-        {
-            return true;
-        }
-    }
-
-    return false;
+    return http_response::header_has_token(g_response, response_headers_end(), header_name, token);
 }
 
-int hex_digit_value(char c)
-{
-    if (c >= '0' && c <= '9')
-    {
-        return c - '0';
-    }
-    if (c >= 'A' && c <= 'F')
-    {
-        return c - 'A' + 10;
-    }
-    if (c >= 'a' && c <= 'f')
-    {
-        return c - 'a' + 10;
-    }
-    return -1;
-}
-
+/// @brief Decodes the current chunked response body in place.
 bool decode_chunked_response_body()
 {
-    char* headers_end = std::strstr(g_response, "\r\n\r\n");
-    if (headers_end == nullptr)
-    {
-        return false;
-    }
-
-    char* read = headers_end + 4;
-    char* write = read;
-    const char* response_end = g_response + g_response_len;
-
-    while (read < response_end)
-    {
-        size_t chunk_size = 0;
-        bool saw_digit = false;
-        while (read < response_end && *read != '\r' && *read != ';')
-        {
-            const int value = hex_digit_value(*read);
-            if (value < 0)
-            {
-                return false;
-            }
-
-            saw_digit = true;
-            chunk_size = (chunk_size * 16U) + static_cast<size_t>(value);
-            ++read;
-        }
-
-        if (!saw_digit)
-        {
-            return false;
-        }
-
-        while (read < response_end && *read != '\r')
-        {
-            ++read;
-        }
-
-        if ((read + 1) >= response_end || read[0] != '\r' || read[1] != '\n')
-        {
-            return false;
-        }
-        read += 2;
-
-        if (chunk_size == 0)
-        {
-            *write = '\0';
-            g_response_len = static_cast<size_t>(write - g_response);
-            return true;
-        }
-
-        if (read + chunk_size + 2 > response_end)
-        {
-            return false;
-        }
-
-        std::memmove(write, read, chunk_size);
-        write += chunk_size;
-        read += chunk_size;
-
-        if (read[0] != '\r' || read[1] != '\n')
-        {
-            return false;
-        }
-        read += 2;
-    }
-
-    return false;
+    return http_response::decode_chunked_body(g_response, &g_response_len);
 }
 
 /// @brief Returns true when the buffered response has enough body bytes to parse.
@@ -634,26 +407,7 @@ bool decode_chunked_response_body()
 /// session open after sending a complete Content-Length or chunked response.
 bool buffered_response_complete()
 {
-    const char* headers_end = response_headers_end();
-    if (headers_end == nullptr)
-    {
-        return false;
-    }
-
-    const char* body = headers_end + 4;
-    const size_t body_length = g_response_len - static_cast<size_t>(body - g_response);
-    size_t content_length = 0;
-    if (parse_response_content_length(&content_length))
-    {
-        return body_length >= content_length;
-    }
-
-    if (response_header_has_token("Transfer-Encoding:", "chunked"))
-    {
-        return std::strncmp(body, "0\r\n", 3) == 0 || std::strstr(body, "\r\n0\r\n") != nullptr;
-    }
-
-    return false;
+    return http_response::is_complete(g_response, g_response_len);
 }
 
 /// @brief Validates that the current HTTP response is complete and supported.
