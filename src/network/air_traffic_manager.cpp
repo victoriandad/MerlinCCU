@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "air_traffic_response_parser.h"
+#include "bounded_json.h"
 #include "config_manager.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
@@ -69,16 +71,10 @@ err_t g_completion_error = ERR_OK;
 using text_utils::copy_text;
 
 /// @brief One nearby aircraft parsed from the provider response.
-struct Candidate
-{
-    char hex[8];
-    char callsign[16];
-    double distance_nm;
-    double bearing_deg;
-    double altitude_ft;
-    bool on_ground;
-    bool has_altitude;
-};
+/// @details Defined in air_traffic_response_parser.h (issue #72) -- aliased
+/// here so the rest of this file's references (merge_trail_history() etc.)
+/// don't need to change.
+using Candidate = air_traffic_response::Candidate;
 
 /// @brief One continuously-tracked aircraft's snail-trail history.
 /// @details Keyed by ICAO24 hex address (stable across a callsign going
@@ -303,205 +299,6 @@ bool prepare_response_for_parsing()
     return http_response::decode_chunked_body(g_response, &g_response_len);
 }
 
-/// @brief Skips JSON whitespace and returns the next meaningful character.
-const char* skip_json_space(const char* cursor)
-{
-    while (cursor != nullptr &&
-           (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n'))
-    {
-        ++cursor;
-    }
-
-    return cursor;
-}
-
-/// @brief Finds the first occurrence of `key` within `[start, end)`.
-const char* find_bounded(const char* start, const char* end, const char* key)
-{
-    const size_t key_len = std::strlen(key);
-    if (key_len == 0U || end <= start)
-    {
-        return nullptr;
-    }
-
-    const size_t range_len = static_cast<size_t>(end - start);
-    if (key_len > range_len)
-    {
-        return nullptr;
-    }
-
-    for (const char* p = start; p <= end - key_len; ++p)
-    {
-        if (std::strncmp(p, key, key_len) == 0)
-        {
-            return p;
-        }
-    }
-
-    return nullptr;
-}
-
-/// @brief Extracts one bounded JSON string scalar by key.
-bool extract_bounded_string(const char* start, const char* end, const char* key, char* out,
-                            size_t out_size)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_json_space(cursor + 1);
-    if (cursor == nullptr || cursor >= end || *cursor != '"')
-    {
-        return false;
-    }
-
-    ++cursor;
-    size_t write_index = 0U;
-    while (cursor < end && *cursor != '"' && write_index + 1U < out_size)
-    {
-        if (*cursor == '\\' && (cursor + 1) < end)
-        {
-            ++cursor;
-        }
-        out[write_index++] = *cursor++;
-    }
-
-    out[write_index] = '\0';
-    return write_index > 0U;
-}
-
-/// @brief Returns true when `key`'s value is a quoted string (e.g. adsb.lol's
-/// `"alt_baro":"ground"` convention for grounded aircraft).
-bool bounded_value_is_string(const char* start, const char* end, const char* key)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_json_space(cursor + 1);
-    return cursor != nullptr && cursor < end && *cursor == '"';
-}
-
-/// @brief Extracts one bounded JSON numeric scalar by key.
-bool extract_bounded_number(const char* start, const char* end, const char* key, double* out_value)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_json_space(cursor + 1);
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    char* parse_end = nullptr;
-    const double value = std::strtod(cursor, &parse_end);
-    if (parse_end == cursor)
-    {
-        return false;
-    }
-
-    *out_value = value;
-    return true;
-}
-
-/// @brief Finds the closing `}` matching the `{` at `obj_start`, string-aware
-/// so a brace inside a quoted value cannot desync the depth count.
-const char* find_object_end(const char* obj_start, const char* buffer_end)
-{
-    if (obj_start >= buffer_end || *obj_start != '{')
-    {
-        return nullptr;
-    }
-
-    int depth = 0;
-    bool in_string = false;
-    for (const char* p = obj_start; p < buffer_end; ++p)
-    {
-        if (in_string)
-        {
-            if (*p == '\\' && (p + 1) < buffer_end)
-            {
-                ++p;
-                continue;
-            }
-            if (*p == '"')
-            {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if (*p == '"')
-        {
-            in_string = true;
-        }
-        else if (*p == '{')
-        {
-            ++depth;
-        }
-        else if (*p == '}')
-        {
-            --depth;
-            if (depth == 0)
-            {
-                return p;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
-/// @brief Inserts `candidate` into the bounded closest-N-by-distance array.
-void insert_candidate(std::array<Candidate, kAirTrafficEntryCapacity>& best, uint8_t& count,
-                      const Candidate& candidate)
-{
-    if (count < best.size())
-    {
-        best[count] = candidate;
-        ++count;
-    }
-    else if (candidate.distance_nm < best[count - 1U].distance_nm)
-    {
-        best[count - 1U] = candidate;
-    }
-    else
-    {
-        return;
-    }
-
-    for (uint8_t i = count; i > 1U && best[i - 1U].distance_nm < best[i - 2U].distance_nm; --i)
-    {
-        std::swap(best[i - 1U], best[i - 2U]);
-    }
-}
-
 /// @brief Merges this cycle's closest-N candidates into the persistent
 /// per-aircraft trail history, and writes each aircraft's current position
 /// and trail into `g_status.aircraft[]`.
@@ -610,81 +407,9 @@ bool parse_aircraft_response()
     }
 
     const char* buffer_end = g_response + g_response_len;
-    const char* cursor = array_marker + std::strlen("\"ac\":[");
     std::array<Candidate, kAirTrafficEntryCapacity> best = {};
-    uint8_t best_count = 0U;
-
-    while (cursor < buffer_end)
-    {
-        cursor = skip_json_space(cursor);
-        if (cursor >= buffer_end || *cursor == ']')
-        {
-            break;
-        }
-        if (*cursor == ',')
-        {
-            ++cursor;
-            continue;
-        }
-        if (*cursor != '{')
-        {
-            break;
-        }
-
-        const char* obj_end = find_object_end(cursor, buffer_end);
-        if (obj_end == nullptr)
-        {
-            // Truncated final object (response didn't fit) -- stop here and
-            // keep whatever closer aircraft were already found.
-            break;
-        }
-
-        double dst = 0.0;
-        if (extract_bounded_number(cursor, obj_end, "\"dst\"", &dst))
-        {
-            Candidate candidate = {};
-            candidate.distance_nm = dst;
-
-            double dir = 0.0;
-            extract_bounded_number(cursor, obj_end, "\"dir\"", &dir);
-            candidate.bearing_deg = dir;
-
-            extract_bounded_string(cursor, obj_end, "\"hex\"", candidate.hex, sizeof(candidate.hex));
-
-            char callsign[16] = {};
-            if (extract_bounded_string(cursor, obj_end, "\"flight\"", callsign, sizeof(callsign)))
-            {
-                size_t len = std::strlen(callsign);
-                while (len > 0U && callsign[len - 1U] == ' ')
-                {
-                    callsign[--len] = '\0';
-                }
-            }
-            if (callsign[0] == '\0')
-            {
-                std::snprintf(callsign, sizeof(callsign), "%s", candidate.hex);
-            }
-            std::snprintf(candidate.callsign, sizeof(candidate.callsign), "%s",
-                          callsign[0] != '\0' ? callsign : "?");
-
-            if (bounded_value_is_string(cursor, obj_end, "\"alt_baro\""))
-            {
-                candidate.on_ground = true;
-                candidate.has_altitude = false;
-            }
-            else
-            {
-                double altitude = 0.0;
-                candidate.has_altitude =
-                    extract_bounded_number(cursor, obj_end, "\"alt_baro\"", &altitude);
-                candidate.altitude_ft = altitude;
-            }
-
-            insert_candidate(best, best_count, candidate);
-        }
-
-        cursor = obj_end + 1;
-    }
+    const uint8_t best_count = air_traffic_response::parse_aircraft_candidates(
+        array_marker + std::strlen("\"ac\":["), buffer_end, best);
 
     merge_trail_history(best, best_count);
 
