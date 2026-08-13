@@ -1296,7 +1296,7 @@ bool build_preview_page()
         "initial-scale=1\"><title>Merlin CCU Display Preview</title><style>"
         ":root{color-scheme:dark;--bg:#070b0a;--panel:#11211c;--line:#315348;--text:#eaf8ef;"
         "--muted:#8eb5a7;--accent:#b7ff57;--key-line:#5d6972;--key-face:#12181d;--key-top:#202831;"
-        "--live:#ffe184;--rect-key-w:78px;--rect-key-h:56px;--font-small:12px;--font-large:18px}*{"
+        "--live:#ffe184;--rect-key-w:59px;--rect-key-h:42px;--font-small:9px;--font-large:14px}*{"
         "box-sizing:border-box}"
         "body{margin:0;background:radial-gradient(circle at 20%% -10%%,#27342f 0%%,#090e0d "
         "48%%,#050707 100%%);"
@@ -1365,9 +1365,16 @@ bool build_preview_page()
         // (substituted in below) -- no CSS scaling, so glyphs render
         // pixel-for-pixel instead of through a mismatched fractional stretch
         // (issue #79). The surrounding bezel/softkey-row geometry is scaled
-        // down proportionally from its previous 340x432 tuning to match.
+        // down proportionally from its previous 340x432 tuning to match --
+        // --rect-key-w/--rect-key-h/--font-small/--font-large (top-row and
+        // keypad matrix buttons) need the same ~0.75 scale applied, or they
+        // read as oversized next to the now-smaller display. justify-content
+        // centers this narrower grid within .display-bay, which otherwise
+        // left-aligns it while the (justify-content:center) top-row/keypad
+        // above and below stay centered -- the two together are what made
+        // the whole preview look mis-proportioned and shifted left.
         ".display-shell{display:grid;grid-template-columns:68px 270px "
-        "68px;gap:10px;align-items:start}"
+        "68px;gap:10px;align-items:start;justify-content:center}"
         ".screen-wrap{width:270px;height:338px;border:2px solid "
         "#5a6268;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,#1a2126,#"
         "0a0e11);"
