@@ -15,6 +15,7 @@
 #include "pinter_controller.h"
 #include "pinter_scheduling.h"
 #include "settings_controller.h"
+#include "status_controller.h"
 
 namespace console_controller
 {
@@ -63,131 +64,6 @@ constexpr size_t lamp_index(LampId lamp)
 constexpr size_t softkey_index(SoftKeyId key)
 {
     return static_cast<size_t>(key);
-}
-
-/// @brief Compares environment sensor snapshots without relying on structure padding.
-bool environment_sensor_status_matches(
-    const environment_sensor_manager::EnvironmentSensorStatus& lhs,
-    const environment_sensor_manager::EnvironmentSensorStatus& rhs)
-{
-    if (lhs.enabled !=                                  rhs.enabled || 
-        lhs.board !=                                    rhs.board || 
-        lhs.health !=                                   rhs.health ||
-        lhs.detected_device_count !=                    rhs.detected_device_count ||
-        lhs.last_scan_ms !=                             rhs.last_scan_ms ||
-        lhs.successful_scan_count !=                    rhs.successful_scan_count ||
-        lhs.failed_scan_count !=                        rhs.failed_scan_count || 
-        lhs.last_error !=                               rhs.last_error ||
-        lhs.i2c_bus !=                                  rhs.i2c_bus || 
-        lhs.sda_gpio !=                                 rhs.sda_gpio ||
-        lhs.scl_gpio !=                                 rhs.scl_gpio || 
-        lhs.baudrate_hz !=                              rhs.baudrate_hz ||
-        lhs.bme_variant !=                              rhs.bme_variant || 
-        lhs.bme_chip_id !=                              rhs.bme_chip_id ||
-        lhs.bme_last_error !=                           rhs.bme_last_error ||
-        lhs.bme_reading_valid !=                        rhs.bme_reading_valid ||
-        lhs.bme_temperature_centi_celsius !=            rhs.bme_temperature_centi_celsius ||
-        lhs.bme_pressure_pa !=                          rhs.bme_pressure_pa ||
-        lhs.bme_humidity_milli_percent !=               rhs.bme_humidity_milli_percent ||
-        lhs.bme_last_read_ms !=                         rhs.bme_last_read_ms ||
-        lhs.bme_read_error !=                           rhs.bme_read_error ||
-        lhs.bme_history_count !=                        rhs.bme_history_count ||
-        lhs.bme_temperature_history_centi_celsius !=    rhs.bme_temperature_history_centi_celsius ||
-        lhs.bme_pressure_history_deci_hpa !=            rhs.bme_pressure_history_deci_hpa ||
-        lhs.bme_humidity_history_centi_percent !=       rhs.bme_humidity_history_centi_percent ||
-        lhs.air_quality_raw_valid !=                    rhs.air_quality_raw_valid ||
-        lhs.air_quality_raw_signal !=                   rhs.air_quality_raw_signal ||
-        lhs.air_quality_baseline_raw_signal !=          rhs.air_quality_baseline_raw_signal ||
-        lhs.air_quality_score_valid !=                  rhs.air_quality_score_valid ||
-        lhs.air_quality_score !=                        rhs.air_quality_score ||
-        lhs.air_quality_last_read_ms !=                 rhs.air_quality_last_read_ms ||
-        lhs.air_quality_read_error !=                   rhs.air_quality_read_error ||
-        lhs.air_quality_history_count !=                rhs.air_quality_history_count ||
-        lhs.air_quality_history_score !=                rhs.air_quality_history_score)
-    {
-        return false;
-    }
-
-    for (size_t index = 0; index < lhs.devices.size(); ++index)
-    {
-        if (lhs.devices[index].device !=        rhs.devices[index].device ||
-            lhs.devices[index].i2c_address !=   rhs.devices[index].i2c_address ||
-            lhs.devices[index].detected !=      rhs.devices[index].detected)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// @brief Formats the list of currently active keypad panel pins.
-void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                 std::array<char, 48>& out_text)
-{
-    out_text.fill('\0');
-    size_t used = 0;
-
-    // These helpers flatten the electrical keypad snapshot into compact text so
-    // the debug page can show bench-oriented panel-pin numbers directly.
-    for (const auto& line : keypad_status.lines)
-    {
-        if (!line.configured || !line.active)
-        {
-            continue;
-        }
-
-        const int kWritten = std::snprintf(
-            out_text.data() + used, 
-            out_text.size() - used, 
-            "%s%u", 
-            (used == 0) ? "" : " ", 
-            static_cast<unsigned>(line.panel_pin));
-
-        if (kWritten <= 0)
-        {
-            break;
-        }
-
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
-        {
-            used = out_text.size() - 1;
-            break;
-        }
-        used += kWriteSize;
-    }
-}
-
-/// @brief Formats the panel-pin list for the current probe hit mask.
-void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                    std::array<char, 48>& out_text)
-{
-    out_text.fill('\0');
-    size_t used = 0;
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
-    {
-        if ((keypad_status.probe_hit_mask & (1U << i)) == 0)
-        {
-            continue;
-        }
-
-        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                                           (used == 0) ? "" : " ",
-                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (kWritten <= 0)
-        {
-            break;
-        }
-
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
-        {
-            used = out_text.size() - 1;
-            break;
-        }
-        used += kWriteSize;
-    }
 }
 
 /// @brief Applies any temporary softkey label overrides onto a page map.
@@ -1913,27 +1789,11 @@ bool flush_pending_pinter_save()
 /// @brief Updates the cached Wi-Fi snapshot in the console model.
 bool set_wifi_status(const WifiStatus& wifi_status)
 {
-    // These setters short-circuit unchanged snapshots so the UI does not redraw
-    // every loop when the subsystem state is stable.
-    const bool kChanged =
-        g_console_state.wifi_status.state != wifi_status.state ||
-        g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
-        g_console_state.wifi_status.internet_reachable != wifi_status.internet_reachable ||
-        g_console_state.wifi_status.internet_probe_pending != wifi_status.internet_probe_pending ||
-        g_console_state.wifi_status.last_error != wifi_status.last_error ||
-        g_console_state.wifi_status.link_status != wifi_status.link_status ||
-        g_console_state.wifi_status.internet_rtt_ms != wifi_status.internet_rtt_ms ||
-        g_console_state.wifi_status.auth_mode != wifi_status.auth_mode ||
-        g_console_state.wifi_status.mac_address != wifi_status.mac_address ||
-        g_console_state.wifi_status.ssid != wifi_status.ssid ||
-        g_console_state.wifi_status.ip_address != wifi_status.ip_address;
-
-    if (!kChanged)
+    if (!status_controller::set_wifi_status(g_console_state, wifi_status))
     {
         return false;
     }
 
-    g_console_state.wifi_status = wifi_status;
     update_softkeys_from_state();
     return true;
 }
@@ -1941,19 +1801,11 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 /// @brief Updates the cached time snapshot in the console model.
 bool set_time_status(const TimeStatus& time_status)
 {
-    const bool kChanged = g_console_state.time_status.synced != time_status.synced ||
-                          g_console_state.time_status.time_text != time_status.time_text ||
-                          g_console_state.time_status.date_text != time_status.date_text ||
-                          g_console_state.time_status.local_epoch_day !=
-                              time_status.local_epoch_day ||
-                          g_console_state.time_status.weekday_index != time_status.weekday_index;
-
-    if (!kChanged)
+    if (!status_controller::set_time_status(g_console_state, time_status))
     {
         return false;
     }
 
-    g_console_state.time_status = time_status;
     update_softkeys_from_state();
     return true;
 }
@@ -1961,13 +1813,7 @@ bool set_time_status(const TimeStatus& time_status)
 /// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
-    // operator== deliberately excludes weather_last_success_ms (see its
-    // declaration) so that field alone doesn't count as a UI-visible change --
-    // but it must still be copied into g_console_state every call, or it would
-    // never reach the page that reads it on ticks where nothing else changed.
-    const bool changed = !(g_console_state.home_assistant_status == home_assistant_status);
-    g_console_state.home_assistant_status = home_assistant_status;
-    if (!changed)
+    if (!status_controller::set_home_assistant_status(g_console_state, home_assistant_status))
     {
         return false;
     }
@@ -1979,12 +1825,11 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
-    if (g_console_state.mqtt_status == mqtt_status)
+    if (!status_controller::set_mqtt_status(g_console_state, mqtt_status))
     {
         return false;
     }
 
-    g_console_state.mqtt_status = mqtt_status;
     update_softkeys_from_state();
     return true;
 }
@@ -1992,11 +1837,7 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
 /// @brief Updates the cached local air-traffic snapshot in the console model.
 bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 {
-    // See set_home_assistant_status() above: last_success_ms is deliberately
-    // excluded from operator== but must still always be copied through.
-    const bool changed = !(g_console_state.air_traffic_status == air_traffic_status);
-    g_console_state.air_traffic_status = air_traffic_status;
-    if (!changed)
+    if (!status_controller::set_air_traffic_status(g_console_state, air_traffic_status))
     {
         return false;
     }
@@ -2008,34 +1849,11 @@ bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 /// @brief Updates the cached share market-data snapshot in the console model.
 bool set_share_market_status(const ShareMarketStatus& share_market_status)
 {
-    const bool kChanged =
-        g_console_state.share_data_configured != share_market_status.configured ||
-        g_console_state.share_data_valid != share_market_status.data_valid ||
-        g_console_state.share_data_last_error != share_market_status.last_error ||
-        g_console_state.share_data_last_http_status != share_market_status.last_http_status ||
-        g_console_state.share_count != share_market_status.share_count ||
-        g_console_state.watched_shares != share_market_status.watched_shares;
-
-    // last_success_ms is deliberately excluded from kChanged above (see its
-    // declaration) but must still always be copied through, or it would never
-    // reach the page that reads it on ticks where nothing else changed.
-    g_console_state.share_data_last_success_ms = share_market_status.last_success_ms;
-
-    if (!kChanged)
+    if (!status_controller::set_share_market_status(g_console_state, share_market_status))
     {
         return false;
     }
 
-    g_console_state.share_data_configured = share_market_status.configured;
-    g_console_state.share_data_valid = share_market_status.data_valid;
-    g_console_state.share_data_last_error = share_market_status.last_error;
-    g_console_state.share_data_last_http_status = share_market_status.last_http_status;
-    g_console_state.share_count = share_market_status.share_count;
-    g_console_state.watched_shares = share_market_status.watched_shares;
-    if (g_console_state.selected_share_index >= g_console_state.share_count)
-    {
-        g_console_state.selected_share_index = 0U;
-    }
     update_softkeys_from_state();
     return true;
 }
@@ -2044,13 +1862,12 @@ bool set_share_market_status(const ShareMarketStatus& share_market_status)
 bool set_environment_sensor_status(
     const environment_sensor_manager::EnvironmentSensorStatus& environment_sensor_status)
 {
-    if (environment_sensor_status_matches(g_console_state.environment_sensor_status,
-                                          environment_sensor_status))
+    if (!status_controller::set_environment_sensor_status(g_console_state,
+                                                           environment_sensor_status))
     {
         return false;
     }
 
-    g_console_state.environment_sensor_status = environment_sensor_status;
     update_softkeys_from_state();
     return true;
 }
@@ -2058,43 +1875,11 @@ bool set_environment_sensor_status(
 /// @brief Updates the keypad diagnostics snapshot shown by the UI.
 bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 {
-    std::array<char, 48> active_panel_pins = {};
-    std::array<char, 48> probe_hit_panel_pins = {};
-    std::array<char, 24> pressed_key_name = {};
-
-    // Build the display strings up front so the change detection compares the
-    // exact text the diagnostics page will eventually render.
-    build_active_panel_pin_text(keypad_status, active_panel_pins);
-    build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
-    std::snprintf(pressed_key_name.data(), pressed_key_name.size(), "%s",
-                  settings_controller::decoded_pressed_key(keypad_status));
-
-    const bool kChanged =
-        g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
-        g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
-        g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
-        g_console_state.keypad_debug_status.pressed_key_name != pressed_key_name ||
-        g_console_state.keypad_debug_status.active_panel_pins != active_panel_pins ||
-        g_console_state.keypad_debug_status.probe_drive_panel_pin !=
-            keypad_status.probe_drive_panel_pin ||
-        g_console_state.keypad_debug_status.probe_hit_mask != keypad_status.probe_hit_mask ||
-        g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
-        g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins;
-
-    if (!kChanged)
+    if (!status_controller::set_keypad_monitor_status(g_console_state, keypad_status))
     {
         return false;
     }
 
-    g_console_state.keypad_debug_status.active_mask = keypad_status.active_mask;
-    g_console_state.keypad_debug_status.configured_count = keypad_status.configured_count;
-    g_console_state.keypad_debug_status.active_count = keypad_status.active_count;
-    g_console_state.keypad_debug_status.pressed_key_name = pressed_key_name;
-    g_console_state.keypad_debug_status.active_panel_pins = active_panel_pins;
-    g_console_state.keypad_debug_status.probe_drive_panel_pin = keypad_status.probe_drive_panel_pin;
-    g_console_state.keypad_debug_status.probe_hit_mask = keypad_status.probe_hit_mask;
-    g_console_state.keypad_debug_status.probe_hit_count = keypad_status.probe_hit_count;
-    g_console_state.keypad_debug_status.probe_hit_panel_pins = probe_hit_panel_pins;
     update_softkeys_from_state();
     return true;
 }
@@ -2102,14 +1887,11 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 /// @brief Updates foreground main-loop load telemetry shown by Resources status.
 bool set_main_loop_load_status(const MainLoopLoadStatus& status)
 {
-    if (g_console_state.main_loop_load_status.valid == status.valid &&
-        g_console_state.main_loop_load_status.load_percent == status.load_percent &&
-        g_console_state.main_loop_load_status.sample_ms == status.sample_ms)
+    if (!status_controller::set_main_loop_load_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.main_loop_load_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -2117,14 +1899,11 @@ bool set_main_loop_load_status(const MainLoopLoadStatus& status)
 /// @brief Updates live heap usage telemetry shown by Resources status.
 bool set_heap_status(const HeapStatus& status)
 {
-    if (g_console_state.heap_status.valid == status.valid &&
-        g_console_state.heap_status.used_bytes == status.used_bytes &&
-        g_console_state.heap_status.arena_bytes == status.arena_bytes)
+    if (!status_controller::set_heap_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.heap_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -2132,13 +1911,11 @@ bool set_heap_status(const HeapStatus& status)
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.
 bool set_stack_status(const StackStatus& status)
 {
-    if (g_console_state.stack_status.valid == status.valid &&
-        g_console_state.stack_status.free_bytes == status.free_bytes)
+    if (!status_controller::set_stack_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.stack_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -2146,16 +1923,11 @@ bool set_stack_status(const StackStatus& status)
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(const DisplayTimingStatus& status)
 {
-    if (g_console_state.display_timing_status.valid == status.valid &&
-        g_console_state.display_timing_status.frame_rate_hz == status.frame_rate_hz &&
-        g_console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us &&
-        g_console_state.display_timing_status.present_skipped_count ==
-            status.present_skipped_count)
+    if (!status_controller::set_display_timing_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.display_timing_status = status;
     update_softkeys_from_state();
     return true;
 }
