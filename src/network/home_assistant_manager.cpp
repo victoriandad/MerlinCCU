@@ -248,6 +248,10 @@ altcp_pcb* g_pcb = nullptr;
 struct altcp_tls_config* g_tls_config = nullptr;
 size_t g_request_sent = 0;
 size_t g_response_len = 0;
+// Issue #104: g_response has no documented sizing rationale and aggregates
+// several entity fetches per cycle (weather, calendar, sun, self-entity).
+// Tracked here rather than guessed at before shrinking it.
+size_t g_response_peak_len = 0;
 char g_request[1024] = {};
 char g_request_body[256] = {};
 char g_response[16384] = {};
@@ -1427,14 +1431,16 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         pbuf_copy_partial(p, g_response + g_response_len, copy_len, 0);
         g_response_len += copy_len;
         g_response[g_response_len] = '\0';
+        g_response_peak_len = std::max(g_response_peak_len, g_response_len);
         g_deadline = make_timeout_time_ms(active_io_timeout_ms());
     }
 
     altcp_recved(pcb, received_len);
     pbuf_free(p);
-    direct_weather_log("recv bytes=%u copied=%u total=%u partial_http=%d\n",
+    direct_weather_log("recv bytes=%u copied=%u total=%u peak=%u partial_http=%d\n",
                        static_cast<unsigned>(received_len), static_cast<unsigned>(copy_len),
-                       static_cast<unsigned>(g_response_len), partial_http_status());
+                       static_cast<unsigned>(g_response_len),
+                       static_cast<unsigned>(g_response_peak_len), partial_http_status());
     if (g_response_len + 1 >= sizeof(g_response))
     {
         if (request_updates_connection_state())

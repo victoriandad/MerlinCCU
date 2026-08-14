@@ -8,6 +8,8 @@
 #include "hardware/clocks.h"
 #include "hardware/pio.h"
 #include "hardware/watchdog.h"
+#include "lwip/memp.h"
+#include "lwip/stats.h"
 #include "pico/stdlib.h"
 
 #include "air_traffic_manager.h"
@@ -697,6 +699,18 @@ int main()
                 .arena_bytes = static_cast<uint32_t>(heap_info.arena),
             };
             const bool heap_status_changed = console_controller::set_heap_status(heap_status);
+            // Issue #104: MEM_SIZE (lwipopts.h) and PBUF_POOL_SIZE are the two
+            // biggest static RAM consumers after the display raster buffers,
+            // with no prior usage data to size them against. Reports the
+            // real high-water mark once MEM_STATS/MEMP_STATS are enabled and
+            // debug_logging::kEnablePeriodicSerialOutput is flipped on for a
+            // bring-up session -- see the linked issue for why neither was
+            // safe to shrink on a guess.
+            PERIODIC_LOG("RAM: lwip_mem=%u/%uB pbuf_pool=%u/%uB\n",
+                         static_cast<unsigned>(lwip_stats.mem.max),
+                         static_cast<unsigned>(lwip_stats.mem.avail),
+                         static_cast<unsigned>(lwip_stats.memp[MEMP_PBUF_POOL]->max),
+                         static_cast<unsigned>(lwip_stats.memp[MEMP_PBUF_POOL]->avail));
             const StackStatus stack_status = {
                 .valid = true,
                 .free_bytes = stack_high_water_free_bytes(),
