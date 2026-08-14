@@ -38,10 +38,17 @@ add_executable(host_tests
     test_share_feed_parser.cpp
     test_air_traffic_response_parser.cpp
     test_golden_screens.cpp
+    test_pinter_controller.cpp
+    test_alert_controller.cpp
+    test_calendar_controller.cpp
+    test_settings_controller.cpp
+    test_status_controller.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
     stubs/environment_sensor_manager_stub.cpp
+    stubs/console_model_stub.cpp
+    stubs/pinter_store_stub.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
     ${MERLIN_ROOT}/src/config/config_persistence.cpp
     ${MERLIN_ROOT}/src/network/date_time_math.cpp
@@ -68,10 +75,17 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/status_screens.cpp
     ${MERLIN_ROOT}/src/display/weather_screens.cpp
     ${MERLIN_ROOT}/src/display/air_traffic_screens.cpp
+    ${MERLIN_ROOT}/src/core/console_controller.cpp
+    ${MERLIN_ROOT}/src/core/pinter_controller.cpp
+    ${MERLIN_ROOT}/src/core/alert_controller.cpp
+    ${MERLIN_ROOT}/src/core/calendar_controller.cpp
+    ${MERLIN_ROOT}/src/core/settings_controller.cpp
+    ${MERLIN_ROOT}/src/core/status_controller.cpp
 )
 
 target_include_directories(host_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MERLIN_ROOT}/include
     ${MERLIN_ROOT}/include/core
     ${MERLIN_ROOT}/include/sensors
     ${MERLIN_ROOT}/include/config
