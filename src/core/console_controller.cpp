@@ -2,26 +2,20 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <limits>
 
+#include "alert_controller.h"
 #include "alert_ordering.h"
-#include "calendar_navigation.h"
-#include "config_persistence.h"
+#include "calendar_controller.h"
 #include "console_controller_internal.h"
 #include "debug_logging.h"
-#include "pico/error.h"
 #include "pinter_controller.h"
 #include "pinter_scheduling.h"
-
-#if __has_include("calendar_identities.h")
-#include "calendar_identities.h"
-#else
-#include "calendar_identities.example.h"
-#endif
+#include "settings_controller.h"
+#include "status_controller.h"
 
 namespace console_controller
 {
@@ -38,115 +32,13 @@ bool g_user_activity_requested = false;
 // Sized for the longest three-line Pinter slot label: title + "[state name]"
 // (recipe names run up to ~42 characters) + "[Nd - rdy dd mon]".
 constexpr size_t kSoftkeyLabelCapacity = 96;
-// Shared with config_manager.cpp's save-time clamp so the two can't drift.
-using config_persistence::kMaxScreenSaverTimeoutMinutes;
-constexpr uint8_t kSettingsPageCount = 2U;
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_labels = {};
-std::array<std::array<char, 16>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_values = {};
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
-std::array<char, 16> g_screen_saver_timeout_selection_text = {};
-uint32_t g_alert_sequence_counter = 1U;
-uint8_t g_home_assistant_connect_failures = 0U;
-uint8_t g_weather_refresh_failures = 0U;
-uint8_t g_mqtt_connect_failures = 0U;
-uint8_t g_time_unsynced_samples = 0U;
-uint8_t g_keypad_fault_samples = 0U;
-uint32_t g_alert_acknowledged_sequence = 0U;
-constexpr uint8_t kAlertRetryThreshold = 5U;
-constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
-constexpr float kHighTemperatureAlertCelsius = 30.0F;
-constexpr float kHighWindAlertMph = 40.0F;
-constexpr uint32_t kStormLowPressurePa = 98000U;
-constexpr uint32_t kStormRapidPressureFallPa = 200U;
-constexpr uint8_t kStormPressureMinimumSamples = 6U;
-
-enum class AlertCode : uint8_t
-{
-    WifiDisconnected = 0,
-    WifiAuthFailed,
-    TimeNotSynced,
-    HomeAssistantOffline,
-    HomeAssistantUnauthorized,
-    HomeAssistantEntityMissing,
-    WeatherUnavailable,
-    WeatherProviderWarning,
-    WeatherTemperatureWarning,
-    WeatherWindWarning,
-    MqttOffline,
-    KeypadLineFault,
-    EnvironmentSensorFault,
-    LocalPressureStormWarning,
-    DisplayPipelineLag,
-    ShareDataUnavailable,
-    PinterScheduleConflict,
-    Count,
-};
-
-std::array<bool, static_cast<size_t>(AlertCode::Count)> g_alert_suppressed = {};
-std::array<bool, static_cast<size_t>(AlertCode::Count)> g_alert_was_active = {};
 
 void update_softkeys_from_state();
-void sync_system_alerts();
 void update_lamps_from_state();
-
-struct WeatherSourceDefinition
-{
-    WeatherSource source;
-    const char* selection_label;
-    const char* option_label;
-};
-
-struct WeatherPeriodDefinition
-{
-    WeatherPeriod period;
-    const char* selection_label;
-};
-
-struct SharePeriodDefinition
-{
-    SharePeriod period;
-    const char* selection_label;
-};
-
-struct CalendarOwnerDefinition
-{
-    CalendarOwner owner;
-    const char* selection_label;
-};
-
-struct TimeZoneDefinition
-{
-    TimeZoneSelection zone;
-    const char* selection_label;
-    const char* option_label;
-};
-
-struct ScreenSaverDefinition
-{
-    ScreenSaverSelection selection;
-    const char* selection_label;
-    const char* option_label;
-};
-
-constexpr std::array<WeatherSourceDefinition, 2> kWeatherSources = {{
-    {WeatherSource::HomeAssistant, "Home Assistant", "HOME ASSISTANT"},
-    {WeatherSource::OpenMeteo, "Open-Meteo", "OPEN-METEO"},
-}};
-
-constexpr std::array<WeatherPeriodDefinition, 3> kWeatherPeriods = {{
-    {WeatherPeriod::Hourly, "Hourly"},
-    {WeatherPeriod::NextTwentyFourHours, "Next 24 Hours"},
-    {WeatherPeriod::NextSevenDays, "Next 7 Days"},
-}};
-
-constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
-    {SharePeriod::Today, "Today"},
-    {SharePeriod::Week, "Week"},
-    {SharePeriod::Month, "Month"},
-    {SharePeriod::Year, "Year"},
-    {SharePeriod::AllTime, "All-time"},
-}};
+bool button_digit_value(ButtonId id, uint8_t* out_digit);
 
 constexpr std::array<SoftKeyId, kPinterBrewListVisibleCount> kPinterBrewListSoftkeys = {
     SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,  SoftKeyId::Left4,
@@ -157,366 +49,6 @@ constexpr std::array<SoftKeyRoute, kPinterBrewListVisibleCount> kPinterBrewListR
     SoftKeyRoute::SelectPinterListItem3, SoftKeyRoute::SelectPinterListItem4,
     SoftKeyRoute::SelectPinterListItem5, SoftKeyRoute::SelectPinterListItem6,
     SoftKeyRoute::SelectPinterListItem7, SoftKeyRoute::SelectPinterListItem8};
-
-const char* calendar_identity_label(CalendarOwner owner)
-{
-    if (owner == CalendarOwner::Combined)
-    {
-        return "Combined";
-    }
-
-    const size_t index = static_cast<size_t>(owner) - 1U;
-    if (index < kLocalCalendarIdentities.size() && kLocalCalendarIdentities[index][0] != '\0')
-    {
-        return kLocalCalendarIdentities[index];
-    }
-
-    switch (owner)
-    {
-    case CalendarOwner::Owner1:
-        return "Owner 1";
-    case CalendarOwner::Owner2:
-        return "Owner 2";
-    case CalendarOwner::Owner3:
-        return "Owner 3";
-    case CalendarOwner::Owner4:
-        return "Owner 4";
-    case CalendarOwner::Owner5:
-        return "Owner 5";
-    case CalendarOwner::Owner6:
-        return "Owner 6";
-    case CalendarOwner::Owner7:
-        return "Owner 7";
-    case CalendarOwner::Owner8:
-        return "Owner 8";
-    case CalendarOwner::Combined:
-        break;
-    }
-
-    return "Owner";
-}
-
-constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
-    {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
-    {TimeZoneSelection::ArgentinaStandard, "Argentina Time", "ARGENTINA"},
-    {TimeZoneSelection::SouthGeorgia, "South Georgia Time", "SOUTH GEORGIA"},
-    {TimeZoneSelection::Azores, "Azores Time", "AZORES"},
-    {TimeZoneSelection::EuropeLondon, "Europe/London", "LONDON"},
-    {TimeZoneSelection::CentralEuropean, "Central European Time", "CENTRAL EUROPEAN"},
-    {TimeZoneSelection::EasternEuropean, "Eastern European Time", "EASTERN EUROPEAN"},
-    {TimeZoneSelection::ArabiaStandard, "Arabia Standard Time", "ARABIA"},
-    {TimeZoneSelection::GulfStandard, "Gulf Standard Time", "GULF"},
-}};
-
-constexpr std::array<ScreenSaverDefinition, 8> kScreenSavers = {{
-    {ScreenSaverSelection::Life, "Life", "LIFE"},
-    {ScreenSaverSelection::Clock, "Clock", "CLOCK"},
-    {ScreenSaverSelection::Starfield, "Starfield", "STARFIELD"},
-    {ScreenSaverSelection::Matrix, "Matrix", "MATRIX"},
-    {ScreenSaverSelection::Radar, "Radar", "RADAR"},
-    {ScreenSaverSelection::Rain, "Rain", "RAIN"},
-    {ScreenSaverSelection::Worms, "Worms", "WORMS"},
-    {ScreenSaverSelection::Random, "Random", "RANDOM"},
-}};
-
-/// @brief Returns a short on/off label for selection-style softkeys.
-const char* enabled_selection_text(bool enabled)
-{
-    return enabled ? "Enabled" : "Disabled";
-}
-
-/// @brief Returns whether a saved secret has a non-empty persisted value.
-const char* secret_selection_text(bool present)
-{
-    return present ? "Stored" : "Not set";
-}
-
-/// @brief Returns the operator-facing identity label used on the settings menu.
-const char* device_identity_selection_text()
-{
-    const RuntimeConfig& settings = config_manager::settings();
-    if (settings.device_label[0] != '\0')
-    {
-        return settings.device_label.data();
-    }
-
-    return settings.device_name.data();
-}
-
-/// @brief Formats a numeric port for bracketed softkey labels.
-const char* port_selection_text(SoftKeyId key, uint16_t port)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
-    std::snprintf(buffer.data(), buffer.size(), "%u", static_cast<unsigned>(port));
-    return buffer.data();
-}
-
-/// @brief Formats a nautical-mile radius for bracketed softkey labels.
-const char* radius_nm_selection_text(SoftKeyId key, uint16_t radius_nm)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
-    std::snprintf(buffer.data(), buffer.size(), "%unm", static_cast<unsigned>(radius_nm));
-    return buffer.data();
-}
-
-/// @brief Moves the top-level settings menu between paged section groups.
-bool change_settings_page(int direction)
-{
-    if (g_console_state.active_page != MenuPage::Settings || direction == 0)
-    {
-        return false;
-    }
-
-    const int current_page = static_cast<int>(g_console_state.settings_page_index);
-    const int target_page = current_page + direction;
-    if (target_page < 0 || target_page >= static_cast<int>(kSettingsPageCount))
-    {
-        return false;
-    }
-
-    g_console_state.settings_page_index = static_cast<uint8_t>(target_page);
-    return true;
-}
-
-/// @brief Persists one runtime-config mutation and refreshes the menu UI.
-/// @details Front-panel settings must write back to the same flash-backed
-/// configuration used by the web UI so the two surfaces never diverge.
-template <typename Mutator> bool persist_runtime_config_change(Mutator&& mutator)
-{
-    RuntimeConfig settings = config_manager::settings();
-    if (!mutator(settings))
-    {
-        return false;
-    }
-
-    if (!config_manager::save(settings))
-    {
-        return false;
-    }
-
-    (void)console_controller::apply_runtime_config(config_manager::settings());
-    console_controller::request_redraw();
-    return true;
-}
-
-/// @brief Returns true when the panel pin is one of the confirmed matrix row pins.
-constexpr bool is_keypad_row_pin(uint8_t panel_pin)
-{
-    return panel_pin >= 5U && panel_pin <= 11U;
-}
-
-/// @brief Returns true when the panel pin is one of the confirmed matrix column pins.
-constexpr bool is_keypad_column_pin(uint8_t panel_pin)
-{
-    return panel_pin >= 15U && panel_pin <= 22U;
-}
-
-/// @brief Resolves one confirmed keypad matrix closure to its printed key legend.
-/// @details The mapping follows the bench-confirmed pairs documented in
-/// `README.md`, so the keypad debug page can show real legends like `LTRS`.
-const char* keypad_key_legend(uint8_t panel_pin_a, uint8_t panel_pin_b)
-{
-    uint8_t row_pin = panel_pin_a;
-    uint8_t column_pin = panel_pin_b;
-
-    if (is_keypad_column_pin(row_pin) && is_keypad_row_pin(column_pin))
-    {
-        row_pin = panel_pin_b;
-        column_pin = panel_pin_a;
-    }
-
-    if (!is_keypad_row_pin(row_pin) || !is_keypad_column_pin(column_pin))
-    {
-        return nullptr;
-    }
-
-    switch (row_pin)
-    {
-    case 5:
-        switch (column_pin)
-        {
-        case 20:
-            return "ALERT";
-        case 17:
-            return "TEST";
-        case 16:
-            return "BRT";
-        case 15:
-            return "DIM";
-        }
-        break;
-    case 6:
-        switch (column_pin)
-        {
-        case 21:
-            return "LTRS";
-        case 20:
-            return "BACK STEP";
-        case 19:
-            return "LEFT";
-        case 18:
-            return "RIGHT";
-        case 17:
-            return "/";
-        case 16:
-            return "CLR";
-        }
-        break;
-    case 7:
-        switch (column_pin)
-        {
-        case 22:
-            return "L1";
-        case 21:
-            return "A";
-        case 20:
-            return "B";
-        case 19:
-            return "C";
-        case 18:
-            return "D";
-        case 17:
-            return "E";
-        case 16:
-            return "F";
-        case 15:
-            return "R1";
-        }
-        break;
-    case 8:
-        switch (column_pin)
-        {
-        case 22:
-            return "L2";
-        case 21:
-            return "G";
-        case 20:
-            return "H";
-        case 19:
-            return "I";
-        case 18:
-            return "J";
-        case 17:
-            return "K";
-        case 16:
-            return "L";
-        case 15:
-            return "R2";
-        }
-        break;
-    case 9:
-        switch (column_pin)
-        {
-        case 22:
-            return "L3";
-        case 21:
-            return "M";
-        case 20:
-            return "N";
-        case 19:
-            return "O";
-        case 18:
-            return "P";
-        case 17:
-            return "Q";
-        case 16:
-            return "R";
-        case 15:
-            return "R3";
-        }
-        break;
-    case 10:
-        switch (column_pin)
-        {
-        case 22:
-            return "L4";
-        case 21:
-            return "S";
-        case 20:
-            return "T";
-        case 19:
-            return "U";
-        case 18:
-            return "V";
-        case 17:
-            return "W";
-        case 16:
-            return "X";
-        case 15:
-            return "R4";
-        }
-        break;
-    case 11:
-        switch (column_pin)
-        {
-        case 22:
-            return "L5";
-        case 21:
-            return "Y";
-        case 20:
-            return "Z";
-        case 19:
-            return "T FUNC";
-        case 18:
-            return ".";
-        case 17:
-            return "0";
-        case 16:
-            return "SPC";
-        case 15:
-            return "R5";
-        }
-        break;
-    }
-
-    return nullptr;
-}
-
-/// @brief Decodes the currently observed matrix closure set into one key legend.
-/// @details Symmetric probe hits for the same physical key are collapsed, while
-/// multiple simultaneous keys deliberately show `MULTI`.
-const char* decoded_pressed_key(const KeypadMonitorStatus& keypad_status)
-{
-    const char* decoded_key = nullptr;
-
-    for (size_t drive_index = 0; drive_index < keypad_status.lines.size(); ++drive_index)
-    {
-        const uint8_t drive_panel_pin = keypad_status.lines[drive_index].panel_pin;
-        const uint16_t hit_mask = keypad_status.probe_hits_by_drive[drive_index];
-        if (hit_mask == 0)
-        {
-            continue;
-        }
-
-        for (size_t sense_index = 0; sense_index < keypad_status.lines.size(); ++sense_index)
-        {
-            if ((hit_mask & (1U << sense_index)) == 0)
-            {
-                continue;
-            }
-
-            const uint8_t sense_panel_pin = keypad_status.lines[sense_index].panel_pin;
-            const char* legend = keypad_key_legend(drive_panel_pin, sense_panel_pin);
-            if (legend == nullptr)
-            {
-                continue;
-            }
-
-            if (decoded_key == nullptr)
-            {
-                decoded_key = legend;
-                continue;
-            }
-
-            if (std::strcmp(decoded_key, legend) != 0)
-            {
-                return "MULTI";
-            }
-        }
-    }
-
-    return (decoded_key != nullptr) ? decoded_key : "-";
-}
 
 /// @brief Converts a lamp enum into a stable array index.
 /// @details The controller stores lamp state in dense arrays so the UI update path can avoid
@@ -534,255 +66,6 @@ constexpr size_t softkey_index(SoftKeyId key)
     return static_cast<size_t>(key);
 }
 
-constexpr size_t alert_code_index(AlertCode code)
-{
-    return static_cast<size_t>(code);
-}
-
-/// @brief Compares environment sensor snapshots without relying on structure padding.
-bool environment_sensor_status_matches(
-    const environment_sensor_manager::EnvironmentSensorStatus& lhs,
-    const environment_sensor_manager::EnvironmentSensorStatus& rhs)
-{
-    if (lhs.enabled !=                                  rhs.enabled || 
-        lhs.board !=                                    rhs.board || 
-        lhs.health !=                                   rhs.health ||
-        lhs.detected_device_count !=                    rhs.detected_device_count ||
-        lhs.last_scan_ms !=                             rhs.last_scan_ms ||
-        lhs.successful_scan_count !=                    rhs.successful_scan_count ||
-        lhs.failed_scan_count !=                        rhs.failed_scan_count || 
-        lhs.last_error !=                               rhs.last_error ||
-        lhs.i2c_bus !=                                  rhs.i2c_bus || 
-        lhs.sda_gpio !=                                 rhs.sda_gpio ||
-        lhs.scl_gpio !=                                 rhs.scl_gpio || 
-        lhs.baudrate_hz !=                              rhs.baudrate_hz ||
-        lhs.bme_variant !=                              rhs.bme_variant || 
-        lhs.bme_chip_id !=                              rhs.bme_chip_id ||
-        lhs.bme_last_error !=                           rhs.bme_last_error ||
-        lhs.bme_reading_valid !=                        rhs.bme_reading_valid ||
-        lhs.bme_temperature_centi_celsius !=            rhs.bme_temperature_centi_celsius ||
-        lhs.bme_pressure_pa !=                          rhs.bme_pressure_pa ||
-        lhs.bme_humidity_milli_percent !=               rhs.bme_humidity_milli_percent ||
-        lhs.bme_last_read_ms !=                         rhs.bme_last_read_ms ||
-        lhs.bme_read_error !=                           rhs.bme_read_error ||
-        lhs.bme_history_count !=                        rhs.bme_history_count ||
-        lhs.bme_temperature_history_centi_celsius !=    rhs.bme_temperature_history_centi_celsius ||
-        lhs.bme_pressure_history_deci_hpa !=            rhs.bme_pressure_history_deci_hpa ||
-        lhs.bme_humidity_history_centi_percent !=       rhs.bme_humidity_history_centi_percent ||
-        lhs.air_quality_raw_valid !=                    rhs.air_quality_raw_valid ||
-        lhs.air_quality_raw_signal !=                   rhs.air_quality_raw_signal ||
-        lhs.air_quality_baseline_raw_signal !=          rhs.air_quality_baseline_raw_signal ||
-        lhs.air_quality_score_valid !=                  rhs.air_quality_score_valid ||
-        lhs.air_quality_score !=                        rhs.air_quality_score ||
-        lhs.air_quality_last_read_ms !=                 rhs.air_quality_last_read_ms ||
-        lhs.air_quality_read_error !=                   rhs.air_quality_read_error ||
-        lhs.air_quality_history_count !=                rhs.air_quality_history_count ||
-        lhs.air_quality_history_score !=                rhs.air_quality_history_score)
-    {
-        return false;
-    }
-
-    for (size_t index = 0; index < lhs.devices.size(); ++index)
-    {
-        if (lhs.devices[index].device !=        rhs.devices[index].device ||
-            lhs.devices[index].i2c_address !=   rhs.devices[index].i2c_address ||
-            lhs.devices[index].detected !=      rhs.devices[index].detected)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// @brief Returns the static metadata for one selectable weather source.
-const WeatherSourceDefinition& weather_source_definition(WeatherSource source)
-{
-    for (const WeatherSourceDefinition& definition : kWeatherSources)
-    {
-        if (definition.source == source)
-        {
-            return definition;
-        }
-    }
-
-    return kWeatherSources[0];
-}
-
-/// @brief Returns the static metadata for one selectable weather period label.
-const WeatherPeriodDefinition& weather_period_definition(WeatherPeriod period)
-{
-    for (const WeatherPeriodDefinition& definition : kWeatherPeriods)
-    {
-        if (definition.period == period)
-        {
-            return definition;
-        }
-    }
-
-    return kWeatherPeriods[0];
-}
-
-/// @brief Returns the static metadata for one selectable share period.
-const SharePeriodDefinition& share_period_definition(SharePeriod period)
-{
-    for (const SharePeriodDefinition& definition : kSharePeriods)
-    {
-        if (definition.period == period)
-        {
-            return definition;
-        }
-    }
-
-    return kSharePeriods[0];
-}
-
-/// @brief Returns the static metadata for one selectable calendar owner filter.
-const CalendarOwnerDefinition& calendar_owner_definition(CalendarOwner owner)
-{
-    static CalendarOwnerDefinition definitions[] = {
-        {CalendarOwner::Combined, "Combined"}, {CalendarOwner::Owner1, "Owner 1"},
-        {CalendarOwner::Owner2, "Owner 2"},     {CalendarOwner::Owner3, "Owner 3"},
-        {CalendarOwner::Owner4, "Owner 4"},     {CalendarOwner::Owner5, "Owner 5"},
-        {CalendarOwner::Owner6, "Owner 6"},     {CalendarOwner::Owner7, "Owner 7"},
-        {CalendarOwner::Owner8, "Owner 8"},
-    };
-
-    const size_t index = static_cast<size_t>(owner);
-    if (index < (sizeof(definitions) / sizeof(definitions[0])))
-    {
-        definitions[index].selection_label = calendar_identity_label(owner);
-        return definitions[index];
-    }
-
-    return definitions[0];
-}
-
-/// @brief Returns the ordered array index for the currently selected time zone.
-size_t time_zone_index(TimeZoneSelection zone)
-{
-    for (size_t i = 0; i < kTimeZones.size(); ++i)
-    {
-        if (kTimeZones[i].zone == zone)
-        {
-            return i;
-        }
-    }
-
-    for (size_t i = 0; i < kTimeZones.size(); ++i)
-    {
-        if (kTimeZones[i].zone == TimeZoneSelection::EuropeLondon)
-        {
-            return i;
-        }
-    }
-
-    return 0;
-}
-
-/// @brief Returns the static metadata for one selectable time-zone preset.
-const TimeZoneDefinition& time_zone_definition(TimeZoneSelection zone)
-{
-    return kTimeZones[time_zone_index(zone)];
-}
-
-/// @brief Returns the static metadata for one selectable screen saver.
-const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection selection)
-{
-    for (const ScreenSaverDefinition& definition : kScreenSavers)
-    {
-        if (definition.selection == selection)
-        {
-            return definition;
-        }
-    }
-
-    return kScreenSavers[0];
-}
-
-/// @brief Returns the selectable time zone at a relative offset from the current one.
-const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
-                                                        int offset)
-{
-    const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
-    const int kTargetIndex = kCurrentIndex + offset;
-    if (kTargetIndex < 0 || kTargetIndex >= static_cast<int>(kTimeZones.size()))
-    {
-        return nullptr;
-    }
-
-    return &kTimeZones[static_cast<size_t>(kTargetIndex)];
-}
-
-/// @brief Formats the list of currently active keypad panel pins.
-void build_active_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                 std::array<char, 48>& out_text)
-{
-    out_text.fill('\0');
-    size_t used = 0;
-
-    // These helpers flatten the electrical keypad snapshot into compact text so
-    // the debug page can show bench-oriented panel-pin numbers directly.
-    for (const auto& line : keypad_status.lines)
-    {
-        if (!line.configured || !line.active)
-        {
-            continue;
-        }
-
-        const int kWritten = std::snprintf(
-            out_text.data() + used, 
-            out_text.size() - used, 
-            "%s%u", 
-            (used == 0) ? "" : " ", 
-            static_cast<unsigned>(line.panel_pin));
-
-        if (kWritten <= 0)
-        {
-            break;
-        }
-
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
-        {
-            used = out_text.size() - 1;
-            break;
-        }
-        used += kWriteSize;
-    }
-}
-
-/// @brief Formats the panel-pin list for the current probe hit mask.
-void build_probe_hit_panel_pin_text(const KeypadMonitorStatus& keypad_status,
-                                    std::array<char, 48>& out_text)
-{
-    out_text.fill('\0');
-    size_t used = 0;
-    for (size_t i = 0; i < keypad_status.lines.size(); ++i)
-    {
-        if ((keypad_status.probe_hit_mask & (1U << i)) == 0)
-        {
-            continue;
-        }
-
-        const int kWritten = std::snprintf(out_text.data() + used, out_text.size() - used, "%s%u",
-                                           (used == 0) ? "" : " ",
-                                           static_cast<unsigned>(keypad_status.lines[i].panel_pin));
-        if (kWritten <= 0)
-        {
-            break;
-        }
-
-        const size_t kWriteSize = static_cast<size_t>(kWritten);
-        if (kWriteSize >= (out_text.size() - used))
-        {
-            used = out_text.size() - 1;
-            break;
-        }
-        used += kWriteSize;
-    }
-}
-
 /// @brief Applies any temporary softkey label overrides onto a page map.
 void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 {
@@ -796,720 +79,6 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
         }
 
         softkeys[i].label = g_softkey_label_overrides[i].data();
-    }
-}
-
-/// @brief Returns the configured or connected Wi-Fi name for the settings menu.
-const char* wifi_selection_text(const ConsoleState& console_state)
-{
-    if (console_state.wifi_status.ssid[0] != '\0')
-    {
-        return console_state.wifi_status.ssid.data();
-    }
-
-    const RuntimeConfig& config = config_manager::settings();
-    if (config.wifi_ssid[0] != '\0')
-    {
-        return config.wifi_ssid.data();
-    }
-
-    return console_state.wifi_status.credentials_present ? "Configured" : "Not Set";
-}
-
-/// @brief Returns the currently selected weather-source label for menu softkeys.
-const char* weather_source_selection_text(const ConsoleState& console_state)
-{
-    return weather_source_definition(console_state.weather_source).selection_label;
-}
-
-/// @brief Returns the currently selected weather period label for menu softkeys.
-const char* weather_period_selection_text(const ConsoleState& console_state)
-{
-    return weather_period_definition(console_state.weather_period).selection_label;
-}
-
-/// @brief Returns the currently selected share history period label.
-const char* share_period_selection_text(const ConsoleState& console_state)
-{
-    return share_period_definition(console_state.share_period).selection_label;
-}
-
-/// @brief Returns the Local Traffic page's current presentation mode label.
-const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
-{
-    return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
-}
-
-/// @brief Returns the currently selected shared-calendar owner label.
-const char* calendar_owner_selection_text(const ConsoleState& console_state)
-{
-    return calendar_owner_definition(console_state.calendar_owner).selection_label;
-}
-
-/// @brief Formats local temperature for softkey value brackets.
-const char* local_temperature_selection_text()
-{
-    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left1)];
-    const auto& status = g_console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const int32_t raw_value = status.bme_temperature_centi_celsius;
-    const bool negative = raw_value < 0;
-    const uint32_t absolute_value =
-        static_cast<uint32_t>(negative ? -static_cast<int64_t>(raw_value) : raw_value);
-    std::snprintf(buffer.data(), buffer.size(), "%s%lu.%02luC", negative ? "-" : "",
-                  static_cast<unsigned long>(absolute_value / 100U),
-                  static_cast<unsigned long>(absolute_value % 100U));
-    return buffer.data();
-}
-
-/// @brief Formats local humidity for softkey value brackets.
-const char* local_humidity_selection_text()
-{
-    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left2)];
-    const auto& status = g_console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%lu%%",
-                  static_cast<unsigned long>(tenths_percent / 10U),
-                  static_cast<unsigned long>(tenths_percent % 10U));
-    return buffer.data();
-}
-
-/// @brief Formats local pressure for softkey value brackets.
-const char* local_pressure_selection_text()
-{
-    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left3)];
-    const auto& status = g_console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%luhPa",
-                  static_cast<unsigned long>(tenths_hpa / 10U),
-                  static_cast<unsigned long>(tenths_hpa % 10U));
-    return buffer.data();
-}
-
-/// @brief Formats the local VOC-change band for softkey value brackets.
-const char* local_air_quality_selection_text()
-{
-    auto& buffer = g_dynamic_softkey_values[softkey_index(SoftKeyId::Left4)];
-    const auto& status = g_console_state.environment_sensor_status;
-    if (!status.enabled || !status.air_quality_score_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "%s",
-                      status.air_quality_read_error == PICO_ERROR_NONE ? "-" : "ERR");
-        return buffer.data();
-    }
-
-    std::snprintf(buffer.data(), buffer.size(), "%s",
-                  environment_sensor_manager::air_quality_band_text(status.air_quality_score));
-    return buffer.data();
-}
-
-/// @brief Returns the currently selected screen-saver label for menu softkeys.
-const char* screen_saver_selection_text(const ConsoleState& console_state)
-{
-    return screen_saver_definition(console_state.screen_saver_selection).selection_label;
-}
-
-/// @brief Returns the currently selected time-zone label for menu softkeys.
-const char* time_zone_selection_text(const ConsoleState& console_state)
-{
-    return time_zone_definition(console_state.time_zone).selection_label;
-}
-
-/// @brief Returns the currently configured screen-saver timeout label.
-/// @details `0 minutes` means the idle-triggered screen saver is disabled, and
-/// the label uses singular/plural wording that reads naturally on the menu.
-const char* screen_saver_timeout_selection_text(const ConsoleState& console_state)
-{
-    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
-    std::snprintf(g_screen_saver_timeout_selection_text.data(),
-                  g_screen_saver_timeout_selection_text.size(), "%u %s",
-                  static_cast<unsigned>(console_state.screen_saver_timeout_minutes), unit);
-    return g_screen_saver_timeout_selection_text.data();
-}
-
-/// @brief Returns the number of alert list pages required for the current queue.
-uint8_t alert_page_count()
-{
-    constexpr uint8_t kAlertsPerPage = 9U;
-    if (g_console_state.alert_count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((g_console_state.alert_count + (kAlertsPerPage - 1U)) /
-                                kAlertsPerPage);
-}
-
-/// @brief Sorts active alerts from newest to oldest for list-page mapping.
-void build_alert_display_indices(std::array<uint8_t, kActiveAlertCapacity>& out_indices,
-                                 uint8_t* out_count)
-{
-    const uint8_t count =
-        std::min(g_console_state.alert_count, static_cast<uint8_t>(out_indices.size()));
-    alert_ordering::sort_display_indices(g_console_state.active_alerts, count, out_indices);
-    *out_count = count;
-}
-
-/// @brief Finds an alert by code in the active queue.
-int find_alert_by_code(AlertCode code)
-{
-    for (uint8_t i = 0U; i < g_console_state.alert_count; ++i)
-    {
-        if (g_console_state.active_alerts[i].code == static_cast<uint8_t>(code))
-        {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
-}
-
-/// @brief Removes one alert from the active queue and compacts trailing entries.
-void erase_alert_at(uint8_t index)
-{
-    if (index >= g_console_state.alert_count)
-    {
-        return;
-    }
-
-    for (uint8_t i = index; i + 1U < g_console_state.alert_count; ++i)
-    {
-        g_console_state.active_alerts[i] = g_console_state.active_alerts[i + 1U];
-    }
-    if (g_console_state.alert_count > 0U)
-    {
-        --g_console_state.alert_count;
-    }
-}
-
-/// @brief Adds or updates one alert condition in the active queue.
-void set_alert_condition(AlertCode code, bool active, AlertSeverity severity, const char* summary,
-                         const char* detail)
-{
-    const size_t code_idx = alert_code_index(code);
-    if (!active)
-    {
-        g_alert_was_active[code_idx] = false;
-        g_alert_suppressed[code_idx] = false;
-        const int existing = find_alert_by_code(code);
-        if (existing >= 0)
-        {
-            erase_alert_at(static_cast<uint8_t>(existing));
-        }
-        return;
-    }
-
-    g_alert_was_active[code_idx] = true;
-    if (g_alert_suppressed[code_idx])
-    {
-        return;
-    }
-
-    const int existing = find_alert_by_code(code);
-    if (existing >= 0)
-    {
-        ActiveAlert& alert = g_console_state.active_alerts[static_cast<size_t>(existing)];
-        alert.severity = severity;
-        std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-        std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
-        // Existing active alerts keep their original arrival sequence/time so
-        // periodic state re-evaluation does not retrigger annunciation.
-        return;
-    }
-
-    if (g_console_state.alert_count >= g_console_state.active_alerts.size())
-    {
-        erase_alert_at(0U);
-    }
-
-    ActiveAlert& alert = g_console_state.active_alerts[g_console_state.alert_count++];
-    alert.severity = severity;
-    alert.code = static_cast<uint8_t>(code);
-    alert.sequence = g_alert_sequence_counter++;
-    std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%s",
-                  g_console_state.time_status.synced ? g_console_state.time_status.time_text.data()
-                                                     : "--:--");
-    std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-    std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
-}
-
-/// @brief Adds one optional temperature value to a min/max range.
-void include_temperature_alert_value(bool valid, float value_celsius, bool& have_range,
-                                     float& min_celsius, float& max_celsius)
-{
-    if (!valid)
-    {
-        return;
-    }
-
-    if (!have_range)
-    {
-        min_celsius = value_celsius;
-        max_celsius = value_celsius;
-        have_range = true;
-        return;
-    }
-
-    min_celsius = std::min(min_celsius, value_celsius);
-    max_celsius = std::max(max_celsius, value_celsius);
-}
-
-/// @brief Builds the combined current/forecast temperature range used by weather alerts.
-bool weather_temperature_alert_range(const WeatherMetrics& metrics, float& min_celsius,
-                                     float& max_celsius)
-{
-    bool have_range = false;
-    include_temperature_alert_value(metrics.current_temperature_celsius_valid,
-                                    metrics.current_temperature_celsius, have_range, min_celsius,
-                                    max_celsius);
-    include_temperature_alert_value(metrics.forecast_min_temperature_celsius_valid,
-                                    metrics.forecast_min_temperature_celsius, have_range,
-                                    min_celsius, max_celsius);
-    include_temperature_alert_value(metrics.forecast_max_temperature_celsius_valid,
-                                    metrics.forecast_max_temperature_celsius, have_range,
-                                    min_celsius, max_celsius);
-    return have_range;
-}
-
-/// @brief Builds the maximum current/forecast wind value used by weather alerts.
-bool weather_wind_alert_maximum(const WeatherMetrics& metrics, float& max_wind_mph)
-{
-    bool have_wind = false;
-    if (metrics.current_wind_speed_mph_valid)
-    {
-        max_wind_mph = metrics.current_wind_speed_mph;
-        have_wind = true;
-    }
-    if (metrics.forecast_max_wind_speed_mph_valid &&
-        (!have_wind || metrics.forecast_max_wind_speed_mph > max_wind_mph))
-    {
-        max_wind_mph = metrics.forecast_max_wind_speed_mph;
-        have_wind = true;
-    }
-
-    return have_wind;
-}
-
-/// @brief Formats the operator-facing temperature alert detail.
-void build_weather_temperature_alert_detail(float min_celsius, float max_celsius, char* out,
-                                            size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    const int min_celsius_rounded = static_cast<int>(std::lround(min_celsius));
-    const int max_celsius_rounded = static_cast<int>(std::lround(max_celsius));
-    const bool freezing = min_celsius <= kFreezingTemperatureAlertCelsius;
-    const bool hot = max_celsius >= kHighTemperatureAlertCelsius;
-
-    if (freezing && hot)
-    {
-        std::snprintf(out, out_size,
-                      "Weather temperature thresholds are active.\nLowest: %d C.\nHighest: %d C.",
-                      min_celsius_rounded, max_celsius_rounded);
-    }
-    else if (freezing)
-    {
-        std::snprintf(out, out_size,
-                      "Weather source reports freezing conditions.\nLowest cached value: %d C.",
-                      min_celsius_rounded);
-    }
-    else
-    {
-        std::snprintf(out, out_size,
-                      "Weather source reports high temperature.\nHighest cached value: %d C.",
-                      max_celsius_rounded);
-    }
-}
-
-/// @brief Formats the operator-facing wind alert detail.
-void build_weather_wind_alert_detail(float max_wind_mph, char* out, size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    const int max_wind_rounded = static_cast<int>(std::lround(max_wind_mph));
-    std::snprintf(out, out_size,
-                  "Weather source reports wind up to %d mph.\nSecure loose items and check local "
-                  "warnings.",
-                  max_wind_rounded);
-}
-
-/// @brief Formats pascals as tenths of a hectopascal for operator messages.
-void build_pressure_tenths_hpa_text(uint32_t pressure_pa, char* out, size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    const uint32_t tenths_hpa = (pressure_pa + 5U) / 10U;
-    std::snprintf(out, out_size, "%lu.%lu", static_cast<unsigned long>(tenths_hpa / 10U),
-                  static_cast<unsigned long>(tenths_hpa % 10U));
-}
-
-/// @brief Detects local pressure conditions that can indicate storm risk.
-/// @details BME280 pressure is local station pressure, so a rapid fall is more
-/// portable than an absolute threshold. The low-pressure threshold remains as a
-/// secondary signal for low-altitude installations.
-bool local_pressure_storm_warning(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* detail,
-    size_t detail_size)
-{
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        return false;
-    }
-
-    uint32_t pressure_fall_pa = 0U;
-    bool rapid_fall = false;
-    if (status.bme_history_count >= kStormPressureMinimumSamples)
-    {
-        const uint16_t comparison_index =
-            status.bme_history_count - kStormPressureMinimumSamples;
-        const uint32_t comparison_pressure =
-            static_cast<uint32_t>(status.bme_pressure_history_deci_hpa[comparison_index]) * 10U;
-        const uint32_t latest_pressure =
-            static_cast<uint32_t>(
-                status.bme_pressure_history_deci_hpa[status.bme_history_count - 1U]) *
-            10U;
-        if (comparison_pressure > latest_pressure)
-        {
-            pressure_fall_pa = comparison_pressure - latest_pressure;
-            rapid_fall = pressure_fall_pa >= kStormRapidPressureFallPa;
-        }
-    }
-
-    const bool low_pressure = status.bme_pressure_pa <= kStormLowPressurePa;
-    if (!low_pressure && !rapid_fall)
-    {
-        return false;
-    }
-
-    char current_pressure_text[12] = {};
-    char pressure_fall_text[12] = {};
-    build_pressure_tenths_hpa_text(status.bme_pressure_pa, current_pressure_text,
-                                   sizeof(current_pressure_text));
-    build_pressure_tenths_hpa_text(pressure_fall_pa, pressure_fall_text,
-                                   sizeof(pressure_fall_text));
-
-    if (detail != nullptr && detail_size > 0U)
-    {
-        if (low_pressure && rapid_fall)
-        {
-            std::snprintf(detail, detail_size,
-                          "Local pressure is %s hPa and has fallen %s hPa across recent "
-                          "averages.\nCheck local forecast and conditions.",
-                          current_pressure_text, pressure_fall_text);
-        }
-        else if (rapid_fall)
-        {
-            std::snprintf(detail, detail_size,
-                          "Local pressure has fallen %s hPa across recent five-minute "
-                          "averages.\nCheck local forecast and conditions.",
-                          pressure_fall_text);
-        }
-        else
-        {
-            std::snprintf(detail, detail_size,
-                          "Local pressure is low at %s hPa.\nCheck local forecast and conditions.",
-                          current_pressure_text);
-        }
-    }
-
-    return true;
-}
-
-/// @brief Rebuilds currently active alerts from live subsystem conditions.
-void sync_system_alerts()
-{
-    const bool wifi_connected = g_console_state.wifi_status.state == WifiConnectionState::Connected;
-    set_alert_condition(AlertCode::WifiDisconnected, !wifi_connected, AlertSeverity::Warning,
-                        "NETWORK",
-                        "Wi-Fi link is down.\nCheck SSID/password or signal.\nWithout network, "
-                        "cloud features are unavailable.");
-    const bool wifi_auth_failed =
-        g_console_state.wifi_status.state == WifiConnectionState::AuthFailed;
-    set_alert_condition(
-        AlertCode::WifiAuthFailed, wifi_auth_failed, AlertSeverity::Alert, "WIFI AUTH",
-        "Wi-Fi authentication failed.\nVerify SSID and password in NETWORK settings.");
-
-    if (!g_console_state.time_status.synced && wifi_connected)
-    {
-        if (g_time_unsynced_samples < 255U)
-        {
-            ++g_time_unsynced_samples;
-        }
-    }
-    else
-    {
-        g_time_unsynced_samples = 0U;
-    }
-    set_alert_condition(
-        AlertCode::TimeNotSynced, g_time_unsynced_samples >= kAlertRetryThreshold,
-        AlertSeverity::Warning, "TIME",
-        "Clock sync has failed after 5 attempts.\nCheck NTP reachability and timezone setup.");
-
-    const bool ha_enabled = config_manager::settings().home_assistant_enabled;
-    const HomeAssistantConnectionState ha_state = g_console_state.home_assistant_status.state;
-    if (!ha_enabled || ha_state == HomeAssistantConnectionState::Connected ||
-        ha_state == HomeAssistantConnectionState::Unauthorized)
-    {
-        g_home_assistant_connect_failures = 0U;
-    }
-    else
-    {
-        if (g_home_assistant_connect_failures < 255U)
-        {
-            ++g_home_assistant_connect_failures;
-        }
-    }
-
-    const bool ha_unauthorised = ha_state == HomeAssistantConnectionState::Unauthorized;
-    const bool ha_offline = ha_enabled && ha_state != HomeAssistantConnectionState::Connected &&
-                            ha_state != HomeAssistantConnectionState::Unauthorized &&
-                            g_home_assistant_connect_failures >= kAlertRetryThreshold;
-    set_alert_condition(AlertCode::HomeAssistantOffline, ha_offline, AlertSeverity::Message,
-                        "HOME ASSISTANT",
-                        "Home Assistant is not connected.\nCheck host/port/token and network "
-                        "routing.\nStatus page shows the latest connector state.");
-    set_alert_condition(AlertCode::HomeAssistantUnauthorized, ha_unauthorised, AlertSeverity::Alert,
-                        "AUTH FAILED",
-                        "Home Assistant rejected the API token.\nUpdate the token in Settings > "
-                        "Home Assistant.\nThis alert clears after a successful authorisation.");
-    const bool tracked_entity_configured =
-        config_manager::settings().home_assistant_entity_id[0] != '\0';
-    const bool tracked_entity_missing =
-        ha_enabled && tracked_entity_configured &&
-        ha_state == HomeAssistantConnectionState::Connected &&
-        (g_console_state.home_assistant_status.tracked_entity_state[0] == '\0' ||
-         std::strcmp(g_console_state.home_assistant_status.tracked_entity_state.data(),
-                     "unknown") == 0 ||
-         std::strcmp(g_console_state.home_assistant_status.tracked_entity_state.data(),
-                     "unavailable") == 0);
-    set_alert_condition(AlertCode::HomeAssistantEntityMissing, tracked_entity_missing,
-                        AlertSeverity::Warning, "HA ENTITY",
-                        "Tracked Home Assistant entity is missing or unavailable.\nCheck the "
-                        "entity id in settings and HA integration state.");
-
-    const bool weather_source_active =
-        g_console_state.weather_source == WeatherSource::OpenMeteo ||
-        g_console_state.weather_source == WeatherSource::HomeAssistant;
-    const bool weather_payload_present =
-        g_console_state.home_assistant_status.weather_condition[0] != '\0' ||
-        g_console_state.home_assistant_status.weather_temperature[0] != '\0' ||
-        g_console_state.home_assistant_status.weather_forecast_count > 0U ||
-        g_console_state.home_assistant_status.weather_daily_forecast_count > 0U;
-    const bool weather_prerequisites_ok =
-        (g_console_state.weather_source == WeatherSource::HomeAssistant)
-            ? (ha_state == HomeAssistantConnectionState::Connected)
-            : g_console_state.wifi_status.internet_reachable;
-    const bool weather_http_failed = g_console_state.home_assistant_status.last_http_status >= 400;
-    const bool weather_failed_now = !weather_payload_present || weather_http_failed;
-    if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
-    {
-        if (g_weather_refresh_failures < 255U)
-        {
-            ++g_weather_refresh_failures;
-        }
-    }
-    else
-    {
-        g_weather_refresh_failures = 0U;
-    }
-
-    const bool weather_unavailable = weather_source_active && weather_prerequisites_ok &&
-                                     g_weather_refresh_failures >= kAlertRetryThreshold;
-    set_alert_condition(
-        AlertCode::WeatherUnavailable, weather_unavailable, AlertSeverity::Message, "WEATHER",
-        "Weather refresh failed after 5 retries.\nCheck source settings and network path.");
-
-    const bool weather_alert_data_current =
-        weather_source_active && weather_prerequisites_ok && weather_payload_present &&
-        !weather_unavailable;
-    const WeatherAlertStatus& weather_alert_status =
-        g_console_state.home_assistant_status.weather_alert_status;
-    const AlertSeverity provider_warning_severity =
-        weather_alert_status.provider_warning_severity == AlertSeverity::None
-            ? AlertSeverity::Warning
-            : weather_alert_status.provider_warning_severity;
-    const char* provider_warning_summary =
-        weather_alert_status.provider_warning_summary[0] != '\0'
-            ? weather_alert_status.provider_warning_summary.data()
-            : "WX WARNING";
-    const char* provider_warning_detail =
-        weather_alert_status.provider_warning_detail[0] != '\0'
-            ? weather_alert_status.provider_warning_detail.data()
-            : "Weather source reports a warning.\nCheck the latest local forecast.";
-    // Official provider-warning APIs are not wired yet. Current weather providers
-    // can still raise this hook from severe condition telemetry such as thunder.
-    set_alert_condition(AlertCode::WeatherProviderWarning,
-                        weather_alert_data_current &&
-                            weather_alert_status.provider_warning_active,
-                        provider_warning_severity, provider_warning_summary,
-                        provider_warning_detail);
-
-    const WeatherMetrics& weather_metrics = g_console_state.home_assistant_status.weather_metrics;
-    float min_temperature_celsius = 0.0F;
-    float max_temperature_celsius = 0.0F;
-    const bool have_temperature_range = weather_temperature_alert_range(
-        weather_metrics, min_temperature_celsius, max_temperature_celsius);
-    const bool temperature_warning =
-        weather_alert_data_current && have_temperature_range &&
-        (min_temperature_celsius <= kFreezingTemperatureAlertCelsius ||
-         max_temperature_celsius >= kHighTemperatureAlertCelsius);
-    // Reused for each alert's detail text below rather than one 320-byte
-    // buffer per alert: every use is built then immediately consumed by
-    // set_alert_condition (which copies it into ActiveAlert), so lifetimes
-    // never overlap. This function runs twice per keypress (from
-    // update_softkeys_from_state and update_lamps_from_state), so trimming
-    // its stack footprint matters on a memory-constrained MCU with no
-    // configured stack guard.
-    char alert_detail_scratch[sizeof(ActiveAlert::detail)] = {};
-    if (temperature_warning)
-    {
-        build_weather_temperature_alert_detail(min_temperature_celsius, max_temperature_celsius,
-                                               alert_detail_scratch,
-                                               sizeof(alert_detail_scratch));
-    }
-    set_alert_condition(AlertCode::WeatherTemperatureWarning, temperature_warning,
-                        AlertSeverity::Warning, "WX TEMP",
-                        temperature_warning ? alert_detail_scratch : "");
-
-    float max_wind_mph = 0.0F;
-    const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
-    const bool wind_warning =
-        weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
-    if (wind_warning)
-    {
-        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch,
-                                        sizeof(alert_detail_scratch));
-    }
-    set_alert_condition(AlertCode::WeatherWindWarning, wind_warning, AlertSeverity::Warning,
-                        "WX WIND", wind_warning ? alert_detail_scratch : "");
-
-    const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
-    const MqttConnectionState mqtt_state = g_console_state.mqtt_status.state;
-    if (!mqtt_enabled || mqtt_state == MqttConnectionState::Connected)
-    {
-        g_mqtt_connect_failures = 0U;
-    }
-    else
-    {
-        if (g_mqtt_connect_failures < 255U)
-        {
-            ++g_mqtt_connect_failures;
-        }
-    }
-    set_alert_condition(
-        AlertCode::MqttOffline,
-        mqtt_enabled && mqtt_state != MqttConnectionState::Connected &&
-            g_mqtt_connect_failures >= kAlertRetryThreshold,
-        AlertSeverity::Message, "MQTT",
-        "MQTT discovery is offline after 5 retries.\nCheck broker host/port and credentials.");
-
-    const bool keypad_fault_now =
-        (std::strcmp(g_console_state.keypad_debug_status.pressed_key_name.data(), "MULTI") == 0) ||
-        g_console_state.keypad_debug_status.active_count > 3U;
-    if (keypad_fault_now)
-    {
-        if (g_keypad_fault_samples < 255U)
-        {
-            ++g_keypad_fault_samples;
-        }
-    }
-    else
-    {
-        g_keypad_fault_samples = 0U;
-    }
-    set_alert_condition(AlertCode::KeypadLineFault, g_keypad_fault_samples >= kAlertRetryThreshold,
-                        AlertSeverity::Warning, "KEYPAD",
-                        "Matrix line fault suspected.\nMultiple simultaneous/stuck lines were "
-                        "detected repeatedly.");
-
-    const environment_sensor_manager::EnvironmentSensorStatus& environment_status =
-        g_console_state.environment_sensor_status;
-    const bool sgp40_detected = std::any_of(
-        environment_status.devices.begin(), environment_status.devices.end(),
-        [](const environment_sensor_manager::EnvironmentSensorPresence& presence) {
-            return presence.device == environment_sensor_manager::EnvironmentSensorDevice::Sgp40 &&
-                   presence.detected;
-        });
-    const bool environment_sensor_fault =
-        environment_status.enabled &&
-        (environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Fault ||
-         environment_status.health ==
-             environment_sensor_manager::EnvironmentSensorHealth::BoardMissing ||
-         environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Partial ||
-         (environment_status.bme_variant == environment_sensor_manager::EnvironmentBmeVariant::Bme280 &&
-          !environment_status.bme_reading_valid &&
-          environment_status.bme_read_error != PICO_ERROR_NONE) ||
-         (sgp40_detected && !environment_status.air_quality_raw_valid &&
-          environment_status.air_quality_read_error != PICO_ERROR_NONE));
-    set_alert_condition(
-        AlertCode::EnvironmentSensorFault, environment_sensor_fault, AlertSeverity::Warning,
-        "ENV SENSOR",
-        "Environment sensor board is not fully detected.\nCheck I2C pins, power, and address "
-        "jumpers.\nStatus page shows the detected addresses and read errors.");
-
-    const bool pressure_storm_warning = local_pressure_storm_warning(
-        environment_status, alert_detail_scratch, sizeof(alert_detail_scratch));
-    set_alert_condition(AlertCode::LocalPressureStormWarning, pressure_storm_warning,
-                        AlertSeverity::Warning, "STORM WARN",
-                        pressure_storm_warning ? alert_detail_scratch : "");
-
-    // Placeholder: enable this once render/frame timing counters are exposed to console state.
-    const bool display_pipeline_lag = false;
-    set_alert_condition(
-        AlertCode::DisplayPipelineLag, display_pipeline_lag, AlertSeverity::Message, "DISPLAY LAG",
-        "Display update pipeline is lagging.\nAdd frame timing telemetry to activate this alert.");
-
-    const bool share_data_unavailable = g_console_state.share_data_configured &&
-                                        !g_console_state.share_data_valid &&
-                                        (g_console_state.share_data_last_error != 0 ||
-                                         g_console_state.share_data_last_http_status >= 400);
-    set_alert_condition(AlertCode::ShareDataUnavailable, share_data_unavailable,
-                        AlertSeverity::Message, "SHARES",
-                        "Share price data is unavailable.\nCheck the market data provider and "
-                        "watchlist configuration.");
-
-    // The Pinter workflow now records typed queue entries and planned durations.
-    // Friday target forecasts and future fridge/dock reservation windows are
-    // still needed before this can raise a reliable schedule-conflict alert.
-    set_alert_condition(AlertCode::PinterScheduleConflict, false, AlertSeverity::Message, "PINTER",
-                        "");
-
-    if (g_console_state.alert_detail_index >= g_console_state.alert_count)
-    {
-        g_console_state.alert_detail_index =
-            g_console_state.alert_count > 0U
-                ? static_cast<uint8_t>(g_console_state.alert_count - 1U)
-                : 0U;
-    }
-    const uint8_t pages = alert_page_count();
-    if (g_console_state.alert_list_page_index >= pages)
-    {
-        g_console_state.alert_list_page_index = static_cast<uint8_t>(pages - 1U);
     }
 }
 
@@ -1565,6 +134,11 @@ char* dynamic_softkey_label_buffer(SoftKeyId key, size_t& out_capacity)
     return buffer.data();
 }
 
+bool keypad_digit_value(ButtonId id, uint8_t* out_digit)
+{
+    return button_digit_value(id, out_digit);
+}
+
 } // namespace console_controller_internal
 
 namespace
@@ -1576,35 +150,6 @@ namespace
 // split out into its own namespace.
 using console_controller_internal::build_selection_softkey_label;
 using console_controller_internal::build_uppercase_title;
-
-/// @brief Formats one two-line alert softkey label using summary and occurred time.
-const char* build_alert_softkey_label(SoftKeyId key, const ActiveAlert& alert)
-{
-    auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
-    const char* time_text =
-        (alert.occurred_time_text[0] != '\0') ? alert.occurred_time_text.data() : "--:--";
-    std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", alert.summary.data(), time_text);
-    return buffer.data();
-}
-
-/// @brief Returns whether one event belongs in the active Calendar page filter.
-bool calendar_event_matches_filter(const CalendarEvent& event)
-{
-    return calendar_navigation::event_matches_filter(event, g_console_state.calendar_owner,
-                                                      g_console_state.calendar_day_offset);
-}
-
-/// @brief Formats one calendar event for the surrounding softkey labels.
-/// @details The data portion deliberately carries both time and owner so the
-/// Combined view remains useful without needing a wider centre table.
-const char* build_calendar_event_softkey_label(SoftKeyId key, const CalendarEvent& event)
-{
-    const char* owner_text = calendar_owner_definition(event.owner).selection_label;
-    char value[24] = {};
-    std::snprintf(value, sizeof(value), "%s %s",
-                  event.start_time[0] != '\0' ? event.start_time.data() : "--:--", owner_text);
-    return build_selection_softkey_label(key, event.title.data(), value);
-}
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
 MenuPage parent_page(MenuPage page)
@@ -1668,36 +213,6 @@ bool navigate_up_one_level()
     }
 
     g_console_state.active_page = kParentPage;
-    return true;
-}
-
-/// @brief Leaves the timeout scratchpad and restores normal page navigation.
-bool stop_screen_saver_timeout_editing()
-{
-    if (!g_console_state.screen_saver_timeout_editing)
-    {
-        return false;
-    }
-
-    g_console_state.screen_saver_timeout_editing = false;
-    g_console_state.screen_saver_timeout_edit_minutes =
-        g_console_state.screen_saver_timeout_minutes;
-    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
-    return true;
-}
-
-/// @brief Enters the timeout scratchpad using the currently saved timeout.
-bool start_screen_saver_timeout_editing()
-{
-    if (g_console_state.screen_saver_timeout_editing)
-    {
-        return false;
-    }
-
-    g_console_state.screen_saver_timeout_editing = true;
-    g_console_state.screen_saver_timeout_edit_minutes =
-        g_console_state.screen_saver_timeout_minutes;
-    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
     return true;
 }
 
@@ -1871,376 +386,6 @@ bool text_character_from_button(ButtonId id, char* out_character)
     return true;
 }
 
-/// @brief Appends or replaces the timeout scratchpad value with one digit.
-bool apply_screen_saver_timeout_digit(uint8_t digit)
-{
-    if (!g_console_state.screen_saver_timeout_editing)
-    {
-        return false;
-    }
-
-    const uint16_t kCurrentMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
-                                         ? 0
-                                         : g_console_state.screen_saver_timeout_edit_minutes;
-    const uint16_t kCandidateMinutes = g_console_state.screen_saver_timeout_replace_on_next_digit
-                                           ? digit
-                                           : static_cast<uint16_t>((kCurrentMinutes * 10U) + digit);
-    if (kCandidateMinutes > kMaxScreenSaverTimeoutMinutes)
-    {
-        return false;
-    }
-
-    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != kCandidateMinutes ||
-                          g_console_state.screen_saver_timeout_replace_on_next_digit;
-    g_console_state.screen_saver_timeout_edit_minutes = kCandidateMinutes;
-    g_console_state.screen_saver_timeout_replace_on_next_digit = false;
-    return kChanged;
-}
-
-/// @brief Clears the timeout scratchpad back to the disabled `0 mins` state.
-bool clear_screen_saver_timeout_edit()
-{
-    if (!g_console_state.screen_saver_timeout_editing)
-    {
-        return false;
-    }
-
-    const bool kChanged = g_console_state.screen_saver_timeout_edit_minutes != 0 ||
-                          !g_console_state.screen_saver_timeout_replace_on_next_digit;
-    g_console_state.screen_saver_timeout_edit_minutes = 0;
-    g_console_state.screen_saver_timeout_replace_on_next_digit = true;
-    return kChanged;
-}
-
-/// @brief Handles digit-only timeout entry while the scratchpad is visible.
-bool handle_screen_saver_timeout_edit_event(const ButtonEvent& event)
-{
-    if (!g_console_state.screen_saver_timeout_editing || event.type != ButtonEventType::Pressed)
-    {
-        return false;
-    }
-
-    if (event.id == ButtonId::BackStep)
-    {
-        return stop_screen_saver_timeout_editing();
-    }
-
-    if (event.id == ButtonId::Clr)
-    {
-        return clear_screen_saver_timeout_edit();
-    }
-
-    uint8_t digit = 0;
-    if (!button_digit_value(event.id, &digit))
-    {
-        return false;
-    }
-
-    return apply_screen_saver_timeout_digit(digit);
-}
-
-/// @brief Updates the selected weather source when a new provider is chosen.
-bool select_weather_source(WeatherSource source)
-{
-    return persist_runtime_config_change(
-        [source](RuntimeConfig& settings)
-        {
-            if (settings.weather_source == source)
-            {
-                return false;
-            }
-
-            settings.weather_source = source;
-            return true;
-        });
-}
-
-/// @brief Returns the next weather range in the user-facing cycle order.
-WeatherPeriod next_weather_period(WeatherPeriod period)
-{
-    switch (period)
-    {
-    case WeatherPeriod::Hourly:
-        return WeatherPeriod::NextTwentyFourHours;
-    case WeatherPeriod::NextTwentyFourHours:
-        return WeatherPeriod::NextSevenDays;
-    case WeatherPeriod::NextSevenDays:
-        return WeatherPeriod::Hourly;
-    }
-
-    return WeatherPeriod::Hourly;
-}
-
-/// @brief Advances the active weather page range without touching persisted config.
-bool cycle_weather_period()
-{
-    const WeatherPeriod next = next_weather_period(g_console_state.weather_period);
-    if (next == g_console_state.weather_period)
-    {
-        return false;
-    }
-
-    g_console_state.weather_period = next;
-    return true;
-}
-
-/// @brief Advances the Calendar owner filter without touching persisted config.
-bool cycle_calendar_owner()
-{
-    const CalendarOwner next = calendar_navigation::next_owner(g_console_state.calendar_owner);
-    if (next == g_console_state.calendar_owner)
-    {
-        return false;
-    }
-
-    g_console_state.calendar_owner = next;
-    return true;
-}
-
-/// @brief Returns whether the Calendar filters are showing the default view.
-bool calendar_filters_are_default()
-{
-    return calendar_navigation::filters_are_default(g_console_state.calendar_owner,
-                                                     g_console_state.calendar_day_offset);
-}
-
-/// @brief Restores the Calendar page to the default combined-today view.
-bool reset_calendar_filters()
-{
-    if (calendar_filters_are_default())
-    {
-        return false;
-    }
-
-    g_console_state.calendar_owner = CalendarOwner::Combined;
-    g_console_state.calendar_day_offset = 0;
-    return true;
-}
-
-/// @brief Moves the Calendar page day selection within a bounded preview window.
-/// @details The current UI slice stores days as offsets from today so the same
-/// model can be filled by Home Assistant calendar data later.
-bool change_calendar_day(int direction)
-{
-    if (g_console_state.active_page != MenuPage::Calendar)
-    {
-        return false;
-    }
-
-    return calendar_navigation::step_day_offset(direction, g_console_state.calendar_day_offset,
-                                                g_console_state.calendar_day_offset);
-}
-
-/// @brief Returns the backing event index for one visible Calendar softkey slot.
-/// @details Slots are rebuilt from the filtered event list on demand so Home
-/// Assistant data can replace the sample rows without duplicate indices.
-uint8_t calendar_event_index_for_visible_slot(uint8_t visible_slot)
-{
-    return calendar_navigation::event_index_for_visible_slot(
-        g_console_state.calendar_events, g_console_state.calendar_event_count,
-        g_console_state.calendar_owner, g_console_state.calendar_day_offset, visible_slot);
-}
-
-/// @brief Opens the detail page for one visible calendar event slot.
-bool open_calendar_detail_from_slot(uint8_t visible_slot)
-{
-    const uint8_t event_index = calendar_event_index_for_visible_slot(visible_slot);
-    if (event_index >= g_console_state.calendar_events.size())
-    {
-        return false;
-    }
-
-    g_console_state.selected_calendar_event_index = event_index;
-    g_console_state.active_page = MenuPage::CalendarDetail;
-    return true;
-}
-
-/// @brief Returns the next share-history period in the user-facing cycle order.
-SharePeriod next_share_period(SharePeriod period)
-{
-    switch (period)
-    {
-    case SharePeriod::Today:
-        return SharePeriod::Week;
-    case SharePeriod::Week:
-        return SharePeriod::Month;
-    case SharePeriod::Month:
-        return SharePeriod::Year;
-    case SharePeriod::Year:
-        return SharePeriod::AllTime;
-    case SharePeriod::AllTime:
-        return SharePeriod::Today;
-    }
-
-    return SharePeriod::Today;
-}
-
-/// @brief Advances the active share detail period without touching persisted config.
-bool cycle_share_period()
-{
-    const SharePeriod next = next_share_period(g_console_state.share_period);
-    if (next == g_console_state.share_period)
-    {
-        return false;
-    }
-
-    g_console_state.share_period = next;
-    return true;
-}
-
-/// @brief Toggles the Local Traffic page between the Tabular and Plot views.
-bool toggle_air_traffic_view_mode()
-{
-    g_console_state.air_traffic_view_mode =
-        (g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
-            ? AirTrafficViewMode::Plot
-            : AirTrafficViewMode::Tabular;
-    g_console_state.air_traffic_page_index = 0U;
-    return true;
-}
-
-/// @brief Returns the number of tabular Local Traffic pages for the current aircraft count.
-uint8_t air_traffic_page_count()
-{
-    const uint8_t count = g_console_state.air_traffic_status.aircraft_count;
-    if (count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage);
-}
-
-/// @brief Opens the requested share detail page from the current watchlist.
-bool select_share_slot(uint8_t slot)
-{
-    if (slot >= g_console_state.share_count || slot >= g_console_state.watched_shares.size())
-    {
-        return false;
-    }
-
-    g_console_state.selected_share_index = slot;
-    g_console_state.active_page = MenuPage::ShareDetail;
-    return true;
-}
-
-/// @brief Opens the currently selected share detail page from the watchlist.
-bool open_selected_share_detail()
-{
-    return select_share_slot(g_console_state.selected_share_index);
-}
-
-/// @brief Updates the selected time zone by moving relative to the current choice.
-bool select_relative_time_zone(int offset)
-{
-    const TimeZoneDefinition* target = relative_time_zone_definition(g_console_state, offset);
-    if (target == nullptr)
-    {
-        return false;
-    }
-
-    return persist_runtime_config_change(
-        [target](RuntimeConfig& settings)
-        {
-            if (settings.time_zone == target->zone)
-            {
-                return false;
-            }
-
-            settings.time_zone = target->zone;
-            return true;
-        });
-}
-
-/// @brief Updates the selected screen saver when the user chooses a new stub.
-bool select_screen_saver(ScreenSaverSelection selection)
-{
-    return persist_runtime_config_change(
-        [selection](RuntimeConfig& settings)
-        {
-            if (settings.screen_saver == selection)
-            {
-                return false;
-            }
-
-            settings.screen_saver = selection;
-            return true;
-        });
-}
-
-/// @brief Toggles whether the local web configuration server may run.
-bool toggle_remote_config_enabled()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.remote_config_enabled = !settings.remote_config_enabled;
-            return true;
-        });
-}
-
-
-/// @brief Toggles the Home Assistant REST integration enable flag.
-bool toggle_home_assistant_enabled()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.home_assistant_enabled = !settings.home_assistant_enabled;
-            return true;
-        });
-}
-
-/// @brief Toggles the MQTT discovery integration enable flag.
-bool toggle_mqtt_enabled()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.mqtt_enabled = !settings.mqtt_enabled;
-            return true;
-        });
-}
-
-/// @brief Toggles the local ADS-B air-traffic feed enable flag.
-bool toggle_air_traffic_enabled()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.air_traffic_enabled = !settings.air_traffic_enabled;
-            return true;
-        });
-}
-
-/// @brief Persists the scratchpad timeout value when the user presses Enter.
-bool confirm_screen_saver_timeout_edit()
-{
-    if (!g_console_state.screen_saver_timeout_editing)
-    {
-        return false;
-    }
-
-    const uint16_t new_minutes = g_console_state.screen_saver_timeout_edit_minutes;
-    if (new_minutes != g_console_state.screen_saver_timeout_minutes &&
-        !persist_runtime_config_change(
-            [new_minutes](RuntimeConfig& settings)
-            {
-                if (settings.screen_saver_timeout_minutes == new_minutes)
-                {
-                    return false;
-                }
-
-                settings.screen_saver_timeout_minutes = new_minutes;
-                return true;
-            }))
-    {
-        return false;
-    }
-
-    return stop_screen_saver_timeout_editing();
-}
-
 /// @brief Maps a physical bezel button to its logical softkey slot.
 SoftKeyId softkey_id_from_button(ButtonId button)
 {
@@ -2261,9 +406,9 @@ bool button_maps_to_softkey(ButtonId button)
 /// @brief Rebuilds the current softkey map from the active console state.
 void update_softkeys_from_state()
 {
-    sync_system_alerts();
+    alert_controller::sync(g_console_state);
 
-    const uint8_t air_traffic_pages = air_traffic_page_count();
+    const uint8_t air_traffic_pages = settings_controller::air_traffic_page_count(g_console_state);
     if (g_console_state.air_traffic_page_index >= air_traffic_pages)
     {
         g_console_state.air_traffic_page_index = static_cast<uint8_t>(air_traffic_pages - 1U);
@@ -2297,7 +442,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right1)] = {"SETTINGS", SoftKeyRoute::GoSettings, true};
         softkeys[softkey_index(SoftKeyId::Right2)] = {
             build_selection_softkey_label(SoftKeyId::Right2, "WEATHER",
-                                          weather_source_selection_text(g_console_state)),
+                                          settings_controller::weather_source_selection_text(g_console_state)),
             SoftKeyRoute::GoWeather,
             true,
         };
@@ -2323,14 +468,14 @@ void update_softkeys_from_state()
         for (uint8_t i = 0U; i < event_count && visible_index < slots.size(); ++i)
         {
             const CalendarEvent& event = g_console_state.calendar_events[i];
-            if (!calendar_event_matches_filter(event))
+            if (!calendar_controller::event_matches_filter(g_console_state, event))
             {
                 continue;
             }
 
             const SoftKeyId slot = slots[visible_index];
             softkeys[softkey_index(slot)] = {
-                build_calendar_event_softkey_label(slot, event),
+                calendar_controller::build_event_softkey_label(slot, event),
                 routes[visible_index],
                 true,
             };
@@ -2338,12 +483,12 @@ void update_softkeys_from_state()
         }
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(SoftKeyId::Left5, "PERSON",
-                                          calendar_owner_selection_text(g_console_state)),
+                                          calendar_controller::owner_selection_text(g_console_state)),
             SoftKeyRoute::CycleCalendarOwner,
             true,
         };
         softkeys[softkey_index(SoftKeyId::Right5)] =
-            calendar_filters_are_default()
+            calendar_controller::filters_are_default(g_console_state)
                 ? SoftKeyAction{"HOME", SoftKeyRoute::GoHome, true}
                 : SoftKeyAction{"RESET", SoftKeyRoute::ResetCalendarFilters, true};
         break;
@@ -2353,7 +498,7 @@ void update_softkeys_from_state()
     case MenuPage::Weather:
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
-                                          weather_period_selection_text(g_console_state)),
+                                          settings_controller::weather_period_selection_text(g_console_state)),
             SoftKeyRoute::CycleWeatherPeriod,
             true,
         };
@@ -2361,7 +506,7 @@ void update_softkeys_from_state()
     case MenuPage::AirTraffic:
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(SoftKeyId::Left5, "VIEW",
-                                          air_traffic_view_mode_selection_text(g_console_state)),
+                                          settings_controller::air_traffic_view_mode_selection_text(g_console_state)),
             SoftKeyRoute::ToggleAirTrafficViewMode,
             true,
         };
@@ -2539,7 +684,7 @@ void update_softkeys_from_state()
     case MenuPage::ShareDetail:
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(SoftKeyId::Left5, "PERIOD",
-                                          share_period_selection_text(g_console_state)),
+                                          settings_controller::share_period_selection_text(g_console_state)),
             SoftKeyRoute::CycleSharePeriod,
             true,
         };
@@ -2571,25 +716,25 @@ void update_softkeys_from_state()
     case MenuPage::LocalConditions:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(SoftKeyId::Left1, "TEMP",
-                                          local_temperature_selection_text()),
+                                          settings_controller::local_temperature_selection_text(g_console_state)),
             SoftKeyRoute::ShowLocalTemperatureGraph,
             true,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             build_selection_softkey_label(SoftKeyId::Left2, "HUMIDITY",
-                                          local_humidity_selection_text()),
+                                          settings_controller::local_humidity_selection_text(g_console_state)),
             SoftKeyRoute::ShowLocalHumidityGraph,
             true,
         };
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(SoftKeyId::Left3, "AIR PRESSURE",
-                                          local_pressure_selection_text()),
+                                          settings_controller::local_pressure_selection_text(g_console_state)),
             SoftKeyRoute::ShowLocalPressureGraph,
             true,
         };
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(SoftKeyId::Left4, "VOC CHANGE",
-                                          local_air_quality_selection_text()),
+                                          settings_controller::local_air_quality_selection_text(g_console_state)),
             SoftKeyRoute::ShowLocalAirQualityGraph,
             true,
         };
@@ -2603,28 +748,28 @@ void update_softkeys_from_state()
         {
             softkeys[softkey_index(SoftKeyId::Left1)] = {
                 build_selection_softkey_label(SoftKeyId::Left1, "DEVICE IDENTITY",
-                                              device_identity_selection_text()),
+                                              settings_controller::device_identity_selection_text()),
                 SoftKeyRoute::GoDeviceSettings,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left2)] = {
                 build_selection_softkey_label(
                     SoftKeyId::Left2, "REMOTE CONFIG",
-                    enabled_selection_text(config_manager::settings().remote_config_enabled)),
+                    settings_controller::enabled_selection_text(config_manager::settings().remote_config_enabled)),
                 SoftKeyRoute::ToggleRemoteConfig,
                 true,
                 config_manager::settings().remote_config_enabled,
             };
             softkeys[softkey_index(SoftKeyId::Left3)] = {
                 build_selection_softkey_label(SoftKeyId::Left3, "NETWORK",
-                                              wifi_selection_text(g_console_state)),
+                                              settings_controller::wifi_selection_text(g_console_state)),
                 SoftKeyRoute::GoWifiSettings,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left4)] = {
                 build_selection_softkey_label(
                     SoftKeyId::Left4, "HOME ASSISTANT",
-                    enabled_selection_text(config_manager::settings().home_assistant_enabled)),
+                    settings_controller::enabled_selection_text(config_manager::settings().home_assistant_enabled)),
                 SoftKeyRoute::GoHomeAssistantSettings,
                 true,
             };
@@ -2634,32 +779,32 @@ void update_softkeys_from_state()
             softkeys[softkey_index(SoftKeyId::Left1)] = {
                 build_selection_softkey_label(
                     SoftKeyId::Left1, "MQTT DISCOVERY",
-                    enabled_selection_text(config_manager::settings().mqtt_enabled)),
+                    settings_controller::enabled_selection_text(config_manager::settings().mqtt_enabled)),
                 SoftKeyRoute::GoMqttSettings,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left2)] = {
                 build_selection_softkey_label(SoftKeyId::Left2, "WEATHER SOURCE",
-                                              weather_source_selection_text(g_console_state)),
+                                              settings_controller::weather_source_selection_text(g_console_state)),
                 SoftKeyRoute::GoWeatherSources,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left3)] = {
                 build_selection_softkey_label(SoftKeyId::Left3, "DISPLAY & TIME",
-                                              time_zone_selection_text(g_console_state)),
+                                              settings_controller::time_zone_selection_text(g_console_state)),
                 SoftKeyRoute::GoTimeZoneSettings,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left4)] = {
                 build_selection_softkey_label(SoftKeyId::Left4, "SCREEN SAVER",
-                                              screen_saver_selection_text(g_console_state)),
+                                              settings_controller::screen_saver_selection_text(g_console_state)),
                 SoftKeyRoute::GoScreenSaverSettings,
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Right1)] = {
                 build_selection_softkey_label(
                     SoftKeyId::Right1, "ADS-B TRAFFIC",
-                    enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+                    settings_controller::enabled_selection_text(config_manager::settings().air_traffic_enabled)),
                 SoftKeyRoute::GoAirTrafficSettings,
                 true,
             };
@@ -2701,7 +846,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left2)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left2, "PASSWORD",
-                secret_selection_text(config_manager::settings().wifi_password[0] != '\0')),
+                settings_controller::secret_selection_text(config_manager::settings().wifi_password[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -2710,7 +855,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left1, "REST API",
-                enabled_selection_text(config_manager::settings().home_assistant_enabled)),
+                settings_controller::enabled_selection_text(config_manager::settings().home_assistant_enabled)),
             SoftKeyRoute::ToggleHomeAssistantEnabled,
             true,
             config_manager::settings().home_assistant_enabled,
@@ -2724,7 +869,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left3, "PORT",
-                port_selection_text(SoftKeyId::Left3,
+                settings_controller::port_selection_text(SoftKeyId::Left3,
                                     config_manager::settings().home_assistant_port)),
             SoftKeyRoute::None,
             true,
@@ -2732,7 +877,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left4, "TOKEN",
-                secret_selection_text(config_manager::settings().home_assistant_token[0] != '\0')),
+                settings_controller::secret_selection_text(config_manager::settings().home_assistant_token[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -2755,7 +900,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left1, "MQTT",
-                enabled_selection_text(config_manager::settings().mqtt_enabled)),
+                settings_controller::enabled_selection_text(config_manager::settings().mqtt_enabled)),
             SoftKeyRoute::ToggleMqttEnabled,
             true,
             config_manager::settings().mqtt_enabled,
@@ -2769,7 +914,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left3, "PORT",
-                port_selection_text(SoftKeyId::Left3, config_manager::settings().mqtt_port)),
+                settings_controller::port_selection_text(SoftKeyId::Left3, config_manager::settings().mqtt_port)),
             SoftKeyRoute::None,
             true,
         };
@@ -2782,7 +927,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left5)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left5, "PASSWORD",
-                secret_selection_text(config_manager::settings().mqtt_password[0] != '\0')),
+                settings_controller::secret_selection_text(config_manager::settings().mqtt_password[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -2803,7 +948,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left1, "ADS-B",
-                enabled_selection_text(config_manager::settings().air_traffic_enabled)),
+                settings_controller::enabled_selection_text(config_manager::settings().air_traffic_enabled)),
             SoftKeyRoute::ToggleAirTrafficEnabled,
             true,
             config_manager::settings().air_traffic_enabled,
@@ -2817,14 +962,14 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left3)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left3, "PORT",
-                port_selection_text(SoftKeyId::Left3, config_manager::settings().air_traffic_port)),
+                settings_controller::port_selection_text(SoftKeyId::Left3, config_manager::settings().air_traffic_port)),
             SoftKeyRoute::None,
             true,
         };
         softkeys[softkey_index(SoftKeyId::Left4)] = {
             build_selection_softkey_label(
                 SoftKeyId::Left4, "RADIUS",
-                radius_nm_selection_text(SoftKeyId::Left4,
+                settings_controller::radius_nm_selection_text(SoftKeyId::Left4,
                                          config_manager::settings().air_traffic_radius_nm)),
             SoftKeyRoute::None,
             true,
@@ -2838,7 +983,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Right1)] = {
             build_selection_softkey_label(
                 SoftKeyId::Right1, "API KEY",
-                secret_selection_text(config_manager::settings().air_traffic_api_key[0] != '\0')),
+                settings_controller::secret_selection_text(config_manager::settings().air_traffic_api_key[0] != '\0')),
             SoftKeyRoute::None,
             true,
         };
@@ -2846,55 +991,55 @@ void update_softkeys_from_state()
     case MenuPage::ScreenSaverSettings:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             build_selection_softkey_label(SoftKeyId::Left1, "TIMEOUT PERIOD",
-                                          screen_saver_timeout_selection_text(g_console_state)),
+                                          settings_controller::screen_saver_timeout_selection_text(g_console_state)),
             SoftKeyRoute::EditScreenSaverTimeout,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_timeout_editing,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
-            screen_saver_definition(ScreenSaverSelection::Life).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Life).option_label,
             SoftKeyRoute::SelectScreenSaverLife,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Life,
         };
         softkeys[softkey_index(SoftKeyId::Left3)] = {
-            screen_saver_definition(ScreenSaverSelection::Clock).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Clock).option_label,
             SoftKeyRoute::SelectScreenSaverClock,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Clock,
         };
         softkeys[softkey_index(SoftKeyId::Left4)] = {
-            screen_saver_definition(ScreenSaverSelection::Starfield).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Starfield).option_label,
             SoftKeyRoute::SelectScreenSaverStarfield,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Starfield,
         };
         softkeys[softkey_index(SoftKeyId::Left5)] = {
-            screen_saver_definition(ScreenSaverSelection::Random).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Random).option_label,
             SoftKeyRoute::SelectScreenSaverRandom,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Random,
         };
         softkeys[softkey_index(SoftKeyId::Right1)] = {
-            screen_saver_definition(ScreenSaverSelection::Matrix).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Matrix).option_label,
             SoftKeyRoute::SelectScreenSaverMatrix,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Matrix,
         };
         softkeys[softkey_index(SoftKeyId::Right2)] = {
-            screen_saver_definition(ScreenSaverSelection::Radar).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Radar).option_label,
             SoftKeyRoute::SelectScreenSaverRadar,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Radar,
         };
         softkeys[softkey_index(SoftKeyId::Right3)] = {
-            screen_saver_definition(ScreenSaverSelection::Rain).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Rain).option_label,
             SoftKeyRoute::SelectScreenSaverRain,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Rain,
         };
         softkeys[softkey_index(SoftKeyId::Right4)] = {
-            screen_saver_definition(ScreenSaverSelection::Worms).option_label,
+            settings_controller::screen_saver_definition(ScreenSaverSelection::Worms).option_label,
             SoftKeyRoute::SelectScreenSaverWorms,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_selection == ScreenSaverSelection::Worms,
@@ -2910,13 +1055,13 @@ void update_softkeys_from_state()
         break;
     case MenuPage::WeatherSources:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
-            weather_source_definition(WeatherSource::HomeAssistant).option_label,
+            settings_controller::weather_source_definition(WeatherSource::HomeAssistant).option_label,
             SoftKeyRoute::SelectWeatherHomeAssistant,
             true,
             g_console_state.weather_source == WeatherSource::HomeAssistant,
         };
         softkeys[softkey_index(SoftKeyId::Left2)] = {
-            weather_source_definition(WeatherSource::OpenMeteo).option_label,
+            settings_controller::weather_source_definition(WeatherSource::OpenMeteo).option_label,
             SoftKeyRoute::SelectWeatherOpenMeteo,
             true,
             g_console_state.weather_source == WeatherSource::OpenMeteo,
@@ -2941,14 +1086,14 @@ void update_softkeys_from_state()
         break;
     case MenuPage::TimeZoneSettings:
     {
-        const TimeZoneDefinition* west_one = relative_time_zone_definition(g_console_state, -1);
-        const TimeZoneDefinition* west_two = relative_time_zone_definition(g_console_state, -2);
-        const TimeZoneDefinition* west_three = relative_time_zone_definition(g_console_state, -3);
-        const TimeZoneDefinition* west_four = relative_time_zone_definition(g_console_state, -4);
-        const TimeZoneDefinition* east_one = relative_time_zone_definition(g_console_state, 1);
-        const TimeZoneDefinition* east_two = relative_time_zone_definition(g_console_state, 2);
-        const TimeZoneDefinition* east_three = relative_time_zone_definition(g_console_state, 3);
-        const TimeZoneDefinition* east_four = relative_time_zone_definition(g_console_state, 4);
+        const settings_controller::TimeZoneDefinition* west_one = settings_controller::relative_time_zone_definition(g_console_state, -1);
+        const settings_controller::TimeZoneDefinition* west_two = settings_controller::relative_time_zone_definition(g_console_state, -2);
+        const settings_controller::TimeZoneDefinition* west_three = settings_controller::relative_time_zone_definition(g_console_state, -3);
+        const settings_controller::TimeZoneDefinition* west_four = settings_controller::relative_time_zone_definition(g_console_state, -4);
+        const settings_controller::TimeZoneDefinition* east_one = settings_controller::relative_time_zone_definition(g_console_state, 1);
+        const settings_controller::TimeZoneDefinition* east_two = settings_controller::relative_time_zone_definition(g_console_state, 2);
+        const settings_controller::TimeZoneDefinition* east_three = settings_controller::relative_time_zone_definition(g_console_state, 3);
+        const settings_controller::TimeZoneDefinition* east_four = settings_controller::relative_time_zone_definition(g_console_state, 4);
 
         if (west_one != nullptr)
         {
@@ -3003,7 +1148,7 @@ void update_softkeys_from_state()
     {
         std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
         uint8_t sorted_count = 0U;
-        build_alert_display_indices(alert_indices, &sorted_count);
+        alert_controller::build_display_indices(g_console_state, alert_indices, &sorted_count);
         constexpr uint8_t kAlertsPerPage = 9U;
         const uint8_t page_start =
             static_cast<uint8_t>(g_console_state.alert_list_page_index * kAlertsPerPage);
@@ -3026,7 +1171,7 @@ void update_softkeys_from_state()
                 continue;
             }
             const ActiveAlert& alert = g_console_state.active_alerts[alert_indices[index]];
-            softkeys[softkey_index(slots[i])] = {build_alert_softkey_label(slots[i], alert),
+            softkeys[softkey_index(slots[i])] = {alert_controller::build_softkey_label(slots[i], alert),
                                                  routes[i], true};
         }
         softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
@@ -3075,12 +1220,12 @@ SystemTestState next_test_state(SystemTestState state)
 /// @brief Recomputes lamp outputs from the current logical console state.
 void update_lamps_from_state()
 {
-    sync_system_alerts();
+    alert_controller::sync(g_console_state);
 
     // Alert and test lamps mirror the current logical state so the front panel
     // behaves like annunciators rather than generic status LEDs.
-    const alert_ordering::AnnunciationSummary annunciation = alert_ordering::summarize(
-        g_console_state.active_alerts, g_console_state.alert_count, g_alert_acknowledged_sequence);
+    const alert_ordering::AnnunciationSummary annunciation =
+        alert_controller::annunciation_summary(g_console_state);
     const AlertSeverity highest_severity = annunciation.highest_severity;
     g_console_state.alert_severity = highest_severity;
 
@@ -3131,41 +1276,6 @@ void update_lamps_from_state()
         (g_console_state.panel_brightness == BrightnessLevel::Off) ? LampMode::Off : LampMode::On;
 }
 
-/// @brief Opens the alert list from the current page when alerts exist.
-bool open_alert_list_page()
-{
-    sync_system_alerts();
-    const alert_ordering::AnnunciationSummary annunciation = alert_ordering::summarize(
-        g_console_state.active_alerts, g_console_state.alert_count, g_alert_acknowledged_sequence);
-    g_alert_acknowledged_sequence = annunciation.newest_sequence;
-    if (g_console_state.active_page != MenuPage::AlertList &&
-        g_console_state.active_page != MenuPage::AlertDetail)
-    {
-        g_console_state.alert_parent_page = g_console_state.active_page;
-    }
-    g_console_state.active_page = MenuPage::AlertList;
-    return true;
-}
-
-/// @brief Opens one alert-detail page from the currently visible list page slot.
-bool open_alert_detail_from_slot(uint8_t page_slot)
-{
-    std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
-    uint8_t sorted_count = 0U;
-    build_alert_display_indices(alert_indices, &sorted_count);
-    constexpr uint8_t kAlertsPerPage = 9U;
-    const uint8_t absolute =
-        static_cast<uint8_t>((g_console_state.alert_list_page_index * kAlertsPerPage) + page_slot);
-    if (absolute >= sorted_count)
-    {
-        return false;
-    }
-    g_console_state.alert_detail_index = alert_indices[absolute];
-    g_console_state.alert_detail_scroll_line = 0U;
-    g_console_state.active_page = MenuPage::AlertDetail;
-    return true;
-}
-
 /// @brief Returns the next brighter backlight level without exceeding the max.
 BrightnessLevel brighter(BrightnessLevel level)
 {
@@ -3196,28 +1306,28 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::None:
         return false;
     case SoftKeyRoute::GoHome:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Home;
         return true;
     case SoftKeyRoute::GoCalendar:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Calendar;
         return true;
     case SoftKeyRoute::GoWeather:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Weather;
         return true;
     case SoftKeyRoute::GoAirTraffic:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::AirTraffic;
         g_console_state.air_traffic_page_index = 0U;
         return true;
     case SoftKeyRoute::GoPinter:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Pinter;
         return true;
     case SoftKeyRoute::GoPinterSelectBrew:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         pinter_controller::clamp_list_page(g_console_state.pinter_catalogue_page_index,
                                            pinter_controller::brew_catalogue_count());
         g_console_state.active_page = MenuPage::PinterSelectBrew;
@@ -3283,194 +1393,194 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::ConfirmPinterStart:
         return pinter_controller::confirm_start(g_console_state);
     case SoftKeyRoute::GoShares:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Shares;
         return true;
     case SoftKeyRoute::GoStatus:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Status;
         return true;
     case SoftKeyRoute::GoStatusOverview:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::StatusOverview;
         return true;
     case SoftKeyRoute::GoStatusConnectivity:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::StatusConnectivity;
         return true;
     case SoftKeyRoute::GoStatusResources:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::StatusResources;
         return true;
     case SoftKeyRoute::GoStatusSensors:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::StatusSensors;
         return true;
     case SoftKeyRoute::GoStatusIntegrations:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::StatusIntegrations;
         return true;
     case SoftKeyRoute::GoLocalConditions:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::LocalConditions;
         return true;
     case SoftKeyRoute::ShowLocalTemperatureGraph:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.local_condition_metric = LocalConditionMetric::Temperature;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalHumidityGraph:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.local_condition_metric = LocalConditionMetric::Humidity;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalPressureGraph:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.local_condition_metric = LocalConditionMetric::AirPressure;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::ShowLocalAirQualityGraph:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.local_condition_metric = LocalConditionMetric::AirQuality;
         g_console_state.active_page = MenuPage::LocalConditionGraph;
         return true;
     case SoftKeyRoute::GoSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Settings;
         g_console_state.settings_page_index = 0;
         return true;
     case SoftKeyRoute::GoDeviceSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::DeviceSettings;
         return true;
     case SoftKeyRoute::GoWifiSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::WifiSettings;
         return true;
     case SoftKeyRoute::GoHomeAssistantSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::HomeAssistantSettings;
         return true;
     case SoftKeyRoute::GoMqttSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::MqttSettings;
         return true;
     case SoftKeyRoute::GoAirTrafficSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::AirTrafficSettings;
         return true;
     case SoftKeyRoute::GoScreenSaverSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
         return true;
     case SoftKeyRoute::EditScreenSaverTimeout:
-        return start_screen_saver_timeout_editing();
+        return settings_controller::start_timeout_editing(g_console_state);
     case SoftKeyRoute::ConfirmScreenSaverTimeout:
-        return confirm_screen_saver_timeout_edit();
+        return settings_controller::confirm_timeout_edit(g_console_state);
     case SoftKeyRoute::GoWeatherSources:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::WeatherSources;
         return true;
     case SoftKeyRoute::GoTimeZoneSettings:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::TimeZoneSettings;
         return true;
     case SoftKeyRoute::GoKeypadDebug:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::KeypadDebug;
         return true;
     case SoftKeyRoute::GoGreyscaleTest:
-        stop_screen_saver_timeout_editing();
+        settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::GreyscaleTest;
         return true;
     case SoftKeyRoute::ToggleRemoteConfig:
-        return toggle_remote_config_enabled();
+        return settings_controller::toggle_remote_config_enabled();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:
-        return toggle_home_assistant_enabled();
+        return settings_controller::toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:
-        return toggle_mqtt_enabled();
+        return settings_controller::toggle_mqtt_enabled();
     case SoftKeyRoute::ToggleAirTrafficEnabled:
-        return toggle_air_traffic_enabled();
+        return settings_controller::toggle_air_traffic_enabled();
     case SoftKeyRoute::SelectScreenSaverLife:
-        return select_screen_saver(ScreenSaverSelection::Life);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Life);
     case SoftKeyRoute::SelectScreenSaverClock:
-        return select_screen_saver(ScreenSaverSelection::Clock);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Clock);
     case SoftKeyRoute::SelectScreenSaverStarfield:
-        return select_screen_saver(ScreenSaverSelection::Starfield);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Starfield);
     case SoftKeyRoute::SelectScreenSaverMatrix:
-        return select_screen_saver(ScreenSaverSelection::Matrix);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Matrix);
     case SoftKeyRoute::SelectScreenSaverRadar:
-        return select_screen_saver(ScreenSaverSelection::Radar);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Radar);
     case SoftKeyRoute::SelectScreenSaverRain:
-        return select_screen_saver(ScreenSaverSelection::Rain);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Rain);
     case SoftKeyRoute::SelectScreenSaverWorms:
-        return select_screen_saver(ScreenSaverSelection::Worms);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Worms);
     case SoftKeyRoute::SelectScreenSaverRandom:
-        return select_screen_saver(ScreenSaverSelection::Random);
+        return settings_controller::select_screen_saver(ScreenSaverSelection::Random);
     case SoftKeyRoute::SelectWeatherHomeAssistant:
-        return select_weather_source(WeatherSource::HomeAssistant);
+        return settings_controller::select_weather_source(WeatherSource::HomeAssistant);
     case SoftKeyRoute::SelectWeatherOpenMeteo:
-        return select_weather_source(WeatherSource::OpenMeteo);
+        return settings_controller::select_weather_source(WeatherSource::OpenMeteo);
     case SoftKeyRoute::CycleWeatherPeriod:
-        return cycle_weather_period();
+        return settings_controller::cycle_weather_period(g_console_state);
     case SoftKeyRoute::SelectShareSlot1:
-        return select_share_slot(0U);
+        return settings_controller::select_share_slot(g_console_state, 0U);
     case SoftKeyRoute::SelectShareSlot2:
-        return select_share_slot(1U);
+        return settings_controller::select_share_slot(g_console_state, 1U);
     case SoftKeyRoute::SelectShareSlot3:
-        return select_share_slot(2U);
+        return settings_controller::select_share_slot(g_console_state, 2U);
     case SoftKeyRoute::SelectShareSlot4:
-        return select_share_slot(3U);
+        return settings_controller::select_share_slot(g_console_state, 3U);
     case SoftKeyRoute::SelectShareSlot5:
-        return select_share_slot(4U);
+        return settings_controller::select_share_slot(g_console_state, 4U);
     case SoftKeyRoute::SelectShareSlot6:
-        return select_share_slot(5U);
+        return settings_controller::select_share_slot(g_console_state, 5U);
     case SoftKeyRoute::CycleSharePeriod:
-        return cycle_share_period();
+        return settings_controller::cycle_share_period(g_console_state);
     case SoftKeyRoute::ToggleAirTrafficViewMode:
-        return toggle_air_traffic_view_mode();
+        return settings_controller::toggle_air_traffic_view_mode(g_console_state);
     case SoftKeyRoute::GoSelectedShareDetail:
-        return open_selected_share_detail();
+        return settings_controller::open_selected_share_detail(g_console_state);
     case SoftKeyRoute::CycleCalendarOwner:
-        return cycle_calendar_owner();
+        return calendar_controller::cycle_owner(g_console_state);
     case SoftKeyRoute::ResetCalendarFilters:
-        return reset_calendar_filters();
+        return calendar_controller::reset_filters(g_console_state);
     case SoftKeyRoute::SelectCalendarSlot1:
-        return open_calendar_detail_from_slot(0U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 0U);
     case SoftKeyRoute::SelectCalendarSlot2:
-        return open_calendar_detail_from_slot(1U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 1U);
     case SoftKeyRoute::SelectCalendarSlot3:
-        return open_calendar_detail_from_slot(2U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 2U);
     case SoftKeyRoute::SelectCalendarSlot4:
-        return open_calendar_detail_from_slot(3U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 3U);
     case SoftKeyRoute::SelectCalendarSlot5:
-        return open_calendar_detail_from_slot(4U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 4U);
     case SoftKeyRoute::SelectCalendarSlot6:
-        return open_calendar_detail_from_slot(5U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 5U);
     case SoftKeyRoute::SelectCalendarSlot7:
-        return open_calendar_detail_from_slot(6U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 6U);
     case SoftKeyRoute::SelectCalendarSlot8:
-        return open_calendar_detail_from_slot(7U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 7U);
     case SoftKeyRoute::SelectCalendarSlot9:
-        return open_calendar_detail_from_slot(8U);
+        return calendar_controller::open_detail_from_slot(g_console_state, 8U);
     case SoftKeyRoute::SelectTimeZoneWest1:
-        return select_relative_time_zone(-1);
+        return settings_controller::select_relative_time_zone(g_console_state, -1);
     case SoftKeyRoute::SelectTimeZoneWest2:
-        return select_relative_time_zone(-2);
+        return settings_controller::select_relative_time_zone(g_console_state, -2);
     case SoftKeyRoute::SelectTimeZoneWest3:
-        return select_relative_time_zone(-3);
+        return settings_controller::select_relative_time_zone(g_console_state, -3);
     case SoftKeyRoute::SelectTimeZoneWest4:
-        return select_relative_time_zone(-4);
+        return settings_controller::select_relative_time_zone(g_console_state, -4);
     case SoftKeyRoute::SelectTimeZoneEast1:
-        return select_relative_time_zone(1);
+        return settings_controller::select_relative_time_zone(g_console_state, 1);
     case SoftKeyRoute::SelectTimeZoneEast2:
-        return select_relative_time_zone(2);
+        return settings_controller::select_relative_time_zone(g_console_state, 2);
     case SoftKeyRoute::SelectTimeZoneEast3:
-        return select_relative_time_zone(3);
+        return settings_controller::select_relative_time_zone(g_console_state, 3);
     case SoftKeyRoute::SelectTimeZoneEast4:
-        return select_relative_time_zone(4);
+        return settings_controller::select_relative_time_zone(g_console_state, 4);
     case SoftKeyRoute::CycleAlert:
-        return open_alert_list_page();
+        return alert_controller::open_list_page(g_console_state);
     case SoftKeyRoute::ToggleLetters:
         return cycle_letter_mode();
     case SoftKeyRoute::CycleTest:
@@ -3478,15 +1588,7 @@ bool apply_softkey_route(SoftKeyRoute route)
         return true;
     case SoftKeyRoute::ResetConsoleState:
         make_default_console_state(g_console_state);
-        g_alert_sequence_counter = 1U;
-        g_home_assistant_connect_failures = 0U;
-        g_weather_refresh_failures = 0U;
-        g_mqtt_connect_failures = 0U;
-        g_time_unsynced_samples = 0U;
-        g_keypad_fault_samples = 0U;
-        g_alert_acknowledged_sequence = 0U;
-        g_alert_suppressed.fill(false);
-        g_alert_was_active.fill(false);
+        alert_controller::reset();
         return true;
     case SoftKeyRoute::ClearAlert:
         if (g_console_state.alert_severity == AlertSeverity::None)
@@ -3496,32 +1598,32 @@ bool apply_softkey_route(SoftKeyRoute route)
         g_console_state.alert_severity = AlertSeverity::None;
         return true;
     case SoftKeyRoute::SelectAlertSlot1:
-        return open_alert_detail_from_slot(0U);
+        return alert_controller::open_detail_from_slot(g_console_state, 0U);
     case SoftKeyRoute::SelectAlertSlot2:
-        return open_alert_detail_from_slot(1U);
+        return alert_controller::open_detail_from_slot(g_console_state, 1U);
     case SoftKeyRoute::SelectAlertSlot3:
-        return open_alert_detail_from_slot(2U);
+        return alert_controller::open_detail_from_slot(g_console_state, 2U);
     case SoftKeyRoute::SelectAlertSlot4:
-        return open_alert_detail_from_slot(3U);
+        return alert_controller::open_detail_from_slot(g_console_state, 3U);
     case SoftKeyRoute::SelectAlertSlot5:
-        return open_alert_detail_from_slot(4U);
+        return alert_controller::open_detail_from_slot(g_console_state, 4U);
     case SoftKeyRoute::SelectAlertSlot6:
-        return open_alert_detail_from_slot(5U);
+        return alert_controller::open_detail_from_slot(g_console_state, 5U);
     case SoftKeyRoute::SelectAlertSlot7:
-        return open_alert_detail_from_slot(6U);
+        return alert_controller::open_detail_from_slot(g_console_state, 6U);
     case SoftKeyRoute::SelectAlertSlot8:
-        return open_alert_detail_from_slot(7U);
+        return alert_controller::open_detail_from_slot(g_console_state, 7U);
     case SoftKeyRoute::SelectAlertSlot9:
-        return open_alert_detail_from_slot(8U);
+        return alert_controller::open_detail_from_slot(g_console_state, 8U);
     case SoftKeyRoute::AlertAccept:
         if (g_console_state.active_page != MenuPage::AlertDetail ||
             g_console_state.alert_detail_index >= g_console_state.alert_count)
         {
             return false;
         }
-        g_alert_suppressed[static_cast<size_t>(
-            g_console_state.active_alerts[g_console_state.alert_detail_index].code)] = true;
-        erase_alert_at(g_console_state.alert_detail_index);
+        alert_controller::suppress_alert_code(
+            g_console_state.active_alerts[g_console_state.alert_detail_index].code);
+        alert_controller::erase_active_alert(g_console_state, g_console_state.alert_detail_index);
         g_console_state.active_page = MenuPage::AlertList;
         return true;
     case SoftKeyRoute::AlertIgnore:
@@ -3572,15 +1674,7 @@ void init()
 {
     make_default_console_state(g_console_state);
     g_redraw_requested = false;
-    g_alert_sequence_counter = 1U;
-    g_home_assistant_connect_failures = 0U;
-    g_weather_refresh_failures = 0U;
-    g_mqtt_connect_failures = 0U;
-    g_time_unsynced_samples = 0U;
-    g_keypad_fault_samples = 0U;
-    g_alert_acknowledged_sequence = 0U;
-    g_alert_suppressed.fill(false);
-    g_alert_was_active.fill(false);
+    alert_controller::reset();
     g_softkey_label_override_active.fill(false);
 
     for (auto& label : g_dynamic_softkey_labels)
@@ -3695,27 +1789,11 @@ bool flush_pending_pinter_save()
 /// @brief Updates the cached Wi-Fi snapshot in the console model.
 bool set_wifi_status(const WifiStatus& wifi_status)
 {
-    // These setters short-circuit unchanged snapshots so the UI does not redraw
-    // every loop when the subsystem state is stable.
-    const bool kChanged =
-        g_console_state.wifi_status.state != wifi_status.state ||
-        g_console_state.wifi_status.credentials_present != wifi_status.credentials_present ||
-        g_console_state.wifi_status.internet_reachable != wifi_status.internet_reachable ||
-        g_console_state.wifi_status.internet_probe_pending != wifi_status.internet_probe_pending ||
-        g_console_state.wifi_status.last_error != wifi_status.last_error ||
-        g_console_state.wifi_status.link_status != wifi_status.link_status ||
-        g_console_state.wifi_status.internet_rtt_ms != wifi_status.internet_rtt_ms ||
-        g_console_state.wifi_status.auth_mode != wifi_status.auth_mode ||
-        g_console_state.wifi_status.mac_address != wifi_status.mac_address ||
-        g_console_state.wifi_status.ssid != wifi_status.ssid ||
-        g_console_state.wifi_status.ip_address != wifi_status.ip_address;
-
-    if (!kChanged)
+    if (!status_controller::set_wifi_status(g_console_state, wifi_status))
     {
         return false;
     }
 
-    g_console_state.wifi_status = wifi_status;
     update_softkeys_from_state();
     return true;
 }
@@ -3723,19 +1801,11 @@ bool set_wifi_status(const WifiStatus& wifi_status)
 /// @brief Updates the cached time snapshot in the console model.
 bool set_time_status(const TimeStatus& time_status)
 {
-    const bool kChanged = g_console_state.time_status.synced != time_status.synced ||
-                          g_console_state.time_status.time_text != time_status.time_text ||
-                          g_console_state.time_status.date_text != time_status.date_text ||
-                          g_console_state.time_status.local_epoch_day !=
-                              time_status.local_epoch_day ||
-                          g_console_state.time_status.weekday_index != time_status.weekday_index;
-
-    if (!kChanged)
+    if (!status_controller::set_time_status(g_console_state, time_status))
     {
         return false;
     }
 
-    g_console_state.time_status = time_status;
     update_softkeys_from_state();
     return true;
 }
@@ -3743,13 +1813,7 @@ bool set_time_status(const TimeStatus& time_status)
 /// @brief Updates the cached Home Assistant snapshot in the console model.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 {
-    // operator== deliberately excludes weather_last_success_ms (see its
-    // declaration) so that field alone doesn't count as a UI-visible change --
-    // but it must still be copied into g_console_state every call, or it would
-    // never reach the page that reads it on ticks where nothing else changed.
-    const bool changed = !(g_console_state.home_assistant_status == home_assistant_status);
-    g_console_state.home_assistant_status = home_assistant_status;
-    if (!changed)
+    if (!status_controller::set_home_assistant_status(g_console_state, home_assistant_status))
     {
         return false;
     }
@@ -3761,12 +1825,11 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
-    if (g_console_state.mqtt_status == mqtt_status)
+    if (!status_controller::set_mqtt_status(g_console_state, mqtt_status))
     {
         return false;
     }
 
-    g_console_state.mqtt_status = mqtt_status;
     update_softkeys_from_state();
     return true;
 }
@@ -3774,11 +1837,7 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
 /// @brief Updates the cached local air-traffic snapshot in the console model.
 bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 {
-    // See set_home_assistant_status() above: last_success_ms is deliberately
-    // excluded from operator== but must still always be copied through.
-    const bool changed = !(g_console_state.air_traffic_status == air_traffic_status);
-    g_console_state.air_traffic_status = air_traffic_status;
-    if (!changed)
+    if (!status_controller::set_air_traffic_status(g_console_state, air_traffic_status))
     {
         return false;
     }
@@ -3790,34 +1849,11 @@ bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
 /// @brief Updates the cached share market-data snapshot in the console model.
 bool set_share_market_status(const ShareMarketStatus& share_market_status)
 {
-    const bool kChanged =
-        g_console_state.share_data_configured != share_market_status.configured ||
-        g_console_state.share_data_valid != share_market_status.data_valid ||
-        g_console_state.share_data_last_error != share_market_status.last_error ||
-        g_console_state.share_data_last_http_status != share_market_status.last_http_status ||
-        g_console_state.share_count != share_market_status.share_count ||
-        g_console_state.watched_shares != share_market_status.watched_shares;
-
-    // last_success_ms is deliberately excluded from kChanged above (see its
-    // declaration) but must still always be copied through, or it would never
-    // reach the page that reads it on ticks where nothing else changed.
-    g_console_state.share_data_last_success_ms = share_market_status.last_success_ms;
-
-    if (!kChanged)
+    if (!status_controller::set_share_market_status(g_console_state, share_market_status))
     {
         return false;
     }
 
-    g_console_state.share_data_configured = share_market_status.configured;
-    g_console_state.share_data_valid = share_market_status.data_valid;
-    g_console_state.share_data_last_error = share_market_status.last_error;
-    g_console_state.share_data_last_http_status = share_market_status.last_http_status;
-    g_console_state.share_count = share_market_status.share_count;
-    g_console_state.watched_shares = share_market_status.watched_shares;
-    if (g_console_state.selected_share_index >= g_console_state.share_count)
-    {
-        g_console_state.selected_share_index = 0U;
-    }
     update_softkeys_from_state();
     return true;
 }
@@ -3826,13 +1862,12 @@ bool set_share_market_status(const ShareMarketStatus& share_market_status)
 bool set_environment_sensor_status(
     const environment_sensor_manager::EnvironmentSensorStatus& environment_sensor_status)
 {
-    if (environment_sensor_status_matches(g_console_state.environment_sensor_status,
-                                          environment_sensor_status))
+    if (!status_controller::set_environment_sensor_status(g_console_state,
+                                                           environment_sensor_status))
     {
         return false;
     }
 
-    g_console_state.environment_sensor_status = environment_sensor_status;
     update_softkeys_from_state();
     return true;
 }
@@ -3840,43 +1875,11 @@ bool set_environment_sensor_status(
 /// @brief Updates the keypad diagnostics snapshot shown by the UI.
 bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 {
-    std::array<char, 48> active_panel_pins = {};
-    std::array<char, 48> probe_hit_panel_pins = {};
-    std::array<char, 24> pressed_key_name = {};
-
-    // Build the display strings up front so the change detection compares the
-    // exact text the diagnostics page will eventually render.
-    build_active_panel_pin_text(keypad_status, active_panel_pins);
-    build_probe_hit_panel_pin_text(keypad_status, probe_hit_panel_pins);
-    std::snprintf(pressed_key_name.data(), pressed_key_name.size(), "%s",
-                  decoded_pressed_key(keypad_status));
-
-    const bool kChanged =
-        g_console_state.keypad_debug_status.active_mask != keypad_status.active_mask ||
-        g_console_state.keypad_debug_status.configured_count != keypad_status.configured_count ||
-        g_console_state.keypad_debug_status.active_count != keypad_status.active_count ||
-        g_console_state.keypad_debug_status.pressed_key_name != pressed_key_name ||
-        g_console_state.keypad_debug_status.active_panel_pins != active_panel_pins ||
-        g_console_state.keypad_debug_status.probe_drive_panel_pin !=
-            keypad_status.probe_drive_panel_pin ||
-        g_console_state.keypad_debug_status.probe_hit_mask != keypad_status.probe_hit_mask ||
-        g_console_state.keypad_debug_status.probe_hit_count != keypad_status.probe_hit_count ||
-        g_console_state.keypad_debug_status.probe_hit_panel_pins != probe_hit_panel_pins;
-
-    if (!kChanged)
+    if (!status_controller::set_keypad_monitor_status(g_console_state, keypad_status))
     {
         return false;
     }
 
-    g_console_state.keypad_debug_status.active_mask = keypad_status.active_mask;
-    g_console_state.keypad_debug_status.configured_count = keypad_status.configured_count;
-    g_console_state.keypad_debug_status.active_count = keypad_status.active_count;
-    g_console_state.keypad_debug_status.pressed_key_name = pressed_key_name;
-    g_console_state.keypad_debug_status.active_panel_pins = active_panel_pins;
-    g_console_state.keypad_debug_status.probe_drive_panel_pin = keypad_status.probe_drive_panel_pin;
-    g_console_state.keypad_debug_status.probe_hit_mask = keypad_status.probe_hit_mask;
-    g_console_state.keypad_debug_status.probe_hit_count = keypad_status.probe_hit_count;
-    g_console_state.keypad_debug_status.probe_hit_panel_pins = probe_hit_panel_pins;
     update_softkeys_from_state();
     return true;
 }
@@ -3884,14 +1887,11 @@ bool set_keypad_monitor_status(const KeypadMonitorStatus& keypad_status)
 /// @brief Updates foreground main-loop load telemetry shown by Resources status.
 bool set_main_loop_load_status(const MainLoopLoadStatus& status)
 {
-    if (g_console_state.main_loop_load_status.valid == status.valid &&
-        g_console_state.main_loop_load_status.load_percent == status.load_percent &&
-        g_console_state.main_loop_load_status.sample_ms == status.sample_ms)
+    if (!status_controller::set_main_loop_load_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.main_loop_load_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -3899,14 +1899,11 @@ bool set_main_loop_load_status(const MainLoopLoadStatus& status)
 /// @brief Updates live heap usage telemetry shown by Resources status.
 bool set_heap_status(const HeapStatus& status)
 {
-    if (g_console_state.heap_status.valid == status.valid &&
-        g_console_state.heap_status.used_bytes == status.used_bytes &&
-        g_console_state.heap_status.arena_bytes == status.arena_bytes)
+    if (!status_controller::set_heap_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.heap_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -3914,13 +1911,11 @@ bool set_heap_status(const HeapStatus& status)
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.
 bool set_stack_status(const StackStatus& status)
 {
-    if (g_console_state.stack_status.valid == status.valid &&
-        g_console_state.stack_status.free_bytes == status.free_bytes)
+    if (!status_controller::set_stack_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.stack_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -3928,16 +1923,11 @@ bool set_stack_status(const StackStatus& status)
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(const DisplayTimingStatus& status)
 {
-    if (g_console_state.display_timing_status.valid == status.valid &&
-        g_console_state.display_timing_status.frame_rate_hz == status.frame_rate_hz &&
-        g_console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us &&
-        g_console_state.display_timing_status.present_skipped_count ==
-            status.present_skipped_count)
+    if (!status_controller::set_display_timing_status(g_console_state, status))
     {
         return false;
     }
 
-    g_console_state.display_timing_status = status;
     update_softkeys_from_state();
     return true;
 }
@@ -4012,7 +2002,7 @@ bool handle_direct_hard_key_event(ButtonId id)
     switch (id)
     {
     case ButtonId::Alert:
-        return open_alert_list_page();
+        return alert_controller::open_list_page(g_console_state);
     case ButtonId::Test:
         g_console_state.test_state = next_test_state(g_console_state.test_state);
         return true;
@@ -4099,7 +2089,7 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (g_console_state.screen_saver_timeout_editing)
     {
-        const bool kEditChanged = handle_screen_saver_timeout_edit_event(event);
+        const bool kEditChanged = settings_controller::handle_timeout_edit_event(g_console_state, event);
         if (kEditChanged)
         {
             update_softkeys_from_state();
@@ -4143,17 +2133,17 @@ bool handle_button_event(const ButtonEvent& event)
         bool changed = false;
         if (g_console_state.active_page == MenuPage::Settings)
         {
-            changed = change_settings_page(direction);
+            changed = settings_controller::change_page(g_console_state, direction);
         }
         else if (g_console_state.active_page == MenuPage::Calendar)
         {
-            changed = change_calendar_day(direction);
+            changed = calendar_controller::change_day(g_console_state, direction);
         }
         else if (g_console_state.active_page == MenuPage::AlertList)
         {
             const int next_page =
                 static_cast<int>(g_console_state.alert_list_page_index) + direction;
-            if (next_page >= 0 && next_page < static_cast<int>(alert_page_count()))
+            if (next_page >= 0 && next_page < static_cast<int>(alert_controller::page_count(g_console_state)))
             {
                 g_console_state.alert_list_page_index = static_cast<uint8_t>(next_page);
                 changed = true;
@@ -4192,13 +2182,13 @@ bool handle_button_event(const ButtonEvent& event)
         }
         else if (g_console_state.active_page == MenuPage::Shares && direction > 0)
         {
-            changed = open_selected_share_detail();
+            changed = settings_controller::open_selected_share_detail(g_console_state);
         }
         else if (g_console_state.active_page == MenuPage::AirTraffic &&
                 g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
         {
             const int next_page = static_cast<int>(g_console_state.air_traffic_page_index) + direction;
-            if (next_page >= 0 && next_page < static_cast<int>(air_traffic_page_count()))
+            if (next_page >= 0 && next_page < static_cast<int>(settings_controller::air_traffic_page_count(g_console_state)))
             {
                 g_console_state.air_traffic_page_index = static_cast<uint8_t>(next_page);
                 changed = true;
@@ -4215,7 +2205,7 @@ bool handle_button_event(const ButtonEvent& event)
         PERIODIC_LOG("Console state updated: page=%u settings=%u/%u calendar_day=%d\n",
                      static_cast<unsigned>(g_console_state.active_page),
                      static_cast<unsigned>(g_console_state.settings_page_index + 1U),
-                     static_cast<unsigned>(kSettingsPageCount),
+                     static_cast<unsigned>(settings_controller::kSettingsPageCount),
                      static_cast<int>(g_console_state.calendar_day_offset));
         return true;
     }
@@ -4278,7 +2268,7 @@ bool cycle_test_lamp_preview()
 /// @brief Opens the alert list page on demand, preserving the caller page for IGNORE.
 bool open_alert_page()
 {
-    const bool changed = open_alert_list_page();
+    const bool changed = alert_controller::open_list_page(g_console_state);
     if (changed)
     {
         update_softkeys_from_state();

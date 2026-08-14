@@ -49,7 +49,9 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 add_executable(MerlinCCU
     src/core/MerlinCCU.cpp
+    src/core/alert_controller.cpp
     src/core/alert_ordering.cpp
+    src/core/calendar_controller.cpp
     src/core/calendar_navigation.cpp
     src/core/console_controller.cpp
     src/core/console_model.cpp
@@ -58,6 +60,8 @@ add_executable(MerlinCCU
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp
     src/core/pinter_store.cpp
+    src/core/settings_controller.cpp
+    src/core/status_controller.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/display/display.cpp
