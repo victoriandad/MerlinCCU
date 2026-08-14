@@ -8,7 +8,6 @@
 #include "config_persistence.h"
 #include "console_controller.h"
 #include "console_controller_internal.h"
-#include "pico/error.h"
 
 namespace settings_controller
 {
@@ -17,6 +16,11 @@ namespace
 {
 
 namespace cci = console_controller::console_controller_internal;
+
+// pico/error.h's PICO_ERROR_NONE is always 0; kept as a local constant
+// (rather than including the Pico-SDK header) so this file stays
+// host-testable -- see issue #78.
+constexpr int kNoErrorCode = 0;
 
 std::array<std::array<char, 16>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_values =
     {};
@@ -564,7 +568,7 @@ const char* local_air_quality_selection_text(const ConsoleState& console_state)
     if (!status.enabled || !status.air_quality_score_valid)
     {
         std::snprintf(buffer.data(), buffer.size(), "%s",
-                      status.air_quality_read_error == PICO_ERROR_NONE ? "-" : "ERR");
+                      status.air_quality_read_error == kNoErrorCode ? "-" : "ERR");
         return buffer.data();
     }
 

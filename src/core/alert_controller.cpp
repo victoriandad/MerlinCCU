@@ -8,7 +8,6 @@
 #include "alert_ordering.h"
 #include "config_manager.h"
 #include "console_controller_internal.h"
-#include "pico/error.h"
 
 namespace alert_controller
 {
@@ -17,6 +16,11 @@ namespace
 {
 
 namespace cci = console_controller::console_controller_internal;
+
+// pico/error.h's PICO_ERROR_NONE is always 0; kept as a local constant
+// (rather than including the Pico-SDK header) so this file stays
+// host-testable -- see issue #78.
+constexpr int kNoErrorCode = 0;
 
 uint32_t g_alert_sequence_counter = 1U;
 uint32_t g_alert_acknowledged_sequence = 0U;
@@ -541,9 +545,9 @@ void sync(ConsoleState& console_state)
          environment_status.health == environment_sensor_manager::EnvironmentSensorHealth::Partial ||
          (environment_status.bme_variant == environment_sensor_manager::EnvironmentBmeVariant::Bme280 &&
           !environment_status.bme_reading_valid &&
-          environment_status.bme_read_error != PICO_ERROR_NONE) ||
+          environment_status.bme_read_error != kNoErrorCode) ||
          (sgp40_detected && !environment_status.air_quality_raw_valid &&
-          environment_status.air_quality_read_error != PICO_ERROR_NONE));
+          environment_status.air_quality_read_error != kNoErrorCode));
     set_alert_condition(
         console_state, AlertCode::EnvironmentSensorFault, environment_sensor_fault,
         AlertSeverity::Warning, "ENV SENSOR",
