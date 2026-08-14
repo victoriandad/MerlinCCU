@@ -10,6 +10,7 @@
 #include "air_traffic_response_parser.h"
 #include "bounded_json.h"
 #include "config_manager.h"
+#include "debug_logging.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
@@ -58,6 +59,11 @@ bool g_dns_resolved = false;
 altcp_pcb* g_pcb = nullptr;
 size_t g_request_sent = 0U;
 size_t g_response_len = 0U;
+// Issue #104: kResponseBufferSize was already widened once (8KB -> 16KB)
+// after a real overflow, so shrinking it needs real usage data, not a
+// guess. Tracked here rather than guessed at.
+size_t g_response_peak_len = 0U;
+bool g_response_ever_truncated = false;
 char g_request[kRequestBufferSize] = {};
 char g_response[kResponseBufferSize] = {};
 absolute_time_t g_deadline = nil_time;
@@ -602,6 +608,9 @@ err_t on_tcp_sent(void* arg, altcp_pcb* pcb, u16_t len)
 /// @brief Handles completed provider response data.
 void handle_response_complete()
 {
+    PERIODIC_LOG("air_traffic_manager: response complete, peak=%uB of %uB, ever_truncated=%d\n",
+                 static_cast<unsigned>(g_response_peak_len), static_cast<unsigned>(sizeof(g_response)),
+                 static_cast<int>(g_response_ever_truncated));
     defer_completion(true, ERR_OK, partial_http_status());
 }
 
@@ -653,11 +662,16 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         pbuf_copy_partial(p, g_response + g_response_len, static_cast<u16_t>(copy_len), 0);
         g_response_len += copy_len;
         g_response[g_response_len] = '\0';
+        g_response_peak_len = std::max(g_response_peak_len, g_response_len);
     }
     pbuf_free(p);
 
     if (copy_len < received_len)
     {
+        g_response_ever_truncated = true;
+        PERIODIC_LOG("air_traffic_manager: response buffer truncated, peak=%uB of %uB\n",
+                     static_cast<unsigned>(g_response_peak_len),
+                     static_cast<unsigned>(sizeof(g_response)));
         // The response didn't fit in our fixed-size buffer (a wider search
         // radius returns more aircraft). This is not a hard failure --
         // parse_aircraft_response() already tolerates a truncated final

@@ -81,6 +81,9 @@ struct WebSession
 tcp_pcb* g_listener = nullptr;
 WebSession g_session = {};
 char g_response[kResponseCapacity] = {};
+// Issue #104: high-water mark across every response shape this buffer
+// serves (HTML pages, PBM/raw framebuffer dumps) -- see send_response_with_length().
+size_t g_response_peak_len = 0;
 
 /// @brief Maps web button identifiers to logical firmware button ids.
 struct WebButtonBinding
@@ -2820,6 +2823,17 @@ void send_response_with_length(WebSession* session, tcp_pcb* pcb, const char* re
     {
         return;
     }
+
+    // Issue #104: g_response (kResponseCapacity, 24KB) has no documented
+    // sizing rationale and serves several different response shapes (HTML
+    // pages, PBM/raw framebuffer dumps). Unlike the fetch buffers in
+    // home_assistant_manager/air_traffic_manager/share_price_manager, this
+    // content is entirely locally generated, so a real high-water mark here
+    // is a much more direct answer to "is 24KB enough" than guessing.
+    g_response_peak_len = std::max(g_response_peak_len, response_len);
+    PERIODIC_LOG("web_config_server: response sent, len=%u peak=%u of %uB\n",
+                 static_cast<unsigned>(response_len), static_cast<unsigned>(g_response_peak_len),
+                 static_cast<unsigned>(sizeof(g_response)));
 
     session->response_len = response_len;
     session->response_sent = 0;
