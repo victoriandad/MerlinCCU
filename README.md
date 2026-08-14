@@ -25,7 +25,7 @@ Working now:
 - CPU-built scanout raster with frame-boundary buffer swaps.
 - Menu/state controller for Home, Calendar, Weather, Status, Settings, diagnostics, alerts, and shares.
 - Runtime configuration persisted in flash with CRC/version handling.
-- Local web configuration page with admin-password option.
+- Local web configuration page, gated by a "Remote Access" on/off toggle rather than a login.
 - Browser display preview at `/preview`, including framebuffer mirror, lamp preview, and virtual key input.
 - Wi-Fi station mode with DHCP/static-IP support, NetBIOS hostname, NTP/SNTP, and simple internet reachability probing.
 - Home Assistant REST client for status/entity/weather flows.
@@ -35,8 +35,9 @@ Working now:
 - Alert workflow with alert list/detail pages, acknowledgement/clear actions, and generated system alerts.
 - Calendar UI scaffold with neutral owner filtering, relative-day footer, and
   softkey event-detail pages.
-- Share page and share detail graph with explicit demo data while the
-  Home Assistant/local share feed is pending.
+- Share page and share detail graph fed by the local Home Assistant/direct
+  share feed (issue #42), with watched symbols configurable from the web
+  config page.
 - Selectable screen savers: Life, Clock, Starfield, Matrix, Radar, Rain, Worms, and Random.
 - Provisional keypad matrix monitor/decoder for all confirmed front-panel keys.
 
@@ -47,7 +48,7 @@ Still incomplete or provisional:
 - Live Home Assistant calendar ingestion is not implemented yet.
 - Real calendar participant labels belong in local `config/calendar_identities.h`,
   which is ignored by git. Tracked demo calendar data uses synthetic examples.
-- Watched share symbols are not user-configurable from the UI or web config yet.
+- Watched share symbols are configurable from the web config page (issue #9); on-device text entry for them is still missing.
 - Weather iconography and warning/threshold alert rules are still planned.
 - Disabled I2C sensor-discovery scaffolding exists for the optional Waveshare
   Pico Environment Sensor board, including BME280/BME680 chip-ID probing; full
@@ -77,8 +78,9 @@ Primary runtime flow:
 
 - `src/core/MerlinCCU.cpp` owns startup, the main loop, screen saver
   activation, and display present decisions.
-- `src/core/console_controller.cpp` owns UI state, softkey routing, alert
-  state, and runtime config application.
+- `src/core/console_controller.cpp` owns menu routing and softkey dispatch,
+  delegating page-family logic (Pinter, alerts, calendar, settings, manager
+  status) to split controller modules under `src/core/` (issue #44).
 - `src/display/screens.cpp` draws the current menu/page into the back
   framebuffer.
 - `src/display/display.cpp` converts the UI framebuffer into the native panel
@@ -181,10 +183,13 @@ Known build compatibility note:
 
 ### Host Tests
 
-`tests/host/` is a separate, non-cross-compiling CMake project covering
-keypad matrix decode logic and alert ordering/acknowledgement rules with the
+`tests/host/` is a separate, non-cross-compiling CMake project with the
 machine's native compiler -- no Pico SDK or ARM toolchain required (issue
-#14). Run it independently of the firmware build:
+#14). Coverage has grown well beyond its original keypad/alert-ordering
+scope and now includes the five split controller modules (Pinter, alerts,
+calendar, settings, status ingestion; issue #78), golden-image display
+rendering, and most parser/protocol logic. Run it independently of the
+firmware build:
 
 ```
 cd tests/host
@@ -244,8 +249,14 @@ Core firmware:
 - `include/display/framebuffer.h` / `src/display/framebuffer.cpp`: 1-bit UI framebuffer and drawing helpers.
 - `include/display/display.h` / `src/display/display.cpp`: native raster composition, DMA, PIO setup, and display presentation.
 - `include/core/console_model.h` / `src/core/console_model.cpp`: UI state types and default state.
-- `include/core/console_controller.h` / `src/core/console_controller.cpp`: menu routing, softkeys, alerts, runtime config sync, and UI state changes.
-- `include/display/screens.h` / `src/display/screens.cpp`: page rendering.
+- `include/core/console_controller.h` / `src/core/console_controller.cpp`: menu routing, softkey dispatch, and UI state changes.
+- `include/core/console_controller_internal.h`: softkey-label scratch buffers/helpers shared between `console_controller.cpp` and the split controller modules below, without being public API.
+- `include/core/pinter_controller.h` / `src/core/pinter_controller.cpp`: Pinter brew workflow (start/reset/primary action, catalogue paging, pending-save flush).
+- `include/core/alert_controller.h` / `src/core/alert_controller.cpp`: system alert generation, acknowledgement, and clearing (`alert_controller::sync()`).
+- `include/core/calendar_controller.h` / `src/core/calendar_controller.cpp`: calendar owner/day filtering and event-detail lookup.
+- `include/core/settings_controller.h` / `src/core/settings_controller.cpp`: Settings page navigation and runtime-config selection helpers.
+- `include/core/status_controller.h` / `src/core/status_controller.cpp`: manager-status ingestion (`set_*_status()`).
+- `include/display/screens.h` / `src/display/screens.cpp`: shared drawing primitives and page dispatch; per-page-family rendering lives in `status_screens.cpp`, `weather_screens.cpp`, `air_traffic_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`, `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`, and `screen_banners.cpp`.
 - `include/core/input.h` / `src/core/input.cpp`: keypad polling, matrix probing, debounced button events, and diagnostics.
 
 Network/config managers:
