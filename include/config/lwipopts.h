@@ -65,9 +65,15 @@ extern "C"
 #define SNTP_STARTUP_DELAY 0
 #define SNTP_SET_SYSTEM_TIME(sec) merlinccu_set_ntp_time(sec)
 
-#define MEM_STATS 0
+// Issue #104: MEM_STATS/MEMP_STATS cost a small, fixed amount of static RAM
+// (a handful of bytes per pool) in exchange for real high-water-mark data on
+// lwIP's internal MEM_SIZE pool and PBUF_POOL_SIZE -- together the two
+// biggest static RAM consumers after the display raster buffers, and the two
+// with no existing usage data to size against. See debug_logging.h's
+// kEnablePeriodicSerialOutput for how to read them.
+#define MEM_STATS 1
 #define SYS_STATS 0
-#define MEMP_STATS 0
+#define MEMP_STATS 1
 #define LINK_STATS 0
 
 // Required by the CYW43 glue used by the Pico SDK.

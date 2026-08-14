@@ -9,6 +9,7 @@
 
 #include "bounded_json.h"
 #include "config_manager.h"
+#include "debug_logging.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
@@ -53,6 +54,10 @@ bool g_dns_resolved = false;
 altcp_pcb* g_pcb = nullptr;
 size_t g_request_sent = 0U;
 size_t g_response_len = 0U;
+// Issue #104: confirms the 4KB right-sizing from #42 still has headroom,
+// now that it can be measured instead of assumed.
+size_t g_response_peak_len = 0U;
+bool g_response_ever_truncated = false;
 char g_request[kRequestBufferSize] = {};
 char g_response[kResponseBufferSize] = {};
 absolute_time_t g_deadline = nil_time;
@@ -487,6 +492,9 @@ err_t on_tcp_sent(void* arg, altcp_pcb* pcb, u16_t len)
 /// @brief Handles completed provider response data.
 void handle_response_complete()
 {
+    PERIODIC_LOG("share_price_manager: response complete, peak=%uB of %uB, ever_truncated=%d\n",
+                 static_cast<unsigned>(g_response_peak_len), static_cast<unsigned>(sizeof(g_response)),
+                 static_cast<int>(g_response_ever_truncated));
     // Parsing can be surprisingly expensive on the Pico when the all-time
     // period returns a larger payload. Defer both parsing and socket close to
     // the update loop so lwIP callbacks stay short and non-reentrant.
@@ -541,11 +549,16 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         pbuf_copy_partial(p, g_response + g_response_len, static_cast<u16_t>(copy_len), 0);
         g_response_len += copy_len;
         g_response[g_response_len] = '\0';
+        g_response_peak_len = std::max(g_response_peak_len, g_response_len);
     }
     pbuf_free(p);
 
     if (copy_len < received_len)
     {
+        g_response_ever_truncated = true;
+        PERIODIC_LOG("share_price_manager: response buffer truncated, peak=%uB of %uB\n",
+                     static_cast<unsigned>(g_response_peak_len),
+                     static_cast<unsigned>(sizeof(g_response)));
         // The response didn't fit in our fixed-size buffer. Not a hard
         // failure -- parse_shares_feed_response() tolerates a truncated
         // final object and keeps whatever complete shares it already found.
