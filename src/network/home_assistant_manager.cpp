@@ -1141,6 +1141,15 @@ void on_tcp_error(void* arg, err_t err)
 /// @brief Handles the completed HTTP status for the current request kind.
 void handle_http_status(int http_status)
 {
+    // Unconditional (unlike direct_weather_log below, which only covers the
+    // direct-weather-source path): every RequestKind cycled by
+    // advance_request_kind() shares this one response buffer, so peak usage
+    // has to be observed across all of them, not just weather fetches -- see
+    // issue #104.
+    PERIODIC_LOG("home_assistant_manager: response complete, kind=%s peak=%uB of %uB\n",
+                 request_kind_name(g_request_kind), static_cast<unsigned>(g_response_peak_len),
+                 static_cast<unsigned>(sizeof(g_response)));
+
     if (g_active_weather_source == WeatherSource::OpenMeteo)
     {
         if (http_status == 200 && parse_open_meteo_weather(response_body()))
