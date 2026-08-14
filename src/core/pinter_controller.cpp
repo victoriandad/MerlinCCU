@@ -486,7 +486,7 @@ bool confirm_start(ConsoleState& console_state)
 
     PinterStatus& pinter = selected(console_state);
     pinter.state = PinterState::Brewing;
-    pinter.brew_index = brew_catalogue_index(console_state.pinter_pending_brew_index);
+    pinter.brew_index = static_cast<uint8_t>(brew_catalogue_index(console_state.pinter_pending_brew_index));
     pinter.brew_start_day = current_event_day(console_state);
     pinter.cold_crash_start_day = 0U;
     pinter.conditioning_start_day = 0U;
