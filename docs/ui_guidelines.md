@@ -6,6 +6,10 @@ The MerlinCCU UI is a constrained embedded operator interface. This document
 captures the presentation rules that already exist in the firmware so future
 pages stay consistent with the current panel behaviour.
 
+This document explains intent and tone. The numbered rules a page is checked
+against are in `docs/ui_requirements.md`; where the two disagree, that
+document wins.
+
 ## Scope
 
 This document records only patterns that are already implemented or strongly
@@ -39,7 +43,8 @@ implied by the current UI code:
 - Selected values are shown in brackets on softkeys when a choice is active,
   for example `PERIOD [Today]`.
 - `BACK STEP` returns to the logical parent page.
-- `R5=HOME` remains available where navigation would otherwise become deep.
+- `R5=HOME` is available on every page except Home, unless the page is asking
+  for a decision or accepting typed entry.
 - Cursor arrows are used for paging lists, dates, alert pages, and graph
   periods when those screens have more content than fits on one view.
 - Page routes should feel stateful and reversible rather than modal.

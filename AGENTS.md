@@ -17,8 +17,11 @@ Raspberry Pi Pico 2 W firmware.
 - Add or update alerts when a user-visible feature introduces a failure mode.
 - If the needed telemetry does not exist yet, add a placeholder alert hook
   with a comment describing the missing signal.
-- Before changing UI behaviour, review `docs/ui_guidelines.md`,
-  `docs/ui_patterns.md`, and `docs/display-test-checklist.md`.
+- Before changing UI behaviour, review `docs/ui_requirements.md`,
+  `docs/ui_guidelines.md`, `docs/ui_patterns.md`, and
+  `docs/display-test-checklist.md`.
+- A new or changed page must meet the numbered rules in
+  `docs/ui_requirements.md`; work through its New Page Checklist.
 
 ## Build Workflow
 
@@ -58,7 +61,8 @@ Raspberry Pi Pico 2 W firmware.
   matter, and which hardware or protocol behaviour drives it.
 - Keep detailed project knowledge in focused docs:
   - architecture: `docs/architecture.md`
-  - UI rules: `docs/ui_guidelines.md`
+  - UI rules: `docs/ui_requirements.md`
+  - UI intent and tone: `docs/ui_guidelines.md`
   - UI patterns: `docs/ui_patterns.md`
   - alerts: `docs/alerts.md`
   - hardware findings: `docs/schematic-pinout.md`
@@ -70,4 +74,5 @@ Raspberry Pi Pico 2 W firmware.
   framebuffer.
 - Preserve shared page chrome, softkey-first navigation, compact status rows,
   mixed-case values, uppercase headings and labels, and unclipped text.
-- Use `docs/ui_guidelines.md` as the source of truth for UI behaviour.
+- Use `docs/ui_requirements.md` as the source of truth for UI behaviour;
+  `docs/ui_guidelines.md` explains the intent behind it.
