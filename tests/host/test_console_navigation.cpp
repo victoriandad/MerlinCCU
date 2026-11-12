@@ -476,3 +476,87 @@ HOST_TEST(brew_timing_cancel_returns_to_select_brew_without_starting)
     EXPECT_EQ(console_controller::state().pinter_pending_cold_crash_days, 3U);
     EXPECT_TRUE(key(SoftKeyId::Right2).label[0] == '\0');
 }
+
+namespace
+{
+
+/// @brief Home R1 SETTINGS, cursor right to Settings 2/2, L4 SCREEN SAVER.
+void open_screen_saver_settings()
+{
+    start_fresh();
+    press(ButtonId::RightTop);
+    press(ButtonId::CursorRight);
+    press(ButtonId::LeftLower);
+}
+
+} // namespace
+
+HOST_TEST(screen_saver_timeout_entry_offers_only_cancel_and_enter)
+{
+    open_screen_saver_settings();
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverSettings));
+    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::GoHome);
+    EXPECT_TRUE(key(SoftKeyId::Left2).route == SoftKeyRoute::GoScreenSaverOptions);
+    const uint16_t saved = config_manager::settings().screen_saver_timeout_minutes;
+
+    press(ButtonId::LeftTop); // L1: TIMEOUT
+    EXPECT_TRUE(console_controller::state().screen_saver_timeout_editing);
+    for (size_t k = 0U; k < static_cast<size_t>(SoftKeyId::Count); ++k)
+    {
+        const bool labelled = k == static_cast<size_t>(SoftKeyId::Left1) ||
+                              k == static_cast<size_t>(SoftKeyId::Left5) ||
+                              k == static_cast<size_t>(SoftKeyId::Right5);
+        EXPECT_EQ(console_controller::state().softkeys[k].label[0] != '\0', labelled);
+    }
+    EXPECT_TRUE(key(SoftKeyId::Left1).inverted);
+    EXPECT_TRUE(std::string(key(SoftKeyId::Left5).label) == "CANCEL");
+    EXPECT_TRUE(std::string(key(SoftKeyId::Right5).label) == "ENTER");
+
+    // Type a different value, then decline it.
+    for (int i = 0; i < 4 && console_controller::state().letter_mode != LetterMode::Numbers; ++i)
+    {
+        press(ButtonId::Ltrs);
+    }
+    press(ButtonId::AlphaJ); // 1
+    press(ButtonId::AlphaJ); // 1
+    EXPECT_EQ(console_controller::state().screen_saver_timeout_edit_minutes, 11U);
+    press(ButtonId::LeftBottom); // L5: CANCEL
+    EXPECT_FALSE(console_controller::state().screen_saver_timeout_editing);
+    EXPECT_EQ(config_manager::settings().screen_saver_timeout_minutes, saved);
+    EXPECT_EQ(console_controller::state().screen_saver_timeout_minutes, saved);
+
+    // ENTER keeps the typed value.
+    press(ButtonId::LeftTop);
+    press(ButtonId::AlphaJ);
+    press(ButtonId::AlphaJ);
+    press(ButtonId::RightBottom); // R5: ENTER
+    EXPECT_FALSE(console_controller::state().screen_saver_timeout_editing);
+    EXPECT_EQ(config_manager::settings().screen_saver_timeout_minutes, 11U);
+}
+
+HOST_TEST(screen_saver_options_page_selects_exactly_one_saver_in_place)
+{
+    open_screen_saver_settings();
+    press(ButtonId::LeftUpper); // L2: SAVER
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverOptions));
+    EXPECT_TRUE(key(SoftKeyId::Left5).label[0] == '\0');
+    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::GoHome);
+
+    for (const ButtonId slot : kListSlotButtons)
+    {
+        press(slot);
+        EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverOptions));
+        int selected = 0;
+        for (const SoftKeyAction& action : console_controller::state().softkeys)
+        {
+            selected += action.inverted ? 1 : 0;
+        }
+        EXPECT_EQ(selected, 1);
+        EXPECT_TRUE(console_controller::state()
+                        .softkeys[static_cast<size_t>(slot)]
+                        .inverted);
+    }
+
+    press(ButtonId::BackStep);
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverSettings));
+}

@@ -473,6 +473,8 @@ const char* menu_page_title(MenuPage page)
         return "ADS-B TRAFFIC";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
+    case MenuPage::ScreenSaverOptions:
+        return "SAVER";
     case MenuPage::WeatherSources:
         return "WEATHER SOURCE";
     case MenuPage::TimeZoneSettings:
@@ -672,6 +674,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
+    case MenuPage::ScreenSaverOptions:
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:
     case MenuPage::PinterStartTiming:
@@ -1431,6 +1434,7 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::MqttSettings:
     case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
+    case MenuPage::ScreenSaverOptions:
         // Key pages with no body: every value they show is on a softkey label
         // (PAGE-2), so the body is deliberately left empty.
         break;

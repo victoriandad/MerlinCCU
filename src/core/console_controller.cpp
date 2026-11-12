@@ -197,6 +197,8 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
         return MenuPage::Settings;
+    case MenuPage::ScreenSaverOptions:
+        return MenuPage::ScreenSaverSettings;
     case MenuPage::AlertList:
         return g_console_state.alert_parent_page;
     case MenuPage::AlertDetail:
@@ -1017,70 +1019,62 @@ void update_softkeys_from_state()
         };
         break;
     case MenuPage::ScreenSaverSettings:
+        // Two select keys (SK-7). TIMEOUT opens a numeric entry state on this
+        // page: the field being edited stays inverse, CANCEL at L5 declines
+        // and ENTER at R5 confirms (NAV-3); every other key is blank (SK-5).
         softkeys[softkey_index(SoftKeyId::Left1)] = {
-            build_selection_softkey_label(SoftKeyId::Left1, "TIMEOUT PERIOD",
-                                          settings_controller::screen_saver_timeout_selection_text(g_console_state)),
+            build_selection_softkey_label(
+                SoftKeyId::Left1, "TIMEOUT",
+                settings_controller::screen_saver_timeout_selection_text(g_console_state)),
             SoftKeyRoute::EditScreenSaverTimeout,
             !g_console_state.screen_saver_timeout_editing,
             g_console_state.screen_saver_timeout_editing,
         };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Life).option_label,
-            SoftKeyRoute::SelectScreenSaverLife,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Life,
-        };
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Clock).option_label,
-            SoftKeyRoute::SelectScreenSaverClock,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Clock,
-        };
-        softkeys[softkey_index(SoftKeyId::Left4)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Starfield).option_label,
-            SoftKeyRoute::SelectScreenSaverStarfield,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Starfield,
-        };
-        softkeys[softkey_index(SoftKeyId::Left5)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Random).option_label,
-            SoftKeyRoute::SelectScreenSaverRandom,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Random,
-        };
-        softkeys[softkey_index(SoftKeyId::Right1)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Matrix).option_label,
-            SoftKeyRoute::SelectScreenSaverMatrix,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Matrix,
-        };
-        softkeys[softkey_index(SoftKeyId::Right2)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Radar).option_label,
-            SoftKeyRoute::SelectScreenSaverRadar,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Radar,
-        };
-        softkeys[softkey_index(SoftKeyId::Right3)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Rain).option_label,
-            SoftKeyRoute::SelectScreenSaverRain,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Rain,
-        };
-        softkeys[softkey_index(SoftKeyId::Right4)] = {
-            settings_controller::screen_saver_definition(ScreenSaverSelection::Worms).option_label,
-            SoftKeyRoute::SelectScreenSaverWorms,
-            !g_console_state.screen_saver_timeout_editing,
-            g_console_state.screen_saver_selection == ScreenSaverSelection::Worms,
-        };
         if (g_console_state.screen_saver_timeout_editing)
         {
-            softkeys[softkey_index(SoftKeyId::Right5)] = {
-                "ENTER",
-                SoftKeyRoute::ConfirmScreenSaverTimeout,
+            softkeys[softkey_index(SoftKeyId::Left5)] = {"CANCEL",
+                                                         SoftKeyRoute::CancelScreenSaverTimeout, true};
+            softkeys[softkey_index(SoftKeyId::Right5)] = {"ENTER",
+                                                          SoftKeyRoute::ConfirmScreenSaverTimeout, true};
+            break;
+        }
+        softkeys[softkey_index(SoftKeyId::Left2)] = {
+            build_selection_softkey_label(SoftKeyId::Left2, "SAVER",
+                                          settings_controller::screen_saver_selection_text(g_console_state)),
+            SoftKeyRoute::GoScreenSaverOptions,
+            true,
+        };
+        break;
+    case MenuPage::ScreenSaverOptions:
+    {
+        // A fixed list of option keys in L1-L4, R1-R4 with the current saver
+        // inverse (SK-7, NAV-6); choosing one takes effect at once.
+        struct SaverOption
+        {
+            ScreenSaverSelection selection;
+            SoftKeyRoute route;
+        };
+        constexpr std::array<SaverOption, kListSlotSoftkeys.size()> options = {{
+            {ScreenSaverSelection::Life, SoftKeyRoute::SelectScreenSaverLife},
+            {ScreenSaverSelection::Clock, SoftKeyRoute::SelectScreenSaverClock},
+            {ScreenSaverSelection::Starfield, SoftKeyRoute::SelectScreenSaverStarfield},
+            {ScreenSaverSelection::Random, SoftKeyRoute::SelectScreenSaverRandom},
+            {ScreenSaverSelection::Matrix, SoftKeyRoute::SelectScreenSaverMatrix},
+            {ScreenSaverSelection::Radar, SoftKeyRoute::SelectScreenSaverRadar},
+            {ScreenSaverSelection::Rain, SoftKeyRoute::SelectScreenSaverRain},
+            {ScreenSaverSelection::Worms, SoftKeyRoute::SelectScreenSaverWorms},
+        }};
+        for (size_t i = 0U; i < options.size(); ++i)
+        {
+            softkeys[softkey_index(kListSlotSoftkeys[i])] = {
+                settings_controller::screen_saver_definition(options[i].selection).option_label,
+                options[i].route,
                 true,
+                g_console_state.screen_saver_selection == options[i].selection,
             };
         }
         break;
+    }
     case MenuPage::WeatherSources:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
             settings_controller::weather_source_definition(WeatherSource::HomeAssistant).option_label,
@@ -1485,10 +1479,17 @@ bool apply_softkey_route(SoftKeyRoute route)
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
         return true;
+    case SoftKeyRoute::GoScreenSaverOptions:
+        settings_controller::stop_timeout_editing(g_console_state);
+        g_console_state.active_page = MenuPage::ScreenSaverOptions;
+        return true;
     case SoftKeyRoute::EditScreenSaverTimeout:
         return settings_controller::start_timeout_editing(g_console_state);
     case SoftKeyRoute::ConfirmScreenSaverTimeout:
         return settings_controller::confirm_timeout_edit(g_console_state);
+    case SoftKeyRoute::CancelScreenSaverTimeout:
+        // Restores the saved value, as BACK STEP does.
+        return settings_controller::stop_timeout_editing(g_console_state);
     case SoftKeyRoute::GoWeatherSources:
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::WeatherSources;

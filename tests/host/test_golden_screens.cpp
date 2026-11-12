@@ -618,3 +618,24 @@ HOST_TEST(every_recipe_name_fits_the_brew_timing_footer)
         }
     }
 }
+
+HOST_TEST(screen_saver_pages_normal_editing_and_options)
+{
+    // Home R1 SETTINGS, cursor right to Settings 2/2, L4 SCREEN SAVER.
+    const ConsoleState& normal =
+        navigate({ButtonId::RightTop, ButtonId::CursorRight, ButtonId::LeftLower});
+    EXPECT_EQ(static_cast<int>(normal.active_page), static_cast<int>(MenuPage::ScreenSaverSettings));
+    EXPECT_TRUE(golden_test::check_golden("screen_saver_page", render_page(normal).data()));
+
+    (void)console_controller::handle_button_event({ButtonId::LeftTop, ButtonEventType::Pressed});
+    const ConsoleState& editing = console_controller::state();
+    EXPECT_TRUE(editing.screen_saver_timeout_editing);
+    EXPECT_FALSE(body_touches_softkeys(editing, 60000U));
+    EXPECT_TRUE(golden_test::check_golden("screen_saver_timeout_editing", render_page(editing).data()));
+
+    (void)console_controller::handle_button_event({ButtonId::LeftBottom, ButtonEventType::Pressed});
+    (void)console_controller::handle_button_event({ButtonId::LeftUpper, ButtonEventType::Pressed});
+    const ConsoleState& options = console_controller::state();
+    EXPECT_EQ(static_cast<int>(options.active_page), static_cast<int>(MenuPage::ScreenSaverOptions));
+    EXPECT_TRUE(golden_test::check_golden("screen_saver_options", render_page(options).data()));
+}

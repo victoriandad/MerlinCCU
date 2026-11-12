@@ -139,6 +139,15 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Softkey top-line captions are uppercase.
 - Bracketed selected values remain mixed case.
 - Selection changes update visible values immediately.
+- `SCREEN SAVER` page: `L1=TIMEOUT [n mins]`, `L2=SAVER [name]`, `R5=HOME`,
+  everything else blank.
+  - `TIMEOUT` starts entry: `L1` turns inverse, the scratchpad appears in the
+    footer, and only `L5=CANCEL` and `R5=ENTER` remain. Type a value with the
+    keypad in `123` mode; `ENTER` saves it, `CANCEL` or `BACK STEP` restores
+    the previous value. `CLR` resets the scratchpad to `0 mins`.
+  - `SAVER` opens the `SAVER` option page: the eight savers on `L1`-`L4`,
+    `R1`-`R4`, the current one inverse, `R5=HOME`. Picking one takes effect at
+    once and stays on the page; `BACK STEP` returns to `SCREEN SAVER`.
 
 ## Alert Workflow Pages
 

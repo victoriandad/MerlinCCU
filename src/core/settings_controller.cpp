@@ -604,11 +604,11 @@ const char* time_zone_selection_text(const ConsoleState& console_state)
     return time_zone_definition(console_state.time_zone).selection_label;
 }
 
-/// @details `0 minutes` means the idle-triggered screen saver is disabled, and
-/// the label uses singular/plural wording that reads naturally on the menu.
+/// @details `0 mins` means the idle-triggered screen saver is disabled. Uses
+/// the same `min`/`mins` wording as the entry scratchpad (TXT-6).
 const char* screen_saver_timeout_selection_text(const ConsoleState& console_state)
 {
-    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
+    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "min" : "mins";
     std::snprintf(g_screen_saver_timeout_selection_text.data(),
                   g_screen_saver_timeout_selection_text.size(), "%u %s",
                   static_cast<unsigned>(console_state.screen_saver_timeout_minutes), unit);
