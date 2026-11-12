@@ -95,14 +95,18 @@ full 35-item catalogue, right when you actually have a pack in hand.
     `R5=HOME` returns to Home.
   - Picking a recipe opens the `BREW TIMING` page.
 - `BREW TIMING` page:
-  - `L1=MINIMUM` / `L2=RECOMMENDED` snap brewing/cold-crash/conditioning days to
+  - `L1=MINIMUM` / `R1=RECOMMENDED` snap brewing/cold-crash/conditioning days to
     the recipe's minimum or recommended totals.
-  - `L3`/`R3` adjust brew days down/up; `L4`/`R4` adjust conditioning days
-    down/up; `L5`/`R5` adjust cold-crash days down/up (0 by default, since
-    cold crash is optional).
-  - `R1=START` confirms and starts the vessel brewing now; disabled if the
-    dock filled up while adjusting timing.
-  - `R2=BREW` returns to the recipe catalogue to pick a different recipe.
+  - `L2`/`R2` adjust cold-crash days down/up (0 by default, since cold crash
+    is optional, up to 3); `L3`/`R3` adjust brew days (1-30); `L4`/`R4`
+    adjust conditioning days (1-45). A `-` or `+` key is blank at its limit.
+  - The footer names the recipe being started.
+  - `L5=CANCEL` returns to the recipe catalogue without starting anything;
+    `BACK STEP` does the same.
+  - `R5=START [vessel]` confirms and starts the vessel brewing now; blank if
+    the dock filled up while adjusting timing. There is no `HOME` key here.
+  - A brew started with cold crash days above 0 offers `COLD CRASH` as the
+    Pinter page's primary action while brewing.
 - `http://merlinccu/pinter` shows one row per Pinter, real date ticks, and a
   vertical today marker, plus summary tiles for brewing/conditioning/ready
   counts. Starting, moving to fridge, and marking ready stamp event dates

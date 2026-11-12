@@ -412,3 +412,67 @@ HOST_TEST(pinter_page_leaves_keys_blank_when_they_cannot_act)
     EXPECT_TRUE(key(SoftKeyId::Right2).label[0] == '\0'); // -1 DAY
     EXPECT_TRUE(key(SoftKeyId::Right4).label[0] == '\0'); // +1 DAY
 }
+
+namespace
+{
+
+/// @brief From the Pinter page with vessel 1 brewing, selects idle vessel 2
+/// and opens Brew Timing for the first catalogue entry.
+void open_brew_timing_for_vessel_two()
+{
+    open_pinter_with_one_brewing_vessel();
+    press(ButtonId::LeftUpper); // L2: vessel 2 (idle)
+    press(ButtonId::RightTop);  // R1: START
+    press(ButtonId::LeftTop);   // L1: first brew in the catalogue
+}
+
+} // namespace
+
+HOST_TEST(brew_timing_plans_a_cold_crash_and_starts_from_r5)
+{
+    open_brew_timing_for_vessel_two();
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::PinterStartTiming));
+
+    // Row 5 is the decision: CANCEL declines, START confirms, nothing else does.
+    EXPECT_TRUE(key(SoftKeyId::Left5).route == SoftKeyRoute::GoPinterSelectBrew);
+    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::ConfirmPinterStart);
+    int confirm_keys = 0;
+    for (const SoftKeyAction& action : console_controller::state().softkeys)
+    {
+        confirm_keys += action.route == SoftKeyRoute::ConfirmPinterStart ? 1 : 0;
+        // Every labelled key acts (SK-5).
+        EXPECT_TRUE(action.label[0] == '\0' || action.enabled);
+    }
+    EXPECT_EQ(confirm_keys, 1);
+
+    // Cold crash starts at 0 days, so CRASH - is blank until it is raised.
+    EXPECT_TRUE(key(SoftKeyId::Left2).label[0] == '\0');
+    press(ButtonId::RightUpper); // R2: CRASH +
+    press(ButtonId::RightUpper);
+    EXPECT_EQ(console_controller::state().pinter_pending_cold_crash_days, 2U);
+    EXPECT_TRUE(key(SoftKeyId::Left2).route == SoftKeyRoute::DecreasePinterColdCrashDays);
+
+    press(ButtonId::RightBottom); // R5: START
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Pinter));
+    const PinterStatus& vessel = console_controller::state().pinters[1];
+    EXPECT_TRUE(vessel.state == PinterState::Brewing);
+    EXPECT_EQ(vessel.planned_cold_crash_days, 2U);
+    EXPECT_TRUE(std::string(key(SoftKeyId::Right1).label) == "COLD\nCRASH");
+}
+
+HOST_TEST(brew_timing_cancel_returns_to_select_brew_without_starting)
+{
+    open_brew_timing_for_vessel_two();
+    press(ButtonId::LeftBottom); // L5: CANCEL
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::PinterSelectBrew));
+    EXPECT_TRUE(console_controller::state().pinters[1].state == PinterState::Idle);
+
+    // The cold crash limit blanks CRASH + once reached.
+    press(ButtonId::LeftTop);
+    for (int i = 0; i < 5; ++i)
+    {
+        press(ButtonId::RightUpper);
+    }
+    EXPECT_EQ(console_controller::state().pinter_pending_cold_crash_days, 3U);
+    EXPECT_TRUE(key(SoftKeyId::Right2).label[0] == '\0');
+}

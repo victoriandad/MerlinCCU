@@ -584,3 +584,37 @@ HOST_TEST(pinter_reset_states_render_consistently)
     const auto confirm_fb = render_page(confirming);
     EXPECT_TRUE(golden_test::check_golden("pinter_page_reset_confirm", confirm_fb.data()));
 }
+
+HOST_TEST(brew_timing_page_with_a_planned_cold_crash)
+{
+    (void)open_pinter_page(
+        {make_vessel(1, PinterState::Brewing), make_vessel(2, PinterState::Idle),
+         make_vessel(3, PinterState::Idle), make_vessel(4, PinterState::Idle)},
+        ButtonId::LeftUpper); // L2: an idle vessel
+    for (const ButtonId id : {ButtonId::RightTop,     // R1: START
+                              ButtonId::LeftTop,      // L1: first brew
+                              ButtonId::RightUpper})  // R2: CRASH +
+    {
+        (void)console_controller::handle_button_event({id, ButtonEventType::Pressed});
+    }
+    const ConsoleState& state = console_controller::state();
+    EXPECT_EQ(static_cast<int>(state.active_page), static_cast<int>(MenuPage::PinterStartTiming));
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("brew_timing_page", fb.data()));
+}
+
+HOST_TEST(every_recipe_name_fits_the_brew_timing_footer)
+{
+    constexpr int kFooterMarginX = 4;
+    for (uint8_t i = 0U; i < kPinterBrewCatalogueCount; ++i)
+    {
+        const char* name = console_controller::pinter_brew_timing(i).name;
+        const int width = framebuffer::measure_text(name, fonts::FontFace::Font5x7);
+        if (width > kUiWidth - (kFooterMarginX * 2))
+        {
+            host_tests::record_failure(__FILE__, __LINE__,
+                                       std::string(name) + " is " + std::to_string(width) +
+                                           " px wide");
+        }
+    }
+}

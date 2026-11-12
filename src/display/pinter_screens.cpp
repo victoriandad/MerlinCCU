@@ -17,6 +17,10 @@ namespace pinter_screens
 namespace
 {
 
+/// @brief Footer text baseline shared by the Pinter pages, matching the Home
+/// page's footer line. Moves to the shared layout header under #113.
+constexpr int kPinterFooterTextY = kUiHeight - 18;
+
 /// @brief Draws the reset question in the otherwise empty body.
 /// @details Every softkey except CANCEL and RESET is blank in this state, so
 /// the body can say plainly which vessel and brew will be cleared. Uses the
@@ -87,16 +91,24 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
         // The reason goes in the footer, which is otherwise unused here: the
         // body has no gap between softkey rows wide enough once the vessel
         // keys use three-line labels (SCR-4, SCR-5). Same baseline as the
-        // Home page's footer line; moves to the shared layout header under #113.
-        constexpr int kFooterTextY = kUiHeight - 18;
+        // Home page's footer line.
         if (console_state.pinter_block_reason[0] != '\0')
         {
-            screens::draw_centered_text(fb, kUiWidth / 2, kFooterTextY,
+            screens::draw_centered_text(fb, kUiWidth / 2, kPinterFooterTextY,
                                         console_state.pinter_block_reason.data(), true,
                                         fonts::FontFace::Font5x7, 1);
         }
         return;
     }
+    case MenuPage::PinterStartTiming:
+        // The recipe being started goes in the footer: every softkey row is
+        // in use, and the operator should see what START will commit to.
+        // The longest catalogue name fits the width (checked by a host test).
+        screens::draw_centered_text(
+            fb, kUiWidth / 2, kPinterFooterTextY,
+            console_controller::pinter_brew_timing(console_state.pinter_pending_brew_index).name,
+            true, fonts::FontFace::Font5x7, 1);
+        return;
     default:
         break;
     }

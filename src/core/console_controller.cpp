@@ -41,6 +41,14 @@ void update_softkeys_from_state();
 void update_lamps_from_state();
 bool button_digit_value(ButtonId id, uint8_t* out_digit);
 
+// Brew Timing duration limits, in days, for a brew started from the panel.
+constexpr uint8_t kPinterMinBrewDays = 1U;
+constexpr uint8_t kPinterMaxBrewDays = 30U;
+constexpr uint8_t kPinterMinConditioningDays = 1U;
+constexpr uint8_t kPinterMaxConditioningDays = 45U;
+constexpr uint8_t kPinterMinColdCrashDays = 0U;
+constexpr uint8_t kPinterMaxColdCrashDays = 3U;
+
 /// @brief List slots in fill order, L1-L4 then R1-R4 (NAV-6).
 constexpr std::array<SoftKeyId, 8> kListSlotSoftkeys = {
     SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,  SoftKeyId::Left4,
@@ -612,62 +620,70 @@ void update_softkeys_from_state()
     }
     case MenuPage::PinterStartTiming:
     {
-        const PinterBrewTiming& brew =
-            pinter_controller::brew_timing(g_console_state.pinter_pending_brew_index);
+        // Decision state for a brew start: presets on row 1, one duration per
+        // row with -/+ on opposite sides, CANCEL at L5 and START at R5 (NAV-3).
+        // A step key is blank when its value is at the limit, so every
+        // labelled key acts (SK-5).
         softkeys[softkey_index(SoftKeyId::Left1)] = {"MINIMUM",
                                                      SoftKeyRoute::SelectPinterMinimumTiming,
                                                      true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"RECOMMENDED",
-                                                     SoftKeyRoute::SelectPinterRecommendedTiming,
+        softkeys[softkey_index(SoftKeyId::Right1)] = {"RECOMMENDED",
+                                                      SoftKeyRoute::SelectPinterRecommendedTiming,
+                                                      true};
+
+        struct DurationRow
+        {
+            SoftKeyId minus_key;
+            SoftKeyId plus_key;
+            const char* minus_caption;
+            const char* plus_caption;
+            uint8_t days;
+            uint8_t min_days;
+            uint8_t max_days;
+            SoftKeyRoute minus_route;
+            SoftKeyRoute plus_route;
+        };
+        const std::array<DurationRow, 3> rows = {{
+            {SoftKeyId::Left2, SoftKeyId::Right2, "CRASH -", "CRASH +",
+             g_console_state.pinter_pending_cold_crash_days, kPinterMinColdCrashDays,
+             kPinterMaxColdCrashDays, SoftKeyRoute::DecreasePinterColdCrashDays,
+             SoftKeyRoute::IncreasePinterColdCrashDays},
+            {SoftKeyId::Left3, SoftKeyId::Right3, "BREW -", "BREW +",
+             g_console_state.pinter_pending_brewing_days, kPinterMinBrewDays, kPinterMaxBrewDays,
+             SoftKeyRoute::DecreasePinterBrewDays, SoftKeyRoute::IncreasePinterBrewDays},
+            {SoftKeyId::Left4, SoftKeyId::Right4, "COND -", "COND +",
+             g_console_state.pinter_pending_conditioning_days, kPinterMinConditioningDays,
+             kPinterMaxConditioningDays, SoftKeyRoute::DecreasePinterConditioningDays,
+             SoftKeyRoute::IncreasePinterConditioningDays},
+        }};
+        for (const DurationRow& row : rows)
+        {
+            if (row.days > row.min_days)
+            {
+                softkeys[softkey_index(row.minus_key)] = {
+                    pinter_controller::build_days_label(row.minus_key, row.minus_caption, row.days),
+                    row.minus_route, true};
+            }
+            if (row.days < row.max_days)
+            {
+                softkeys[softkey_index(row.plus_key)] = {
+                    pinter_controller::build_days_label(row.plus_key, row.plus_caption, row.days),
+                    row.plus_route, true};
+            }
+        }
+
+        softkeys[softkey_index(SoftKeyId::Left5)] = {"CANCEL", SoftKeyRoute::GoPinterSelectBrew,
                                                      true};
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            pinter_controller::build_days_label(SoftKeyId::Left3, "BREW -",
-                                                g_console_state.pinter_pending_brewing_days),
-            SoftKeyRoute::DecreasePinterBrewDays,
-            g_console_state.pinter_pending_brewing_days > 1U,
-        };
-        softkeys[softkey_index(SoftKeyId::Right3)] = {
-            pinter_controller::build_days_label(SoftKeyId::Right3, "BREW +",
-                                                g_console_state.pinter_pending_brewing_days),
-            SoftKeyRoute::IncreasePinterBrewDays,
-            g_console_state.pinter_pending_brewing_days < 30U,
-        };
-        softkeys[softkey_index(SoftKeyId::Left4)] = {
-            pinter_controller::build_days_label(SoftKeyId::Left4, "COND -",
-                                                g_console_state.pinter_pending_conditioning_days),
-            SoftKeyRoute::DecreasePinterConditioningDays,
-            g_console_state.pinter_pending_conditioning_days > 1U,
-        };
-        softkeys[softkey_index(SoftKeyId::Right4)] = {
-            pinter_controller::build_days_label(SoftKeyId::Right4, "COND +",
-                                                g_console_state.pinter_pending_conditioning_days),
-            SoftKeyRoute::IncreasePinterConditioningDays,
-            g_console_state.pinter_pending_conditioning_days < 45U,
-        };
-        softkeys[softkey_index(SoftKeyId::Left5)] = {
-            pinter_controller::build_days_label(SoftKeyId::Left5, "CRASH -",
-                                                g_console_state.pinter_pending_cold_crash_days),
-            SoftKeyRoute::DecreasePinterColdCrashDays,
-            g_console_state.pinter_pending_cold_crash_days > 0U,
-        };
-        softkeys[softkey_index(SoftKeyId::Right5)] = {
-            pinter_controller::build_days_label(SoftKeyId::Right5, "CRASH +",
-                                                g_console_state.pinter_pending_cold_crash_days),
-            SoftKeyRoute::IncreasePinterColdCrashDays,
-            g_console_state.pinter_pending_cold_crash_days < 3U,
-        };
-        softkeys[softkey_index(SoftKeyId::Right1)] = {
-            build_selection_softkey_label(
-                SoftKeyId::Right1, "START",
-                pinter_controller::selected_const(g_console_state).label.data()),
-            SoftKeyRoute::ConfirmPinterStart,
-            pinter_controller::can_start(g_console_state),
-        };
-        softkeys[softkey_index(SoftKeyId::Right2)] = {
-            build_selection_softkey_label(SoftKeyId::Right2, "BREW", brew.name),
-            SoftKeyRoute::GoPinterSelectBrew,
-            true,
-        };
+        if (pinter_controller::can_start(g_console_state))
+        {
+            softkeys[softkey_index(SoftKeyId::Right5)] = {
+                build_selection_softkey_label(
+                    SoftKeyId::Right5, "START",
+                    pinter_controller::selected_const(g_console_state).label.data()),
+                SoftKeyRoute::ConfirmPinterStart,
+                true,
+            };
+        }
         break;
     }
     case MenuPage::Shares:
@@ -1170,6 +1186,7 @@ void update_softkeys_from_state()
         g_console_state.active_page != MenuPage::AlertDetail &&
         !(g_console_state.active_page == MenuPage::ScreenSaverSettings &&
           g_console_state.screen_saver_timeout_editing) &&
+        g_console_state.active_page != MenuPage::PinterStartTiming &&
         !(g_console_state.active_page == MenuPage::Pinter &&
           g_console_state.pinter_reset_confirming))
     {
@@ -1365,22 +1382,26 @@ bool apply_softkey_route(SoftKeyRoute route)
         return pinter_controller::set_pending_timing(g_console_state, false);
     case SoftKeyRoute::DecreasePinterBrewDays:
         return pinter_controller::adjust_pending_days(g_console_state.pinter_pending_brewing_days,
-                                                       -1, 1U, 30U);
+                                                       -1, kPinterMinBrewDays, kPinterMaxBrewDays);
     case SoftKeyRoute::IncreasePinterBrewDays:
         return pinter_controller::adjust_pending_days(g_console_state.pinter_pending_brewing_days,
-                                                       1, 1U, 30U);
+                                                       1, kPinterMinBrewDays, kPinterMaxBrewDays);
     case SoftKeyRoute::DecreasePinterConditioningDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_conditioning_days, -1, 1U, 45U);
+            g_console_state.pinter_pending_conditioning_days, -1, kPinterMinConditioningDays,
+            kPinterMaxConditioningDays);
     case SoftKeyRoute::IncreasePinterConditioningDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_conditioning_days, 1, 1U, 45U);
+            g_console_state.pinter_pending_conditioning_days, 1, kPinterMinConditioningDays,
+            kPinterMaxConditioningDays);
     case SoftKeyRoute::DecreasePinterColdCrashDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_cold_crash_days, -1, 0U, 3U);
+            g_console_state.pinter_pending_cold_crash_days, -1, kPinterMinColdCrashDays,
+            kPinterMaxColdCrashDays);
     case SoftKeyRoute::IncreasePinterColdCrashDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_cold_crash_days, 1, 0U, 3U);
+            g_console_state.pinter_pending_cold_crash_days, 1, kPinterMinColdCrashDays,
+            kPinterMaxColdCrashDays);
     case SoftKeyRoute::ConfirmPinterStart:
         return pinter_controller::confirm_start(g_console_state);
     case SoftKeyRoute::GoShares:
