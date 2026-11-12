@@ -1,7 +1,11 @@
 #include <array>
 #include <cstring>
+#include <initializer_list>
 
+#include "console_controller.h"
 #include "console_model.h"
+#include "framebuffer.h"
+#include "input.h"
 #include "golden_test_support.h"
 #include "panel_config.h"
 #include "screens.h"
@@ -125,4 +129,67 @@ HOST_TEST(keypad_debug_page_renders_consistently)
 
     const auto fb = render_page(state);
     EXPECT_TRUE(golden_test::check_golden("keypad_debug_page", fb.data()));
+}
+
+namespace
+{
+
+/// @brief Reaches `page` through real key presses so the rendered softkey map
+/// is the one the firmware builds, not an empty fixture.
+const ConsoleState& navigate(std::initializer_list<ButtonId> presses)
+{
+    console_controller::init();
+    for (const ButtonId id : presses)
+    {
+        (void)console_controller::handle_button_event({id, ButtonEventType::Pressed});
+    }
+    return console_controller::state();
+}
+
+/// @brief Returns true if any pixel in the given rectangle is lit.
+bool any_pixel_lit(const uint8_t* fb, int left, int top, int right, int bottom)
+{
+    for (int y = top; y <= bottom; ++y)
+    {
+        for (int x = left; x <= right; ++x)
+        {
+            if (framebuffer::get_pixel(fb, x, y))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Row 5 softkey label block: top 41 + 4 x 57 pitch = 269, 18 px tall
+// (kSoftkeyLayout in screens.cpp). The right-hand cell starts just right of
+// the centre line. Moves to the shared layout header under #113.
+constexpr int kRow5CellTopY = 269;
+constexpr int kRow5CellBottomY = 286;
+constexpr int kRightCellLeftX = kUiWidth / 2;
+
+} // namespace
+
+HOST_TEST(greyscale_test_card_renders_consistently_with_softkeys)
+{
+    const ConsoleState& state = navigate({ButtonId::LeftTop,       // Home L1: STATUS
+                                          ButtonId::RightMiddle}); // Status R3: GREYSCALE
+    EXPECT_TRUE(state.active_page == MenuPage::GreyscaleTest);
+
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("greyscale_test_page", fb.data()));
+}
+
+HOST_TEST(greyscale_test_card_body_stays_out_of_the_r5_softkey_cell)
+{
+    ConsoleState state = navigate({ButtonId::LeftTop, ButtonId::RightMiddle});
+    for (SoftKeyAction& key : state.softkeys)
+    {
+        key.label = "";
+    }
+
+    const auto fb = render_page(state);
+    EXPECT_FALSE(any_pixel_lit(fb.data(), kRightCellLeftX, kRow5CellTopY, kUiWidth - 1,
+                               kRow5CellBottomY));
 }

@@ -134,23 +134,35 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
     constexpr int kBandHeight = 30;
     constexpr int kLabelHeight = 9;
     constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 8;
+    constexpr int kEntryGap = 4;
     constexpr int kStartY = 44;
+    constexpr int kLevelCount = 5;
     constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
+    constexpr int kCardBottomY =
+        kStartY + (kLevelCount * kEntryHeight) + ((kLevelCount - 1) * kEntryGap);
+    // Top of the row 5 softkey cells (softkey top 41 + 4 rows x 57 pitch in
+    // screens.cpp). The full-width bands must end above it so R5 HOME stays
+    // readable (SCR-5). Moves to the shared layout header under #113.
+    constexpr int kRow5SoftkeyTopY = 269;
+    static_assert(kCardBottomY <= kRow5SoftkeyTopY,
+                  "greyscale bands would overlap the row 5 softkey labels");
+    constexpr fonts::FontFace kLabelFont = fonts::FontFace::Font5x7;
+    constexpr const char* kCaption = "2X2 ORDERED DITHER";
 
-    for (int level = 0; level <= 4; ++level)
+    for (int level = 0; level < kLevelCount; ++level)
     {
         const int kEntryY = kStartY + (level * (kEntryHeight + kEntryGap));
         char label[16] = {};
         std::snprintf(label, sizeof(label), "L%d  %d/4", level, level);
-        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, fonts::FontFace::Font5x7);
+        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, kLabelFont);
         framebuffer::fill_rect_dithered(fb, kMarginX, kEntryY + kLabelHeight + kLabelToBandGap,
                                         kBandWidth, kBandHeight, level);
     }
 
-    const int kCaptionY = kStartY + (5 * (kEntryHeight + kEntryGap));
-    framebuffer::draw_text(fb, kMarginX, kCaptionY, "2X2 ORDERED DITHER", true,
-                           fonts::FontFace::Font5x7);
+    // The caption shares the first label row, right-aligned, so nothing is
+    // drawn in the row 5 or footer zones.
+    framebuffer::draw_text(fb, kMarginX + kBandWidth - screens::text_width(kCaption, kLabelFont),
+                           kStartY, kCaption, true, kLabelFont);
 }
 
 } // namespace settings_screens
