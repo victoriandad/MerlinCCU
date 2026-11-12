@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -275,4 +276,133 @@ HOST_TEST(pinter_page_fridge_full_notice_sits_in_the_footer)
 
     const auto fb = render_page(state);
     EXPECT_TRUE(golden_test::check_golden("pinter_page_fridge_full", fb.data()));
+}
+
+namespace
+{
+
+/// @brief True when any lit body pixel is within one pixel of a lit softkey
+/// label pixel (SCR-5, SCR-6). The softkey layer is rendered by drawing the
+/// same softkey map on a page with no body; the body layer by drawing the
+/// page with every label cleared. The header is excluded.
+bool body_touches_softkeys(const ConsoleState& state, uint32_t now_ms)
+{
+    ConsoleState labels_only = state;
+    labels_only.active_page = MenuPage::Status; // A key page with no body.
+    ConsoleState body_only = state;
+    for (SoftKeyAction& key : body_only.softkeys)
+    {
+        key.label = "";
+    }
+    const auto labels = render_page(labels_only, now_ms);
+    const auto body = render_page(body_only, now_ms);
+
+    for (int y = kBodyTopY; y < kUiHeight; ++y)
+    {
+        for (int x = 0; x < kUiWidth; ++x)
+        {
+            if (!framebuffer::get_pixel(body.data(), x, y))
+            {
+                continue;
+            }
+            if (any_pixel_lit(labels.data(), x - 1, std::max(y - 1, kBodyTopY), x + 1, y + 1))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+constexpr uint32_t kAirTrafficNowMs = 600000U;
+constexpr uint32_t kAirTrafficLiveMs = kAirTrafficNowMs - 5000U;
+constexpr uint32_t kAirTrafficStaleMs = 1000U;
+
+AirTrafficStatus make_air_traffic(uint8_t aircraft_count, uint32_t last_success_ms)
+{
+    AirTrafficStatus status = {};
+    status.enabled = true;
+    status.configured = true;
+    status.data_valid = aircraft_count > 0U;
+    status.configured_radius_nm = 30U;
+    status.aircraft_count = aircraft_count;
+    status.last_success_ms = last_success_ms;
+    for (uint8_t i = 0U; i < aircraft_count; ++i)
+    {
+        AirTrafficEntry& entry = status.aircraft[i];
+        std::snprintf(entry.callsign.data(), entry.callsign.size(), "BAW%u",
+                      static_cast<unsigned>(100U + i));
+        std::snprintf(entry.distance_text.data(), entry.distance_text.size(), "%unm",
+                      static_cast<unsigned>(2U + i));
+        std::snprintf(entry.altitude_text.data(), entry.altitude_text.size(), "%u00ft",
+                      static_cast<unsigned>(30U + i));
+        std::snprintf(entry.bearing_text.data(), entry.bearing_text.size(), "%03u",
+                      static_cast<unsigned>((i * 37U) % 360U));
+        entry.distance_deci_nm = static_cast<int16_t>(20 + (i * 10));
+        entry.bearing_deg = static_cast<int16_t>((i * 37) % 360);
+    }
+    return status;
+}
+
+const ConsoleState& open_air_traffic(const AirTrafficStatus& status, bool plot_view)
+{
+    console_controller::init();
+    (void)console_controller::set_air_traffic_status(status);
+    (void)console_controller::handle_button_event({ButtonId::LeftBottom, ButtonEventType::Pressed});
+    if (plot_view)
+    {
+        (void)console_controller::handle_button_event(
+            {ButtonId::LeftBottom, ButtonEventType::Pressed}); // L5: VIEW
+    }
+    return console_controller::state();
+}
+
+void check_air_traffic_page(const char* golden_name, const AirTrafficStatus& status,
+                            bool plot_view)
+{
+    const ConsoleState& state = open_air_traffic(status, plot_view);
+    EXPECT_TRUE(state.active_page == MenuPage::AirTraffic);
+    EXPECT_FALSE(body_touches_softkeys(state, kAirTrafficNowMs));
+    const auto fb = render_page(state, kAirTrafficNowMs);
+    EXPECT_TRUE(golden_test::check_golden(golden_name, fb.data()));
+}
+
+} // namespace
+
+HOST_TEST(air_traffic_pages_keep_footer_text_clear_of_softkeys)
+{
+    check_air_traffic_page("air_traffic_table_live", make_air_traffic(5U, kAirTrafficLiveMs),
+                           false);
+    check_air_traffic_page("air_traffic_table_stale", make_air_traffic(5U, kAirTrafficStaleMs),
+                           false);
+    check_air_traffic_page("air_traffic_table_paged",
+                           make_air_traffic(static_cast<uint8_t>(kAirTrafficRowsPerPage + 3U),
+                                            kAirTrafficLiveMs),
+                           false);
+    check_air_traffic_page("air_traffic_plot_stale", make_air_traffic(5U, kAirTrafficStaleMs),
+                           true);
+    check_air_traffic_page("air_traffic_no_aircraft", make_air_traffic(0U, kAirTrafficLiveMs),
+                           false);
+    AirTrafficStatus waiting = make_air_traffic(0U, 0U);
+    waiting.last_http_status = 503;
+    check_air_traffic_page("air_traffic_waiting", waiting, false);
+}
+
+HOST_TEST(air_traffic_paged_table_leaves_the_footer_to_the_arrows)
+{
+    ConsoleState state = open_air_traffic(
+        make_air_traffic(static_cast<uint8_t>(kAirTrafficRowsPerPage + 3U), kAirTrafficLiveMs),
+        false);
+    for (SoftKeyAction& key : state.softkeys)
+    {
+        key.label = "";
+    }
+    const auto fb = render_page(state, kAirTrafficNowMs);
+    // Arrows are drawn within 32 px of the centre line; nothing else may be
+    // in the footer while they are shown (SCR-4).
+    constexpr int kArrowBandHalfWidth = 32;
+    EXPECT_FALSE(any_pixel_lit(fb.data(), 0, kFooterTopY, kUiWidth / 2 - kArrowBandHalfWidth - 1,
+                               kUiHeight - 1));
+    EXPECT_FALSE(any_pixel_lit(fb.data(), kUiWidth / 2 + kArrowBandHalfWidth + 1, kFooterTopY,
+                               kUiWidth - 1, kUiHeight - 1));
 }
