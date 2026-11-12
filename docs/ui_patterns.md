@@ -95,6 +95,20 @@ corrected.
 - Rules: list entries show summary and time; detail pages provide accept,
   ignore, and scroll behaviour.
 
+### Text Block
+
+- Intent: show free text that may be longer than one line or one screen.
+- Use When: alert detail, and any future page body that is prose rather
+  than label/value rows.
+- Source: `screens::wrap_text()` in `src/display/screens.cpp` (declared in
+  `include/display/screens_shared.h`); used by `draw_alert_detail_page()` in
+  `src/display/alert_screens.cpp`.
+- Rules: wrap to the body width on spaces, keep `\n` as a forced break, and
+  hard-break a word wider than the line. Scroll with the cursor keys and
+  show only the arrows for directions that move (NAV-7, NAV-8). Compute the
+  scroll range from the wrapped line count in one function shared by the
+  renderer and the key handling (`alert_screens::detail_max_scroll()`).
+
 ### Empty State
 
 - Intent: make absence of data explicit without adding synthetic rows.

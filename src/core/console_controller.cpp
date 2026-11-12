@@ -9,6 +9,7 @@
 
 #include "alert_controller.h"
 #include "alert_ordering.h"
+#include "alert_screens.h"
 #include "calendar_controller.h"
 #include "console_controller_internal.h"
 #include "debug_logging.h"
@@ -2085,22 +2086,14 @@ bool handle_button_event(const ButtonEvent& event)
                 changed = true;
             }
         }
-        else if (g_console_state.active_page == MenuPage::AlertDetail)
+        else if (g_console_state.active_page == MenuPage::AlertDetail &&
+                 g_console_state.alert_detail_index < g_console_state.alert_count)
         {
             const ActiveAlert& alert =
                 g_console_state.active_alerts[g_console_state.alert_detail_index];
-            uint8_t max_lines = 0U;
-            for (char c : alert.detail)
-            {
-                if (c == '\0')
-                {
-                    break;
-                }
-                if (c == '\n')
-                {
-                    ++max_lines;
-                }
-            }
+            // Scroll range comes from the renderer's own line wrapping so the
+            // two cannot disagree.
+            const uint8_t max_lines = alert_screens::detail_max_scroll(alert);
             if (direction < 0 && g_console_state.alert_detail_scroll_line > 0U)
             {
                 --g_console_state.alert_detail_scroll_line;

@@ -83,6 +83,22 @@ struct WrappedSoftkeyLabel
 WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
                                      int max_lines);
 
+/// @brief One wrapped line of a longer text: a view into the source string.
+struct TextSpan
+{
+    const char* text;
+    size_t length;
+};
+
+/// @brief Wraps free text into lines no wider than `max_width` pixels.
+/// @details The shared Text block (docs/ui_patterns.md). Breaks on spaces,
+/// treats `\n` as a forced break (an empty paragraph gives an empty line),
+/// and hard-breaks a single word wider than the line. Spans point into
+/// `text`, so it must outlive them. Returns the number of spans written,
+/// at most `max_spans`; lines beyond that are dropped.
+size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
+                 size_t max_spans);
+
 /// @brief Draws the standard row-based presentation used by information pages.
 /// @details The top banner carries the page title, so the body can stay clean
 /// and consistent without extra boxes, subtitles, or divider lines.

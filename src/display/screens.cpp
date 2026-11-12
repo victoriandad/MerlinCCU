@@ -830,6 +830,90 @@ WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, in
     return wrapped;
 }
 
+/// @brief Wraps free text into lines no wider than `max_width` pixels.
+/// @details Widths are accumulated glyph by glyph with the same one-pixel
+/// spacing `framebuffer::measure_text()` uses, so a span measured here
+/// renders at exactly this width. Declared in screens_shared.h.
+size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
+                 size_t max_spans)
+{
+    if (text == nullptr || out == nullptr || max_spans == 0U)
+    {
+        return 0U;
+    }
+
+    auto glyph_width = [font](char c)
+    {
+        const char glyph[2] = {c, '\0'};
+        return text_width(glyph, font);
+    };
+
+    size_t count = 0U;
+    const char* cursor = text;
+    while (*cursor != '\0' && count < max_spans)
+    {
+        const char* paragraph_end = std::strchr(cursor, '\n');
+        if (paragraph_end == nullptr)
+        {
+            paragraph_end = cursor + std::strlen(cursor);
+        }
+
+        if (cursor == paragraph_end)
+        {
+            out[count++] = {cursor, 0U};
+        }
+
+        while (cursor < paragraph_end && count < max_spans)
+        {
+            while (cursor < paragraph_end && *cursor == ' ')
+            {
+                ++cursor;
+            }
+            if (cursor == paragraph_end)
+            {
+                break;
+            }
+
+            const size_t remaining = static_cast<size_t>(paragraph_end - cursor);
+            size_t fit = 0U;
+            int width = 0;
+            while (fit < remaining)
+            {
+                const int next_width = width + (fit > 0U ? 1 : 0) + glyph_width(cursor[fit]);
+                if (next_width > max_width)
+                {
+                    break;
+                }
+                width = next_width;
+                ++fit;
+            }
+
+            size_t take = fit;
+            if (fit < remaining)
+            {
+                size_t space = fit;
+                while (space > 0U && cursor[space] != ' ')
+                {
+                    --space;
+                }
+                take = (space > 0U) ? space : std::max<size_t>(fit, 1U);
+            }
+
+            size_t length = take;
+            while (length > 0U && cursor[length - 1U] == ' ')
+            {
+                --length;
+            }
+            out[count++] = {cursor, length};
+            cursor += take;
+        }
+
+        cursor = (*paragraph_end == '\n') ? paragraph_end + 1 : paragraph_end;
+    }
+
+    return count;
+}
+
 namespace
 {
 

@@ -3,7 +3,10 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <string>
 
+#include "alert_controller.h"
+#include "alert_screens.h"
 #include "console_controller.h"
 #include "console_model.h"
 #include "framebuffer.h"
@@ -405,4 +408,144 @@ HOST_TEST(air_traffic_paged_table_leaves_the_footer_to_the_arrows)
                                kUiHeight - 1));
     EXPECT_FALSE(any_pixel_lit(fb.data(), kUiWidth / 2 + kArrowBandHalfWidth + 1, kFooterTopY,
                                kUiWidth - 1, kUiHeight - 1));
+}
+
+namespace
+{
+
+constexpr int kAlertTextRightMarginX = kUiWidth - 12;
+
+ConsoleState make_alert_detail_state(const char* detail)
+{
+    ConsoleState state = {};
+    state.active_page = MenuPage::AlertDetail;
+    state.alert_count = 1U;
+    state.alert_detail_index = 0U;
+    ActiveAlert& alert = state.active_alerts[0];
+    alert.severity = AlertSeverity::Warning;
+    std::snprintf(alert.summary.data(), alert.summary.size(), "TEST");
+    std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
+    state.softkeys[static_cast<size_t>(SoftKeyId::Left5)] = {"IGNORE", SoftKeyRoute::AlertIgnore,
+                                                             true};
+    state.softkeys[static_cast<size_t>(SoftKeyId::Right5)] = {"ACCEPT", SoftKeyRoute::AlertAccept,
+                                                              true};
+    return state;
+}
+
+/// @brief True when the detail body stays inside the text column and above
+/// the row 5 labels.
+bool alert_detail_stays_in_bounds(const ConsoleState& state)
+{
+    ConsoleState body_only = state;
+    for (SoftKeyAction& key : body_only.softkeys)
+    {
+        key.label = "";
+    }
+    const auto fb = render_page(body_only);
+    return !any_pixel_lit(fb.data(), kAlertTextRightMarginX, kBodyTopY, kUiWidth - 1,
+                          kFooterTopY - 1) &&
+           !any_pixel_lit(fb.data(), 0, 264, kUiWidth - 1, kFooterTopY - 1);
+}
+
+// 318 characters: close to ActiveAlert::detail's capacity, with long words.
+constexpr const char* kLongAlertDetail =
+    "Tracked Home Assistant entity is missing or unavailable.\nCheck the entity id in "
+    "settings and HA integration state.\nEnvironment sensor board is not fully detected.\n"
+    "Verify SSID and password in NETWORK settings.\nAn_unbroken_identifier_longer_than_a_line "
+    "must still be hard-broken.\nLast line of the longest alert.";
+
+} // namespace
+
+HOST_TEST(alert_detail_wraps_every_raised_alert_inside_the_text_column)
+{
+    ConsoleState state = {};
+    state.wifi_status.state = WifiConnectionState::AuthFailed;
+    state.time_status.synced = false;
+    state.environment_sensor_status.enabled = true;
+    state.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::Fault;
+    state.share_data_configured = true;
+    state.share_data_last_error = -1;
+    for (int i = 0; i < 6; ++i)
+    {
+        alert_controller::reset();
+        alert_controller::sync(state);
+    }
+    for (int i = 0; i < 6; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_TRUE(state.alert_count >= 3U);
+
+    for (uint8_t i = 0U; i < state.alert_count; ++i)
+    {
+        ConsoleState detail = make_alert_detail_state(state.active_alerts[i].detail.data());
+        EXPECT_TRUE(alert_detail_stays_in_bounds(detail));
+    }
+    EXPECT_TRUE(alert_detail_stays_in_bounds(make_alert_detail_state(kLongAlertDetail)));
+}
+
+HOST_TEST(alert_detail_scrolls_until_the_last_line_is_in_view)
+{
+    // Twenty short lines: more than the twelve visible, so the page scrolls.
+    std::string many_lines;
+    for (int line = 1; line <= 20; ++line)
+    {
+        many_lines += "Line " + std::to_string(line) + (line < 20 ? "\n" : "");
+    }
+    ConsoleState state = make_alert_detail_state(many_lines.c_str());
+    const uint8_t max_scroll = alert_screens::detail_max_scroll(state.active_alerts[0]);
+    EXPECT_EQ(max_scroll, 8U);
+
+    state.alert_detail_scroll_line = max_scroll;
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("alert_detail_long_scrolled_to_end", fb.data()));
+    EXPECT_TRUE(alert_detail_stays_in_bounds(state));
+
+    // Asking for more than the maximum renders the same last page.
+    state.alert_detail_scroll_line = static_cast<uint8_t>(max_scroll + 5U);
+    const auto clamped = render_page(state);
+    EXPECT_TRUE(clamped == fb);
+}
+
+HOST_TEST(alert_detail_cursor_keys_stop_at_the_scroll_limit)
+{
+    console_controller::init();
+    WifiStatus wifi = {};
+    wifi.state = WifiConnectionState::Disabled;
+    (void)console_controller::set_wifi_status(wifi);
+    for (const ButtonId id : {ButtonId::Alert, ButtonId::LeftTop})
+    {
+        (void)console_controller::handle_button_event({id, ButtonEventType::Pressed});
+    }
+    const ConsoleState& state = console_controller::state();
+    EXPECT_TRUE(state.active_page == MenuPage::AlertDetail);
+    const uint8_t max_scroll =
+        alert_screens::detail_max_scroll(state.active_alerts[state.alert_detail_index]);
+
+    for (int i = 0; i < 40; ++i)
+    {
+        (void)console_controller::handle_button_event(
+            {ButtonId::CursorRight, ButtonEventType::Pressed});
+    }
+    EXPECT_EQ(state.alert_detail_scroll_line, max_scroll);
+    for (int i = 0; i < 40; ++i)
+    {
+        (void)console_controller::handle_button_event(
+            {ButtonId::CursorLeft, ButtonEventType::Pressed});
+    }
+    EXPECT_EQ(state.alert_detail_scroll_line, 0U);
+}
+
+HOST_TEST(alert_detail_short_and_empty_states_render_consistently)
+{
+    const auto short_fb = render_page(make_alert_detail_state(
+        "Wi-Fi link is down.\nCheck SSID/password or signal.\nWithout network, cloud features "
+        "are unavailable."));
+    EXPECT_TRUE(golden_test::check_golden("alert_detail_short", short_fb.data()));
+
+    ConsoleState empty = make_alert_detail_state("");
+    empty.alert_count = 0U;
+    const auto empty_fb = render_page(empty);
+    EXPECT_TRUE(golden_test::check_golden("alert_detail_empty", empty_fb.data()));
 }
