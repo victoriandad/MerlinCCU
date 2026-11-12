@@ -319,3 +319,96 @@ HOST_TEST(every_page_is_reachable_and_back_step_returns_to_a_page_that_leads_the
         }
     }
 }
+
+namespace
+{
+
+/// @brief Opens the Pinter page with vessel 1 brewing and vessels 2-4 idle,
+/// and clears any save left pending by earlier tests.
+void open_pinter_with_one_brewing_vessel()
+{
+    start_fresh();
+    std::array<PinterStatus, kPinterCount> vessels = {};
+    for (size_t i = 0U; i < vessels.size(); ++i)
+    {
+        std::snprintf(vessels[i].label.data(), vessels[i].label.size(), "Pinter %u",
+                      static_cast<unsigned>(i + 1U));
+    }
+    vessels[0].state = PinterState::Brewing;
+    vessels[0].brew_start_day = 19998U;
+    vessels[0].planned_brewing_days = 7U;
+    console_controller::apply_persisted_pinters(vessels);
+    TimeStatus time = {};
+    time.synced = true;
+    time.local_epoch_day = 20000U;
+    (void)console_controller::set_time_status(time);
+    (void)console_controller::flush_pending_pinter_save();
+    press(ButtonId::LeftLower); // Home L4: PINTER
+}
+
+PinterState vessel_one_state()
+{
+    return console_controller::state().pinters[0].state;
+}
+
+const SoftKeyAction& key(SoftKeyId id)
+{
+    return console_controller::state().softkeys[static_cast<size_t>(id)];
+}
+
+} // namespace
+
+HOST_TEST(pinter_reset_needs_confirmation_and_cancel_or_back_step_keep_the_vessel)
+{
+    open_pinter_with_one_brewing_vessel();
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Pinter));
+
+    press(ButtonId::RightMiddle); // R3: RESET
+    EXPECT_TRUE(console_controller::state().pinter_reset_confirming);
+    EXPECT_TRUE(vessel_one_state() == PinterState::Brewing);
+    EXPECT_FALSE(console_controller::flush_pending_pinter_save());
+
+    // Only CANCEL (L5) and RESET (R5) are labelled in the confirm state.
+    for (size_t k = 0U; k < static_cast<size_t>(SoftKeyId::Count); ++k)
+    {
+        const bool row5 = k == static_cast<size_t>(SoftKeyId::Left5) ||
+                          k == static_cast<size_t>(SoftKeyId::Right5);
+        EXPECT_EQ(console_controller::state().softkeys[k].label[0] != '\0', row5);
+    }
+    EXPECT_TRUE(key(SoftKeyId::Left5).route == SoftKeyRoute::CancelPinterReset);
+    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::ConfirmPinterReset);
+
+    press(ButtonId::LeftBottom); // L5: CANCEL
+    EXPECT_FALSE(console_controller::state().pinter_reset_confirming);
+    EXPECT_TRUE(vessel_one_state() == PinterState::Brewing);
+
+    press(ButtonId::RightMiddle);
+    press(ButtonId::BackStep);
+    EXPECT_FALSE(console_controller::state().pinter_reset_confirming);
+    EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Pinter));
+    EXPECT_TRUE(vessel_one_state() == PinterState::Brewing);
+    EXPECT_FALSE(console_controller::flush_pending_pinter_save());
+
+    press(ButtonId::RightMiddle);
+    press(ButtonId::RightBottom); // R5: RESET (confirm)
+    EXPECT_FALSE(console_controller::state().pinter_reset_confirming);
+    EXPECT_TRUE(vessel_one_state() == PinterState::Idle);
+    EXPECT_TRUE(console_controller::flush_pending_pinter_save());
+}
+
+HOST_TEST(pinter_page_leaves_keys_blank_when_they_cannot_act)
+{
+    open_pinter_with_one_brewing_vessel();
+    press(ButtonId::LeftUpper); // L2: an idle vessel
+    for (const SoftKeyAction& action : console_controller::state().softkeys)
+    {
+        if (!action.enabled)
+        {
+            EXPECT_TRUE(action.label[0] == '\0' || std::string(action.label).find('[') !=
+                                                       std::string::npos);
+        }
+    }
+    EXPECT_TRUE(key(SoftKeyId::Right3).label[0] == '\0'); // RESET
+    EXPECT_TRUE(key(SoftKeyId::Right2).label[0] == '\0'); // -1 DAY
+    EXPECT_TRUE(key(SoftKeyId::Right4).label[0] == '\0'); // +1 DAY
+}

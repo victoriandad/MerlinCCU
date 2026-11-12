@@ -609,7 +609,9 @@ enum class SoftKeyRoute : uint8_t
     SelectPinterSlot3,
     SelectPinterSlot4,
     ApplyPinterPrimaryAction,
-    ResetSelectedPinter,
+    RequestPinterReset,
+    ConfirmPinterReset,
+    CancelPinterReset,
     DecreaseSelectedPinterDay,
     IncreaseSelectedPinterDay,
     GoPinterSelectBrew,
@@ -972,6 +974,10 @@ struct ConsoleState
     /// empty when it isn't. Exists so a capacity block (fridge/dock full) is an
     /// unmissable on-screen message rather than only a two-line softkey hint.
     std::array<char, 40> pinter_block_reason;
+    /// @brief True while the Pinter page is asking the operator to confirm
+    /// a reset of the selected vessel (SK-6: destructive actions get their
+    /// own state). Cleared on confirm, cancel, BACK STEP, or leaving the page.
+    bool pinter_reset_confirming;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

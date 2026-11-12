@@ -566,3 +566,21 @@ HOST_TEST(time_zone_pages_render_consistently)
     const auto second_fb = render_page(console_controller::state());
     EXPECT_TRUE(golden_test::check_golden("time_zone_page_2", second_fb.data()));
 }
+
+HOST_TEST(pinter_reset_states_render_consistently)
+{
+    const ConsoleState& normal = open_pinter_page(
+        {make_vessel(1, PinterState::Brewing), make_vessel(2, PinterState::Idle),
+         make_vessel(3, PinterState::Idle), make_vessel(4, PinterState::Idle)},
+        ButtonId::LeftTop);
+    const auto normal_fb = render_page(normal);
+    EXPECT_TRUE(golden_test::check_golden("pinter_page_normal", normal_fb.data()));
+
+    (void)console_controller::handle_button_event(
+        {ButtonId::RightMiddle, ButtonEventType::Pressed}); // R3: RESET
+    const ConsoleState& confirming = console_controller::state();
+    EXPECT_TRUE(confirming.pinter_reset_confirming);
+    EXPECT_FALSE(body_touches_softkeys(confirming, 60000U));
+    const auto confirm_fb = render_page(confirming);
+    EXPECT_TRUE(golden_test::check_golden("pinter_page_reset_confirm", confirm_fb.data()));
+}

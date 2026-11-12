@@ -415,6 +415,11 @@ void update_softkeys_from_state()
         g_console_state.air_traffic_page_index = static_cast<uint8_t>(air_traffic_pages - 1U);
     }
 
+    if (g_console_state.active_page != MenuPage::Pinter)
+    {
+        g_console_state.pinter_reset_confirming = false;
+    }
+
     SoftKeyMap softkeys = {{
         {"", SoftKeyRoute::None, false},
         {"", SoftKeyRoute::None, false},
@@ -514,6 +519,17 @@ void update_softkeys_from_state()
         break;
     case MenuPage::Pinter:
     {
+        if (g_console_state.pinter_reset_confirming)
+        {
+            // Decision state: only decline (L5) and confirm (R5) (NAV-3).
+            pinter_controller::update_block_reason(g_console_state);
+            softkeys[softkey_index(SoftKeyId::Left5)] = {"CANCEL", SoftKeyRoute::CancelPinterReset,
+                                                         true};
+            softkeys[softkey_index(SoftKeyId::Right5)] = {"RESET", SoftKeyRoute::ConfirmPinterReset,
+                                                          true};
+            break;
+        }
+
         constexpr std::array<SoftKeyId, kPinterCount> slots = {
             SoftKeyId::Left1,
             SoftKeyId::Left2,
@@ -547,25 +563,27 @@ void update_softkeys_from_state()
                 : pinter_controller::primary_action_enabled(g_console_state),
         };
         pinter_controller::update_block_reason(g_console_state);
-        softkeys[softkey_index(SoftKeyId::Right3)] = {
-            "RESET",
-            SoftKeyRoute::ResetSelectedPinter,
-            pinter_controller::selected_const(g_console_state).state != PinterState::Idle,
-        };
+        // Keys that cannot act are left blank rather than shown as bare
+        // labels that do nothing (SK-5).
+        if (pinter_controller::selected_const(g_console_state).state != PinterState::Idle)
+        {
+            softkeys[softkey_index(SoftKeyId::Right3)] = {"RESET", SoftKeyRoute::RequestPinterReset,
+                                                          true};
+        }
         {
             const uint8_t selected_stage_days = pinter_scheduling::current_stage_planned_days(
                 pinter_controller::selected_const(g_console_state));
-            softkeys[softkey_index(SoftKeyId::Right2)] = {
-                "-1 DAY",
-                SoftKeyRoute::DecreaseSelectedPinterDay,
-                selected_stage_days > 1U,
-            };
-            softkeys[softkey_index(SoftKeyId::Right4)] = {
-                "+1 DAY",
-                SoftKeyRoute::IncreaseSelectedPinterDay,
-                selected_stage_days > 0U &&
-                    selected_stage_days < std::numeric_limits<uint8_t>::max(),
-            };
+            if (selected_stage_days > 1U)
+            {
+                softkeys[softkey_index(SoftKeyId::Right2)] = {
+                    "-1 DAY", SoftKeyRoute::DecreaseSelectedPinterDay, true};
+            }
+            if (selected_stage_days > 0U &&
+                selected_stage_days < std::numeric_limits<uint8_t>::max())
+            {
+                softkeys[softkey_index(SoftKeyId::Right4)] = {
+                    "+1 DAY", SoftKeyRoute::IncreaseSelectedPinterDay, true};
+            }
         }
         break;
     }
@@ -1151,7 +1169,9 @@ void update_softkeys_from_state()
         g_console_state.active_page != MenuPage::AlertList &&
         g_console_state.active_page != MenuPage::AlertDetail &&
         !(g_console_state.active_page == MenuPage::ScreenSaverSettings &&
-          g_console_state.screen_saver_timeout_editing))
+          g_console_state.screen_saver_timeout_editing) &&
+        !(g_console_state.active_page == MenuPage::Pinter &&
+          g_console_state.pinter_reset_confirming))
     {
         softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
     }
@@ -1305,8 +1325,20 @@ bool apply_softkey_route(SoftKeyRoute route)
         return pinter_controller::select_slot(g_console_state, 3U);
     case SoftKeyRoute::ApplyPinterPrimaryAction:
         return pinter_controller::apply_primary_action(g_console_state);
-    case SoftKeyRoute::ResetSelectedPinter:
-        return pinter_controller::reset_selected(g_console_state);
+    case SoftKeyRoute::RequestPinterReset:
+        if (pinter_controller::selected_const(g_console_state).state == PinterState::Idle)
+        {
+            return false;
+        }
+        g_console_state.pinter_reset_confirming = true;
+        return true;
+    case SoftKeyRoute::ConfirmPinterReset:
+        g_console_state.pinter_reset_confirming = false;
+        (void)pinter_controller::reset_selected(g_console_state);
+        return true;
+    case SoftKeyRoute::CancelPinterReset:
+        g_console_state.pinter_reset_confirming = false;
+        return true;
     case SoftKeyRoute::DecreaseSelectedPinterDay:
         return pinter_controller::nudge_selected_day(g_console_state, -1);
     case SoftKeyRoute::IncreaseSelectedPinterDay:
@@ -2019,7 +2051,10 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (event.id == ButtonId::BackStep)
     {
-        const bool kRouteChanged = navigate_up_one_level();
+        // BACK STEP declines a pending reset rather than leaving the page.
+        const bool kRouteChanged = g_console_state.pinter_reset_confirming
+                                       ? apply_softkey_route(SoftKeyRoute::CancelPinterReset)
+                                       : navigate_up_one_level();
         if (!kRouteChanged)
         {
             return false;

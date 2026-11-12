@@ -76,7 +76,11 @@ full 35-item catalogue, right when you actually have a pack in hand.
   softkeys, and never overlaps a vessel label.
 - Moving to the fridge is blocked once two Pinters are conditioning or ready;
   cold crash is exempt from the fridge-capacity check.
-- `R3=RESET` clears the selected Pinter back to idle after a mistaken event.
+- `R3=RESET` asks for confirmation: the body names the vessel and brew, and only
+  `L5=CANCEL` and `R5=RESET` are labelled. `R5` clears the vessel back to idle;
+  `CANCEL` or `BACK STEP` leaves it unchanged.
+- `RESET`, `-1 DAY` and `+1 DAY` are blank when the selected vessel cannot use them
+  (for example an idle vessel).
 - Vessel state survives a power cycle: start a brew, advance a stage, or reset
   a vessel, then power-cycle the board -- the vessel should come back showing
   the same state, recipe, and days rather than resetting to `Idle`. Each of
