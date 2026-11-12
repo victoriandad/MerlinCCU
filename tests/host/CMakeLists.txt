@@ -43,6 +43,7 @@ add_executable(host_tests
     test_calendar_controller.cpp
     test_settings_controller.cpp
     test_status_controller.cpp
+    test_console_navigation.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp

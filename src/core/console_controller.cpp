@@ -163,7 +163,6 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::Status:
     case MenuPage::LocalConditions:
     case MenuPage::Settings:
-    case MenuPage::Alignment:
     case MenuPage::Pinter:
     case MenuPage::Shares:
         return MenuPage::Home;
@@ -176,6 +175,8 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::StatusResources:
     case MenuPage::StatusSensors:
     case MenuPage::StatusIntegrations:
+    case MenuPage::KeypadDebug:
+    case MenuPage::GreyscaleTest:
         return MenuPage::Status;
     case MenuPage::DeviceSettings:
     case MenuPage::WifiSettings:
@@ -185,8 +186,6 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::ScreenSaverSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
-    case MenuPage::KeypadDebug:
-    case MenuPage::GreyscaleTest:
         return MenuPage::Settings;
     case MenuPage::AlertList:
         return g_console_state.alert_parent_page;
@@ -588,8 +587,7 @@ void update_softkeys_from_state()
                 true,
             };
         }
-        softkeys[softkey_index(SoftKeyId::Right4)] = {"PINTER", SoftKeyRoute::GoPinter, true};
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
+        // R4 carries the eighth list item; BACK STEP returns to Pinter (NAV-5).
         break;
     }
     case MenuPage::PinterStartTiming:
@@ -599,7 +597,7 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left1)] = {"MINIMUM",
                                                      SoftKeyRoute::SelectPinterMinimumTiming,
                                                      true};
-        softkeys[softkey_index(SoftKeyId::Left2)] = {"RECOMM",
+        softkeys[softkey_index(SoftKeyId::Left2)] = {"RECOMMENDED",
                                                      SoftKeyRoute::SelectPinterRecommendedTiming,
                                                      true};
         softkeys[softkey_index(SoftKeyId::Left3)] = {
@@ -654,9 +652,10 @@ void update_softkeys_from_state()
     }
     case MenuPage::Shares:
     {
+        // Lists fill L1-L4 then R1-R4, leaving row 5 free (NAV-6).
         constexpr std::array<SoftKeyId, kMaxWatchedShares> slots = {
-            SoftKeyId::Left1, SoftKeyId::Left2, SoftKeyId::Left3,
-            SoftKeyId::Left4, SoftKeyId::Left5, SoftKeyId::Right3};
+            SoftKeyId::Left1, SoftKeyId::Left2,  SoftKeyId::Left3,
+            SoftKeyId::Left4, SoftKeyId::Right1, SoftKeyId::Right2};
         constexpr std::array<SoftKeyRoute, kMaxWatchedShares> routes = {
             SoftKeyRoute::SelectShareSlot1, SoftKeyRoute::SelectShareSlot2,
             SoftKeyRoute::SelectShareSlot3, SoftKeyRoute::SelectShareSlot4,
@@ -676,9 +675,6 @@ void update_softkeys_from_state()
                 true,
             };
         }
-        softkeys[softkey_index(SoftKeyId::Right1)] = {
-            "HISTORY", SoftKeyRoute::GoSelectedShareDetail, g_console_state.share_count > 0U};
-        softkeys[softkey_index(SoftKeyId::Right2)] = {"REMOVE", SoftKeyRoute::None, false};
         break;
     }
     case MenuPage::ShareDetail:
@@ -697,8 +693,8 @@ void update_softkeys_from_state()
         softkeys[softkey_index(SoftKeyId::Left3)] = {"RESOURCES", SoftKeyRoute::GoStatusResources, true};
         softkeys[softkey_index(SoftKeyId::Left4)] = {"SENSORS", SoftKeyRoute::GoStatusSensors, true};
         softkeys[softkey_index(SoftKeyId::Right1)] = {
-            "INTEGR.", SoftKeyRoute::GoStatusIntegrations, true};
-        softkeys[softkey_index(SoftKeyId::Right3)] = {"GREYSCL", SoftKeyRoute::GoGreyscaleTest, true};
+            "INTEGRATIONS", SoftKeyRoute::GoStatusIntegrations, true};
+        softkeys[softkey_index(SoftKeyId::Right3)] = {"GREYSCALE", SoftKeyRoute::GoGreyscaleTest, true};
         softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
         softkeys[softkey_index(SoftKeyId::Right5)] = {"HOME", SoftKeyRoute::GoHome, true};
         break;
@@ -707,11 +703,7 @@ void update_softkeys_from_state()
     case MenuPage::StatusResources:
     case MenuPage::StatusSensors:
     case MenuPage::StatusIntegrations:
-        if (g_console_state.active_page == MenuPage::StatusSensors)
-        {
-            softkeys[softkey_index(SoftKeyId::Right4)] = {"KEYPAD", SoftKeyRoute::GoKeypadDebug, true};
-        }
-        softkeys[softkey_index(SoftKeyId::Right5)] = {"STATUS", SoftKeyRoute::GoStatus, true};
+        // Body pages: only R5 HOME, added below (PAGE-4). BACK STEP returns to Status.
         break;
     case MenuPage::LocalConditions:
         softkeys[softkey_index(SoftKeyId::Left1)] = {
@@ -1140,7 +1132,6 @@ void update_softkeys_from_state()
         }
         break;
     }
-    case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
     case MenuPage::GreyscaleTest:
         break;
@@ -1364,10 +1355,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return pinter_controller::select_list_item(g_console_state, 6U);
     case SoftKeyRoute::SelectPinterListItem8:
         return pinter_controller::select_list_item(g_console_state, 7U);
-    case SoftKeyRoute::PinterListPreviousPage:
-        return pinter_controller::change_list_page(g_console_state, -1);
-    case SoftKeyRoute::PinterListNextPage:
-        return pinter_controller::change_list_page(g_console_state, 1);
     case SoftKeyRoute::SelectPinterMinimumTiming:
         return pinter_controller::set_pending_timing(g_console_state, true);
     case SoftKeyRoute::SelectPinterRecommendedTiming:
@@ -1539,8 +1526,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return settings_controller::cycle_share_period(g_console_state);
     case SoftKeyRoute::ToggleAirTrafficViewMode:
         return settings_controller::toggle_air_traffic_view_mode(g_console_state);
-    case SoftKeyRoute::GoSelectedShareDetail:
-        return settings_controller::open_selected_share_detail(g_console_state);
     case SoftKeyRoute::CycleCalendarOwner:
         return calendar_controller::cycle_owner(g_console_state);
     case SoftKeyRoute::ResetCalendarFilters:
@@ -1561,8 +1546,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return calendar_controller::open_detail_from_slot(g_console_state, 6U);
     case SoftKeyRoute::SelectCalendarSlot8:
         return calendar_controller::open_detail_from_slot(g_console_state, 7U);
-    case SoftKeyRoute::SelectCalendarSlot9:
-        return calendar_controller::open_detail_from_slot(g_console_state, 8U);
     case SoftKeyRoute::SelectTimeZoneWest1:
         return settings_controller::select_relative_time_zone(g_console_state, -1);
     case SoftKeyRoute::SelectTimeZoneWest2:
@@ -1579,24 +1562,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return settings_controller::select_relative_time_zone(g_console_state, 3);
     case SoftKeyRoute::SelectTimeZoneEast4:
         return settings_controller::select_relative_time_zone(g_console_state, 4);
-    case SoftKeyRoute::CycleAlert:
-        return alert_controller::open_list_page(g_console_state);
-    case SoftKeyRoute::ToggleLetters:
-        return cycle_letter_mode();
-    case SoftKeyRoute::CycleTest:
-        g_console_state.test_state = next_test_state(g_console_state.test_state);
-        return true;
-    case SoftKeyRoute::ResetConsoleState:
-        make_default_console_state(g_console_state);
-        alert_controller::reset();
-        return true;
-    case SoftKeyRoute::ClearAlert:
-        if (g_console_state.alert_severity == AlertSeverity::None)
-        {
-            return false;
-        }
-        g_console_state.alert_severity = AlertSeverity::None;
-        return true;
     case SoftKeyRoute::SelectAlertSlot1:
         return alert_controller::open_detail_from_slot(g_console_state, 0U);
     case SoftKeyRoute::SelectAlertSlot2:
@@ -1632,35 +1597,6 @@ bool apply_softkey_route(SoftKeyRoute route)
             return false;
         }
         g_console_state.active_page = MenuPage::AlertList;
-        return true;
-    case SoftKeyRoute::PanelBrighter:
-        if (g_console_state.panel_brightness == BrightnessLevel::High)
-        {
-            return false;
-        }
-        g_console_state.panel_brightness = brighter(g_console_state.panel_brightness);
-        return true;
-    case SoftKeyRoute::PanelDimmer:
-        if (g_console_state.panel_brightness == BrightnessLevel::Off)
-        {
-            return false;
-        }
-        g_console_state.panel_brightness = dimmer(g_console_state.panel_brightness);
-        return true;
-    case SoftKeyRoute::KeysBrighter:
-        if (g_console_state.key_backlight_brightness == BrightnessLevel::High)
-        {
-            return false;
-        }
-        g_console_state.key_backlight_brightness =
-            brighter(g_console_state.key_backlight_brightness);
-        return true;
-    case SoftKeyRoute::KeysDimmer:
-        if (g_console_state.key_backlight_brightness == BrightnessLevel::Off)
-        {
-            return false;
-        }
-        g_console_state.key_backlight_brightness = dimmer(g_console_state.key_backlight_brightness);
         return true;
     }
 
@@ -2179,10 +2115,6 @@ bool handle_button_event(const ButtonEvent& event)
         else if (g_console_state.active_page == MenuPage::PinterSelectBrew)
         {
             changed = pinter_controller::change_list_page(g_console_state, direction);
-        }
-        else if (g_console_state.active_page == MenuPage::Shares && direction > 0)
-        {
-            changed = settings_controller::open_selected_share_detail(g_console_state);
         }
         else if (g_console_state.active_page == MenuPage::AirTraffic &&
                 g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)

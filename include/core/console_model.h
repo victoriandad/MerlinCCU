@@ -148,7 +148,6 @@ enum class MenuPage : uint8_t
     ScreenSaverSettings,
     WeatherSources,
     TimeZoneSettings,
-    Alignment,
     KeypadDebug,
     GreyscaleTest,
     AlertList,
@@ -522,6 +521,11 @@ inline constexpr uint8_t kDefaultPinterBrewIndex = 0U;
 inline constexpr uint8_t kPinterBrewDockCapacity = 3U;
 inline constexpr uint8_t kPinterFridgeCapacity = 2U;
 inline constexpr size_t kPinterBrewListVisibleCount = 8;
+/// @brief Pages needed to show the whole brew catalogue on Select Brew.
+/// @details Shared by the header title (`SELECT BREW n/m`) and the footer
+/// arrows so both agree with the controller's cursor paging.
+inline constexpr uint8_t kPinterBrewListPageCount = static_cast<uint8_t>(
+    (kPinterBrewCatalogueCount + kPinterBrewListVisibleCount - 1U) / kPinterBrewListVisibleCount);
 
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
@@ -564,7 +568,6 @@ enum class SoftKeyRoute : uint8_t
     SelectWeatherHomeAssistant,
     SelectWeatherOpenMeteo,
     CycleWeatherPeriod,
-    GoSelectedShareDetail,
     GoStatusOverview,
     GoStatusConnectivity,
     GoStatusResources,
@@ -578,11 +581,6 @@ enum class SoftKeyRoute : uint8_t
     SelectTimeZoneEast2,
     SelectTimeZoneEast3,
     SelectTimeZoneEast4,
-    CycleAlert,
-    ToggleLetters,
-    CycleTest,
-    ResetConsoleState,
-    ClearAlert,
     SelectAlertSlot1,
     SelectAlertSlot2,
     SelectAlertSlot3,
@@ -612,8 +610,6 @@ enum class SoftKeyRoute : uint8_t
     SelectPinterListItem6,
     SelectPinterListItem7,
     SelectPinterListItem8,
-    PinterListPreviousPage,
-    PinterListNextPage,
     SelectPinterMinimumTiming,
     SelectPinterRecommendedTiming,
     DecreasePinterBrewDays,
@@ -643,11 +639,6 @@ enum class SoftKeyRoute : uint8_t
     SelectCalendarSlot6,
     SelectCalendarSlot7,
     SelectCalendarSlot8,
-    SelectCalendarSlot9,
-    PanelBrighter,
-    PanelDimmer,
-    KeysBrighter,
-    KeysDimmer,
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
@@ -801,7 +792,6 @@ inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
 inline constexpr int kCalendarMaxDayOffset = 14;
 inline constexpr size_t kCalendarEventCapacity = 48;
-inline constexpr size_t kCalendarVisibleEventCount = 9;
 
 /// @brief One compact calendar row ready for display on a softkey.
 struct CalendarEvent

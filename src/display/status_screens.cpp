@@ -257,12 +257,6 @@ const char* home_assistant_rest_state_text(const ConsoleState& console_state,
     return "Unconfig";
 }
 
-/// @brief Draws the Status selector page.
-void draw_status_selector_page(uint8_t* fb)
-{
-    (void)fb;
-}
-
 /// @brief Draws the high-level system overview status page.
 void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -581,9 +575,6 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state, uint32_t n
 {
     switch (console_state.active_page)
     {
-    case MenuPage::Status:
-        draw_status_selector_page(fb);
-        break;
     case MenuPage::StatusOverview:
         draw_status_overview_page(fb, console_state);
         break;

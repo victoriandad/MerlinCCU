@@ -709,11 +709,6 @@ bool select_share_slot(ConsoleState& console_state, uint8_t slot)
     return true;
 }
 
-bool open_selected_share_detail(ConsoleState& console_state)
-{
-    return select_share_slot(console_state, console_state.selected_share_index);
-}
-
 bool select_relative_time_zone(ConsoleState& console_state, int offset)
 {
     const TimeZoneDefinition* target = relative_time_zone_definition(console_state, offset);

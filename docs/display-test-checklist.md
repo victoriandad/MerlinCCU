@@ -85,10 +85,12 @@ full 35-item catalogue, right when you actually have a pack in hand.
     plus recommended/minimum total days, for example `Public House / R12 M7`.
   - `<`/`>` cursor keys page through the catalogue; page arrows only show
     when there is a previous/next page.
-  - `R4=PINTER` returns to the main Pinter page; `R5=HOME` returns to Home.
+  - All eight slots, `L1`-`L4` and `R1`-`R4`, carry recipes; the header shows
+    `SELECT BREW n/m`. `BACK STEP` returns to the main Pinter page;
+    `R5=HOME` returns to Home.
   - Picking a recipe opens the `BREW TIMING` page.
 - `BREW TIMING` page:
-  - `L1=MINIMUM` / `L2=RECOMM` snap brewing/cold-crash/conditioning days to
+  - `L1=MINIMUM` / `L2=RECOMMENDED` snap brewing/cold-crash/conditioning days to
     the recipe's minimum or recommended totals.
   - `L3`/`R3` adjust brew days down/up; `L4`/`R4` adjust conditioning days
     down/up; `L5`/`R5` adjust cold-crash days down/up (0 by default, since
@@ -106,6 +108,9 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Home `L2` opens the shares watchlist.
 - Shares list shows `BAE SYSTEMS` with a bracketed price value on `L1` and no
   duplicated share data in the display body.
+- Share keys fill `L1`-`L4`, then `R1`-`R2`; row 5 carries only `R5=HOME`.
+  There are no `HISTORY` or `REMOVE` keys, and the cursor keys do nothing on
+  this page.
 - Pressing the BAE Systems softkey opens the share detail page.
 - Share detail page shows a full-width graph in the upper display region with
   no graph bounding box and no overlap with softkey labels.

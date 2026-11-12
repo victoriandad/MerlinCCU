@@ -477,12 +477,10 @@ const char* menu_page_title(MenuPage page)
         return "WEATHER SOURCE";
     case MenuPage::TimeZoneSettings:
         return "TIME ZONE";
-    case MenuPage::Alignment:
-        return "ALIGN";
     case MenuPage::KeypadDebug:
         return "KEYPAD DEBUG";
     case MenuPage::GreyscaleTest:
-        return "GREY TEST";
+        return "GREYSCALE";
     case MenuPage::AlertList:
         return "ALERTS";
     case MenuPage::AlertDetail:
@@ -537,6 +535,13 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
         std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
                       static_cast<unsigned>(console_state.alert_list_page_index + 1U),
                       static_cast<unsigned>(page_count));
+        return buffer;
+    }
+    if (console_state.active_page == MenuPage::PinterSelectBrew && kPinterBrewListPageCount > 1U)
+    {
+        std::snprintf(buffer, buffer_size, "SELECT BREW %u/%u",
+                      static_cast<unsigned>(console_state.pinter_catalogue_page_index + 1U),
+                      static_cast<unsigned>(kPinterBrewListPageCount));
         return buffer;
     }
     if (console_state.active_page == MenuPage::AirTraffic &&
@@ -674,7 +679,6 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::StatusResources:
     case MenuPage::StatusSensors:
     case MenuPage::StatusIntegrations:
-    case MenuPage::Alignment:
     case MenuPage::KeypadDebug:
     case MenuPage::GreyscaleTest:
     case MenuPage::AlertList:
@@ -1095,15 +1099,6 @@ void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
     }
 }
 
-/// @brief Leaves a top-level menu page intentionally blank in the centre area.
-/// @details Label-only shells rely on the surrounding softkeys rather than any
-/// centre content, which keeps those pages deliberately sparse.
-void draw_blank_menu_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
 constexpr int kCompactDetailTextX = 10;
 constexpr fonts::FontFace kCompactDetailFont = fonts::FontFace::Font5x7;
 
@@ -1167,19 +1162,10 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
     constexpr int kHomeIpY = kUiHeight - 18;
     constexpr fonts::FontFace kHomeIpFont = fonts::FontFace::Font5x7;
 
-    draw_blank_menu_page(fb, console_state);
-
     char ip_text[32] = {};
     framebuffer::draw_text(fb, kHomeIpX, kHomeIpY,
                            home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
                            true, kHomeIpFont, 1);
-}
-
-/// @brief Draws the local environment summary page.
-void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
 }
 
 /// @brief Draws one local-condition history graph using the compact status history.
@@ -1330,7 +1316,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::ShareDetail:
         shares_screens::draw_share_detail_page(fb, console_state, now_ms);
         break;
-    case MenuPage::Status:
     case MenuPage::StatusOverview:
     case MenuPage::StatusConnectivity:
     case MenuPage::StatusResources:
@@ -1338,41 +1323,26 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::StatusIntegrations:
         status_screens::draw_status_page(fb, console_state, now_ms);
         break;
-    case MenuPage::LocalConditions:
-        draw_local_conditions_page(fb, console_state);
-        break;
     case MenuPage::LocalConditionGraph:
         draw_local_condition_history_graph(fb, console_state);
         break;
     case MenuPage::Settings:
         settings_screens::draw_settings_page(fb, console_state);
         break;
-    case MenuPage::DeviceSettings:
-        settings_screens::draw_device_settings_page(fb, console_state);
-        break;
-    case MenuPage::WifiSettings:
-        settings_screens::draw_wifi_settings_page(fb, console_state);
-        break;
-    case MenuPage::HomeAssistantSettings:
-        settings_screens::draw_home_assistant_settings_page(fb, console_state);
-        break;
-    case MenuPage::MqttSettings:
-        settings_screens::draw_mqtt_settings_page(fb, console_state);
-        break;
-    case MenuPage::AirTrafficSettings:
-        settings_screens::draw_air_traffic_settings_page(fb, console_state);
-        break;
     case MenuPage::ScreenSaverSettings:
         settings_screens::draw_screen_saver_page(fb, console_state);
         break;
+    case MenuPage::Status:
+    case MenuPage::LocalConditions:
+    case MenuPage::DeviceSettings:
+    case MenuPage::WifiSettings:
+    case MenuPage::HomeAssistantSettings:
+    case MenuPage::MqttSettings:
+    case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
-        settings_screens::draw_weather_sources_page(fb, console_state);
-        break;
     case MenuPage::TimeZoneSettings:
-        settings_screens::draw_time_zone_page(fb, console_state);
-        break;
-    case MenuPage::Alignment:
-        settings_screens::draw_alignment_page(fb, console_state);
+        // Key pages with no body: every value they show is on a softkey label
+        // (PAGE-2), so the body is deliberately left empty.
         break;
     case MenuPage::KeypadDebug:
         settings_screens::draw_keypad_debug_page(fb, console_state);

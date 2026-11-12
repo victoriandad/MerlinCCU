@@ -133,9 +133,6 @@ uint8_t air_traffic_page_count(const ConsoleState& console_state);
 /// @brief Opens the requested share detail page from the current watchlist.
 bool select_share_slot(ConsoleState& console_state, uint8_t slot);
 
-/// @brief Opens the currently selected share detail page from the watchlist.
-bool open_selected_share_detail(ConsoleState& console_state);
-
 /// @brief Updates the selected time zone by moving relative to the current choice.
 bool select_relative_time_zone(ConsoleState& console_state, int offset);
 

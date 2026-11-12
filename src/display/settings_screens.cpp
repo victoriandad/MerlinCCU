@@ -65,46 +65,6 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
         (console_state.settings_page_index + 1U) < screens::kSettingsPageCount);
 }
 
-/// @brief Leaves the device identity settings body blank.
-/// @details The surrounding softkeys carry each visible identity value.
-void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the network settings body blank.
-/// @details Configured Wi-Fi values are shown as softkey attributes only.
-void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the Home Assistant settings body blank.
-/// @details Integration settings are exposed as bracketed softkey attributes.
-void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the MQTT discovery settings body blank.
-/// @details Broker and discovery values are shown around the bezel.
-void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the ADS-B traffic settings body blank.
-/// @details Feed enable/host/coordinates values are shown around the bezel.
-void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
 /// @brief Draws only active screen-saver editing UI.
 /// @details When not editing, the selected saver and timeout live on softkeys.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
@@ -113,23 +73,6 @@ void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
     {
         draw_screen_saver_scratchpad(fb, console_state);
     }
-}
-
-/// @brief Draws the weather-source selection page under Settings.
-/// @details Settings subpages keep values on the surrounding softkeys so the
-/// centre of the display stays free of duplicate status text.
-void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the time-zone settings body blank.
-/// @details Available zones are presented as softkey choices.
-void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
 }
 
 /// @brief Draws the keypad-debug diagnostics page.
@@ -172,15 +115,6 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
     };
 
     screens::draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
-}
-
-/// @brief Placeholder for the future alignment menu page.
-/// @details The route already exists so menu navigation can stabilize before the
-/// dedicated alignment workflow is implemented.
-void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
 }
 
 /// @brief Draws the 2x2 ordered-dither greyscale test card.

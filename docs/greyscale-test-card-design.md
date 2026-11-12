@@ -60,10 +60,11 @@ Implemented on branch `greyscale-test-card-dithering` (issue #54):
   would guarantee label contrast against every brightness level — separating
   label from fill sidesteps that instead of trying to invert per-pixel.
 - **`src/core/console_controller.cpp`** — reachable from the existing
-  `Status` page via a new `GREYSCL` softkey (`Right3`, previously unused),
-  following the same pattern as the existing `KEYPAD` softkey that reaches
-  `MenuPage::KeypadDebug`. `parent_page()` returns `Settings`, matching
-  `KeypadDebug`. No softkeys are defined on the page itself, also matching
+  `Status` page via the `GREYSCALE` softkey (`Right3`), following the same
+  pattern as the `KEYPAD` softkey that reaches `MenuPage::KeypadDebug`.
+  `parent_page()` returns `Status`, matching `KeypadDebug` (both originally
+  returned `Settings`, corrected under #127). No softkeys other than `R5=HOME`
+  are defined on the page itself, also matching
   `KeypadDebug` — back navigation is via the hardware `BACK STEP` key.
 
 ### Correction from the original design sketch
@@ -74,13 +75,14 @@ as the precedent to follow. Closer inspection during implementation found
 menu navigation can stabilize before the dedicated alignment workflow is
 implemented") and `draw_calibration_screen` is actually invoked through a
 separate top-level `ScreenMode::Calibration` mechanism in `MerlinCCU.cpp`,
-not through the `MenuPage` system at all. `MenuPage::KeypadDebug` — a real,
+not through the `MenuPage` system at all. (The unreachable `MenuPage::Alignment`
+placeholder was later removed under #142.) `MenuPage::KeypadDebug` — a real,
 working, softkey-reachable diagnostic page — turned out to be the accurate
 precedent, and is what this implementation follows.
 
 ## Validation
 
 Per the existing Display Validation Workflow: flash, open
-`http://merlinccu/preview`, navigate Home → STATUS → GREYSCL, and check all
+`http://merlinccu/preview`, navigate Home → STATUS → GREYSCALE, and check all
 five bands render distinctly on both the browser preview and the physical
 panel.

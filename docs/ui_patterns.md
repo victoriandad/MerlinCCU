@@ -52,8 +52,9 @@ corrected.
 
 - Intent: avoid duplicating settings values in the centre of the page.
 - Use When: the softkeys already show all relevant editable state.
-- Source: settings page draw functions in
-  `src/display/settings_screens.cpp`.
+- Source: the "key pages with no body" case list in `draw_menu_screen()`
+  (`src/display/screens.cpp`); pages that draw only an edit control or page
+  arrows have their own function in `src/display/settings_screens.cpp`.
 - Rules: leave the centre clear except for active edit controls or page arrows.
 
 ### Compact Detail Rows

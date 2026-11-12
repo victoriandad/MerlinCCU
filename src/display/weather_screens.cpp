@@ -22,28 +22,6 @@ namespace weather_screens
 namespace
 {
 
-/// @brief Returns the user-facing label for the currently selected weather source.
-const char* weather_source_text(WeatherSource source)
-{
-    switch (source)
-    {
-    case WeatherSource::HomeAssistant:
-        return "Home Assistant";
-    case WeatherSource::OpenMeteo:
-    case WeatherSource::MetNorway:
-        return "Open-Meteo";
-    }
-
-    return "?";
-}
-
-/// @brief Returns whether the selected weather source is still only a stub.
-bool weather_source_is_stub(WeatherSource source)
-{
-    (void)source;
-    return false;
-}
-
 /// @brief Returns the shared left inset for the weather-source footer.
 constexpr int weather_source_footer_left_x()
 {
@@ -690,16 +668,6 @@ bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state
 
 void draw_weather_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
-    if (weather_source_is_stub(console_state.weather_source))
-    {
-        const screens::DetailRow rows[] = {
-            {"SOURCE", weather_source_text(console_state.weather_source)},
-            {"STATUS", "Stub only"},
-            {"DETAIL", "Provider integration pending"}};
-        screens::draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
-        return;
-    }
-
     char status_detail[24] = {};
     char formatted_condition[32] = {};
     char direct_config_detail[48] = {};

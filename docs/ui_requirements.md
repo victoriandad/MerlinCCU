@@ -73,7 +73,7 @@ softkeys share the screen.
 | --- | --- | --- | --- |
 | Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list |
 | Body page | Row 5 only (L5, R5) | Rows 1-4 at full width | Status sub-pages, Calendar event, Share detail, Weather, ADS-B, graphs, Alert detail |
-| Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test, Alignment |
+| Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test |
 
 - **PAGE-1** Each page must declare its type, and its softkey map and body must
   obey that type.

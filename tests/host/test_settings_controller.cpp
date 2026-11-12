@@ -107,15 +107,6 @@ HOST_TEST(select_share_slot_rejects_a_slot_past_the_watchlist_count)
     EXPECT_FALSE(settings_controller::select_share_slot(state, 2U));
 }
 
-HOST_TEST(open_selected_share_detail_uses_the_currently_selected_index)
-{
-    ConsoleState state = make_state();
-    state.share_count = 3U;
-    state.selected_share_index = 2U;
-    EXPECT_TRUE(settings_controller::open_selected_share_detail(state));
-    EXPECT_TRUE(state.active_page == MenuPage::ShareDetail);
-}
-
 HOST_TEST(timeout_editing_start_stop_round_trip_restores_the_saved_minutes)
 {
     ConsoleState state = make_state();
