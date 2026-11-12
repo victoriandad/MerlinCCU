@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 
@@ -192,4 +193,86 @@ HOST_TEST(greyscale_test_card_body_stays_out_of_the_r5_softkey_cell)
     const auto fb = render_page(state);
     EXPECT_FALSE(any_pixel_lit(fb.data(), kRightCellLeftX, kRow5CellTopY, kUiWidth - 1,
                                kRow5CellBottomY));
+}
+
+namespace
+{
+
+constexpr uint32_t kPinterTestDay = 20000U;
+
+PinterStatus make_vessel(int number, PinterState state)
+{
+    PinterStatus vessel = {};
+    std::snprintf(vessel.label.data(), vessel.label.size(), "Pinter %d", number);
+    vessel.state = state;
+    vessel.planned_brewing_days = 7U;
+    vessel.planned_conditioning_days = 10U;
+    vessel.brew_start_day = kPinterTestDay - 2U;
+    vessel.conditioning_start_day = kPinterTestDay - 1U;
+    return vessel;
+}
+
+/// @brief Opens the Pinter page with the given vessels, a synced clock (so
+/// non-idle vessels get a third countdown line), and `slot` pressed to
+/// select a vessel.
+const ConsoleState& open_pinter_page(const std::array<PinterStatus, kPinterCount>& vessels,
+                                     ButtonId slot)
+{
+    console_controller::init();
+    console_controller::apply_persisted_pinters(vessels);
+    TimeStatus time = {};
+    time.synced = true;
+    time.local_epoch_day = kPinterTestDay;
+    (void)console_controller::set_time_status(time);
+    for (const ButtonId id : {ButtonId::LeftLower, slot}) // Home L4: PINTER, then the vessel
+    {
+        (void)console_controller::handle_button_event({id, ButtonEventType::Pressed});
+    }
+    return console_controller::state();
+}
+
+// Body zone between the header and the footer (docs/ui_requirements.md
+// section 1). Moves to the shared layout header under #113.
+constexpr int kBodyTopY = 34;
+constexpr int kFooterTopY = 288;
+
+/// @brief Renders the page body alone and checks it draws nothing between the
+/// header and the footer, so the block-reason line cannot touch a label.
+bool pinter_body_leaves_softkey_rows_clear(const ConsoleState& state)
+{
+    ConsoleState body_only = state;
+    for (SoftKeyAction& key : body_only.softkeys)
+    {
+        key.label = "";
+    }
+    const auto fb = render_page(body_only);
+    return !any_pixel_lit(fb.data(), 0, kBodyTopY, kUiWidth - 1, kFooterTopY - 1);
+}
+
+} // namespace
+
+HOST_TEST(pinter_page_dock_full_notice_sits_in_the_footer)
+{
+    const ConsoleState& state = open_pinter_page(
+        {make_vessel(1, PinterState::Brewing), make_vessel(2, PinterState::Brewing),
+         make_vessel(3, PinterState::Brewing), make_vessel(4, PinterState::Idle)},
+        ButtonId::LeftLower); // L4: the idle vessel
+    EXPECT_TRUE(state.pinter_block_reason[0] != '\0');
+    EXPECT_TRUE(pinter_body_leaves_softkey_rows_clear(state));
+
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("pinter_page_dock_full", fb.data()));
+}
+
+HOST_TEST(pinter_page_fridge_full_notice_sits_in_the_footer)
+{
+    const ConsoleState& state = open_pinter_page(
+        {make_vessel(1, PinterState::Conditioning), make_vessel(2, PinterState::Conditioning),
+         make_vessel(3, PinterState::Brewing), make_vessel(4, PinterState::Brewing)},
+        ButtonId::LeftMiddle); // L3: a brewing vessel with the fridge full
+    EXPECT_TRUE(state.pinter_block_reason[0] != '\0');
+    EXPECT_TRUE(pinter_body_leaves_softkey_rows_clear(state));
+
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("pinter_page_fridge_full", fb.data()));
 }

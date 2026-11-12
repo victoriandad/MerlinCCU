@@ -71,8 +71,9 @@ full 35-item catalogue, right when you actually have a pack in hand.
     brew dock is full (3 vessels already `Brewing`).
   - Selected Pinter not idle: applies the normal next event (move to cold
     crash or fridge, ready, drink, or clean), depending on state.
-- Pinter centre data is intentionally blank, except a block-reason message
-  (for example dock/fridge full) appears when `R1` is disabled.
+- Pinter centre data is intentionally blank. When `R1` is disabled by a full
+  dock or fridge, a block-reason line appears in the footer, below the row 5
+  softkeys, and never overlaps a vessel label.
 - Moving to the fridge is blocked once two Pinters are conditioning or ready;
   cold crash is exempt from the fridge-capacity check.
 - `R3=RESET` clears the selected Pinter back to idle after a mistaken event.

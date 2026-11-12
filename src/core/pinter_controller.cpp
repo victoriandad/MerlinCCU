@@ -296,7 +296,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
     case PinterState::Idle:
         if (brew_dock_count(console_state) >= kPinterBrewDockCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "START\n[NO DOCK]");
+            std::snprintf(buffer, buffer_capacity, "START\n[No dock]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "START");
@@ -309,7 +309,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
         }
         if (fridge_count(console_state) >= kPinterFridgeCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[FULL]");
+            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[Full]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "FRIDGE");
@@ -317,7 +317,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
     case PinterState::ColdCrash:
         if (fridge_count(console_state) >= kPinterFridgeCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[FULL]");
+            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[Full]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "FRIDGE");
@@ -338,9 +338,9 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
 }
 
 /// @details The R1 softkey label only has room for a two-line hint (e.g.
-/// "FRIDGE\n[FULL]"), which is easy to press past without registering why
+/// "FRIDGE\n[Full]"), which is easy to press past without registering why
 /// nothing happened. This puts the same reason somewhere unmissable: the
-/// page's own centre body, which is otherwise blank on the main Pinter page.
+/// page footer, which is otherwise unused on the main Pinter page.
 void update_block_reason(ConsoleState& console_state)
 {
     auto& reason = console_state.pinter_block_reason;
