@@ -60,7 +60,7 @@ constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
     {SharePeriod::AllTime, "All-time"},
 }};
 
-constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
+constexpr std::array<TimeZoneDefinition, kTimeZoneSelectionCount> kTimeZones = {{
     {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
     {TimeZoneSelection::ArgentinaStandard, "Argentina Time", "ARGENTINA"},
     {TimeZoneSelection::SouthGeorgia, "South Georgia Time", "SOUTH GEORGIA"},
@@ -458,17 +458,34 @@ const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection select
     return kScreenSavers[0];
 }
 
-const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
-                                                        int offset)
+const TimeZoneDefinition* time_zone_for_slot(const ConsoleState& console_state, uint8_t slot)
 {
-    const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
-    const int kTargetIndex = kCurrentIndex + offset;
-    if (kTargetIndex < 0 || kTargetIndex >= static_cast<int>(kTimeZones.size()))
+    if (slot >= kTimeZoneOptionsPerPage)
     {
         return nullptr;
     }
 
-    return &kTimeZones[static_cast<size_t>(kTargetIndex)];
+    const size_t index =
+        (static_cast<size_t>(console_state.time_zone_page_index) * kTimeZoneOptionsPerPage) + slot;
+    return index < kTimeZones.size() ? &kTimeZones[index] : nullptr;
+}
+
+uint8_t time_zone_page_of_current(const ConsoleState& console_state)
+{
+    return static_cast<uint8_t>(time_zone_index(console_state.time_zone) /
+                                kTimeZoneOptionsPerPage);
+}
+
+bool change_time_zone_page(ConsoleState& console_state, int direction)
+{
+    const int target = static_cast<int>(console_state.time_zone_page_index) + direction;
+    if (direction == 0 || target < 0 || target >= static_cast<int>(kTimeZonePageCount))
+    {
+        return false;
+    }
+
+    console_state.time_zone_page_index = static_cast<uint8_t>(target);
+    return true;
 }
 
 const char* wifi_selection_text(const ConsoleState& console_state)
@@ -709,9 +726,9 @@ bool select_share_slot(ConsoleState& console_state, uint8_t slot)
     return true;
 }
 
-bool select_relative_time_zone(ConsoleState& console_state, int offset)
+bool select_time_zone_slot(ConsoleState& console_state, uint8_t slot)
 {
-    const TimeZoneDefinition* target = relative_time_zone_definition(console_state, offset);
+    const TimeZoneDefinition* target = time_zone_for_slot(console_state, slot);
     if (target == nullptr)
     {
         return false;

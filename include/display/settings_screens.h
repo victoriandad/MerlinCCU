@@ -17,6 +17,9 @@ namespace settings_screens
 /// @brief Draws the top-level settings routing page.
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state);
 
+/// @brief Draws only the paging arrows of the Time Zone option list.
+void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state);
+
 /// @brief Draws only active screen-saver editing UI.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state);
 

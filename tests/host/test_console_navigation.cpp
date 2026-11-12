@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "config_manager.h"
 #include "console_controller.h"
 #include "console_model.h"
 #include "input.h"
@@ -158,6 +159,59 @@ HOST_TEST(shares_list_fills_left_then_right_and_each_key_opens_its_own_share)
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Shares));
     press(ButtonId::CursorRight);
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Shares));
+}
+
+HOST_TEST(time_zone_page_is_a_fixed_option_list_with_the_current_zone_selected)
+{
+    // Every zone, chosen from the panel: Home R1 SETTINGS, cursor right to
+    // Settings 2/2, L3 TIME ZONE, page with the cursor keys, press the slot.
+    for (uint8_t target = 0U; target < kTimeZoneSelectionCount; ++target)
+    {
+        start_fresh();
+        press(ButtonId::RightTop);
+        press(ButtonId::CursorRight);
+        press(ButtonId::LeftMiddle);
+        EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::TimeZoneSettings));
+        for (int i = 0; i < kTimeZonePageCount; ++i)
+        {
+            press(ButtonId::CursorLeft);
+        }
+
+        const uint8_t target_page = static_cast<uint8_t>(target / kTimeZoneOptionsPerPage);
+        for (uint8_t i = 0U; i < target_page; ++i)
+        {
+            press(ButtonId::CursorRight);
+        }
+        EXPECT_EQ(console_controller::state().time_zone_page_index, target_page);
+
+        std::array<const char*, static_cast<size_t>(SoftKeyId::Count)> labels_before = {};
+        for (size_t k = 0U; k < labels_before.size(); ++k)
+        {
+            labels_before[k] = console_controller::state().softkeys[k].label;
+        }
+
+        press(kListSlotButtons[target % kTimeZoneOptionsPerPage]);
+        EXPECT_EQ(static_cast<int>(config_manager::settings().time_zone), static_cast<int>(target));
+
+        int selected = 0;
+        for (size_t k = 0U; k < labels_before.size(); ++k)
+        {
+            const SoftKeyAction& key = console_controller::state().softkeys[k];
+            // Labels do not move when the selection changes (NAV-11).
+            EXPECT_TRUE(std::string(key.label) == std::string(labels_before[k]));
+            selected += key.inverted ? 1 : 0;
+        }
+        EXPECT_EQ(selected, 1);
+        EXPECT_TRUE(console_controller::state()
+                        .softkeys[static_cast<size_t>(SoftKeyId::Right5)]
+                        .route == SoftKeyRoute::GoHome);
+    }
+
+    // Re-entering opens on the page that holds the current zone.
+    press(ButtonId::BackStep);
+    press(ButtonId::LeftMiddle);
+    EXPECT_EQ(console_controller::state().time_zone_page_index,
+              static_cast<uint8_t>((kTimeZoneSelectionCount - 1U) / kTimeZoneOptionsPerPage));
 }
 
 HOST_TEST(keypad_debug_and_greyscale_return_to_status)

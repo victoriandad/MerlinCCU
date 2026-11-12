@@ -4,7 +4,8 @@
 
 #include "test_framework.h"
 
-// Not covered here: select_weather_source(), select_relative_time_zone(),
+// Not covered here: select_weather_source(), select_time_zone_slot() (covered
+// through key presses in test_console_navigation.cpp),
 // select_screen_saver(), toggle_remote_config_enabled(),
 // toggle_home_assistant_enabled(), toggle_mqtt_enabled(),
 // toggle_air_traffic_enabled(), and confirm_timeout_edit(). All of them
@@ -181,13 +182,48 @@ HOST_TEST(weather_source_definition_falls_back_to_the_first_entry_for_an_unknown
     EXPECT_TRUE(def.selection_label != nullptr);
 }
 
-HOST_TEST(relative_time_zone_definition_returns_null_past_the_edges)
+HOST_TEST(time_zone_slots_list_every_zone_once_in_a_fixed_order)
 {
     ConsoleState state = make_state();
-    state.time_zone = TimeZoneSelection::EuropeLondon;
-    EXPECT_TRUE(settings_controller::relative_time_zone_definition(state, 0) != nullptr);
-    EXPECT_TRUE(settings_controller::relative_time_zone_definition(state, 100) == nullptr);
-    EXPECT_TRUE(settings_controller::relative_time_zone_definition(state, -100) == nullptr);
+    int listed = 0;
+    for (uint8_t page = 0U; page < kTimeZonePageCount; ++page)
+    {
+        state.time_zone_page_index = page;
+        for (uint8_t slot = 0U; slot < kTimeZoneOptionsPerPage; ++slot)
+        {
+            const auto* zone = settings_controller::time_zone_for_slot(state, slot);
+            if (zone == nullptr)
+            {
+                continue;
+            }
+            EXPECT_EQ(static_cast<int>(zone->zone), listed);
+            ++listed;
+        }
+    }
+    EXPECT_EQ(listed, static_cast<int>(kTimeZoneSelectionCount));
+    EXPECT_TRUE(settings_controller::time_zone_for_slot(state, kTimeZoneOptionsPerPage) == nullptr);
+}
+
+HOST_TEST(change_time_zone_page_stops_at_both_ends)
+{
+    ConsoleState state = make_state();
+    state.time_zone_page_index = 0U;
+    EXPECT_FALSE(settings_controller::change_time_zone_page(state, -1));
+    for (uint8_t i = 1U; i < kTimeZonePageCount; ++i)
+    {
+        EXPECT_TRUE(settings_controller::change_time_zone_page(state, 1));
+    }
+    EXPECT_FALSE(settings_controller::change_time_zone_page(state, 1));
+    EXPECT_EQ(state.time_zone_page_index, static_cast<uint8_t>(kTimeZonePageCount - 1U));
+}
+
+HOST_TEST(time_zone_page_of_current_finds_the_page_holding_the_zone)
+{
+    ConsoleState state = make_state();
+    state.time_zone = TimeZoneSelection::AtlanticStandard;
+    EXPECT_EQ(settings_controller::time_zone_page_of_current(state), 0U);
+    state.time_zone = TimeZoneSelection::GulfStandard;
+    EXPECT_EQ(settings_controller::time_zone_page_of_current(state), 1U);
 }
 
 HOST_TEST(enabled_and_secret_selection_text_are_simple_boolean_labels)

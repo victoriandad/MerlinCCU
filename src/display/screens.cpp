@@ -537,6 +537,13 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
                       static_cast<unsigned>(page_count));
         return buffer;
     }
+    if (console_state.active_page == MenuPage::TimeZoneSettings && kTimeZonePageCount > 1U)
+    {
+        std::snprintf(buffer, buffer_size, "TIME ZONE %u/%u",
+                      static_cast<unsigned>(console_state.time_zone_page_index + 1U),
+                      static_cast<unsigned>(kTimeZonePageCount));
+        return buffer;
+    }
     if (console_state.active_page == MenuPage::PinterSelectBrew && kPinterBrewListPageCount > 1U)
     {
         std::snprintf(buffer, buffer_size, "SELECT BREW %u/%u",
@@ -1424,9 +1431,11 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::MqttSettings:
     case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
-    case MenuPage::TimeZoneSettings:
         // Key pages with no body: every value they show is on a softkey label
         // (PAGE-2), so the body is deliberately left empty.
+        break;
+    case MenuPage::TimeZoneSettings:
+        settings_screens::draw_time_zone_page(fb, console_state);
         break;
     case MenuPage::KeypadDebug:
         settings_screens::draw_keypad_debug_page(fb, console_state);

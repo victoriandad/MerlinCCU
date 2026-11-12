@@ -549,3 +549,20 @@ HOST_TEST(alert_detail_short_and_empty_states_render_consistently)
     const auto empty_fb = render_page(empty);
     EXPECT_TRUE(golden_test::check_golden("alert_detail_empty", empty_fb.data()));
 }
+
+HOST_TEST(time_zone_pages_render_consistently)
+{
+    // Home R1 SETTINGS, cursor right to Settings 2/2, L3 TIME ZONE, choose
+    // LONDON (page 1, slot 5 = R1), then view page 2.
+    const ConsoleState& first = navigate({ButtonId::RightTop, ButtonId::CursorRight,
+                                          ButtonId::LeftMiddle, ButtonId::CursorLeft,
+                                          ButtonId::RightTop});
+    EXPECT_TRUE(first.active_page == MenuPage::TimeZoneSettings);
+    EXPECT_TRUE(first.time_zone == TimeZoneSelection::EuropeLondon);
+    const auto first_fb = render_page(first);
+    EXPECT_TRUE(golden_test::check_golden("time_zone_page_1", first_fb.data()));
+
+    (void)console_controller::handle_button_event({ButtonId::CursorRight, ButtonEventType::Pressed});
+    const auto second_fb = render_page(console_controller::state());
+    EXPECT_TRUE(golden_test::check_golden("time_zone_page_2", second_fb.data()));
+}

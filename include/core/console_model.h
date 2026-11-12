@@ -495,6 +495,17 @@ enum class TimeZoneSelection : uint8_t
     GulfStandard,
 };
 
+/// @brief Number of selectable time-zone presets (settings_controller's table).
+inline constexpr uint8_t kTimeZoneSelectionCount = 9U;
+static_assert(static_cast<uint8_t>(TimeZoneSelection::GulfStandard) + 1U == kTimeZoneSelectionCount,
+              "kTimeZoneSelectionCount must match TimeZoneSelection");
+/// @brief Option keys per Time Zone page: L1-L4 then R1-R4 (NAV-6).
+inline constexpr uint8_t kTimeZoneOptionsPerPage = 8U;
+/// @brief Pages needed to list every time zone, shared by the controller's
+/// paging, the header title, and the footer arrows.
+inline constexpr uint8_t kTimeZonePageCount = static_cast<uint8_t>(
+    (kTimeZoneSelectionCount + kTimeZoneOptionsPerPage - 1U) / kTimeZoneOptionsPerPage);
+
 /// @brief Local environmental metric selected for the graph detail page.
 enum class LocalConditionMetric : uint8_t
 {
@@ -573,14 +584,14 @@ enum class SoftKeyRoute : uint8_t
     GoStatusResources,
     GoStatusSensors,
     GoStatusIntegrations,
-    SelectTimeZoneWest1,
-    SelectTimeZoneWest2,
-    SelectTimeZoneWest3,
-    SelectTimeZoneWest4,
-    SelectTimeZoneEast1,
-    SelectTimeZoneEast2,
-    SelectTimeZoneEast3,
-    SelectTimeZoneEast4,
+    SelectTimeZoneSlot1,
+    SelectTimeZoneSlot2,
+    SelectTimeZoneSlot3,
+    SelectTimeZoneSlot4,
+    SelectTimeZoneSlot5,
+    SelectTimeZoneSlot6,
+    SelectTimeZoneSlot7,
+    SelectTimeZoneSlot8,
     SelectAlertSlot1,
     SelectAlertSlot2,
     SelectAlertSlot3,
@@ -932,6 +943,7 @@ struct ConsoleState
 {
     MenuPage active_page;
     uint8_t settings_page_index;
+    uint8_t time_zone_page_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
     LocalConditionMetric local_condition_metric;

@@ -41,7 +41,8 @@ void update_softkeys_from_state();
 void update_lamps_from_state();
 bool button_digit_value(ButtonId id, uint8_t* out_digit);
 
-constexpr std::array<SoftKeyId, kPinterBrewListVisibleCount> kPinterBrewListSoftkeys = {
+/// @brief List slots in fill order, L1-L4 then R1-R4 (NAV-6).
+constexpr std::array<SoftKeyId, 8> kListSlotSoftkeys = {
     SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,  SoftKeyId::Left4,
     SoftKeyId::Right1, SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
 
@@ -581,7 +582,7 @@ void update_softkeys_from_state()
             {
                 break;
             }
-            const SoftKeyId key = kPinterBrewListSoftkeys[i];
+            const SoftKeyId key = kListSlotSoftkeys[i];
             softkeys[softkey_index(key)] = {
                 pinter_controller::build_catalogue_item_label(key, static_cast<uint8_t>(brew_index)),
                 kPinterBrewListRoutes[i],
@@ -783,7 +784,7 @@ void update_softkeys_from_state()
                 true,
             };
             softkeys[softkey_index(SoftKeyId::Left3)] = {
-                build_selection_softkey_label(SoftKeyId::Left3, "DISPLAY & TIME",
+                build_selection_softkey_label(SoftKeyId::Left3, "TIME ZONE",
                                               settings_controller::time_zone_selection_text(g_console_state)),
                 SoftKeyRoute::GoTimeZoneSettings,
                 true,
@@ -1079,57 +1080,27 @@ void update_softkeys_from_state()
         break;
     case MenuPage::TimeZoneSettings:
     {
-        const settings_controller::TimeZoneDefinition* west_one = settings_controller::relative_time_zone_definition(g_console_state, -1);
-        const settings_controller::TimeZoneDefinition* west_two = settings_controller::relative_time_zone_definition(g_console_state, -2);
-        const settings_controller::TimeZoneDefinition* west_three = settings_controller::relative_time_zone_definition(g_console_state, -3);
-        const settings_controller::TimeZoneDefinition* west_four = settings_controller::relative_time_zone_definition(g_console_state, -4);
-        const settings_controller::TimeZoneDefinition* east_one = settings_controller::relative_time_zone_definition(g_console_state, 1);
-        const settings_controller::TimeZoneDefinition* east_two = settings_controller::relative_time_zone_definition(g_console_state, 2);
-        const settings_controller::TimeZoneDefinition* east_three = settings_controller::relative_time_zone_definition(g_console_state, 3);
-        const settings_controller::TimeZoneDefinition* east_four = settings_controller::relative_time_zone_definition(g_console_state, 4);
-
-        if (west_one != nullptr)
+        // A fixed, ordered list of option keys: a zone keeps its key whichever
+        // zone is selected, and the selected one is shown inverse (SK-7).
+        constexpr std::array<SoftKeyRoute, kTimeZoneOptionsPerPage> routes = {
+            SoftKeyRoute::SelectTimeZoneSlot1, SoftKeyRoute::SelectTimeZoneSlot2,
+            SoftKeyRoute::SelectTimeZoneSlot3, SoftKeyRoute::SelectTimeZoneSlot4,
+            SoftKeyRoute::SelectTimeZoneSlot5, SoftKeyRoute::SelectTimeZoneSlot6,
+            SoftKeyRoute::SelectTimeZoneSlot7, SoftKeyRoute::SelectTimeZoneSlot8};
+        for (uint8_t slot = 0U; slot < kTimeZoneOptionsPerPage; ++slot)
         {
-            softkeys[softkey_index(SoftKeyId::Left1)] = {west_one->option_label,
-                                                         SoftKeyRoute::SelectTimeZoneWest1, true};
-        }
-        if (west_two != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Left2)] = {west_two->option_label,
-                                                         SoftKeyRoute::SelectTimeZoneWest2, true};
-        }
-        if (west_three != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Left3)] = {west_three->option_label,
-                                                         SoftKeyRoute::SelectTimeZoneWest3, true};
-        }
-        if (west_four != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Left4)] = {west_four->option_label,
-                                                         SoftKeyRoute::SelectTimeZoneWest4, true};
-        }
-        if (east_one != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Right1)] = {east_one->option_label,
-                                                          SoftKeyRoute::SelectTimeZoneEast1, true};
-        }
-        if (east_two != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Right2)] = {east_two->option_label,
-                                                          SoftKeyRoute::SelectTimeZoneEast2, true};
-        }
-        if (east_three != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Right3)] = {
-                east_three->option_label,
-                SoftKeyRoute::SelectTimeZoneEast3,
+            const settings_controller::TimeZoneDefinition* zone =
+                settings_controller::time_zone_for_slot(g_console_state, slot);
+            if (zone == nullptr)
+            {
+                break;
+            }
+            softkeys[softkey_index(kListSlotSoftkeys[slot])] = {
+                zone->option_label,
+                routes[slot],
                 true,
+                zone->zone == g_console_state.time_zone,
             };
-        }
-        if (east_four != nullptr)
-        {
-            softkeys[softkey_index(SoftKeyId::Right4)] = {east_four->option_label,
-                                                          SoftKeyRoute::SelectTimeZoneEast4, true};
         }
         break;
     }
@@ -1472,6 +1443,8 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::GoTimeZoneSettings:
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::TimeZoneSettings;
+        g_console_state.time_zone_page_index =
+            settings_controller::time_zone_page_of_current(g_console_state);
         return true;
     case SoftKeyRoute::GoKeypadDebug:
         settings_controller::stop_timeout_editing(g_console_state);
@@ -1547,22 +1520,22 @@ bool apply_softkey_route(SoftKeyRoute route)
         return calendar_controller::open_detail_from_slot(g_console_state, 6U);
     case SoftKeyRoute::SelectCalendarSlot8:
         return calendar_controller::open_detail_from_slot(g_console_state, 7U);
-    case SoftKeyRoute::SelectTimeZoneWest1:
-        return settings_controller::select_relative_time_zone(g_console_state, -1);
-    case SoftKeyRoute::SelectTimeZoneWest2:
-        return settings_controller::select_relative_time_zone(g_console_state, -2);
-    case SoftKeyRoute::SelectTimeZoneWest3:
-        return settings_controller::select_relative_time_zone(g_console_state, -3);
-    case SoftKeyRoute::SelectTimeZoneWest4:
-        return settings_controller::select_relative_time_zone(g_console_state, -4);
-    case SoftKeyRoute::SelectTimeZoneEast1:
-        return settings_controller::select_relative_time_zone(g_console_state, 1);
-    case SoftKeyRoute::SelectTimeZoneEast2:
-        return settings_controller::select_relative_time_zone(g_console_state, 2);
-    case SoftKeyRoute::SelectTimeZoneEast3:
-        return settings_controller::select_relative_time_zone(g_console_state, 3);
-    case SoftKeyRoute::SelectTimeZoneEast4:
-        return settings_controller::select_relative_time_zone(g_console_state, 4);
+    case SoftKeyRoute::SelectTimeZoneSlot1:
+        return settings_controller::select_time_zone_slot(g_console_state, 0U);
+    case SoftKeyRoute::SelectTimeZoneSlot2:
+        return settings_controller::select_time_zone_slot(g_console_state, 1U);
+    case SoftKeyRoute::SelectTimeZoneSlot3:
+        return settings_controller::select_time_zone_slot(g_console_state, 2U);
+    case SoftKeyRoute::SelectTimeZoneSlot4:
+        return settings_controller::select_time_zone_slot(g_console_state, 3U);
+    case SoftKeyRoute::SelectTimeZoneSlot5:
+        return settings_controller::select_time_zone_slot(g_console_state, 4U);
+    case SoftKeyRoute::SelectTimeZoneSlot6:
+        return settings_controller::select_time_zone_slot(g_console_state, 5U);
+    case SoftKeyRoute::SelectTimeZoneSlot7:
+        return settings_controller::select_time_zone_slot(g_console_state, 6U);
+    case SoftKeyRoute::SelectTimeZoneSlot8:
+        return settings_controller::select_time_zone_slot(g_console_state, 7U);
     case SoftKeyRoute::SelectAlertSlot1:
         return alert_controller::open_detail_from_slot(g_console_state, 0U);
     case SoftKeyRoute::SelectAlertSlot2:
@@ -2104,6 +2077,10 @@ bool handle_button_event(const ButtonEvent& event)
                 ++g_console_state.alert_detail_scroll_line;
                 changed = true;
             }
+        }
+        else if (g_console_state.active_page == MenuPage::TimeZoneSettings)
+        {
+            changed = settings_controller::change_time_zone_page(g_console_state, direction);
         }
         else if (g_console_state.active_page == MenuPage::PinterSelectBrew)
         {
