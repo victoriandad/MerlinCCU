@@ -123,10 +123,6 @@ inline int softkey_two_line_label_top_y(int row, text_styles::TextStyle style)
 /// @brief Shared content-top line: where body text starts below the header.
 inline constexpr int kContentTopY = 44;
 
-/// @brief Top of the Info rows block.
-/// @details Two pixels above kContentTopY; to be aligned with it.
-inline constexpr int kInfoRowsTopY = 42;
-
 /// @brief Space between one row's text and the next row's text.
 inline constexpr int kRowGapY = 6;
 
@@ -208,5 +204,8 @@ inline constexpr int kEmptyStateHeadlineY = 124;
 
 /// @brief Top of the empty-state hint line, beneath the headline.
 inline constexpr int kEmptyStateHintY = 142;
+
+/// @brief Most lines an empty-state hint wraps onto.
+inline constexpr int kMaxEmptyStateHintLines = 3;
 
 } // namespace ui_layout

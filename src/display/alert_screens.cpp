@@ -41,11 +41,6 @@ constexpr size_t kMaxDetailLines = 48U;
 constexpr size_t kDetailTextCapacity = 400U;
 using DetailText = std::array<char, kDetailTextCapacity>;
 
-/// @brief Top of the alert pages' empty-state headline.
-/// @details Twelve pixels above ui_layout::kEmptyStateHeadlineY; to be
-/// aligned with the shared empty state.
-constexpr int kEmptyStateY = 112;
-
 using DetailLines = std::array<screens::TextSpan, kMaxDetailLines>;
 
 /// @brief Wraps the alert's detail text, followed by how often it has
@@ -84,8 +79,7 @@ void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
                                          (console_state.alert_list_page_index + 1U) < page_count);
     if (console_state.alert_count == 0U)
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyStateY, "NO ACTIVE ALERTS",
-                                    TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO ACTIVE ALERTS", nullptr);
     }
 }
 
@@ -102,8 +96,7 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyStateY, "NO ALERT SELECTED",
-                                    TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO ALERT SELECTED", nullptr);
         return;
     }
 

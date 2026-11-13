@@ -132,16 +132,18 @@ corrected.
 - Intent: make absence of data explicit without adding synthetic rows.
 - Use When: no alerts, shares, events, or selected records exist.
 - Source: `screens::draw_empty_state()` in `src/display/screens.cpp`
-  (declared in `include/display/screens_shared.h`); used by
-  `draw_weather_page()` in `src/display/weather_screens.cpp` and the Local
-  Conditions page and graph in `src/display/screens.cpp`. Other pages
-  still centre their own message with `draw_centered_text()` and move to the
-  block under #117.
-- Rules: one uppercase headline at `kEmptyStateHeadlineY` and an optional
-  one-line, mixed-case hint at `kEmptyStateHintY`, both centred. The block
-  sits between the row 2 and row 3 softkey cells, so it never meets a label.
-  The hint says what the operator can do; a not-configured hint names where
-  to configure (STATE-2, STATE-5).
+  (declared in `include/display/screens_shared.h`). Every page with an empty,
+  waiting or failed body uses it: Weather, Local Conditions and its graph,
+  Local Traffic, Alerts, Shares and Share detail, Calendar detail, and the
+  Pinter reset confirmation.
+- Rules: one uppercase headline at `ui_layout::kEmptyStateHeadlineY` and an
+  optional mixed-case hint at `ui_layout::kEmptyStateHintY`, both centred.
+  The headline and the first hint line sit between the row 2 and row 3
+  softkey cells, so they never meet a label. The hint wraps to the content
+  width over at most three lines. Use more than one line only on a page whose
+  row 3 keys are blank, as on the Pinter reset confirmation (SCR-5). The hint
+  says what the operator can do; a not-configured hint names where to
+  configure (STATE-2, STATE-5).
 
 ### Graph Plot Area
 

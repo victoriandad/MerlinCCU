@@ -21,14 +21,8 @@ namespace
 
 using screens::TextStyle;
 
-/// @brief Positions on the Shares pages that are not yet on the shared
-/// layout: the empty-state headline sits 12 pixels above
-/// ui_layout::kEmptyStateHeadlineY, the no-history headline elsewhere again,
-/// and the detail rows use a 14-pixel pitch. To be aligned.
-constexpr int kEmptyHeadlineY = 112;
-constexpr int kNoHistoryHeadlineY = 106;
+/// @brief Top of the share detail rows, beneath the graph and its labels.
 constexpr int kDetailRowsTopY = 164;
-constexpr int kDetailRowPitch = 14;
 
 /// @brief Formats one graph-axis share value using compact thousands separators.
 void format_share_graph_value(uint16_t value, char* output, size_t output_size)
@@ -76,8 +70,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kNoHistoryHeadlineY,
-                                    "NO PRICE HISTORY", TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO PRICE HISTORY", nullptr);
         return;
     }
 
@@ -132,10 +125,7 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.share_count == 0U)
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO SHARES",
-                                    TextStyle::Headline);
-        screens::draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kEmptyStateHintY,
-                                    "ADD VIA WEB CONFIG", TextStyle::Hint);
+        screens::draw_empty_state(fb, "NO SHARES", "Add shares in web config");
         return;
     }
 
@@ -147,8 +137,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
 {
     if (console_state.selected_share_index >= console_state.share_count)
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO SHARE",
-                                    TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO SHARE", nullptr);
         return;
     }
 
@@ -182,7 +171,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
     };
 
     screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kDetailRowsTopY,
-                                      kDetailRowPitch);
+                                      ui_layout::row_pitch(TextStyle::CompactRow));
 }
 
 } // namespace shares_screens

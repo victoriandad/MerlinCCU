@@ -23,9 +23,7 @@ namespace
 using screens::TextStyle;
 
 /// @brief Top of the Status pages' compact rows.
-/// @details These pages are dense, so their rows start at the top of the
-/// body rather than at ui_layout::kContentTopY.
-constexpr int kStatusRowsTopY = ui_layout::kBodyTopY;
+constexpr int kStatusRowsTopY = ui_layout::kContentTopY;
 
 /// @brief Pitch of the Status pages' compact rows.
 int status_row_pitch()

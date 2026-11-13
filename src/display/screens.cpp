@@ -776,7 +776,7 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
     constexpr TextStyle kValueStyle = TextStyle::BodyValue;
     // Wrapped value lines sit closer together than rows, so they read as one value.
     constexpr int kWrappedLineGapY = 3;
-    const int kStartY = ui_layout::kInfoRowsTopY;
+    const int kStartY = ui_layout::kContentTopY;
     const int kRowPitch = ui_layout::row_pitch(kLabelStyle);
     const int kValueLinePitch = text_styles::line_height(kValueStyle) + kWrappedLineGapY;
     constexpr size_t kLabelBufferSize = 32U;
@@ -963,9 +963,20 @@ void draw_empty_state(uint8_t* fb, const char* headline, const char* hint)
         draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kEmptyStateHeadlineY, headline,
                            TextStyle::Headline);
     }
-    if (hint != nullptr && hint[0] != '\0')
+    if (hint == nullptr || hint[0] == '\0')
     {
-        draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kEmptyStateHintY, hint,
+        return;
+    }
+    std::array<TextSpan, ui_layout::kMaxEmptyStateHintLines> spans = {};
+    const size_t kCount =
+        wrap_text(hint, TextStyle::Hint, ui_layout::kContentWidth, spans.data(), spans.size());
+    const int kPitch = ui_layout::row_pitch(TextStyle::Hint);
+    for (size_t i = 0U; i < kCount; ++i)
+    {
+        char line[kDetailValueLineCapacity] = {};
+        copy_softkey_label_slice(line, sizeof(line), spans[i].text, spans[i].length);
+        draw_centered_text(fb, ui_layout::kCentreX,
+                           ui_layout::kEmptyStateHintY + (static_cast<int>(i) * kPitch), line,
                            TextStyle::Hint);
     }
 }
@@ -1072,8 +1083,11 @@ void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 }
 
 /// @brief Left edge of compact row labels.
-/// @details Two pixels inside ui_layout::kMarginX; to be aligned with it.
-constexpr int kCompactDetailTextX = 10;
+constexpr int kCompactDetailTextX = ui_layout::kMarginX;
+
+/// @brief Space between the widest `LABEL:` and the value column, so no
+/// value ever touches its label's colon.
+constexpr int kCompactLabelValueGapX = 6;
 constexpr TextStyle kCompactDetailStyle = TextStyle::CompactRow;
 
 /// @brief Returns the value-column x-coordinate for compact detail pages.
@@ -1093,7 +1107,7 @@ int compact_detail_value_x(const DetailRow* rows, size_t count)
             std::max(widest_label_width, text_width(label_text, kCompactDetailStyle));
     }
 
-    return kCompactDetailTextX + widest_label_width + text_width(" ", kCompactDetailStyle);
+    return kCompactDetailTextX + widest_label_width + kCompactLabelValueGapX;
 }
 
 } // namespace

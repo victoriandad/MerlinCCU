@@ -238,16 +238,7 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state, uint3
         }
 
         const char* message = status.data_valid ? "NO AIRCRAFT NEARBY" : "WAITING FOR DATA";
-        // 32 and 22 pixels above the shared empty-state lines; to be aligned
-        // with draw_empty_state().
-        constexpr int kHeadlineY = 92;
-        constexpr int kHintY = 120;
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kHeadlineY, message,
-                                    TextStyle::Headline);
-        if (detail[0] != '\0')
-        {
-            screens::draw_centered_text(fb, ui_layout::kCentreX, kHintY, detail, TextStyle::Hint);
-        }
+        screens::draw_empty_state(fb, message, detail);
         draw_provenance_line(fb, status, now_ms, ui_layout::kFooterLineY);
         return;
     }

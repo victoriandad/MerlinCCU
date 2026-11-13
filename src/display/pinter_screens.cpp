@@ -1,6 +1,5 @@
 #include "pinter_screens.h"
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 
@@ -22,20 +21,10 @@ using screens::TextStyle;
 
 /// @brief Draws the reset question in the otherwise empty body.
 /// @details Every softkey except CANCEL and RESET is blank in this state, so
-/// the body can say plainly which vessel and brew will be cleared. Uses the
-/// same headline position as the other centred empty-state headlines.
+/// the body can say plainly which vessel and brew will be cleared. Drawn as
+/// the shared empty-state block, its detail wrapping as the hint.
 void draw_reset_confirmation(uint8_t* fb, const ConsoleState& console_state)
 {
-    // Twelve pixels above ui_layout::kEmptyStateHeadlineY, with a 14-pixel
-    // detail pitch and 16-pixel margins; to be aligned with the shared
-    // empty state and row pitch.
-    constexpr int kHeadlineY = 112;
-    constexpr int kDetailFirstY = ui_layout::kEmptyStateHintY;
-    constexpr int kDetailPitch = 14;
-    constexpr int kDetailMarginX = 16;
-    constexpr size_t kMaxDetailLines = 4U;
-    constexpr TextStyle kDetailStyle = TextStyle::Hint;
-
     const uint8_t index = console_state.selected_pinter_index < console_state.pinters.size()
                               ? console_state.selected_pinter_index
                               : 0U;
@@ -44,23 +33,11 @@ void draw_reset_confirmation(uint8_t* fb, const ConsoleState& console_state)
     char headline[40] = {};
     std::snprintf(headline, sizeof(headline), "RESET %s?", vessel.label.data());
     text_case::copy_uppercase(headline, headline, sizeof(headline));
-    screens::draw_centered_text(fb, ui_layout::kCentreX, kHeadlineY, headline, TextStyle::Headline);
 
     char detail[96] = {};
     std::snprintf(detail, sizeof(detail), "Clears %s and its stage timings. This cannot be undone.",
                   console_controller::pinter_brew_timing(vessel.brew_index).name);
-    std::array<screens::TextSpan, kMaxDetailLines> lines = {};
-    const size_t count = screens::wrap_text(detail, kDetailStyle, kUiWidth - (kDetailMarginX * 2),
-                                            lines.data(), lines.size());
-    for (size_t i = 0U; i < count; ++i)
-    {
-        char line[96] = {};
-        std::snprintf(line, sizeof(line), "%.*s", static_cast<int>(lines[i].length),
-                      lines[i].text);
-        screens::draw_centered_text(fb, ui_layout::kCentreX,
-                                    kDetailFirstY + (static_cast<int>(i) * kDetailPitch), line,
-                                    kDetailStyle);
-    }
+    screens::draw_empty_state(fb, headline, detail);
 }
 
 } // namespace

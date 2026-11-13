@@ -69,9 +69,12 @@ void draw_right_aligned_text(uint8_t* fb, int right_x, int y, const char* text, 
 
 /// @brief Draws the shared empty-state block (STATE-2).
 /// @details One uppercase headline at a fixed position, and an optional
-/// one-line, mixed-case hint beneath it saying what the operator can do.
-/// Both are centred. `hint` may be null or empty. The caller writes text that
-/// fits the body width; the hint is never wrapped.
+/// mixed-case hint beneath it saying what the operator can do or what will
+/// happen. Both are centred. `hint` may be null or empty; it wraps to the
+/// content width over at most kMaxEmptyStateHintLines lines. The first line
+/// ends above the row 3 softkey cells; later lines reach into them, so a
+/// hint longer than one line is only for pages whose row 3 keys are blank
+/// (SCR-5).
 void draw_empty_state(uint8_t* fb, const char* headline, const char* hint);
 
 /// @brief One softkey/footer label wrapped into up to three fixed-size lines.

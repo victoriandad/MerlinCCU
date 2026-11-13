@@ -24,11 +24,6 @@ namespace
 
 using screens::TextStyle;
 
-/// @brief Top of the Calendar detail page's empty-state headline.
-/// @details Twelve pixels above ui_layout::kEmptyStateHeadlineY; to be
-/// aligned with the shared empty state.
-constexpr int kEmptyHeadlineY = 112;
-
 /// @brief Returns the owner label used by Calendar labels and details.
 const char* calendar_owner_text(CalendarOwner owner)
 {
@@ -196,8 +191,7 @@ void draw_calendar_footer_arrow(uint8_t* fb, int centre_x, int centre_y, int dir
 /// the active day bracketed by visible left/right arrow markers.
 void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_state)
 {
-    // Seven pixels above ui_layout::kFooterLineY; to be aligned with it.
-    constexpr int kFooterY = ui_layout::kFooterLineY - 7;
+    constexpr int kFooterY = ui_layout::kFooterLineY;
     constexpr int kArrowGap = 12;
     const int kArrowCentreYOffset = text_styles::line_height(TextStyle::Footer) / 2;
     char day_label[32] = {};
@@ -236,8 +230,7 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.selected_calendar_event_index >= console_state.calendar_events.size())
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO EVENT",
-                                    TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO EVENT", nullptr);
         return;
     }
 
@@ -245,8 +238,7 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
         console_state.calendar_events[console_state.selected_calendar_event_index];
     if (event.title[0] == '\0')
     {
-        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO EVENT",
-                                    TextStyle::Headline);
+        screens::draw_empty_state(fb, "NO EVENT", nullptr);
         return;
     }
 
@@ -258,17 +250,18 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
                   event.end_time[0] != '\0' ? event.end_time.data() : "--:--");
 
     const screens::DetailRow rows[] = {
-        {"Event", event.title.data()},
-        {"Time", time_line},
-        {"Owner", owner_line},
-        {"Location", event.location[0] != '\0' ? event.location.data() : "-"},
-        {"Alarm", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
-        {"Attendees", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
-        {"Detail", event.description[0] != '\0' ? event.description.data() : "-"},
+        {"EVENT", event.title.data()},
+        {"TIME", time_line},
+        {"OWNER", owner_line},
+        {"LOCATION", event.location[0] != '\0' ? event.location.data() : "-"},
+        {"ALARM", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
+        {"ATTENDEES", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
+        {"DETAIL", event.description[0] != '\0' ? event.description.data() : "-"},
     };
-    // Info-row spacing for compact rows; to be aligned with the compact pitch.
-    constexpr int kStartY = ui_layout::kInfoRowsTopY;
-    constexpr int kRowPitch = 18;
+    // The event has few rows, so they take the looser 8x12 pitch for
+    // readability; it is one of the shared pitches (BODY-2).
+    constexpr int kStartY = ui_layout::kContentTopY;
+    const int kRowPitch = ui_layout::row_pitch(TextStyle::BodyText);
     constexpr size_t kRowCount = sizeof(rows) / sizeof(rows[0]);
 
     screens::draw_compact_detail_rows(fb, rows, kRowCount, kStartY, kRowPitch);
