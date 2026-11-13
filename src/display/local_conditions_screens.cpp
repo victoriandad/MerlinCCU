@@ -11,12 +11,15 @@
 #include "local_conditions.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "ui_layout.h"
 
 namespace local_conditions_screens
 {
 
 namespace
 {
+
+using screens::TextStyle;
 
 /// @brief Returns the display label for one local condition metric.
 const char* local_condition_metric_text(LocalConditionMetric metric)
@@ -70,9 +73,7 @@ LocalConditionGraphScale local_condition_graph_scale(LocalConditionMetric metric
 /// @brief Draws a graph axis label right-aligned against the plot edge.
 void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
 {
-    constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
-                           true, kAxisFont, 1);
+    screens::draw_right_aligned_text(fb, right_x, y, text, TextStyle::Annotation);
 }
 
 /// @brief Copies the selected 24-hour five-minute average history into a work buffer.
@@ -121,10 +122,6 @@ void draw_local_conditions_footer(uint8_t* fb,
                                   const environment_sensor_manager::EnvironmentSensorStatus& status,
                                   uint32_t now_ms)
 {
-    constexpr int kFooterX = 12;
-    constexpr int kFooterY = kUiHeight - 18;
-    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
-
     char freshness_text[16] = {};
     screens::build_data_freshness_text(local_conditions::reading_current(status),
                                        local_conditions::last_reading_ms(status), now_ms,
@@ -132,7 +129,8 @@ void draw_local_conditions_footer(uint8_t* fb,
                                        freshness_text, sizeof(freshness_text));
     char footer_text[32] = {};
     std::snprintf(footer_text, sizeof(footer_text), "Sensor board - %s", freshness_text);
-    framebuffer::draw_text(fb, kFooterX, kFooterY, footer_text, true, kFooterFont, 1);
+    screens::draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY, footer_text,
+                       TextStyle::Footer);
 }
 
 } // namespace
@@ -162,14 +160,16 @@ void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state, 
 void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state,
                                         uint32_t now_ms)
 {
-    constexpr int kGraphX = 42;
+    constexpr int kGraphX = ui_layout::kGraphLeftX;
+    // Eight pixels below ui_layout::kContentTopY; to be aligned with the
+    // Shares graph (BODY-4).
     constexpr int kGraphY = 52;
-    constexpr int kGraphWidth = kUiWidth - (kGraphX * 2);
+    constexpr int kGraphWidth = ui_layout::kGraphWidth;
     constexpr int kGraphHeight = 128;
     constexpr int kTimelineLabelY = kGraphY + kGraphHeight + 5;
-    constexpr int kMetricLabelY = kTimelineLabelY + 13;
-    constexpr int kPlotInset = 1;
+    constexpr int kPlotInset = ui_layout::kGraphPlotInset;
     constexpr int kAxisLabelRightX = kGraphX - 6;
+    const int kMetricLabelY = kTimelineLabelY + ui_layout::row_pitch(TextStyle::Annotation);
 
     const auto& status = console_state.environment_sensor_status;
     std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount> values = {};
@@ -231,25 +231,20 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
                                     sizeof(current_text));
     draw_local_conditions_footer(fb, status, now_ms);
 
-    framebuffer::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", true, fonts::FontFace::Font5x7,
-                           1);
-    const int now_width = screens::text_width("NOW", fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - now_width, kTimelineLabelY, "NOW", true,
-                           fonts::FontFace::Font5x7, 1);
+    screens::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", TextStyle::Annotation);
+    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, kTimelineLabelY, "NOW",
+                                     TextStyle::Annotation);
 
-    framebuffer::draw_text(fb, kGraphX, kMetricLabelY,
-                           local_condition_metric_text(console_state.local_condition_metric), true,
-                           fonts::FontFace::Font5x7, 1);
-    const int unit_x =
-        kGraphX +
-        screens::text_width(local_condition_metric_text(console_state.local_condition_metric),
-                            fonts::FontFace::Font5x7, 1) +
-        screens::text_width(" ", fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, true,
-                           fonts::FontFace::Font5x7, 1);
-    const int current_width = screens::text_width(current_text, fonts::FontFace::Font8x12, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - current_width, kMetricLabelY - 3,
-                           current_text, true, fonts::FontFace::Font8x12, 1);
+    const char* metric_text = local_condition_metric_text(console_state.local_condition_metric);
+    screens::draw_text(fb, kGraphX, kMetricLabelY, metric_text, TextStyle::Annotation);
+    const int unit_x = kGraphX + screens::text_width(metric_text, TextStyle::Annotation) +
+                       screens::text_width(" ", TextStyle::Annotation);
+    screens::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, TextStyle::Annotation);
+    // The large value shares a bottom edge with the small metric label.
+    const int kValueY = kMetricLabelY + text_styles::line_height(TextStyle::Annotation) -
+                        text_styles::line_height(TextStyle::EmphasisValue) + 2;
+    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, kValueY, current_text,
+                                     TextStyle::EmphasisValue);
 }
 
 } // namespace local_conditions_screens

@@ -74,6 +74,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/alert_screens.cpp
     ${MERLIN_ROOT}/src/display/local_conditions_screens.cpp
     ${MERLIN_ROOT}/src/display/shares_screens.cpp
+    ${MERLIN_ROOT}/src/display/text_styles.cpp
     ${MERLIN_ROOT}/src/display/settings_screens.cpp
     ${MERLIN_ROOT}/src/display/status_screens.cpp
     ${MERLIN_ROOT}/src/display/weather_screens.cpp

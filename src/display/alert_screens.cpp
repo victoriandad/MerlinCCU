@@ -9,6 +9,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "ui_layout.h"
 
 namespace alert_screens
 {
@@ -16,19 +17,20 @@ namespace alert_screens
 namespace
 {
 
-constexpr fonts::FontFace kDetailFont = fonts::FontFace::Font8x12;
-constexpr int kDetailFontHeight = 12;
-constexpr int kDetailTextX = 12;
-constexpr int kDetailTextWidth = kUiWidth - (kDetailTextX * 2);
-constexpr int kDetailStartY = 44;
-constexpr int kDetailRowPitch = 18;
-constexpr int kDetailVisibleLines = 12;
-// Top of the row 5 softkey labels (IGNORE / ACCEPT). The last visible line
-// must end above it (SCR-5). Moves to the shared layout header under #113.
-constexpr int kRow5LabelTopY = 264;
-static_assert(kDetailStartY + ((kDetailVisibleLines - 1) * kDetailRowPitch) + kDetailFontHeight <=
-                  kRow5LabelTopY,
-              "alert detail text would reach the row 5 softkey labels");
+using screens::TextStyle;
+
+constexpr TextStyle kDetailStyle = TextStyle::BodyText;
+
+/// @brief Lines of detail text that fit between the content-top line and
+/// the row 5 labels (IGNORE / ACCEPT), which the last line must end above
+/// (SCR-5). Measured from the current fonts: 12 lines of 8x12 text.
+int detail_visible_lines()
+{
+    const int kLineHeight = text_styles::line_height(kDetailStyle);
+    const int kPitch = ui_layout::row_pitch(kDetailStyle);
+    const int kLimitY = ui_layout::softkey_two_line_label_top_y(4, TextStyle::Softkey);
+    return std::max(1, ((kLimitY - ui_layout::kContentTopY - kLineHeight) / kPitch) + 1);
+}
 
 // ActiveAlert::detail holds 319 characters, plus the occurrence line; even
 // at one short word per line that is well under this many wrapped lines at
@@ -39,7 +41,9 @@ constexpr size_t kMaxDetailLines = 48U;
 constexpr size_t kDetailTextCapacity = 400U;
 using DetailText = std::array<char, kDetailTextCapacity>;
 
-// Same position as the alert list's empty state.
+/// @brief Top of the alert pages' empty-state headline.
+/// @details Twelve pixels above ui_layout::kEmptyStateHeadlineY; to be
+/// aligned with the shared empty state.
 constexpr int kEmptyStateY = 112;
 
 using DetailLines = std::array<screens::TextSpan, kMaxDetailLines>;
@@ -59,14 +63,14 @@ size_t wrap_detail(const ActiveAlert& alert, DetailText& text, DetailLines& line
     {
         std::snprintf(text.data(), text.size(), "%s", alert.detail.data());
     }
-    return screens::wrap_text(text.data(), kDetailFont, kDetailTextWidth, lines.data(),
+    return screens::wrap_text(text.data(), kDetailStyle, ui_layout::kContentWidth, lines.data(),
                               lines.size());
 }
 
 /// @brief Highest first-visible line for `line_count` wrapped lines.
 uint8_t max_scroll_for(size_t line_count)
 {
-    const size_t visible = static_cast<size_t>(kDetailVisibleLines);
+    const size_t visible = static_cast<size_t>(detail_visible_lines());
     return static_cast<uint8_t>(line_count > visible ? line_count - visible : 0U);
 }
 
@@ -80,8 +84,8 @@ void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
                                          (console_state.alert_list_page_index + 1U) < page_count);
     if (console_state.alert_count == 0U)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, kEmptyStateY, "NO ACTIVE ALERTS", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyStateY, "NO ACTIVE ALERTS",
+                                    TextStyle::Headline);
     }
 }
 
@@ -98,8 +102,8 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, kEmptyStateY, "NO ALERT SELECTED", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyStateY, "NO ALERT SELECTED",
+                                    TextStyle::Headline);
         return;
     }
 
@@ -113,16 +117,17 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
     const size_t first =
         std::min<size_t>(console_state.alert_detail_scroll_line, max_scroll);
 
-    for (size_t row = 0U; row < static_cast<size_t>(kDetailVisibleLines) && first + row < count;
-         ++row)
+    const size_t kVisible = static_cast<size_t>(detail_visible_lines());
+    const int kPitch = ui_layout::row_pitch(kDetailStyle);
+    for (size_t row = 0U; row < kVisible && first + row < count; ++row)
     {
         const screens::TextSpan& span = lines[first + row];
         char line[96] = {};
         const size_t length = std::min(span.length, sizeof(line) - 1U);
         std::copy(span.text, span.text + length, line);
-        framebuffer::draw_text(fb, kDetailTextX,
-                               kDetailStartY + (static_cast<int>(row) * kDetailRowPitch), line,
-                               true, kDetailFont, 1);
+        screens::draw_text(fb, ui_layout::kMarginX,
+                           ui_layout::kContentTopY + (static_cast<int>(row) * kPitch), line,
+                           kDetailStyle);
     }
 
     screens::draw_page_navigation_arrows(fb, first > 0U, first < max_scroll);

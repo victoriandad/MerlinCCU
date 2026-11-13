@@ -75,6 +75,7 @@ add_executable(MerlinCCU
     src/display/settings_screens.cpp
     src/display/local_conditions_screens.cpp
     src/display/shares_screens.cpp
+    src/display/text_styles.cpp
     src/display/status_screens.cpp
     src/display/weather_screens.cpp
     src/display/screensavers/screensaver_clock.cpp

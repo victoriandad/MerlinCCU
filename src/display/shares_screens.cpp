@@ -11,12 +11,24 @@
 #include "settings_controller.h"
 #include "share_price_manager.h"
 #include "text_case.h"
+#include "ui_layout.h"
 
 namespace shares_screens
 {
 
 namespace
 {
+
+using screens::TextStyle;
+
+/// @brief Positions on the Shares pages that are not yet on the shared
+/// layout: the empty-state headline sits 12 pixels above
+/// ui_layout::kEmptyStateHeadlineY, the no-history headline elsewhere again,
+/// and the detail rows use a 14-pixel pitch. To be aligned.
+constexpr int kEmptyHeadlineY = 112;
+constexpr int kNoHistoryHeadlineY = 106;
+constexpr int kDetailRowsTopY = 164;
+constexpr int kDetailRowPitch = 14;
 
 /// @brief Formats one graph-axis share value using compact thousands separators.
 void format_share_graph_value(uint16_t value, char* output, size_t output_size)
@@ -55,17 +67,17 @@ bool share_history_has_values(const ShareWatchEntry& share)
 /// @brief Draws one full-width share history graph in the centre detail region.
 void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
 {
-    constexpr int kGraphX = 42;
-    constexpr int kGraphY = 44;
-    const int kGraphWidth = kUiWidth - (kGraphX * 2);
+    constexpr int kGraphX = ui_layout::kGraphLeftX;
+    constexpr int kGraphY = ui_layout::kContentTopY;
+    constexpr int kGraphWidth = ui_layout::kGraphWidth;
     constexpr int kGraphHeight = 94;
     constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotInset = 1;
+    constexpr int kPeriodLabelInsetY = 2;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 106, "NO PRICE HISTORY", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kNoHistoryHeadlineY,
+                                    "NO PRICE HISTORY", TextStyle::Headline);
         return;
     }
 
@@ -78,7 +90,7 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     }
 
     const screens::GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight,
-                                           kGraphPlotInset};
+                                           ui_layout::kGraphPlotInset};
     screens::draw_graph_plot_border(fb, plot_area);
     const int base_y = screens::graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
@@ -92,8 +104,8 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     char period_label[16] = {};
     text_case::copy_uppercase(settings_controller::share_period_name(period), period_label,
                               sizeof(period_label));
-    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
-                           1);
+    screens::draw_text(fb, kGraphX, kGraphY + kPeriodLabelInsetY, period_label,
+                       TextStyle::Annotation);
 
     char min_value_text[16] = {};
     char max_value_text[16] = {};
@@ -105,10 +117,9 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
 
     const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
-    framebuffer::draw_text(fb, kGraphX, label_y, min_label, true, fonts::FontFace::Font5x7, 1);
-    const int max_label_width = screens::text_width(max_label, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
-                           fonts::FontFace::Font5x7, 1);
+    screens::draw_text(fb, kGraphX, label_y, min_label, TextStyle::Annotation);
+    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, label_y, max_label,
+                                     TextStyle::Annotation);
 }
 
 } // namespace
@@ -121,10 +132,10 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.share_count == 0U)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true,
-                                    fonts::FontFace::Font8x12, 1);
-        screens::draw_centered_text(fb, kUiWidth / 2, 142, "ADD VIA WEB CONFIG", true,
-                                    fonts::FontFace::Font5x7, 1);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO SHARES",
+                                    TextStyle::Headline);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kEmptyStateHintY,
+                                    "ADD VIA WEB CONFIG", TextStyle::Hint);
         return;
     }
 
@@ -136,8 +147,8 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
 {
     if (console_state.selected_share_index >= console_state.share_count)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kEmptyHeadlineY, "NO SHARE",
+                                    TextStyle::Headline);
         return;
     }
 
@@ -170,7 +181,8 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
         {"CHANGE", share.change_text.data()},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 164, 14);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kDetailRowsTopY,
+                                      kDetailRowPitch);
 }
 
 } // namespace shares_screens

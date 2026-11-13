@@ -8,6 +8,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "ui_layout.h"
 
 namespace air_traffic_screens
 {
@@ -15,42 +16,44 @@ namespace air_traffic_screens
 namespace
 {
 
-constexpr int kTableHeaderY = 36;
-constexpr int kTableDividerY = 46;
-constexpr int kTableFirstRowY = 54;
-constexpr int kTableRowPitchY = 18;
-constexpr int kCallsignX = 12;
+using screens::TextStyle;
+
+constexpr int kCallsignX = ui_layout::kMarginX;
 constexpr int kDistanceX = 90;
 constexpr int kAltitudeX = 148;
 constexpr int kBearingX = 208;
-// Footer text baseline, below the two-line L5 VIEW label (whose bracketed
-// value reaches about y 293) and shared with the Home and Pinter footer
-// lines. Moves to the shared layout header under #113.
-constexpr int kFooterTextY = kUiHeight - 18;
-// In the table view the footer belongs to the paging arrows (SCR-4), so the
-// provenance/freshness line sits in the body directly under the last row.
-constexpr int kTableProvenanceY =
-    kTableFirstRowY + (static_cast<int>(kAirTrafficRowsPerPage) * kTableRowPitchY) + 6;
+
+/// @brief Gap between the last table row and the provenance line beneath it.
+constexpr int kProvenanceGapY = 6;
+
+/// @brief Where the provenance line goes in the table view. The footer
+/// belongs to the paging arrows there (SCR-4), so the line sits in the body
+/// directly under the last row.
+int table_provenance_y()
+{
+    const ui_layout::TableFrame kTable = ui_layout::table_frame();
+    return kTable.first_row_y + (static_cast<int>(kAirTrafficRowsPerPage) * kTable.row_pitch) +
+           kProvenanceGapY;
+}
 
 /// @brief Draws the nearby-aircraft table header row.
 void draw_table_header(uint8_t* fb)
 {
-    constexpr fonts::FontFace kFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, kCallsignX, kTableHeaderY, "Callsign", true, kFont, 1);
-    framebuffer::draw_text(fb, kDistanceX, kTableHeaderY, "Dist", true, kFont, 1);
-    framebuffer::draw_text(fb, kAltitudeX, kTableHeaderY, "Alt", true, kFont, 1);
-    framebuffer::draw_text(fb, kBearingX, kTableHeaderY, "Brg", true, kFont, 1);
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, kTableDividerY, true);
+    const ui_layout::TableFrame kTable = ui_layout::table_frame();
+    screens::draw_text(fb, kCallsignX, kTable.header_y, "Callsign", TextStyle::TableHeader);
+    screens::draw_text(fb, kDistanceX, kTable.header_y, "Dist", TextStyle::TableHeader);
+    screens::draw_text(fb, kAltitudeX, kTable.header_y, "Alt", TextStyle::TableHeader);
+    screens::draw_text(fb, kBearingX, kTable.header_y, "Brg", TextStyle::TableHeader);
+    framebuffer::draw_hline(fb, kTable.left_x, kTable.right_x, kTable.divider_y, true);
 }
 
 /// @brief Draws one aircraft row.
 void draw_table_row(uint8_t* fb, const AirTrafficEntry& entry, int row_y)
 {
-    constexpr fonts::FontFace kFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, kCallsignX, row_y, entry.callsign.data(), true, kFont, 1);
-    framebuffer::draw_text(fb, kDistanceX, row_y, entry.distance_text.data(), true, kFont, 1);
-    framebuffer::draw_text(fb, kAltitudeX, row_y, entry.altitude_text.data(), true, kFont, 1);
-    framebuffer::draw_text(fb, kBearingX, row_y, entry.bearing_text.data(), true, kFont, 1);
+    screens::draw_text(fb, kCallsignX, row_y, entry.callsign.data(), TextStyle::TableCell);
+    screens::draw_text(fb, kDistanceX, row_y, entry.distance_text.data(), TextStyle::TableCell);
+    screens::draw_text(fb, kAltitudeX, row_y, entry.altitude_text.data(), TextStyle::TableCell);
+    screens::draw_text(fb, kBearingX, row_y, entry.bearing_text.data(), TextStyle::TableCell);
 }
 
 /// @brief Draws the small provenance/coverage disclaimer, plus a data-freshness
@@ -64,8 +67,7 @@ void draw_provenance_line(uint8_t* fb, const AirTrafficStatus& status, uint32_t 
 
     char footer_text[32] = {};
     std::snprintf(footer_text, sizeof(footer_text), "ADS-B TRAFFIC ONLY - %s", freshness_text);
-    screens::draw_centered_text(fb, kUiWidth / 2, y, footer_text, true,
-                                fonts::FontFace::Font5x7, 1);
+    screens::draw_centered_text(fb, ui_layout::kCentreX, y, footer_text, TextStyle::Footer);
 }
 
 /// @brief Draws the paginated Callsign/Dist/Alt/Brg table view.
@@ -82,15 +84,16 @@ void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state, uint32_t 
         std::min<uint16_t>(static_cast<uint16_t>(start) + kAirTrafficRowsPerPage,
                           status.aircraft_count));
 
+    const ui_layout::TableFrame kTable = ui_layout::table_frame();
     draw_table_header(fb);
     for (uint8_t i = start; i < end; ++i)
     {
         draw_table_row(fb, status.aircraft[i],
-                       kTableFirstRowY + (static_cast<int>(i - start) * kTableRowPitchY));
+                       kTable.first_row_y + (static_cast<int>(i - start) * kTable.row_pitch));
     }
     screens::draw_page_navigation_arrows(fb, page_index > 0U,
                                         (page_index + 1U) < page_count);
-    draw_provenance_line(fb, status, now_ms, kTableProvenanceY);
+    draw_provenance_line(fb, status, now_ms, table_provenance_y());
 }
 
 /// @brief Integer midpoint-circle rings, matching the radar screensaver's algorithm.
@@ -124,9 +127,9 @@ void draw_ring(uint8_t* fb, int cx, int cy, int radius)
     }
 }
 
-constexpr int kPlotCenterX = kUiWidth / 2;
+constexpr int kPlotCenterX = ui_layout::kCentreX;
 // Plot spans y 36-280: below the header, above the footer line.
-constexpr int kPlotTopY = 36;
+constexpr int kPlotTopY = ui_layout::kBodyTopY + 2;
 constexpr int kPlotBottomY = 280;
 constexpr int kPlotCenterY = (kPlotTopY + kPlotBottomY) / 2;
 constexpr int kPlotRadius = 96;
@@ -175,8 +178,7 @@ void draw_plot_blip(uint8_t* fb, const AirTrafficEntry& entry, uint16_t range_nm
     int y = 0;
     polar_to_screen(entry.distance_deci_nm, entry.bearing_deg, range_nm, &x, &y);
     framebuffer::fill_rect(fb, x - 1, y - 1, 3, 3, true);
-    framebuffer::draw_text(fb, x + 4, y - 6, entry.callsign.data(), true, fonts::FontFace::Font5x7,
-                           1);
+    screens::draw_text(fb, x + 4, y - 6, entry.callsign.data(), TextStyle::Annotation);
 }
 
 /// @brief Draws the ATC-style PPI plot: range rings, compass tick, home
@@ -195,15 +197,15 @@ void draw_plot_view(uint8_t* fb, const ConsoleState& console_state, uint32_t now
 
     char range_text[8] = {};
     std::snprintf(range_text, sizeof(range_text), "%unm", static_cast<unsigned>(range_nm));
-    framebuffer::draw_text(fb, kPlotCenterX + 4, kPlotCenterY - kPlotRadius, range_text, true,
-                           fonts::FontFace::Font5x7, 1);
+    screens::draw_text(fb, kPlotCenterX + 4, kPlotCenterY - kPlotRadius, range_text,
+                       TextStyle::Annotation);
 
     for (uint8_t i = 0U; i < status.aircraft_count; ++i)
     {
         draw_plot_blip(fb, status.aircraft[i], range_nm);
     }
 
-    draw_provenance_line(fb, status, now_ms, kFooterTextY);
+    draw_provenance_line(fb, status, now_ms, ui_layout::kFooterLineY);
 }
 
 } // namespace
@@ -236,14 +238,17 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state, uint3
         }
 
         const char* message = status.data_valid ? "NO AIRCRAFT NEARBY" : "WAITING FOR DATA";
-        screens::draw_centered_text(fb, kUiWidth / 2, 92, message, true, fonts::FontFace::Font8x12,
-                                    1);
+        // 32 and 22 pixels above the shared empty-state lines; to be aligned
+        // with draw_empty_state().
+        constexpr int kHeadlineY = 92;
+        constexpr int kHintY = 120;
+        screens::draw_centered_text(fb, ui_layout::kCentreX, kHeadlineY, message,
+                                    TextStyle::Headline);
         if (detail[0] != '\0')
         {
-            screens::draw_centered_text(fb, kUiWidth / 2, 120, detail, true,
-                                        fonts::FontFace::Font5x7, 1);
+            screens::draw_centered_text(fb, ui_layout::kCentreX, kHintY, detail, TextStyle::Hint);
         }
-        draw_provenance_line(fb, status, now_ms, kFooterTextY);
+        draw_provenance_line(fb, status, now_ms, ui_layout::kFooterLineY);
         return;
     }
 

@@ -40,6 +40,21 @@ README history, chat context, or incidental source-code discovery.
   `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`,
   `local_conditions_screens.cpp` (Local Conditions page and history graph),
   and `screen_banners.cpp` (top status banner).
+- `include/display/ui_layout.h`: the screen zones, softkey rows, margins,
+  content-top line, row pitch, table frame, graph frame, footer line and
+  empty-state position (SCR-2, BODY-2, BODY-3). Page renderers take positions
+  from here. Positions that depend on a font are functions measured from a text
+  style, so they follow a font change. A few pages still use their own
+  positions for a concept defined here; each is a named constant marked "to be
+  aligned".
+- `include/display/text_styles.h` / `src/display/text_styles.cpp`: every piece
+  of UI text is drawn in a named `TextStyle` (header title, softkey, compact
+  row, table header, headline, hint, footer, and so on). Each style's font is
+  held in one table that can be changed at run time (`set_font`), ready for a
+  Settings page that tries fonts on the panel (#123). Page renderers never name
+  a `fonts::FontFace`. They draw through `screens::draw_text`,
+  `draw_centered_text`, `draw_right_aligned_text` and `text_width`, which take
+  a style (TXT-1 to TXT-3).
 - `src/display/status_screens.cpp`: Status root/overview/connectivity/
   resources/sensors/integrations pages.
 - `src/display/weather_screens.cpp`: the live Weather page, its Hourly/Next

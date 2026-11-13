@@ -10,6 +10,7 @@
 #include "home_assistant_manager.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "ui_layout.h"
 
 #if __has_include("weather_display_config.h")
 #include "weather_display_config.h"
@@ -23,29 +24,13 @@ namespace weather_screens
 namespace
 {
 
-/// @brief Returns the shared left inset for the weather-source footer.
-constexpr int weather_source_footer_left_x()
-{
-    return 12;
-}
+using screens::TextStyle;
 
-/// @brief Returns the footer baseline used for weather-source attribution text.
-constexpr int weather_source_footer_bottom_y()
-{
-    return kUiHeight - 18;
-}
+/// @brief Top of the sunrise and sunset line, under the forecast rows.
+constexpr int kSunTimesY = 244;
 
-/// @brief Returns the y-position reserved for sunrise and sunset information.
-constexpr int weather_sun_times_y()
-{
-    return 244;
-}
-
-/// @brief Returns the maximum width available to the weather-source footer text.
-constexpr int weather_source_footer_max_width()
-{
-    return kUiWidth - (weather_source_footer_left_x() * 2);
-}
+/// @brief Gap between the divider above the sun times and their text.
+constexpr int kSunDividerGapY = 10;
 
 /// @brief Parses a `HH:MM` string into minutes after midnight.
 /// @details A tiny local parser keeps the firmware independent of heavier
@@ -96,15 +81,6 @@ struct ForecastRenderSlice
 // One table frame for every forecast period (BODY-3): header line, divider,
 // first row and row pitch are shared; only the columns differ.
 constexpr size_t kForecastVisibleRows = 10U;
-constexpr int kForecastHeaderY = 36;
-constexpr int kForecastDividerY = 46;
-constexpr int kForecastFirstRowY = 54;
-constexpr int kForecastRowPitchY = 18;
-constexpr int kForecastTableLeftX = 12;
-constexpr int kForecastTableRightX = kUiWidth - 12;
-constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
-constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-
 /// @brief One forecast table column: where it starts and its header.
 struct ForecastColumn
 {
@@ -118,7 +94,7 @@ using ForecastColumns = std::array<ForecastColumn, 4>;
 
 // The wind unit is written the same way in both tables (TXT-6).
 constexpr ForecastColumns kHourlyColumns = {{
-    {kForecastTableLeftX, "Time"},
+    {ui_layout::kMarginX, "Time"},
     {60, "Temp"},
     {102, "Wind mph"},
     {160, "Conditions"},
@@ -126,16 +102,17 @@ constexpr ForecastColumns kHourlyColumns = {{
 
 // The day column is wider than the time column so "Tomorrow" fits.
 constexpr ForecastColumns kDailyColumns = {{
-    {kForecastTableLeftX, "Day"},
+    {ui_layout::kMarginX, "Day"},
     {66, "Temp"},
     {102, "Wind mph"},
     {160, "Conditions"},
 }};
 
 /// @brief Returns the top of forecast table row `index`.
-constexpr int forecast_row_y(size_t index)
+int forecast_row_y(size_t index)
 {
-    return kForecastFirstRowY + (static_cast<int>(index) * kForecastRowPitchY);
+    const ui_layout::TableFrame kTable = ui_layout::table_frame();
+    return kTable.first_row_y + (static_cast<int>(index) * kTable.row_pitch);
 }
 
 /// @brief Reconstructs monotonic forecast minutes and drops stale pre-now rows.
@@ -389,7 +366,8 @@ bool weather_sun_times_available(const ConsoleState& console_state)
 /// available so the footer still looks intentional instead of half-empty.
 void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr fonts::FontFace kSunFont = fonts::FontFace::Font5x7;
+    constexpr TextStyle kSunStyle = TextStyle::BodyValue;
+    constexpr int kDividerY = kSunTimesY - kSunDividerGapY;
     char sunrise_label[24] = {};
     char sunset_label[24] = {};
 
@@ -407,10 +385,10 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 
     if (sunrise_label[0] != '\0' && sunset_label[0] != '\0')
     {
-        framebuffer::draw_hline(fb, 12, kUiWidth - 12, weather_sun_times_y() - 10, true);
-        framebuffer::draw_text(fb, 12, weather_sun_times_y(), sunrise_label, true, kSunFont, 1);
-        framebuffer::draw_text(fb, kUiWidth - 12 - screens::text_width(sunset_label, kSunFont),
-                               weather_sun_times_y(), sunset_label, true, kSunFont, 1);
+        framebuffer::draw_hline(fb, ui_layout::kMarginX, ui_layout::kRightEdgeX, kDividerY, true);
+        screens::draw_text(fb, ui_layout::kMarginX, kSunTimesY, sunrise_label, kSunStyle);
+        screens::draw_right_aligned_text(fb, ui_layout::kRightEdgeX, kSunTimesY, sunset_label,
+                                         kSunStyle);
         return;
     }
 
@@ -420,8 +398,8 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
         return;
     }
 
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, weather_sun_times_y() - 10, true);
-    screens::draw_centered_text(fb, kUiWidth / 2, weather_sun_times_y(), label, true, kSunFont, 1);
+    framebuffer::draw_hline(fb, ui_layout::kMarginX, ui_layout::kRightEdgeX, kDividerY, true);
+    screens::draw_centered_text(fb, ui_layout::kCentreX, kSunTimesY, label, kSunStyle);
 }
 
 /// @brief Draws the weather-source attribution footer.
@@ -429,7 +407,6 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 /// which backend is driving the weather data on the screen.
 void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
-    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
     constexpr int kFooterLineGap = 2;
 
     // The fetcher owns the stale threshold and what counts as a failed fetch
@@ -446,22 +423,21 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
                   weather_source_label_text(console_state), freshness_text);
 
     const screens::WrappedSoftkeyLabel kWrapped =
-        screens::wrap_label_lines(footer_label, kFooterFont, weather_source_footer_max_width(), 2);
-    const int kLineHeight = framebuffer::font_height(kFooterFont);
-    const int kFirstLineY = weather_source_footer_bottom_y() -
-                            ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));
+        screens::wrap_label_lines(footer_label, TextStyle::Footer, ui_layout::kContentWidth, 2);
+    const int kLineHeight = text_styles::line_height(TextStyle::Footer);
+    const int kFirstLineY =
+        ui_layout::kFooterLineY - ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));
 
     if (kWrapped.line_one[0] != '\0')
     {
-        framebuffer::draw_text(fb, weather_source_footer_left_x(), kFirstLineY, kWrapped.line_one,
-                               true, kFooterFont, 1);
+        screens::draw_text(fb, ui_layout::kMarginX, kFirstLineY, kWrapped.line_one,
+                           TextStyle::Footer);
     }
 
     if (kWrapped.line_count > 1 && kWrapped.line_two[0] != '\0')
     {
-        framebuffer::draw_text(fb, weather_source_footer_left_x(),
-                               kFirstLineY + kLineHeight + kFooterLineGap, kWrapped.line_two, true,
-                               kFooterFont, 1);
+        screens::draw_text(fb, ui_layout::kMarginX, kFirstLineY + kLineHeight + kFooterLineGap,
+                           kWrapped.line_two, TextStyle::Footer);
     }
 }
 
@@ -510,13 +486,12 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
 /// @brief Draws a forecast table's column headers and divider in the shared frame.
 void draw_forecast_table_header(uint8_t* fb, const ForecastColumns& columns)
 {
+    const ui_layout::TableFrame kTable = ui_layout::table_frame();
     for (const ForecastColumn& column : columns)
     {
-        framebuffer::draw_text(fb, column.x, kForecastHeaderY, column.header, true,
-                               kForecastHeaderFont, 1);
+        screens::draw_text(fb, column.x, kTable.header_y, column.header, TextStyle::TableHeader);
     }
-    framebuffer::draw_hline(fb, kForecastTableLeftX, kForecastTableRightX, kForecastDividerY,
-                            true);
+    framebuffer::draw_hline(fb, kTable.left_x, kTable.right_x, kTable.divider_y, true);
 }
 
 /// @brief Draws one forecast table row: when, temperature, wind, conditions.
@@ -530,8 +505,7 @@ void draw_forecast_table_row(uint8_t* fb, const ForecastColumns& columns, size_t
         when, temperature, wind, formatted_condition[0] != '\0' ? formatted_condition : condition};
     for (size_t i = 0U; i < cells.size(); ++i)
     {
-        framebuffer::draw_text(fb, columns[i].x, forecast_row_y(index), cells[i], true,
-                               kForecastBodyFont, 1);
+        screens::draw_text(fb, columns[i].x, forecast_row_y(index), cells[i], TextStyle::TableCell);
     }
 }
 
