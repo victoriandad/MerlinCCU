@@ -4,6 +4,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 #include "alert_controller.h"
 #include "alert_screens.h"
@@ -14,6 +15,7 @@
 #include "golden_test_support.h"
 #include "panel_config.h"
 #include "screens.h"
+#include "screens_shared.h"
 #include "test_framework.h"
 
 namespace
@@ -638,4 +640,85 @@ HOST_TEST(screen_saver_pages_normal_editing_and_options)
     const ConsoleState& options = console_controller::state();
     EXPECT_EQ(static_cast<int>(options.active_page), static_cast<int>(MenuPage::ScreenSaverOptions));
     EXPECT_TRUE(golden_test::check_golden("screen_saver_options", render_page(options).data()));
+}
+
+HOST_TEST(pinter_vessel_labels_wrap_long_recipe_names_and_keep_the_countdown)
+{
+    // The recipe whose name is widest in the softkey font.
+    uint8_t widest = 0U;
+    int widest_width = 0;
+    for (uint8_t i = 0U; i < kPinterBrewCatalogueCount; ++i)
+    {
+        const int width = framebuffer::measure_text(console_controller::pinter_brew_timing(i).name,
+                                                    fonts::FontFace::Font5x7);
+        if (width > widest_width)
+        {
+            widest_width = width;
+            widest = i;
+        }
+    }
+    const std::string recipe = console_controller::pinter_brew_timing(widest).name;
+
+    std::array<PinterStatus, kPinterCount> vessels = {
+        make_vessel(1, PinterState::Brewing), make_vessel(2, PinterState::ColdCrash),
+        make_vessel(3, PinterState::Conditioning), make_vessel(4, PinterState::Ready)};
+    for (PinterStatus& vessel : vessels)
+    {
+        vessel.brew_index = widest;
+        vessel.planned_cold_crash_days = 2U;
+        vessel.cold_crash_start_day = kPinterTestDay - 1U;
+    }
+    const ConsoleState& state = open_pinter_page(vessels, ButtonId::LeftTop);
+
+    constexpr std::array<SoftKeyId, kPinterCount> vessel_keys = {
+        SoftKeyId::Left1, SoftKeyId::Left2, SoftKeyId::Left3, SoftKeyId::Left4};
+    for (const SoftKeyId id : vessel_keys)
+    {
+        const std::string label = state.softkeys[static_cast<size_t>(id)].label;
+        const screens::SoftkeyLabelLayout layout =
+            screens::layout_softkey_label(label.c_str(), fonts::FontFace::Font5x7,
+                                          screens::kMaxSoftkeyLabelLines);
+
+        // Parts of the label as built: caption, [recipe], [stage and countdown].
+        std::vector<std::string> parts;
+        size_t start = 0U;
+        for (size_t nl = label.find('\n'); nl != std::string::npos; nl = label.find('\n', start))
+        {
+            parts.push_back(label.substr(start, nl - start));
+            start = nl + 1U;
+        }
+        parts.push_back(label.substr(start));
+        EXPECT_TRUE(parts.size() >= 2U);
+
+        std::string value;
+        std::string last_line;
+        int value_lines = 0;
+        for (int i = 0; i < layout.count; ++i)
+        {
+            const screens::SoftkeyLabelLine& line = layout.lines[static_cast<size_t>(i)];
+            // Brackets are drawn as graphics, never left as split glyphs.
+            EXPECT_TRUE(std::string(line.text).find_first_of("[]") == std::string::npos);
+            EXPECT_EQ(line.bracketed, i > 0);
+            if (i > 0 && value_lines >= 0)
+            {
+                value += (value.empty() ? "" : " ") + std::string(line.text);
+                ++value_lines;
+                if (line.value_end)
+                {
+                    value_lines = -1; // The state-and-recipe value is complete.
+                }
+            }
+            last_line = line.text;
+        }
+        // The whole recipe name is shown, wrapped rather than cut, and the
+        // stage with its countdown is always the whole last line.
+        EXPECT_EQ(parts.size(), 3U);
+        EXPECT_TRUE(value == recipe);
+        EXPECT_TRUE(parts.size() == 3U && "[" + last_line + "]" == parts[2]);
+    }
+
+    // Vessels with a stage target show the countdown.
+    EXPECT_TRUE(std::string(state.softkeys[0].label).find("ready") != std::string::npos);
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("pinter_page_long_recipe", fb.data()));
 }

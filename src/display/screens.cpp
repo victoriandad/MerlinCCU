@@ -701,13 +701,23 @@ fonts::FontFace softkey_label_font(MenuPage page)
     return fonts::FontFace::Font5x7;
 }
 
+/// @brief Lines a label block is centred on its key over; a longer block
+/// (a wrapped value) extends downward so it never rises into the header.
+constexpr int kCentredSoftkeyLabelLines = 3;
+
+/// @brief Longest single newline-separated part of a label, in characters.
+constexpr size_t kSoftkeyLabelPartCapacity = 96U;
+
 /// @brief Returns how many lines one softkey label may wrap onto for a page.
 /// @details Most pages cap this at two lines so long labels degrade
-/// gracefully; the Pinter page opts into a third line so each vessel's slot
-/// key can carry a stage countdown alongside its state and recipe name.
+/// gracefully. The Pinter page allows five, so each vessel key can carry its
+/// name, a recipe value wrapped over up to three lines, and the stage with its
+/// countdown (LBL-1). A five-line block still ends above the next key's label
+/// at the 57-pixel key pitch. Its vessel keys are on rows 1-4 only; row 5
+/// keeps one or two lines.
 constexpr int softkey_label_max_lines(MenuPage page)
 {
-    return page == MenuPage::Pinter ? 3 : 2;
+    return page == MenuPage::Pinter ? kMaxSoftkeyLabelLines : 2;
 }
 
 /// @brief Returns the maximum drawable width for one softkey label line.
@@ -927,15 +937,6 @@ size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan
 namespace
 {
 
-/// @brief Applies the current softkey width and line-count policy for a page
-/// to one label string.
-/// @details This keeps callers from hard-coding layout limits in multiple places
-/// when the bezel or font rules change.
-WrappedSoftkeyLabel wrap_softkey_label(const char* label, fonts::FontFace font, int max_lines)
-{
-    return wrap_label_lines(label, font, softkey_label_max_width(), max_lines);
-}
-
 /// @brief Draws one aligned detail row for information-oriented pages.
 /// @details Labels stay uppercase and compact on the left while values remain
 /// free to use mixed case on the right for readability.
@@ -1063,27 +1064,74 @@ void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int tot
 namespace
 {
 
-/// @brief Extracts the inner text from a bracketed softkey value line.
-/// @details Selection labels are still authored as `[value]`, but the renderer
-/// can choose to draw larger brackets around the value instead of tiny glyphs.
-bool extract_bracketed_softkey_value(const char* line_text, char* out_value, size_t out_size)
+/// @brief Horizontal gap between a value and its brackets, and how far the
+/// brackets extend above and below the text.
+constexpr int kSoftkeyBracketGapX = 2;
+constexpr int kSoftkeyBracketPadY = 2;
+
+/// @brief Width the brackets and their gaps add around a bracketed value.
+constexpr int softkey_bracket_overhead(fonts::FontFace font)
 {
-    if (line_text == nullptr || out_value == nullptr || out_size == 0)
-    {
-        return false;
-    }
-
-    const size_t kLength = std::strlen(line_text);
-    if (kLength < 3 || line_text[0] != '[' || line_text[kLength - 1] != ']')
-    {
-        return false;
-    }
-
-    copy_softkey_label_slice(out_value, out_size, line_text + 1, kLength - 2);
-    return true;
+    return (softkey_bracket_depth(font) * 2) + (kSoftkeyBracketGapX * 2);
 }
 
 } // namespace
+
+/// @brief Lays out a label: each newline-separated part is wrapped to the
+/// cell width, and a part written as `[value]` is wrapped inside one bracket
+/// pair rather than split with its bracket glyphs on different lines (LBL-3).
+/// @details Stops at `max_lines`, keeping one line for each later part; a
+/// value cut short still gets its closing bracket. Widths are measured, since
+/// the fonts are proportional.
+/// Declared in screens_shared.h so tests can check how a label lays out.
+SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font, int max_lines)
+{
+    SoftkeyLabelLayout layout = {};
+    const int kMaxLines = std::min(max_lines, kMaxSoftkeyLabelLines);
+    const char* cursor = label;
+    while (*cursor != '\0' && layout.count < kMaxLines)
+    {
+        const char* part_end = std::strchr(cursor, '\n');
+        if (part_end == nullptr)
+        {
+            part_end = cursor + std::strlen(cursor);
+        }
+        const size_t kPartLength = static_cast<size_t>(part_end - cursor);
+        const bool kBracketed =
+            kPartLength >= 3U && cursor[0] == '[' && cursor[kPartLength - 1U] == ']';
+
+        char part[kSoftkeyLabelPartCapacity] = {};
+        copy_softkey_label_slice(part, sizeof(part), kBracketed ? cursor + 1 : cursor,
+                                 kBracketed ? kPartLength - 2U : kPartLength);
+        const int kWidth =
+            softkey_label_max_width() - (kBracketed ? softkey_bracket_overhead(font) : 0);
+
+        // Keep one line for each part still to come, so a long value wraps
+        // into the space left over rather than pushing later parts off the key.
+        int later_parts = 0;
+        for (const char* scan = part_end; *scan != '\0'; ++scan)
+        {
+            if (*scan == '\n')
+            {
+                ++later_parts;
+            }
+        }
+        const int kLinesForPart = std::max(1, kMaxLines - layout.count - later_parts);
+
+        std::array<TextSpan, kMaxSoftkeyLabelLines> spans = {};
+        const size_t kSpanCount =
+            wrap_text(part, font, kWidth, spans.data(), static_cast<size_t>(kLinesForPart));
+        for (size_t i = 0U; i < kSpanCount; ++i)
+        {
+            SoftkeyLabelLine& line = layout.lines[static_cast<size_t>(layout.count++)];
+            copy_softkey_label_slice(line.text, sizeof(line.text), spans[i].text, spans[i].length);
+            line.bracketed = kBracketed;
+            line.value_end = kBracketed && (i + 1U == kSpanCount);
+        }
+        cursor = (*part_end == '\n') ? part_end + 1 : part_end;
+    }
+    return layout;
+}
 
 /// @brief Draws text centred around a given x-coordinate.
 /// @details Centralizing the centering math keeps titles and status callouts
@@ -1101,7 +1149,9 @@ namespace
 
 /// @brief Draws one mirrored softkey label block.
 /// @details The label is vertically centred within the physical key slot so
-/// wrapped text still reads like it belongs to one button location.
+/// wrapped text still reads like it belongs to one button location. A
+/// bracketed value is drawn as one run: a single bracket pair, and on an
+/// inverted key a single highlight, around all of its lines.
 void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
                         fonts::FontFace font, int max_lines)
 {
@@ -1110,69 +1160,74 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         return;
     }
 
-    const WrappedSoftkeyLabel kWrapped = wrap_softkey_label(action.label, font, max_lines);
-    const int kLineHeight = framebuffer::font_height(font);
-    const int kBlockHeight =
-        (kWrapped.line_count * kLineHeight) + ((kWrapped.line_count - 1) * kSoftkeyLayout.line_gap);
-    const int kBlockTopY = y + ((kSoftkeyLayout.height - kBlockHeight) / 2);
-
-    auto draw_line = [&](const char* line_text, int line_index)
+    const SoftkeyLabelLayout kLayout = layout_softkey_label(action.label, font, max_lines);
+    if (kLayout.count == 0)
     {
-        if (line_text == nullptr || line_text[0] == '\0')
+        return;
+    }
+
+    const int kLineHeight = framebuffer::font_height(font);
+    const int kLinePitch = kLineHeight + kSoftkeyLayout.line_gap;
+    const int kCentredLines = std::min(kLayout.count, kCentredSoftkeyLabelLines);
+    const int kCentredHeight =
+        (kCentredLines * kLineHeight) + ((kCentredLines - 1) * kSoftkeyLayout.line_gap);
+    const int kBlockTopY = y + ((kSoftkeyLayout.height - kCentredHeight) / 2);
+    const bool kTextOn = !action.inverted;
+
+    int first = 0;
+    while (first < kLayout.count)
+    {
+        // A run is one plain line, or every line of one bracketed value.
+        const bool kBracketed = kLayout.lines[static_cast<size_t>(first)].bracketed;
+        int end = first + 1;
+        if (kBracketed)
         {
-            return;
+            while (end < kLayout.count && !kLayout.lines[static_cast<size_t>(end - 1)].value_end)
+            {
+                ++end;
+            }
         }
 
-        char bracketed_value[48] = {};
-        const bool kBracketedValue =
-            extract_bracketed_softkey_value(line_text, bracketed_value, sizeof(bracketed_value));
-        const int kBracketDepth = softkey_bracket_depth(font);
-        constexpr int kBracketGap = 2;
-        constexpr int kBracketPadY = 2;
-        const int kInnerTextWidth =
-            kBracketedValue ? text_width(bracketed_value, font) : text_width(line_text, font);
-        const int kLabelWidth = kBracketedValue
-                                    ? (kInnerTextWidth + (kBracketDepth * 2) + (kBracketGap * 2))
-                                    : kInnerTextWidth;
-        const int kTextX =
-            left_side
-                ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
-                : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kLabelWidth);
-        const int kTextY = kBlockTopY + (line_index * (kLineHeight + kSoftkeyLayout.line_gap));
-        const int kBracketTopY = kTextY - kBracketPadY;
-        const int kBracketHeight = kLineHeight + (kBracketPadY * 2);
-        const bool kTextOn = !action.inverted;
+        int widest_text = 0;
+        for (int i = first; i < end; ++i)
+        {
+            widest_text =
+                std::max(widest_text, text_width(kLayout.lines[static_cast<size_t>(i)].text, font));
+        }
+        const int kRunWidth = widest_text + (kBracketed ? softkey_bracket_overhead(font) : 0);
+        const int kRunX =
+            left_side ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
+                      : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kRunWidth);
+        const int kRunLines = end - first;
+        const int kRunTextTopY = kBlockTopY + (first * kLinePitch);
+        const int kRunTextHeight =
+            (kRunLines * kLineHeight) + ((kRunLines - 1) * kSoftkeyLayout.line_gap);
+        const int kPadY = kBracketed ? kSoftkeyBracketPadY : 0;
+
         if (action.inverted)
         {
             constexpr int kHighlightPadX = 1;
             constexpr int kHighlightPadY = 1;
-            const int kHighlightTopY = (kBracketedValue ? kBracketTopY : kTextY) - kHighlightPadY;
-            const int kHighlightHeight =
-                (kBracketedValue ? kBracketHeight : kLineHeight) + (kHighlightPadY * 2);
-            framebuffer::fill_rect(fb, kTextX - kHighlightPadX, kHighlightTopY,
-                                   kLabelWidth + (kHighlightPadX * 2), kHighlightHeight, true);
+            framebuffer::fill_rect(fb, kRunX - kHighlightPadX,
+                                   kRunTextTopY - kPadY - kHighlightPadY,
+                                   kRunWidth + (kHighlightPadX * 2),
+                                   kRunTextHeight + (kPadY * 2) + (kHighlightPadY * 2), true);
         }
 
-        if (!kBracketedValue)
+        int text_x = kRunX;
+        if (kBracketed)
         {
-            framebuffer::draw_text(fb, kTextX, kTextY, line_text, kTextOn, font, 1);
-            return;
+            draw_softkey_selection_brackets(fb, kRunX, kRunTextTopY - kPadY,
+                                            kRunTextHeight + (kPadY * 2), kRunWidth, font,
+                                            kTextOn);
+            text_x += softkey_bracket_depth(font) + kSoftkeyBracketGapX;
         }
-
-        const int kInnerTextX = kTextX + kBracketDepth + kBracketGap;
-        draw_softkey_selection_brackets(fb, kTextX, kBracketTopY, kBracketHeight, kLabelWidth, font,
-                                        kTextOn);
-        framebuffer::draw_text(fb, kInnerTextX, kTextY, bracketed_value, kTextOn, font, 1);
-    };
-
-    draw_line(kWrapped.line_one, 0);
-    if (kWrapped.line_count > 1)
-    {
-        draw_line(kWrapped.line_two, 1);
-    }
-    if (kWrapped.line_count > 2)
-    {
-        draw_line(kWrapped.line_three, 2);
+        for (int i = first; i < end; ++i)
+        {
+            framebuffer::draw_text(fb, text_x, kBlockTopY + (i * kLinePitch),
+                                   kLayout.lines[static_cast<size_t>(i)].text, kTextOn, font, 1);
+        }
+        first = end;
     }
 }
 

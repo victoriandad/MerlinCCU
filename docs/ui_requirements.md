@@ -141,8 +141,11 @@ for some of them, it needs adding here as a named role.
 ## 4. How A Label Is Written
 
 - **LBL-1** A label has at most two lines: a caption line and a value line.
-  Item keys on rows 1-4 may opt in to a third line. Row 5 keys must never use
-  three lines, because the third line would enter the footer.
+  Item keys on rows 1-4 may opt in to more: a second value, and a value that
+  wraps over several lines inside one bracket pair, up to five lines in all
+  (the Pinter vessel keys). Each value keeps at least one line, so a long
+  value never pushes a later one off the key. Row 5 keys must never use three
+  lines, because the third line would enter the footer.
 - **LBL-2** The caption names the thing or the action. It must be uppercase.
 - **LBL-3** Square brackets mean one thing only: the text inside is the current
   value or state of whatever the caption names. Brackets must not be used for

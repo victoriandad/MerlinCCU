@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -74,6 +75,31 @@ struct WrappedSoftkeyLabel
     char line_three[48];
     int line_count;
 };
+
+/// @brief Most lines any softkey label may use (LBL-1).
+inline constexpr int kMaxSoftkeyLabelLines = 5;
+
+/// @brief One rendered line of a softkey label.
+struct SoftkeyLabelLine
+{
+    char text[48];
+    /// True when the line is part of a bracketed value; the brackets are
+    /// drawn as graphics around every line of that value, not as glyphs.
+    bool bracketed;
+    /// True on the last line of a bracketed value.
+    bool value_end;
+};
+
+/// @brief A softkey label laid out into lines that each fit the cell.
+struct SoftkeyLabelLayout
+{
+    std::array<SoftkeyLabelLine, kMaxSoftkeyLabelLines> lines;
+    int count;
+};
+
+/// @brief Lays out a softkey label into lines that each fit the cell at
+/// `font`; a `[value]` part wraps inside one bracket pair.
+SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font, int max_lines);
 
 /// @brief Wraps one label into at most `max_lines` renderable lines.
 /// @details Softkeys are deliberately capped (two lines for most pages, three

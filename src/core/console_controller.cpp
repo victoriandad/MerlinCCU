@@ -30,9 +30,9 @@ namespace
 ConsoleState g_console_state = {};
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
-// Sized for the longest three-line Pinter slot label: title + "[state name]"
-// (recipe names run up to ~42 characters) + "[Nd - rdy dd mon]".
-constexpr size_t kSoftkeyLabelCapacity = 96;
+// Sized for the longest Pinter vessel label: title + "[recipe]" (recipe names
+// run up to ~42 characters) + "[stage Nd, ready dd Mon]".
+constexpr size_t kSoftkeyLabelCapacity = 112;
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_labels = {};
 std::array<std::array<char, kSoftkeyLabelCapacity>, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_overrides = {};
 std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override_active = {};
