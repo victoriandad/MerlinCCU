@@ -25,6 +25,7 @@
 #include "panel_config.h"
 #include "screens.h"
 #include "screens_shared.h"
+#include "softkey_builders.h"
 #include "test_framework.h"
 #include "ui_layout.h"
 
@@ -337,11 +338,79 @@ std::vector<std::string> body_overlaps(const ConsoleState& state)
     return overlaps;
 }
 
+/// @brief Names the softkeys whose role disagrees with their label, route,
+/// inverse state or position (SK-1, SK-5, SK-9, LBL-5, NAV-4).
+std::vector<std::string> role_problems(const SoftKeyMap& softkeys)
+{
+    std::vector<std::string> out;
+    for (size_t key = 0U; key < softkeys.size(); ++key)
+    {
+        const SoftKeyAction& action = softkeys[key];
+        const bool left = key < static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+        const size_t row = key % static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+        const std::string where = (left ? "L" : "R") + std::to_string(row + 1U);
+        const bool labelled = action.label != nullptr && action.label[0] != '\0';
+        const bool inert = action.role == SoftKeyRole::Blank || action.role == SoftKeyRole::Status;
+        const bool editing = action.role == SoftKeyRole::Select && action.inverted;
+
+        if (labelled == (action.role == SoftKeyRole::Blank))
+        {
+            out.push_back(where + " label does not match a blank role");
+        }
+        if (inert && (action.enabled || action.route != SoftKeyRoute::None))
+        {
+            out.push_back(where + " status or blank key would act");
+        }
+        if (!inert && !editing && (!action.enabled || action.route == SoftKeyRoute::None))
+        {
+            out.push_back(where + " labelled key does not act");
+        }
+        if (action.inverted && action.role != SoftKeyRole::Option &&
+            action.role != SoftKeyRole::Item && action.role != SoftKeyRole::Select)
+        {
+            out.push_back(where + " inverse on a key that is not a selection");
+        }
+        if (action.role == SoftKeyRole::View && key != static_cast<size_t>(SoftKeyId::Left5))
+        {
+            out.push_back(where + " view key away from L5");
+        }
+    }
+    return out;
+}
+
 } // namespace
+
+HOST_TEST(the_role_check_catches_an_inverse_toggle_and_an_inert_labelled_key)
+{
+    SoftKeyMap softkeys = {};
+    softkeys.fill(softkey::blank());
+    EXPECT_TRUE(role_problems(softkeys).empty());
+
+    SoftKeyAction on =
+        softkey::toggle(SoftKeyId::Left1, "MQTT", true, SoftKeyRoute::ToggleMqttEnabled);
+    EXPECT_FALSE(on.inverted);
+    on.inverted = true;
+    softkeys[static_cast<size_t>(SoftKeyId::Left1)] = on;
+    EXPECT_EQ(role_problems(softkeys).size(), 1U);
+
+    softkeys.fill(softkey::blank());
+    softkeys[static_cast<size_t>(SoftKeyId::Left2)] = {"HOST\n[x]", SoftKeyRoute::None, true, false,
+                                                       SoftKeyRole::Navigate};
+    EXPECT_EQ(role_problems(softkeys).size(), 1U);
+
+    softkeys.fill(softkey::blank());
+    softkeys[static_cast<size_t>(SoftKeyId::Right5)] =
+        softkey::view(SoftKeyId::Right5, "VIEW", "Map", SoftKeyRoute::ToggleAirTrafficViewMode);
+    EXPECT_EQ(role_problems(softkeys).size(), 1U);
+}
 
 HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
 {
     EXPECT_TRUE(softkey_label_fits("HOME\n[Ready]", TextStyle::Softkey, 2));
+    // The longest Home PINTER summary, with every vessel conditioning.
+    EXPECT_TRUE(softkey_label_fits("PINTER\n[4 conditioning]",
+                                   screens::softkey_label_style(MenuPage::Home),
+                                   screens::softkey_label_max_lines(MenuPage::Home)));
     EXPECT_FALSE(softkey_label_fits("A VERY LONG CAPTION THAT WRAPS\n[and a long value too]",
                                     TextStyle::Softkey, 2));
 
@@ -358,7 +427,8 @@ HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
 /// the issue that fixes them, rather than hidden by loosening the checks. The
 /// test fails on any problem not listed, and on a listed one that has gone,
 /// so the list stays accurate.
-HOST_TEST(every_page_renders_with_its_real_softkeys_and_no_label_loses_text_or_meets_the_body)
+HOST_TEST(
+    every_page_renders_with_its_real_softkeys_and_no_label_loses_text_meets_the_body_or_breaks_its_role)
 {
     const std::set<std::string> kKnownProblems = {
         // Recipe names too long for two 5x7 lines lose their last word, such
@@ -415,6 +485,10 @@ HOST_TEST(every_page_renders_with_its_real_softkeys_and_no_label_loses_text_or_m
         for (const std::string& key : body_overlaps(state))
         {
             problems.insert(name + " overlap " + key);
+        }
+        for (const std::string& role : role_problems(state.softkeys))
+        {
+            problems.insert(name + " role " + role);
         }
     }
 

@@ -85,6 +85,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/alert_controller.cpp
     ${MERLIN_ROOT}/src/core/calendar_controller.cpp
     ${MERLIN_ROOT}/src/core/settings_controller.cpp
+    ${MERLIN_ROOT}/src/core/softkey_builders.cpp
     ${MERLIN_ROOT}/src/core/status_controller.cpp
 )
 

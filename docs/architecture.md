@@ -443,6 +443,18 @@ visits every reachable page state and checks each one in three ways:
   dropping text (LBL-1, LBL-6).
 - It checks that no body pixel falls inside the cell of a labelled key
   (SCR-5).
+- It checks that every key's role agrees with its label, route, inverse
+  state and position (SK-1, SK-5, SK-9, LBL-5, NAV-4).
+
+**Softkey roles (#114).** Every softkey is built by one builder per role in
+`include/core/softkey_builders.h` (`navigate`, `select`, `action`, `toggle`,
+`view`, `step`, `status`, `option`, `item`, `blank`), and the role is kept on
+`SoftKeyAction::role`. The builder owns the label form and the enabled and
+inverse flags, so a page cannot, for example, draw a toggle inverse or
+label a key that does nothing as if it acts. `update_softkeys_from_state()`
+in `console_controller.cpp` builds every page's map from these builders;
+the feature controllers (Pinter, Calendar, Alerts) format only the label
+text of their list items.
 
 Existing fit or overlap problems are listed in the test, each with the issue
 that fixes it. The test fails on a problem that is not listed, and also on a

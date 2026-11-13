@@ -75,8 +75,9 @@ Recipe selection is on-the-fly: there is no pre-planned brew queue or pack
 inventory. Starting an idle vessel goes straight to picking a recipe from the
 full 35-item catalogue, right when you actually have a pack in hand.
 
-- Home `L4` shows the Pinter summary as `[nB, nC, nR]` (brewing, conditioning,
-  ready) and opens the Pinter scheduler page.
+- Home `L4` summarises the Pinters in words, naming the stage most worth
+  acting on: `[n ready]`, else `[n conditioning]`, else `[n brewing]`, else
+  `[All idle]`. It opens the Pinter scheduler page.
 - `L1` to `L4` select `P1`, `P3 A`, `P3 B`, and `P3 C`; the selected Pinter is
   inverted on the softkey.
 - Each vessel slot key shows a third line once it's Brewing, Cold Crashing, or
@@ -158,6 +159,9 @@ full 35-item catalogue, right when you actually have a pack in hand.
 
 - Softkey top-line captions are uppercase.
 - Bracketed selected values remain mixed case.
+- On/off settings (`REMOTE CONFIG`, `REST API`, `MQTT`, `ADS-B`) show
+  `[Enabled]` or `[Disabled]` and are never drawn inverse, whichever state
+  they are in.
 - Selection changes update visible values immediately.
 - `SCREEN SAVER` page: `L1=TIMEOUT [n mins]`, `L2=SAVER [name]`, `R5=HOME`,
   everything else blank.
