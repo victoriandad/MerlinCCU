@@ -18,6 +18,7 @@
 #include "pinter_scheduling.h"
 #include "settings_controller.h"
 #include "status_controller.h"
+#include "text_case.h"
 
 namespace console_controller
 {
@@ -101,30 +102,6 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 namespace console_controller_internal
 {
 
-void build_uppercase_title(const char* input, char* output, size_t output_size)
-{
-    if (output == nullptr || output_size == 0U)
-    {
-        return;
-    }
-
-    output[0] = '\0';
-    if (input == nullptr || input[0] == '\0')
-    {
-        return;
-    }
-
-    size_t write_index = 0U;
-    while (input[write_index] != '\0' && write_index + 1U < output_size)
-    {
-        output[write_index] =
-            static_cast<char>(std::toupper(static_cast<unsigned char>(input[write_index])));
-        ++write_index;
-    }
-
-    output[write_index] = '\0';
-}
-
 /// @details The controller owns these buffers so menu pages can rebuild labels
 /// whenever integration state changes without leaving dangling pointers behind.
 const char* build_selection_softkey_label(SoftKeyId key, const char* title, const char* selection)
@@ -133,7 +110,7 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
     const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
     constexpr size_t kSoftkeyTitleBufferSize = 24U;
     char title_upper[kSoftkeyTitleBufferSize] = {};
-    build_uppercase_title(title, title_upper, sizeof(title_upper));
+    text_case::copy_uppercase(title, title_upper, sizeof(title_upper));
     std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper, value);
     return buffer.data();
 }
@@ -160,7 +137,6 @@ namespace
 // unqualified for brevity, exactly as before console_controller_internal was
 // split out into its own namespace.
 using console_controller_internal::build_selection_softkey_label;
-using console_controller_internal::build_uppercase_title;
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
 MenuPage parent_page(MenuPage page)

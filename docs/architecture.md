@@ -37,8 +37,9 @@ README history, chat context, or incidental source-code discovery.
   All page families have been split into their own files (issue #45,
   complete): `status_screens.cpp`, `weather_screens.cpp`,
   `air_traffic_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`,
-  `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`, and
-  `screen_banners.cpp` (top status banner).
+  `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`,
+  `local_conditions_screens.cpp` (Local Conditions page and history graph),
+  and `screen_banners.cpp` (top status banner).
 - `src/display/status_screens.cpp`: Status root/overview/connectivity/
   resources/sensors/integrations pages.
 - `src/display/weather_screens.cpp`: the live Weather page, its Hourly/Next
@@ -197,8 +198,13 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   `"STALE 12m"`, or `"NO DATA"`. `last_success_ms`/`now_ms` are boot-uptime
   milliseconds (`to_ms_since_boot`), matching the pre-existing
   `EnvironmentSensorStatus::bme_last_read_ms` idiom -- not wall-clock, so it
-  works before time sync. `stale_after_ms` is each subsystem's own threshold
-  (this codebase uses 4x that subsystem's own refresh interval throughout).
+  works before time sync. `stale_after_ms` is each subsystem's own threshold,
+  four missed refreshes, published by the subsystem that fetches the data
+  (`home_assistant_manager::kWeatherStaleAfterMs`,
+  `share_price_manager::kShareStaleAfterMs`,
+  `air_traffic_manager::kAirTrafficStaleAfterMs`,
+  `environment_sensor_manager::kLocalConditionStaleAfterMs`) so no renderer
+  holds its own copy (STATE-4).
   A companion `screens::build_elapsed_time_text(elapsed_ms, out, out_size)`
   formats the compact "Xs"/"Xm"/"Xh" age text on its own, reused by the
   Sensors page's `ENV SCAN` row (previously showed a raw uptime timestamp,

@@ -8,6 +8,9 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "settings_controller.h"
+#include "share_price_manager.h"
+#include "text_case.h"
 
 namespace shares_screens
 {
@@ -86,25 +89,9 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
 
-    const char* period_label = "TODAY";
-    switch (period)
-    {
-    case SharePeriod::Today:
-        period_label = "TODAY";
-        break;
-    case SharePeriod::Week:
-        period_label = "WEEK";
-        break;
-    case SharePeriod::Month:
-        period_label = "MONTH";
-        break;
-    case SharePeriod::Year:
-        period_label = "YEAR";
-        break;
-    case SharePeriod::AllTime:
-        period_label = "ALL-TIME";
-        break;
-    }
+    char period_label[16] = {};
+    text_case::copy_uppercase(settings_controller::share_period_name(period), period_label,
+                              sizeof(period_label));
     framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
                            1);
 
@@ -122,26 +109,6 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
     const int max_label_width = screens::text_width(max_label, fonts::FontFace::Font5x7, 1);
     framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
                            fonts::FontFace::Font5x7, 1);
-}
-
-/// @brief Returns a compact label for one share history period.
-const char* share_period_text(SharePeriod period)
-{
-    switch (period)
-    {
-    case SharePeriod::Today:
-        return "Today";
-    case SharePeriod::Week:
-        return "Week";
-    case SharePeriod::Month:
-        return "Month";
-    case SharePeriod::Year:
-        return "Year";
-    case SharePeriod::AllTime:
-        return "All-time";
-    }
-
-    return "Today";
 }
 
 } // namespace
@@ -189,17 +156,15 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
     }
     else
     {
-        // 4x share_price_manager.cpp's own 5-minute kRefreshIntervalMs.
-        constexpr uint32_t kShareStaleAfterMs = 4U * 5U * 60U * 1000U;
-        screens::build_data_freshness_text(console_state.share_data_valid,
-                                           console_state.share_data_last_success_ms, now_ms,
-                                           kShareStaleAfterMs, data_text, sizeof(data_text));
+        screens::build_data_freshness_text(
+            console_state.share_data_valid, console_state.share_data_last_success_ms, now_ms,
+            share_price_manager::kShareStaleAfterMs, data_text, sizeof(data_text));
     }
 
     const screens::DetailRow rows[] = {
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
-        {"PERIOD", share_period_text(console_state.share_period)},
+        {"PERIOD", settings_controller::share_period_name(console_state.share_period)},
         {"DATA", data_text},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},

@@ -31,7 +31,6 @@ constexpr uint32_t kResolveTimeoutMs = 4000U;
 constexpr uint32_t kConnectTimeoutMs = 5000U;
 constexpr uint32_t kIoTimeoutMs = 5000U;
 constexpr uint32_t kRetryDelayMs = 60U * 1000U;
-constexpr uint32_t kRefreshIntervalMs = 5U * 60U * 1000U;
 constexpr size_t kRequestBufferSize = 512U;
 // The local feed's compact multi-share JSON (issue #42) is far smaller than
 // Yahoo's single-symbol chart payload was; shrunk from 16KB to reclaim

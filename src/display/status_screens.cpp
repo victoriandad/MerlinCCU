@@ -11,6 +11,7 @@
 #include "local_conditions.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "share_price_manager.h"
 
 namespace status_screens
 {
@@ -548,10 +549,9 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     }
     else
     {
-        screens::build_data_freshness_text(console_state.share_data_valid,
-                                           console_state.share_data_last_success_ms, now_ms,
-                                           4U * 5U * 60U * 1000U, share_data_text,
-                                           sizeof(share_data_text));
+        screens::build_data_freshness_text(
+            console_state.share_data_valid, console_state.share_data_last_success_ms, now_ms,
+            share_price_manager::kShareStaleAfterMs, share_data_text, sizeof(share_data_text));
     }
 
     const screens::DetailRow rows[] = {

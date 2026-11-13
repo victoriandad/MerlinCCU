@@ -7,6 +7,7 @@
 #include "console_controller_internal.h"
 #include "date_time_math.h"
 #include "pinter_store.h"
+#include "text_case.h"
 
 namespace pinter_controller
 {
@@ -255,7 +256,7 @@ const char* build_slot_softkey_label(const ConsoleState& console_state, SoftKeyI
     size_t buffer_capacity = 0U;
     char* buffer = cci::dynamic_softkey_label_buffer(key, buffer_capacity);
     char title_upper[24] = {};
-    cci::build_uppercase_title(pinter.label.data(), title_upper, sizeof(title_upper));
+    text_case::copy_uppercase(pinter.label.data(), title_upper, sizeof(title_upper));
     std::snprintf(buffer, buffer_capacity, "%s\n[%s]\n[%s]", title_upper,
                   brew_timing(pinter.brew_index).name, stage);
     return buffer;

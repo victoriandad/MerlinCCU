@@ -1,7 +1,6 @@
 #include "pinter_screens.h"
 
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <cstdio>
 
@@ -10,6 +9,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "text_case.h"
 
 namespace pinter_screens
 {
@@ -41,10 +41,7 @@ void draw_reset_confirmation(uint8_t* fb, const ConsoleState& console_state)
 
     char headline[40] = {};
     std::snprintf(headline, sizeof(headline), "RESET %s?", vessel.label.data());
-    for (char& c : headline)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
+    text_case::copy_uppercase(headline, headline, sizeof(headline));
     screens::draw_centered_text(fb, kUiWidth / 2, kHeadlineY, headline, true,
                                 fonts::FontFace::Font8x12, 1);
 

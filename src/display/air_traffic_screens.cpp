@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "air_traffic_manager.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
@@ -56,11 +57,9 @@ void draw_table_row(uint8_t* fb, const AirTrafficEntry& entry, int row_y)
 /// label, centred at `y` -- issue #16's stale-data display policy.
 void draw_provenance_line(uint8_t* fb, const AirTrafficStatus& status, uint32_t now_ms, int y)
 {
-    // 4x air_traffic_manager.cpp's own 15-second kRefreshIntervalMs.
-    constexpr uint32_t kAirTrafficStaleAfterMs = 4U * 15U * 1000U;
     char freshness_text[16] = {};
     screens::build_data_freshness_text(status.data_valid, status.last_success_ms, now_ms,
-                                       kAirTrafficStaleAfterMs, freshness_text,
+                                       air_traffic_manager::kAirTrafficStaleAfterMs, freshness_text,
                                        sizeof(freshness_text));
 
     char footer_text[32] = {};

@@ -509,9 +509,14 @@ const char* weather_period_selection_text(const ConsoleState& console_state)
     return weather_period_definition(console_state.weather_period).selection_label;
 }
 
+const char* share_period_name(SharePeriod period)
+{
+    return share_period_definition(period).selection_label;
+}
+
 const char* share_period_selection_text(const ConsoleState& console_state)
 {
-    return share_period_definition(console_state.share_period).selection_label;
+    return share_period_name(console_state.share_period);
 }
 
 const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)

@@ -73,6 +73,7 @@ add_executable(MerlinCCU
     src/display/screen_banners.cpp
     src/display/screens.cpp
     src/display/settings_screens.cpp
+    src/display/local_conditions_screens.cpp
     src/display/shares_screens.cpp
     src/display/status_screens.cpp
     src/display/weather_screens.cpp
