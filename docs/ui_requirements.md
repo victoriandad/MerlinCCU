@@ -90,13 +90,16 @@ softkeys share the screen.
 
 ## 3. What A Softkey Can Be
 
-The operator reads a key by its shape, and there are only two shapes.
+A softkey label has two parts, and each part says one thing.
 
-- **A label on its own** means pressing the key does something, usually
-  opening another page.
-- **A label with a value in brackets** means the key is showing data. Pressing
-  it either opens a page listing the choices for that data, or does nothing
-  because the value is a status reported from elsewhere.
+- **The caption** names the thing or the action.
+- **A value in brackets** is the current state of the thing the caption
+  names: either the choice that has been made (`[Hourly]`, `[London]`,
+  `[Enabled]`) or data reported from elsewhere (`[21.5C]`, `[HomeWifi]`,
+  `[2 conditioning]`). It describes what is, never what pressing will do.
+
+What a press does is fixed by the key's role. Any role that names a thing may
+show its value.
 
 A softkey has exactly one role at a time. The role fixes both how the label is
 written and what a press does. There are no other roles; a page that needs
@@ -104,9 +107,12 @@ something else needs a change to this document first.
 
 | Role | Label form | A press |
 | --- | --- | --- |
-| Navigate | `CAPTION` | Opens the named page |
-| Action | `VERB` | Does the named thing immediately |
+| Navigate | `CAPTION`, optionally + `[Value]` | Opens the named page; the value summarises what that page holds |
 | Select | `CAPTION` + `[Value]` | Opens a page of option keys listing the choices for this value |
+| Action | `VERB` | Does the named thing immediately |
+| Toggle | `CAPTION` + `[Value]` | Switches a two-state setting to its other state |
+| View | `CAPTION` + `[Value]`, at L5 | Steps the page's view to the next value, wrapping round |
+| Step | `CAPTION -` or `CAPTION +`, optionally + `[Value]` | Moves a number down or up by one step |
 | Status | `CAPTION` + `[Value]` | Nothing; the value is reported from elsewhere |
 | Option | `OPTION NAME`, shown inverse when selected | Chooses this option; used on the page a select key opens |
 | Item | `Summary` + `[Qualifier]` | Opens one entry of a list |
@@ -116,27 +122,26 @@ something else needs a change to this document first.
 - **SK-2** Each role must be built by its own shared label helper, so that the
   label form, the enabled state, and the inverse state cannot be combined in
   ways the table does not allow.
-- **SK-3** A key with a label and no value must act when pressed, and the
-  result must be visible in the next frame.
-- **SK-4** A key with a bracketed value must be either a select key or a
-  status key. It must not change the value in place.
+- **SK-3** A key that acts must show the result in the next frame. A key that
+  changes a value in place (toggle, view, step) must show the new value on its
+  own label.
+- **SK-4** A bracketed value must always be the current state of what the
+  caption names. A key must never show a value it is about to set, a hint, or
+  a placeholder in brackets.
 - **SK-5** A key that cannot act at the moment must be blank or a status key.
-  A bare label must never be shown on a key that will not act.
+  A label that looks pressable must never be shown on a key that will not act.
 - **SK-6** Destructive or hard-to-undo actions must be action keys on their own
   page or state, never the same key as a navigation.
 - **SK-7** The page a select key opens must show the choices as option keys,
   with exactly one shown as selected, and choosing one must take effect
   immediately.
 - **SK-8** Two keys on one page must not do the same thing.
-
-### To confirm: keys that change a value in place
-
-SK-4 follows the rule as stated in review. Several existing keys change their
-value on the key itself instead of opening a page of choices: the two-state
-`ENABLED [Enabled]` keys, the stepping `PERIOD`, `VIEW`, and `PERSON` keys, and
-the Pinter `BREW -` / `BREW +` day keys. Under SK-4 each of these becomes a
-select key with its own option page. If in-place change should remain allowed
-for some of them, it needs adding here as a named role.
+- **SK-9** A toggle shows its state in words (`[Enabled]` / `[Disabled]`),
+  never by inverse video (LBL-5).
+- **SK-10** A setting with more than two values must be a select key, unless
+  it changes what the whole page shows, in which case it is the page's view key
+  (NAV-4). A step key is for a number with no useful list of choices, such as a
+  count of days.
 
 ## 4. How A Label Is Written
 
@@ -148,12 +153,13 @@ for some of them, it needs adding here as a named role.
   lines, because the third line would enter the footer.
 - **LBL-2** The caption names the thing or the action. It must be uppercase.
 - **LBL-3** Square brackets mean one thing only: the text inside is the current
-  value or state of whatever the caption names. Brackets must not be used for
-  decoration, hints, or instructions.
+  value or state of whatever the caption names (SK-4). Brackets must not be
+  used for decoration, hints, or instructions.
 - **LBL-4** Values inside brackets must be mixed case, in operator-facing words
   (`Enabled`, `Open-Meteo`, `No net`), not protocol or code terms.
 - **LBL-5** Inverse video means one thing only: this key is the selected option
-  of a set, or the field currently being edited.
+  of a set, or the field currently being edited. It must never mean that a
+  setting is on.
 - **LBL-6** Every line must fit the 120-pixel cell at the font in use. The code
   that builds a label is responsible for producing text that fits, by choosing
   a compact form. Text that the renderer has to cut off is a defect.

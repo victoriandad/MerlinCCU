@@ -104,7 +104,9 @@ implied by the current UI code:
 - Configuration pages favour softkey selection over large on-screen forms.
 - Many settings pages intentionally leave the centre blank because the current
   value already appears on the softkeys.
-- Bracketed softkey values represent the current selection or stored value.
+- Bracketed softkey values represent the current state: the selection made,
+  or a value reported from elsewhere. What a press does comes from the key's
+  role, not from the brackets.
 - Changes should be reflected immediately in the visible softkey labels.
 - Settings navigation is paged when the category set does not fit on one view.
 - Top-level settings pages act as routing surfaces rather than information
