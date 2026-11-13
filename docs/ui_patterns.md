@@ -52,8 +52,9 @@ corrected.
 
 - Intent: avoid duplicating settings values in the centre of the page.
 - Use When: the softkeys already show all relevant editable state.
-- Source: settings page draw functions in
-  `src/display/settings_screens.cpp`.
+- Source: the "key pages with no body" case list in `draw_menu_screen()`
+  (`src/display/screens.cpp`); pages that draw only an edit control or page
+  arrows have their own function in `src/display/settings_screens.cpp`.
 - Rules: leave the centre clear except for active edit controls or page arrows.
 
 ### Compact Detail Rows
@@ -64,7 +65,7 @@ corrected.
   (declared in `include/display/screens_shared.h`), used by
   `draw_status_page()` in `src/display/status_screens.cpp`.
 - Rules: uppercase labels, concise mixed-case values, stable row pitch, no
-  right-edge clipping.
+  right-edge clipping. Long values follow the Long Detail Values policy below.
 
 ### Info Page Rows
 
@@ -73,7 +74,25 @@ corrected.
 - Source: `draw_info_page_rows()` in `src/display/screens.cpp` (declared in
   `include/display/screens_shared.h`); keypad debug is
   `draw_keypad_debug_page()` in `src/display/settings_screens.cpp`.
-- Rules: use shared row rendering rather than bespoke boxes.
+- Rules: use shared row rendering rather than bespoke boxes. Long values
+  follow the Long Detail Values policy below.
+
+### Long Detail Values
+
+- Intent: never lose a value off the screen edge (SCR-6), and never cut one
+  that there is room to show.
+- Use When: any detail row whose value can be wider than its column, such as
+  calendar text, host names, SSIDs, and share names.
+- Source: `draw_detail_value()` in `src/display/screens.cpp`, used by both
+  `draw_compact_detail_rows()` and `draw_info_page_rows()`.
+- Rules: a value runs from its column to 12 pixels short of the right edge,
+  the same margin as the Text block. A wider value wraps under itself (on
+  spaces, hard-breaking a long word such as a host name) and later rows move
+  down. A block may grow by wrapping only down to the top of the row 5
+  softkey cell; once that room is used up, a value is cut at the last
+  character that fits and ends with `...`. Earlier rows take the room first.
+  A block whose unwrapped rows already reach row 5 gets no extra lines. The
+  stored value is never shortened.
 
 ### Paged Arrows
 
@@ -94,15 +113,35 @@ corrected.
 - Rules: list entries show summary and time; detail pages provide accept,
   ignore, and scroll behaviour.
 
+### Text Block
+
+- Intent: show free text that may be longer than one line or one screen.
+- Use When: alert detail, and any future page body that is prose rather
+  than label/value rows.
+- Source: `screens::wrap_text()` in `src/display/screens.cpp` (declared in
+  `include/display/screens_shared.h`); used by `draw_alert_detail_page()` in
+  `src/display/alert_screens.cpp`.
+- Rules: wrap to the body width on spaces, keep `\n` as a forced break, and
+  hard-break a word wider than the line. Scroll with the cursor keys and
+  show only the arrows for directions that move (NAV-7, NAV-8). Compute the
+  scroll range from the wrapped line count in one function shared by the
+  renderer and the key handling (`alert_screens::detail_max_scroll()`).
+
 ### Empty State
 
 - Intent: make absence of data explicit without adding synthetic rows.
 - Use When: no alerts, shares, events, or selected records exist.
-- Source: `draw_centered_text()` in `src/display/screens.cpp`, called from
-  each page family (for example `draw_alert_list_page()`). There is no shared
-  empty-state block yet.
-- Rules: concise uppercase message, centred in the content area (STATE rules
-  in `docs/ui_requirements.md`).
+- Source: `screens::draw_empty_state()` in `src/display/screens.cpp`
+  (declared in `include/display/screens_shared.h`); used by
+  `draw_weather_page()` in `src/display/weather_screens.cpp` and the Local
+  Conditions page and graph in `src/display/screens.cpp`. Other pages
+  still centre their own message with `draw_centered_text()` and move to the
+  block under #117.
+- Rules: one uppercase headline at `kEmptyStateHeadlineY` and an optional
+  one-line, mixed-case hint at `kEmptyStateHintY`, both centred. The block
+  sits between the row 2 and row 3 softkey cells, so it never meets a label.
+  The hint says what the operator can do; a not-configured hint names where
+  to configure (STATE-2, STATE-5).
 
 ### Graph Plot Area
 
@@ -123,7 +162,5 @@ corrected.
 
 ## Candidates For New Shared Helpers
 
-- Long-value elision or marquee policy.
 - Standard graph footer/min/max labelling.
 - Shared table column definitions for weather/share-like data.
-- Common empty/error/loading state helper.

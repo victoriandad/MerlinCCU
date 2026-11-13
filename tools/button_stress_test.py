@@ -140,7 +140,7 @@ def summarize(results: list[ClickResult], slow_threshold_s: float) -> None:
 def run_crash_toggle_stress(
     host: str, iterations: int, timeout: float, delay: float, slow_threshold_s: float
 ) -> list[ClickResult]:
-    """Alternates CRASH+ (RightBottom) and CRASH- (LeftBottom) `iterations` times.
+    """Alternates CRASH+ (RightUpper) and CRASH- (LeftUpper) `iterations` times.
 
     Each pair should return the pending cold-crash day count to where it
     started (0 -> 1 -> 0 -> ...). When the debug fields are available, every
@@ -169,7 +169,7 @@ def run_crash_toggle_stress(
 
     for i in range(iterations):
         increasing = (i % 2) == 0
-        button_id = "RightBottom" if increasing else "LeftBottom"
+        button_id = "RightUpper" if increasing else "LeftUpper"
         result = post_button(host, button_id, timeout)
         result.index = i
         results.append(result)

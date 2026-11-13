@@ -45,7 +45,6 @@ constexpr std::array<ExpectedDevice, kEnvironmentSensorDeviceCount> kWaveshareDe
 
 inline constexpr uint32_t kInitialScanDelayMs = 10000U;
 inline constexpr uint32_t kDiscoveryScanIntervalMs = 30000U;
-inline constexpr uint32_t kLocalConditionSampleIntervalMs = 10000U;
 inline constexpr uint32_t kLocalConditionHistoryBucketIntervalMs = 5U * 60U * 1000U;
 inline constexpr uint32_t kProbeTimeoutUs = 1000U;
 inline constexpr uint32_t kSensorRegisterTimeoutUs = 5000U;

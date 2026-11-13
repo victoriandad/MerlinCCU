@@ -17,11 +17,6 @@ namespace
 
 namespace cci = console_controller::console_controller_internal;
 
-// pico/error.h's PICO_ERROR_NONE is always 0; kept as a local constant
-// (rather than including the Pico-SDK header) so this file stays
-// host-testable -- see issue #78.
-constexpr int kNoErrorCode = 0;
-
 std::array<std::array<char, 16>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_values =
     {};
 std::array<char, 16> g_screen_saver_timeout_selection_text = {};
@@ -60,7 +55,7 @@ constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
     {SharePeriod::AllTime, "All-time"},
 }};
 
-constexpr std::array<TimeZoneDefinition, 9> kTimeZones = {{
+constexpr std::array<TimeZoneDefinition, kTimeZoneSelectionCount> kTimeZones = {{
     {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
     {TimeZoneSelection::ArgentinaStandard, "Argentina Time", "ARGENTINA"},
     {TimeZoneSelection::SouthGeorgia, "South Georgia Time", "SOUTH GEORGIA"},
@@ -458,17 +453,34 @@ const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection select
     return kScreenSavers[0];
 }
 
-const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
-                                                        int offset)
+const TimeZoneDefinition* time_zone_for_slot(const ConsoleState& console_state, uint8_t slot)
 {
-    const int kCurrentIndex = static_cast<int>(time_zone_index(console_state.time_zone));
-    const int kTargetIndex = kCurrentIndex + offset;
-    if (kTargetIndex < 0 || kTargetIndex >= static_cast<int>(kTimeZones.size()))
+    if (slot >= kTimeZoneOptionsPerPage)
     {
         return nullptr;
     }
 
-    return &kTimeZones[static_cast<size_t>(kTargetIndex)];
+    const size_t index =
+        (static_cast<size_t>(console_state.time_zone_page_index) * kTimeZoneOptionsPerPage) + slot;
+    return index < kTimeZones.size() ? &kTimeZones[index] : nullptr;
+}
+
+uint8_t time_zone_page_of_current(const ConsoleState& console_state)
+{
+    return static_cast<uint8_t>(time_zone_index(console_state.time_zone) /
+                                kTimeZoneOptionsPerPage);
+}
+
+bool change_time_zone_page(ConsoleState& console_state, int direction)
+{
+    const int target = static_cast<int>(console_state.time_zone_page_index) + direction;
+    if (direction == 0 || target < 0 || target >= static_cast<int>(kTimeZonePageCount))
+    {
+        return false;
+    }
+
+    console_state.time_zone_page_index = static_cast<uint8_t>(target);
+    return true;
 }
 
 const char* wifi_selection_text(const ConsoleState& console_state)
@@ -507,76 +519,6 @@ const char* air_traffic_view_mode_selection_text(const ConsoleState& console_sta
     return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
 }
 
-const char* local_temperature_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left1)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const int32_t raw_value = status.bme_temperature_centi_celsius;
-    const bool negative = raw_value < 0;
-    const uint32_t absolute_value =
-        static_cast<uint32_t>(negative ? -static_cast<int64_t>(raw_value) : raw_value);
-    std::snprintf(buffer.data(), buffer.size(), "%s%lu.%02luC", negative ? "-" : "",
-                  static_cast<unsigned long>(absolute_value / 100U),
-                  static_cast<unsigned long>(absolute_value % 100U));
-    return buffer.data();
-}
-
-const char* local_humidity_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left2)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%lu%%",
-                  static_cast<unsigned long>(tenths_percent / 10U),
-                  static_cast<unsigned long>(tenths_percent % 10U));
-    return buffer.data();
-}
-
-const char* local_pressure_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left3)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%luhPa",
-                  static_cast<unsigned long>(tenths_hpa / 10U),
-                  static_cast<unsigned long>(tenths_hpa % 10U));
-    return buffer.data();
-}
-
-const char* local_air_quality_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left4)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.air_quality_score_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "%s",
-                      status.air_quality_read_error == kNoErrorCode ? "-" : "ERR");
-        return buffer.data();
-    }
-
-    std::snprintf(buffer.data(), buffer.size(), "%s",
-                  environment_sensor_manager::air_quality_band_text(status.air_quality_score));
-    return buffer.data();
-}
-
 const char* screen_saver_selection_text(const ConsoleState& console_state)
 {
     return screen_saver_definition(console_state.screen_saver_selection).selection_label;
@@ -587,11 +529,11 @@ const char* time_zone_selection_text(const ConsoleState& console_state)
     return time_zone_definition(console_state.time_zone).selection_label;
 }
 
-/// @details `0 minutes` means the idle-triggered screen saver is disabled, and
-/// the label uses singular/plural wording that reads naturally on the menu.
+/// @details `0 mins` means the idle-triggered screen saver is disabled. Uses
+/// the same `min`/`mins` wording as the entry scratchpad (TXT-6).
 const char* screen_saver_timeout_selection_text(const ConsoleState& console_state)
 {
-    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "minute" : "minutes";
+    const char* unit = (console_state.screen_saver_timeout_minutes == 1U) ? "min" : "mins";
     std::snprintf(g_screen_saver_timeout_selection_text.data(),
                   g_screen_saver_timeout_selection_text.size(), "%u %s",
                   static_cast<unsigned>(console_state.screen_saver_timeout_minutes), unit);
@@ -709,14 +651,9 @@ bool select_share_slot(ConsoleState& console_state, uint8_t slot)
     return true;
 }
 
-bool open_selected_share_detail(ConsoleState& console_state)
+bool select_time_zone_slot(ConsoleState& console_state, uint8_t slot)
 {
-    return select_share_slot(console_state, console_state.selected_share_index);
-}
-
-bool select_relative_time_zone(ConsoleState& console_state, int offset)
-{
-    const TimeZoneDefinition* target = relative_time_zone_definition(console_state, offset);
+    const TimeZoneDefinition* target = time_zone_for_slot(console_state, slot);
     if (target == nullptr)
     {
         return false;

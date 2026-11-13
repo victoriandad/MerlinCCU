@@ -73,7 +73,7 @@ softkeys share the screen.
 | --- | --- | --- | --- |
 | Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list |
 | Body page | Row 5 only (L5, R5) | Rows 1-4 at full width | Status sub-pages, Calendar event, Share detail, Weather, ADS-B, graphs, Alert detail |
-| Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test, Alignment |
+| Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test |
 
 - **PAGE-1** Each page must declare its type, and its softkey map and body must
   obey that type.
@@ -141,8 +141,11 @@ for some of them, it needs adding here as a named role.
 ## 4. How A Label Is Written
 
 - **LBL-1** A label has at most two lines: a caption line and a value line.
-  Item keys on rows 1-4 may opt in to a third line. Row 5 keys must never use
-  three lines, because the third line would enter the footer.
+  Item keys on rows 1-4 may opt in to more: a second value, and a value that
+  wraps over several lines inside one bracket pair, up to five lines in all
+  (the Pinter vessel keys). Each value keeps at least one line, so a long
+  value never pushes a later one off the key. Row 5 keys must never use three
+  lines, because the third line would enter the footer.
 - **LBL-2** The caption names the thing or the action. It must be uppercase.
 - **LBL-3** Square brackets mean one thing only: the text inside is the current
   value or state of whatever the caption names. Brackets must not be used for

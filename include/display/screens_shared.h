@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -36,18 +37,6 @@ struct DetailRow
 void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y,
                               int row_pitch);
 
-/// @brief Formats a fixed-point centi-Celsius temperature for the Status page.
-void build_environment_temperature_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
-/// @brief Formats BME280 humidity as percent relative humidity.
-void build_environment_humidity_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
-/// @brief Formats BME280 pressure as hPa, which is easier to scan than raw Pa.
-void build_environment_pressure_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
 /// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
 void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size);
 
@@ -66,6 +55,20 @@ int text_width(const char* text, fonts::FontFace font = fonts::FontFace::Font5x7
 void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool on,
                         fonts::FontFace font = fonts::FontFace::Font5x7, int spacing = 1);
 
+/// @brief Top of the empty-state headline. The block sits in the gap between
+/// the row 2 and row 3 softkey cells (y 116-155), so it never meets a label.
+inline constexpr int kEmptyStateHeadlineY = 124;
+
+/// @brief Top of the empty-state hint line, beneath the headline.
+inline constexpr int kEmptyStateHintY = 142;
+
+/// @brief Draws the shared empty-state block (STATE-2).
+/// @details One uppercase headline at a fixed position, and an optional
+/// one-line, mixed-case hint beneath it saying what the operator can do.
+/// Both are centred. `hint` may be null or empty. The caller writes text that
+/// fits the body width; the hint is never wrapped.
+void draw_empty_state(uint8_t* fb, const char* headline, const char* hint);
+
 /// @brief One softkey/footer label wrapped into up to three fixed-size lines.
 struct WrappedSoftkeyLabel
 {
@@ -75,6 +78,31 @@ struct WrappedSoftkeyLabel
     int line_count;
 };
 
+/// @brief Most lines any softkey label may use (LBL-1).
+inline constexpr int kMaxSoftkeyLabelLines = 5;
+
+/// @brief One rendered line of a softkey label.
+struct SoftkeyLabelLine
+{
+    char text[48];
+    /// True when the line is part of a bracketed value; the brackets are
+    /// drawn as graphics around every line of that value, not as glyphs.
+    bool bracketed;
+    /// True on the last line of a bracketed value.
+    bool value_end;
+};
+
+/// @brief A softkey label laid out into lines that each fit the cell.
+struct SoftkeyLabelLayout
+{
+    std::array<SoftkeyLabelLine, kMaxSoftkeyLabelLines> lines;
+    int count;
+};
+
+/// @brief Lays out a softkey label into lines that each fit the cell at
+/// `font`; a `[value]` part wraps inside one bracket pair.
+SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font, int max_lines);
+
 /// @brief Wraps one label into at most `max_lines` renderable lines.
 /// @details Softkeys are deliberately capped (two lines for most pages, three
 /// where a page opts in) so long labels degrade gracefully without taking
@@ -82,6 +110,22 @@ struct WrappedSoftkeyLabel
 /// as the width allows, preferring to break on whitespace.
 WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
                                      int max_lines);
+
+/// @brief One wrapped line of a longer text: a view into the source string.
+struct TextSpan
+{
+    const char* text;
+    size_t length;
+};
+
+/// @brief Wraps free text into lines no wider than `max_width` pixels.
+/// @details The shared Text block (docs/ui_patterns.md). Breaks on spaces,
+/// treats `\n` as a forced break (an empty paragraph gives an empty line),
+/// and hard-breaks a single word wider than the line. Spans point into
+/// `text`, so it must outlive them. Returns the number of spans written,
+/// at most `max_spans`; lines beyond that are dropped.
+size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
+                 size_t max_spans);
 
 /// @brief Draws the standard row-based presentation used by information pages.
 /// @details The top banner carries the page title, so the body can stay clean

@@ -44,10 +44,30 @@ quickly without relying only on photographs of the physical panel.
 - `Next 24 Hours` period represents the next 24 hours using the same single-line
   table columns, including `Conditions`.
 - `Next 7 Days` period shows provider daily rows (typically up to 7 entries) with
-  labels (`Today`, `Tmrw`, then date labels like `DD/MM`).
+  labels (`Today`, `Tomorrow`, then date labels like `DD/MM`), in the same
+  table frame and row pitch as the hourly tables.
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.
-- Source footer is visible and readable.
+- Source footer is visible and readable, and reads `LIVE` through a refresh
+  rather than flicking to `STALE` while the fetch is in progress.
+- With each source not set up (no weather entity; no or bad coordinates), the
+  page shows `WEATHER NOT SET UP` with a hint naming the web config page.
+- Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
+  fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.
+
+## Local Conditions
+
+- With no sensor board fitted, the page shows `NO SENSOR BOARD` with a hint
+  pointing to Status > Sensors, all four reading keys are blank, and the
+  `ENV SENSOR` alert is raised.
+- Before the first reading, the page shows `WAITING FOR SENSOR`.
+- With the board, `TEMP`, `HUMIDITY`, `AIR PRESSURE` and `VOC CHANGE` show the
+  same values as Status > Sensors and the graph's current value, and the
+  footer reads `Sensor board - LIVE`; unplugging the board turns it to `STALE`
+  after about 40 seconds.
+- A graph with fewer than two history points shows `NO HISTORY YET` and the
+  current reading. The graph page has only `HOME`; BACK STEP returns to Local
+  Conditions.
 
 ## Pinter Page
 
@@ -71,11 +91,16 @@ full 35-item catalogue, right when you actually have a pack in hand.
     brew dock is full (3 vessels already `Brewing`).
   - Selected Pinter not idle: applies the normal next event (move to cold
     crash or fridge, ready, drink, or clean), depending on state.
-- Pinter centre data is intentionally blank, except a block-reason message
-  (for example dock/fridge full) appears when `R1` is disabled.
+- Pinter centre data is intentionally blank. When `R1` is disabled by a full
+  dock or fridge, a block-reason line appears in the footer, below the row 5
+  softkeys, and never overlaps a vessel label.
 - Moving to the fridge is blocked once two Pinters are conditioning or ready;
   cold crash is exempt from the fridge-capacity check.
-- `R3=RESET` clears the selected Pinter back to idle after a mistaken event.
+- `R3=RESET` asks for confirmation: the body names the vessel and brew, and only
+  `L5=CANCEL` and `R5=RESET` are labelled. `R5` clears the vessel back to idle;
+  `CANCEL` or `BACK STEP` leaves it unchanged.
+- `RESET`, `-1 DAY` and `+1 DAY` are blank when the selected vessel cannot use them
+  (for example an idle vessel).
 - Vessel state survives a power cycle: start a brew, advance a stage, or reset
   a vessel, then power-cycle the board -- the vessel should come back showing
   the same state, recipe, and days rather than resetting to `Idle`. Each of
@@ -85,17 +110,23 @@ full 35-item catalogue, right when you actually have a pack in hand.
     plus recommended/minimum total days, for example `Public House / R12 M7`.
   - `<`/`>` cursor keys page through the catalogue; page arrows only show
     when there is a previous/next page.
-  - `R4=PINTER` returns to the main Pinter page; `R5=HOME` returns to Home.
+  - All eight slots, `L1`-`L4` and `R1`-`R4`, carry recipes; the header shows
+    `SELECT BREW n/m`. `BACK STEP` returns to the main Pinter page;
+    `R5=HOME` returns to Home.
   - Picking a recipe opens the `BREW TIMING` page.
 - `BREW TIMING` page:
-  - `L1=MINIMUM` / `L2=RECOMM` snap brewing/cold-crash/conditioning days to
+  - `L1=MINIMUM` / `R1=RECOMMENDED` snap brewing/cold-crash/conditioning days to
     the recipe's minimum or recommended totals.
-  - `L3`/`R3` adjust brew days down/up; `L4`/`R4` adjust conditioning days
-    down/up; `L5`/`R5` adjust cold-crash days down/up (0 by default, since
-    cold crash is optional).
-  - `R1=START` confirms and starts the vessel brewing now; disabled if the
-    dock filled up while adjusting timing.
-  - `R2=BREW` returns to the recipe catalogue to pick a different recipe.
+  - `L2`/`R2` adjust cold-crash days down/up (0 by default, since cold crash
+    is optional, up to 3); `L3`/`R3` adjust brew days (1-30); `L4`/`R4`
+    adjust conditioning days (1-45). A `-` or `+` key is blank at its limit.
+  - The footer names the recipe being started.
+  - `L5=CANCEL` returns to the recipe catalogue without starting anything;
+    `BACK STEP` does the same.
+  - `R5=START [vessel]` confirms and starts the vessel brewing now; blank if
+    the dock filled up while adjusting timing. There is no `HOME` key here.
+  - A brew started with cold crash days above 0 offers `COLD CRASH` as the
+    Pinter page's primary action while brewing.
 - `http://merlinccu/pinter` shows one row per Pinter, real date ticks, and a
   vertical today marker, plus summary tiles for brewing/conditioning/ready
   counts. Starting, moving to fridge, and marking ready stamp event dates
@@ -106,6 +137,9 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Home `L2` opens the shares watchlist.
 - Shares list shows `BAE SYSTEMS` with a bracketed price value on `L1` and no
   duplicated share data in the display body.
+- Share keys fill `L1`-`L4`, then `R1`-`R2`; row 5 carries only `R5=HOME`.
+  There are no `HISTORY` or `REMOVE` keys, and the cursor keys do nothing on
+  this page.
 - Pressing the BAE Systems softkey opens the share detail page.
 - Share detail page shows a full-width graph in the upper display region with
   no graph bounding box and no overlap with softkey labels.
@@ -125,6 +159,15 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Softkey top-line captions are uppercase.
 - Bracketed selected values remain mixed case.
 - Selection changes update visible values immediately.
+- `SCREEN SAVER` page: `L1=TIMEOUT [n mins]`, `L2=SAVER [name]`, `R5=HOME`,
+  everything else blank.
+  - `TIMEOUT` starts entry: `L1` turns inverse, the scratchpad appears in the
+    footer, and only `L5=CANCEL` and `R5=ENTER` remain. Type a value with the
+    keypad in `123` mode; `ENTER` saves it, `CANCEL` or `BACK STEP` restores
+    the previous value. `CLR` resets the scratchpad to `0 mins`.
+  - `SAVER` opens the `SAVER` option page: the eight savers on `L1`-`L4`,
+    `R1`-`R4`, the current one inverse, `R5=HOME`. Picking one takes effect at
+    once and stays on the page; `BACK STEP` returns to `SCREEN SAVER`.
 
 ## Alert Workflow Pages
 

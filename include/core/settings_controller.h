@@ -75,9 +75,17 @@ const TimeZoneDefinition& time_zone_definition(TimeZoneSelection zone);
 /// @brief Returns the static metadata for one selectable screen saver.
 const ScreenSaverDefinition& screen_saver_definition(ScreenSaverSelection selection);
 
-/// @brief Returns the selectable time zone at a relative offset from the current one.
-const TimeZoneDefinition* relative_time_zone_definition(const ConsoleState& console_state,
-                                                        int offset);
+/// @brief Returns the time zone shown in `slot` (0-7) of the current Time
+/// Zone list page, or nullptr past the end of the list.
+/// @details The list order is fixed (west to east), so a zone keeps the same
+/// key position whichever zone is selected (NAV-11).
+const TimeZoneDefinition* time_zone_for_slot(const ConsoleState& console_state, uint8_t slot);
+
+/// @brief Returns the Time Zone list page that contains the current zone.
+uint8_t time_zone_page_of_current(const ConsoleState& console_state);
+
+/// @brief Moves the Time Zone list one page left or right; false at either end.
+bool change_time_zone_page(ConsoleState& console_state, int direction);
 
 /// @brief Returns the configured or connected Wi-Fi name for the settings menu.
 const char* wifi_selection_text(const ConsoleState& console_state);
@@ -93,18 +101,6 @@ const char* share_period_selection_text(const ConsoleState& console_state);
 
 /// @brief Returns the Local Traffic page's current presentation mode label.
 const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats local temperature for softkey value brackets.
-const char* local_temperature_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats local humidity for softkey value brackets.
-const char* local_humidity_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats local pressure for softkey value brackets.
-const char* local_pressure_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats the local VOC-change band for softkey value brackets.
-const char* local_air_quality_selection_text(const ConsoleState& console_state);
 
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
 const char* screen_saver_selection_text(const ConsoleState& console_state);
@@ -133,11 +129,8 @@ uint8_t air_traffic_page_count(const ConsoleState& console_state);
 /// @brief Opens the requested share detail page from the current watchlist.
 bool select_share_slot(ConsoleState& console_state, uint8_t slot);
 
-/// @brief Opens the currently selected share detail page from the watchlist.
-bool open_selected_share_detail(ConsoleState& console_state);
-
-/// @brief Updates the selected time zone by moving relative to the current choice.
-bool select_relative_time_zone(ConsoleState& console_state, int offset);
+/// @brief Selects the time zone shown in `slot` (0-7) of the current list page.
+bool select_time_zone_slot(ConsoleState& console_state, uint8_t slot);
 
 /// @brief Updates the selected screen saver when the user chooses a new stub.
 bool select_screen_saver(ScreenSaverSelection selection);

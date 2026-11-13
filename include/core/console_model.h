@@ -146,9 +146,9 @@ enum class MenuPage : uint8_t
     MqttSettings,
     AirTrafficSettings,
     ScreenSaverSettings,
+    ScreenSaverOptions,
     WeatherSources,
     TimeZoneSettings,
-    Alignment,
     KeypadDebug,
     GreyscaleTest,
     AlertList,
@@ -496,6 +496,17 @@ enum class TimeZoneSelection : uint8_t
     GulfStandard,
 };
 
+/// @brief Number of selectable time-zone presets (settings_controller's table).
+inline constexpr uint8_t kTimeZoneSelectionCount = 9U;
+static_assert(static_cast<uint8_t>(TimeZoneSelection::GulfStandard) + 1U == kTimeZoneSelectionCount,
+              "kTimeZoneSelectionCount must match TimeZoneSelection");
+/// @brief Option keys per Time Zone page: L1-L4 then R1-R4 (NAV-6).
+inline constexpr uint8_t kTimeZoneOptionsPerPage = 8U;
+/// @brief Pages needed to list every time zone, shared by the controller's
+/// paging, the header title, and the footer arrows.
+inline constexpr uint8_t kTimeZonePageCount = static_cast<uint8_t>(
+    (kTimeZoneSelectionCount + kTimeZoneOptionsPerPage - 1U) / kTimeZoneOptionsPerPage);
+
 /// @brief Local environmental metric selected for the graph detail page.
 enum class LocalConditionMetric : uint8_t
 {
@@ -522,6 +533,11 @@ inline constexpr uint8_t kDefaultPinterBrewIndex = 0U;
 inline constexpr uint8_t kPinterBrewDockCapacity = 3U;
 inline constexpr uint8_t kPinterFridgeCapacity = 2U;
 inline constexpr size_t kPinterBrewListVisibleCount = 8;
+/// @brief Pages needed to show the whole brew catalogue on Select Brew.
+/// @details Shared by the header title (`SELECT BREW n/m`) and the footer
+/// arrows so both agree with the controller's cursor paging.
+inline constexpr uint8_t kPinterBrewListPageCount = static_cast<uint8_t>(
+    (kPinterBrewCatalogueCount + kPinterBrewListVisibleCount - 1U) / kPinterBrewListVisibleCount);
 
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
@@ -543,8 +559,10 @@ enum class SoftKeyRoute : uint8_t
     GoMqttSettings,
     GoAirTrafficSettings,
     GoScreenSaverSettings,
+    GoScreenSaverOptions,
     EditScreenSaverTimeout,
     ConfirmScreenSaverTimeout,
+    CancelScreenSaverTimeout,
     GoWeatherSources,
     GoTimeZoneSettings,
     GoKeypadDebug,
@@ -564,25 +582,19 @@ enum class SoftKeyRoute : uint8_t
     SelectWeatherHomeAssistant,
     SelectWeatherOpenMeteo,
     CycleWeatherPeriod,
-    GoSelectedShareDetail,
     GoStatusOverview,
     GoStatusConnectivity,
     GoStatusResources,
     GoStatusSensors,
     GoStatusIntegrations,
-    SelectTimeZoneWest1,
-    SelectTimeZoneWest2,
-    SelectTimeZoneWest3,
-    SelectTimeZoneWest4,
-    SelectTimeZoneEast1,
-    SelectTimeZoneEast2,
-    SelectTimeZoneEast3,
-    SelectTimeZoneEast4,
-    CycleAlert,
-    ToggleLetters,
-    CycleTest,
-    ResetConsoleState,
-    ClearAlert,
+    SelectTimeZoneSlot1,
+    SelectTimeZoneSlot2,
+    SelectTimeZoneSlot3,
+    SelectTimeZoneSlot4,
+    SelectTimeZoneSlot5,
+    SelectTimeZoneSlot6,
+    SelectTimeZoneSlot7,
+    SelectTimeZoneSlot8,
     SelectAlertSlot1,
     SelectAlertSlot2,
     SelectAlertSlot3,
@@ -600,7 +612,9 @@ enum class SoftKeyRoute : uint8_t
     SelectPinterSlot3,
     SelectPinterSlot4,
     ApplyPinterPrimaryAction,
-    ResetSelectedPinter,
+    RequestPinterReset,
+    ConfirmPinterReset,
+    CancelPinterReset,
     DecreaseSelectedPinterDay,
     IncreaseSelectedPinterDay,
     GoPinterSelectBrew,
@@ -612,8 +626,6 @@ enum class SoftKeyRoute : uint8_t
     SelectPinterListItem6,
     SelectPinterListItem7,
     SelectPinterListItem8,
-    PinterListPreviousPage,
-    PinterListNextPage,
     SelectPinterMinimumTiming,
     SelectPinterRecommendedTiming,
     DecreasePinterBrewDays,
@@ -643,11 +655,6 @@ enum class SoftKeyRoute : uint8_t
     SelectCalendarSlot6,
     SelectCalendarSlot7,
     SelectCalendarSlot8,
-    SelectCalendarSlot9,
-    PanelBrighter,
-    PanelDimmer,
-    KeysBrighter,
-    KeysDimmer,
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
@@ -801,7 +808,6 @@ inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
 inline constexpr int kCalendarMaxDayOffset = 14;
 inline constexpr size_t kCalendarEventCapacity = 48;
-inline constexpr size_t kCalendarVisibleEventCount = 9;
 
 /// @brief One compact calendar row ready for display on a softkey.
 struct CalendarEvent
@@ -942,6 +948,7 @@ struct ConsoleState
 {
     MenuPage active_page;
     uint8_t settings_page_index;
+    uint8_t time_zone_page_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
     LocalConditionMetric local_condition_metric;
@@ -970,6 +977,10 @@ struct ConsoleState
     /// empty when it isn't. Exists so a capacity block (fridge/dock full) is an
     /// unmissable on-screen message rather than only a two-line softkey hint.
     std::array<char, 40> pinter_block_reason;
+    /// @brief True while the Pinter page is asking the operator to confirm
+    /// a reset of the selected vessel (SK-6: destructive actions get their
+    /// own state). Cleared on confirm, cancel, BACK STEP, or leaving the page.
+    bool pinter_reset_confirming;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

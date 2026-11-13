@@ -22,7 +22,14 @@ constexpr int kCallsignX = 12;
 constexpr int kDistanceX = 90;
 constexpr int kAltitudeX = 148;
 constexpr int kBearingX = 208;
-constexpr int kFooterY = kUiHeight - 30;
+// Footer text baseline, below the two-line L5 VIEW label (whose bracketed
+// value reaches about y 293) and shared with the Home and Pinter footer
+// lines. Moves to the shared layout header under #113.
+constexpr int kFooterTextY = kUiHeight - 18;
+// In the table view the footer belongs to the paging arrows (SCR-4), so the
+// provenance/freshness line sits in the body directly under the last row.
+constexpr int kTableProvenanceY =
+    kTableFirstRowY + (static_cast<int>(kAirTrafficRowsPerPage) * kTableRowPitchY) + 6;
 
 /// @brief Draws the nearby-aircraft table header row.
 void draw_table_header(uint8_t* fb)
@@ -46,8 +53,8 @@ void draw_table_row(uint8_t* fb, const AirTrafficEntry& entry, int row_y)
 }
 
 /// @brief Draws the small provenance/coverage disclaimer, plus a data-freshness
-/// label, at the page foot -- issue #16's stale-data display policy.
-void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status, uint32_t now_ms)
+/// label, centred at `y` -- issue #16's stale-data display policy.
+void draw_provenance_line(uint8_t* fb, const AirTrafficStatus& status, uint32_t now_ms, int y)
 {
     // 4x air_traffic_manager.cpp's own 15-second kRefreshIntervalMs.
     constexpr uint32_t kAirTrafficStaleAfterMs = 4U * 15U * 1000U;
@@ -58,7 +65,7 @@ void draw_footer_disclaimer(uint8_t* fb, const AirTrafficStatus& status, uint32_
 
     char footer_text[32] = {};
     std::snprintf(footer_text, sizeof(footer_text), "ADS-B TRAFFIC ONLY - %s", freshness_text);
-    screens::draw_centered_text(fb, kUiWidth / 2, kFooterY, footer_text, true,
+    screens::draw_centered_text(fb, kUiWidth / 2, y, footer_text, true,
                                 fonts::FontFace::Font5x7, 1);
 }
 
@@ -84,7 +91,7 @@ void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state, uint32_t 
     }
     screens::draw_page_navigation_arrows(fb, page_index > 0U,
                                         (page_index + 1U) < page_count);
-    draw_footer_disclaimer(fb, status, now_ms);
+    draw_provenance_line(fb, status, now_ms, kTableProvenanceY);
 }
 
 /// @brief Integer midpoint-circle rings, matching the radar screensaver's algorithm.
@@ -119,7 +126,10 @@ void draw_ring(uint8_t* fb, int cx, int cy, int radius)
 }
 
 constexpr int kPlotCenterX = kUiWidth / 2;
-constexpr int kPlotCenterY = 36 + ((kFooterY - 10 - 36) / 2);
+// Plot spans y 36-280: below the header, above the footer line.
+constexpr int kPlotTopY = 36;
+constexpr int kPlotBottomY = 280;
+constexpr int kPlotCenterY = (kPlotTopY + kPlotBottomY) / 2;
 constexpr int kPlotRadius = 96;
 
 /// @brief Converts a distance/bearing pair to a screen point on the PPI plot.
@@ -194,7 +204,7 @@ void draw_plot_view(uint8_t* fb, const ConsoleState& console_state, uint32_t now
         draw_plot_blip(fb, status.aircraft[i], range_nm);
     }
 
-    draw_footer_disclaimer(fb, status, now_ms);
+    draw_provenance_line(fb, status, now_ms, kFooterTextY);
 }
 
 } // namespace
@@ -234,7 +244,7 @@ void draw_air_traffic_page(uint8_t* fb, const ConsoleState& console_state, uint3
             screens::draw_centered_text(fb, kUiWidth / 2, 120, detail, true,
                                         fonts::FontFace::Font5x7, 1);
         }
-        draw_footer_disclaimer(fb, status, now_ms);
+        draw_provenance_line(fb, status, now_ms, kFooterTextY);
         return;
     }
 

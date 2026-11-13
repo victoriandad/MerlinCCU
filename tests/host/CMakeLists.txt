@@ -43,6 +43,7 @@ add_executable(host_tests
     test_calendar_controller.cpp
     test_settings_controller.cpp
     test_status_controller.cpp
+    test_console_navigation.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -64,6 +65,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/network/bounded_json.cpp
     ${MERLIN_ROOT}/src/network/share_feed_parser.cpp
     ${MERLIN_ROOT}/src/network/air_traffic_response_parser.cpp
+    ${MERLIN_ROOT}/src/sensors/local_conditions.cpp
     ${MERLIN_ROOT}/src/display/framebuffer.cpp
     ${MERLIN_ROOT}/src/display/screen_banners.cpp
     ${MERLIN_ROOT}/src/display/screens.cpp

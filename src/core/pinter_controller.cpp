@@ -1,6 +1,7 @@
 #include "pinter_controller.h"
 
 #include <array>
+#include <cctype>
 #include <cstdio>
 
 #include "console_controller_internal.h"
@@ -14,6 +15,10 @@ namespace cci = console_controller::console_controller_internal;
 
 namespace
 {
+
+/// @brief Room for a vessel key's stage value, for example
+/// "Cond 45d, ready 30 Sep".
+constexpr size_t kPinterSlotStageCapacity = 32U;
 
 // The runtime catalogue stores only scheduling data for actual brew packs.
 // Shop-only fields and glass/bundle products are deliberately omitted here.
@@ -206,41 +211,53 @@ void format_countdown_text(const ConsoleState& console_state, const PinterStatus
 
     const uint32_t days_remaining = (target_day > today) ? (target_day - today) : 0U;
     const date_time_math::DateTimeParts target = date_time_math::civil_from_epoch_day(target_day);
-    const char* month = (target.month >= 1 && target.month <= 12)
-                            ? date_time_math::kMonthAbbreviations[static_cast<size_t>(target.month - 1)]
-                            : "---";
-    std::snprintf(out, out_size, "%uD - RDY %02d %s", static_cast<unsigned>(days_remaining),
+    // Mixed-case month, for example "Jul" (LBL-4).
+    char month[4] = "---";
+    if (target.month >= 1 && target.month <= 12)
+    {
+        const char* source =
+            date_time_math::kMonthAbbreviations[static_cast<size_t>(target.month - 1)];
+        for (size_t i = 0U; i < 3U && source[i] != '\0'; ++i)
+        {
+            const unsigned char c = static_cast<unsigned char>(source[i]);
+            month[i] = static_cast<char>(i == 0U ? std::toupper(c) : std::tolower(c));
+        }
+    }
+    std::snprintf(out, out_size, "%ud, ready %d %s", static_cast<unsigned>(days_remaining),
                   target.day, month);
 }
 
+/// @details A vessel in use shows three parts: its name, the recipe, and the
+/// stage with its countdown. The recipe has its own value so a long name can
+/// wrap over up to three lines inside one bracket pair without pushing the
+/// stage and countdown off the key (LBL-1, LBL-6).
 const char* build_slot_softkey_label(const ConsoleState& console_state, SoftKeyId key,
                                      const PinterStatus& pinter)
 {
     const char* state_text = state_selection_text(pinter.state);
     if (pinter.state == PinterState::Idle || pinter.state == PinterState::Consumed)
     {
-        return cci::build_selection_softkey_label(key, pinter.label.data(),
-                                                                           state_text);
+        return cci::build_selection_softkey_label(key, pinter.label.data(), state_text);
     }
-
-    const PinterBrewTiming& brew = brew_timing(pinter.brew_index);
-    char value[40] = {};
-    std::snprintf(value, sizeof(value), "%s %s", state_text, brew.name);
 
     char countdown_text[24] = {};
     format_countdown_text(console_state, pinter, countdown_text, sizeof(countdown_text));
+    char stage[kPinterSlotStageCapacity] = {};
     if (countdown_text[0] == '\0')
     {
-        return cci::build_selection_softkey_label(key, pinter.label.data(),
-                                                                           value);
+        std::snprintf(stage, sizeof(stage), "%s", state_text);
+    }
+    else
+    {
+        std::snprintf(stage, sizeof(stage), "%s %s", state_text, countdown_text);
     }
 
     size_t buffer_capacity = 0U;
     char* buffer = cci::dynamic_softkey_label_buffer(key, buffer_capacity);
     char title_upper[24] = {};
-    cci::build_uppercase_title(pinter.label.data(), title_upper,
-                                                        sizeof(title_upper));
-    std::snprintf(buffer, buffer_capacity, "%s\n[%s]\n[%s]", title_upper, value, countdown_text);
+    cci::build_uppercase_title(pinter.label.data(), title_upper, sizeof(title_upper));
+    std::snprintf(buffer, buffer_capacity, "%s\n[%s]\n[%s]", title_upper,
+                  brew_timing(pinter.brew_index).name, stage);
     return buffer;
 }
 
@@ -296,7 +313,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
     case PinterState::Idle:
         if (brew_dock_count(console_state) >= kPinterBrewDockCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "START\n[NO DOCK]");
+            std::snprintf(buffer, buffer_capacity, "START\n[No dock]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "START");
@@ -309,7 +326,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
         }
         if (fridge_count(console_state) >= kPinterFridgeCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[FULL]");
+            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[Full]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "FRIDGE");
@@ -317,7 +334,7 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
     case PinterState::ColdCrash:
         if (fridge_count(console_state) >= kPinterFridgeCapacity)
         {
-            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[FULL]");
+            std::snprintf(buffer, buffer_capacity, "FRIDGE\n[Full]");
             return buffer;
         }
         std::snprintf(buffer, buffer_capacity, "FRIDGE");
@@ -338,9 +355,9 @@ const char* build_primary_action_label(SoftKeyId key, const ConsoleState& consol
 }
 
 /// @details The R1 softkey label only has room for a two-line hint (e.g.
-/// "FRIDGE\n[FULL]"), which is easy to press past without registering why
+/// "FRIDGE\n[Full]"), which is easy to press past without registering why
 /// nothing happened. This puts the same reason somewhere unmissable: the
-/// page's own centre body, which is otherwise blank on the main Pinter page.
+/// page footer, which is otherwise unused on the main Pinter page.
 void update_block_reason(ConsoleState& console_state)
 {
     auto& reason = console_state.pinter_block_reason;

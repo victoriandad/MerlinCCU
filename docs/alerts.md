@@ -73,6 +73,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `DisplayPipelineLag` | Message | placeholder, hardcoded `false` | `DISPLAY LAG` | Static text | Never fires yet -- see Missing Telemetry |
 | `ShareDataUnavailable` | Message | share data configured, invalid, and a real error/HTTP failure | `SHARES` | Static text | -- |
 | `PinterScheduleConflict` | Message | placeholder, hardcoded `false` | `PINTER` | Empty detail | Never fires yet -- see Missing Telemetry |
+| `AirTrafficUnavailable` | Message | ADS-B enabled and configured, data invalid with an error or HTTP >= 400, while Wi-Fi is connected; debounced | `ADS-B` | Static text | 5-sample debounce; clears when data is valid again |
 
 ## Missing Telemetry
 

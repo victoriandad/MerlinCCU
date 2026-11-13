@@ -71,7 +71,6 @@ constexpr uint32_t kTlsConnectTimeoutMs = 12000;
 constexpr uint32_t kTlsIoTimeoutMs = 12000;
 constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
-constexpr uint32_t kRefreshIntervalMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr size_t kHttpTargetBufferSize = 640;
 constexpr char kHttpSchemePrefix[] = "http://";
@@ -605,7 +604,7 @@ void advance_request_kind()
     {
         g_request_kind = RequestKind::FetchWeatherEntity;
         g_sequence_complete = true;
-        g_next_attempt = make_timeout_time_ms(kRefreshIntervalMs);
+        g_next_attempt = make_timeout_time_ms(home_assistant_manager::kRefreshIntervalMs);
         return;
     }
 
@@ -694,7 +693,7 @@ void advance_request_kind()
 
     g_request_kind = RequestKind::ProbeApi;
     g_sequence_complete = true;
-    g_next_attempt = make_timeout_time_ms(kRefreshIntervalMs);
+    g_next_attempt = make_timeout_time_ms(home_assistant_manager::kRefreshIntervalMs);
 }
 
 /// @brief Parses and normalizes the configured Home Assistant endpoint.
@@ -1168,7 +1167,10 @@ void handle_http_status(int http_status)
         clear_weather_daily_forecast();
         g_status.sunrise_text.fill('\0');
         g_status.sunset_text.fill('\0');
-        copy_text(g_status.weather_condition, "No data");
+        // Leave the condition empty rather than writing a placeholder: the
+        // Weather page and the WeatherUnavailable alert both read an empty
+        // payload as a failed fetch.
+        g_status.weather_condition.fill('\0');
         g_status.weather_temperature.fill('\0');
         clear_current_weather_metrics();
         clear_weather_alert_status();

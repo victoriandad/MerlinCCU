@@ -1,5 +1,7 @@
 #include "alert_controller.h"
 
+#include <cstring>
+
 #include "test_framework.h"
 
 namespace
@@ -218,4 +220,104 @@ HOST_TEST(open_detail_from_slot_rejects_a_slot_past_the_active_alert_count)
 
     state.active_page = MenuPage::AlertList;
     EXPECT_FALSE(alert_controller::open_detail_from_slot(state, 5U));
+}
+
+namespace
+{
+
+constexpr int kAlertRetryThreshold = 5;
+
+ConsoleState make_failing_air_traffic_state()
+{
+    ConsoleState state = make_healthy_state();
+    state.air_traffic_status.enabled = true;
+    state.air_traffic_status.configured = true;
+    state.air_traffic_status.data_valid = false;
+    state.air_traffic_status.last_http_status = 503;
+    return state;
+}
+
+void sync_times(ConsoleState& state, int times)
+{
+    for (int i = 0; i < times; ++i)
+    {
+        alert_controller::sync(state);
+    }
+}
+
+} // namespace
+
+HOST_TEST(sync_raises_air_traffic_unavailable_after_repeated_failures)
+{
+    alert_controller::reset();
+    ConsoleState state = make_failing_air_traffic_state();
+    sync_times(state, kAlertRetryThreshold - 1);
+    EXPECT_EQ(state.alert_count, 0U);
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "ADS-B") == 0);
+}
+
+HOST_TEST(sync_does_not_raise_air_traffic_unavailable_when_disabled_or_unconfigured)
+{
+    alert_controller::reset();
+    ConsoleState disabled = make_failing_air_traffic_state();
+    disabled.air_traffic_status.enabled = false;
+    sync_times(disabled, kAlertRetryThreshold * 2);
+    EXPECT_EQ(disabled.alert_count, 0U);
+
+    alert_controller::reset();
+    ConsoleState unconfigured = make_failing_air_traffic_state();
+    unconfigured.air_traffic_status.configured = false;
+    sync_times(unconfigured, kAlertRetryThreshold * 2);
+    EXPECT_EQ(unconfigured.alert_count, 0U);
+}
+
+HOST_TEST(sync_air_traffic_unavailable_needs_consecutive_failures_and_clears_on_valid_data)
+{
+    alert_controller::reset();
+    ConsoleState state = make_failing_air_traffic_state();
+    sync_times(state, kAlertRetryThreshold - 1);
+
+    // One good fetch resets the run, so a single later failure does not alert.
+    state.air_traffic_status.data_valid = true;
+    alert_controller::sync(state);
+    state.air_traffic_status.data_valid = false;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    sync_times(state, kAlertRetryThreshold);
+    EXPECT_EQ(state.alert_count, 1U);
+    state.air_traffic_status.data_valid = true;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+}
+
+HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    state.weather_source = WeatherSource::OpenMeteo;
+    state.wifi_status.internet_reachable = true;
+    state.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    state.home_assistant_status.last_error = -5;
+
+    // One failed sample is not enough to raise it.
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "WEATHER") == 0);
+
+    // A good fetch clears it.
+    std::strncpy(state.home_assistant_status.weather_condition.data(), "cloudy",
+                 state.home_assistant_status.weather_condition.size());
+    state.home_assistant_status.state = HomeAssistantConnectionState::Connected;
+    state.home_assistant_status.last_error = 0;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
 }

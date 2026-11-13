@@ -27,6 +27,7 @@ uint32_t g_alert_acknowledged_sequence = 0U;
 uint8_t g_home_assistant_connect_failures = 0U;
 uint8_t g_weather_refresh_failures = 0U;
 uint8_t g_mqtt_connect_failures = 0U;
+uint8_t g_air_traffic_fetch_failures = 0U;
 uint8_t g_time_unsynced_samples = 0U;
 uint8_t g_keypad_fault_samples = 0U;
 constexpr uint8_t kAlertRetryThreshold = 5U;
@@ -56,6 +57,7 @@ enum class AlertCode : uint8_t
     DisplayPipelineLag,
     ShareDataUnavailable,
     PinterScheduleConflict,
+    AirTrafficUnavailable,
     Count,
 };
 
@@ -582,6 +584,30 @@ void sync(ConsoleState& console_state)
     set_alert_condition(console_state, AlertCode::PinterScheduleConflict, false,
                         AlertSeverity::Message, "PINTER", "");
 
+    // ADS-B feed failing while the link is up. Wi-Fi outages are already
+    // covered by WifiDisconnected, so they do not count here.
+    const AirTrafficStatus& air_traffic = console_state.air_traffic_status;
+    const bool air_traffic_failed_now =
+        air_traffic.enabled && air_traffic.configured && !air_traffic.data_valid &&
+        (air_traffic.last_error != 0 || air_traffic.last_http_status >= 400) &&
+        console_state.wifi_status.state == WifiConnectionState::Connected;
+    if (air_traffic_failed_now)
+    {
+        if (g_air_traffic_fetch_failures < 255U)
+        {
+            ++g_air_traffic_fetch_failures;
+        }
+    }
+    else
+    {
+        g_air_traffic_fetch_failures = 0U;
+    }
+    set_alert_condition(console_state, AlertCode::AirTrafficUnavailable,
+                        g_air_traffic_fetch_failures >= kAlertRetryThreshold,
+                        AlertSeverity::Message, "ADS-B",
+                        "ADS-B traffic feed has failed after 5 retries.\nCheck host, port, API "
+                        "key and coordinates in Settings > ADS-B Traffic.");
+
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
         console_state.alert_detail_index =
@@ -698,6 +724,7 @@ void reset()
     g_home_assistant_connect_failures = 0U;
     g_weather_refresh_failures = 0U;
     g_mqtt_connect_failures = 0U;
+    g_air_traffic_fetch_failures = 0U;
     g_time_unsynced_samples = 0U;
     g_keypad_fault_samples = 0U;
     g_alert_suppressed.fill(false);

@@ -65,44 +65,14 @@ void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
         (console_state.settings_page_index + 1U) < screens::kSettingsPageCount);
 }
 
-/// @brief Leaves the device identity settings body blank.
-/// @details The surrounding softkeys carry each visible identity value.
-void draw_device_settings_page(uint8_t* fb, const ConsoleState& console_state)
+/// @brief Draws only the paging arrows of the Time Zone option list.
+/// @details The zones themselves are option keys around the bezel; the
+/// cursor keys page through them (NAV-7, NAV-8).
+void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the network settings body blank.
-/// @details Configured Wi-Fi values are shown as softkey attributes only.
-void draw_wifi_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the Home Assistant settings body blank.
-/// @details Integration settings are exposed as bracketed softkey attributes.
-void draw_home_assistant_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the MQTT discovery settings body blank.
-/// @details Broker and discovery values are shown around the bezel.
-void draw_mqtt_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the ADS-B traffic settings body blank.
-/// @details Feed enable/host/coordinates values are shown around the bezel.
-void draw_air_traffic_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
+    screens::draw_page_navigation_arrows(
+        fb, console_state.time_zone_page_index > 0U,
+        (console_state.time_zone_page_index + 1U) < kTimeZonePageCount);
 }
 
 /// @brief Draws only active screen-saver editing UI.
@@ -113,23 +83,6 @@ void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
     {
         draw_screen_saver_scratchpad(fb, console_state);
     }
-}
-
-/// @brief Draws the weather-source selection page under Settings.
-/// @details Settings subpages keep values on the surrounding softkeys so the
-/// centre of the display stays free of duplicate status text.
-void draw_weather_sources_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
-/// @brief Leaves the time-zone settings body blank.
-/// @details Available zones are presented as softkey choices.
-void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
 }
 
 /// @brief Draws the keypad-debug diagnostics page.
@@ -174,15 +127,6 @@ void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
     screens::draw_info_page_rows(fb, rows, sizeof(rows) / sizeof(rows[0]));
 }
 
-/// @brief Placeholder for the future alignment menu page.
-/// @details The route already exists so menu navigation can stabilize before the
-/// dedicated alignment workflow is implemented.
-void draw_alignment_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    (void)fb;
-    (void)console_state;
-}
-
 /// @brief Draws the 2x2 ordered-dither greyscale test card.
 /// @details Five bands, one per brightness level (0-4 of every 2x2 pixel
 /// block lit), exercising `framebuffer::fill_rect_dithered` end-to-end on
@@ -200,23 +144,35 @@ void draw_greyscale_test_card(uint8_t* fb, const ConsoleState& console_state)
     constexpr int kBandHeight = 30;
     constexpr int kLabelHeight = 9;
     constexpr int kLabelToBandGap = 2;
-    constexpr int kEntryGap = 8;
+    constexpr int kEntryGap = 4;
     constexpr int kStartY = 44;
+    constexpr int kLevelCount = 5;
     constexpr int kEntryHeight = kLabelHeight + kLabelToBandGap + kBandHeight;
+    constexpr int kCardBottomY =
+        kStartY + (kLevelCount * kEntryHeight) + ((kLevelCount - 1) * kEntryGap);
+    // Top of the row 5 softkey cells (softkey top 41 + 4 rows x 57 pitch in
+    // screens.cpp). The full-width bands must end above it so R5 HOME stays
+    // readable (SCR-5). Moves to the shared layout header under #113.
+    constexpr int kRow5SoftkeyTopY = 269;
+    static_assert(kCardBottomY <= kRow5SoftkeyTopY,
+                  "greyscale bands would overlap the row 5 softkey labels");
+    constexpr fonts::FontFace kLabelFont = fonts::FontFace::Font5x7;
+    constexpr const char* kCaption = "2X2 ORDERED DITHER";
 
-    for (int level = 0; level <= 4; ++level)
+    for (int level = 0; level < kLevelCount; ++level)
     {
         const int kEntryY = kStartY + (level * (kEntryHeight + kEntryGap));
         char label[16] = {};
         std::snprintf(label, sizeof(label), "L%d  %d/4", level, level);
-        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, fonts::FontFace::Font5x7);
+        framebuffer::draw_text(fb, kMarginX, kEntryY, label, true, kLabelFont);
         framebuffer::fill_rect_dithered(fb, kMarginX, kEntryY + kLabelHeight + kLabelToBandGap,
                                         kBandWidth, kBandHeight, level);
     }
 
-    const int kCaptionY = kStartY + (5 * (kEntryHeight + kEntryGap));
-    framebuffer::draw_text(fb, kMarginX, kCaptionY, "2X2 ORDERED DITHER", true,
-                           fonts::FontFace::Font5x7);
+    // The caption shares the first label row, right-aligned, so nothing is
+    // drawn in the row 5 or footer zones.
+    framebuffer::draw_text(fb, kMarginX + kBandWidth - screens::text_width(kCaption, kLabelFont),
+                           kStartY, kCaption, true, kLabelFont);
 }
 
 } // namespace settings_screens

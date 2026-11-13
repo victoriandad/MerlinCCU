@@ -26,6 +26,14 @@ inline constexpr std::size_t kEnvironmentSensorDeviceCount =
     static_cast<std::size_t>(EnvironmentSensorDevice::Count);
 inline constexpr std::size_t kLocalConditionHistoryPointCount = 288U;
 
+/// @brief How often the board's sensors are read.
+inline constexpr uint32_t kLocalConditionSampleIntervalMs = 10000U;
+
+/// @brief Age at which a local reading counts as stale: four missed reads.
+/// @details Owned here, by the subsystem that takes the readings, so every
+/// page that shows their freshness uses the same threshold (STATE-4).
+inline constexpr uint32_t kLocalConditionStaleAfterMs = 4U * kLocalConditionSampleIntervalMs;
+
 /// @brief Returns the operator-facing VOC-change label for a local 0-100 score.
 const char* air_quality_band_text(uint8_t score);
 

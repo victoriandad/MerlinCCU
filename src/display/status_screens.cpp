@@ -7,6 +7,8 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
+#include "home_assistant_manager.h"
+#include "local_conditions.h"
 #include "panel_config.h"
 #include "screens_shared.h"
 
@@ -257,12 +259,6 @@ const char* home_assistant_rest_state_text(const ConsoleState& console_state,
     return "Unconfig";
 }
 
-/// @brief Draws the Status selector page.
-void draw_status_selector_page(uint8_t* fb)
-{
-    (void)fb;
-}
-
 /// @brief Draws the high-level system overview status page.
 void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -459,14 +455,14 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state, ui
     build_environment_address_text(console_state.environment_sensor_status, sensor_addresses_text,
                                    sizeof(sensor_addresses_text));
     char sensor_temperature_text[16] = {};
-    screens::build_environment_temperature_text(console_state.environment_sensor_status,
+    local_conditions::format_temperature(console_state.environment_sensor_status,
                                                 sensor_temperature_text,
                                                 sizeof(sensor_temperature_text));
     char sensor_humidity_text[16] = {};
-    screens::build_environment_humidity_text(console_state.environment_sensor_status,
+    local_conditions::format_humidity(console_state.environment_sensor_status,
                                              sensor_humidity_text, sizeof(sensor_humidity_text));
     char sensor_pressure_text[16] = {};
-    screens::build_environment_pressure_text(console_state.environment_sensor_status,
+    local_conditions::format_pressure(console_state.environment_sensor_status,
                                              sensor_pressure_text, sizeof(sensor_pressure_text));
     char sensor_scan_text[16] = {};
     if (console_state.environment_sensor_status.enabled &&
@@ -541,9 +537,9 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     // summary page reads consistently with the pages it's summarizing.
     char weather_data_text[16] = {};
     screens::build_data_freshness_text(
-        console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
+        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.state),
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
-        4U * 5U * 60U * 1000U, weather_data_text, sizeof(weather_data_text));
+        home_assistant_manager::kWeatherStaleAfterMs, weather_data_text, sizeof(weather_data_text));
 
     char share_data_text[16] = {};
     if (console_state.share_data_last_success_ms == 0U)
@@ -581,9 +577,6 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state, uint32_t n
 {
     switch (console_state.active_page)
     {
-    case MenuPage::Status:
-        draw_status_selector_page(fb);
-        break;
     case MenuPage::StatusOverview:
         draw_status_overview_page(fb, console_state);
         break;
