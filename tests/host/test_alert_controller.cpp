@@ -321,3 +321,101 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 0U);
 }
+
+namespace
+{
+
+/// @brief Drops Wi-Fi and syncs, then restores it and syncs, `times` times.
+void flap_wifi(ConsoleState& state, int times)
+{
+    for (int i = 0; i < times; ++i)
+    {
+        state.wifi_status.state = WifiConnectionState::Disabled;
+        alert_controller::sync(state);
+        state.wifi_status.state = WifiConnectionState::Connected;
+        alert_controller::sync(state);
+    }
+}
+
+} // namespace
+
+HOST_TEST(a_recurring_alert_raises_its_count_on_one_entry)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    flap_wifi(state, 2);
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+    alert_controller::sync(state); // staying down is not a new occurrence
+
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count), 3U);
+    EXPECT_TRUE(std::strstr(alert_controller::build_softkey_label(SoftKeyId::Left1,
+                                                                  state.active_alerts[0]),
+                            " x3]") != nullptr);
+}
+
+HOST_TEST(a_first_occurrence_shows_no_count)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count), 1U);
+    EXPECT_TRUE(std::strcmp(alert_controller::build_softkey_label(SoftKeyId::Left1,
+                                                                  state.active_alerts[0]),
+                            "NETWORK\n[--:--]") == 0);
+}
+
+HOST_TEST(accept_restarts_the_occurrence_count)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    flap_wifi(state, 3);
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count), 4U);
+
+    alert_controller::accept_alert(state, 0U);
+    EXPECT_EQ(state.alert_count, 0U);
+    alert_controller::sync(state); // still down: accepted alerts stay hidden
+    EXPECT_EQ(state.alert_count, 0U);
+
+    // The accepted episode ends and a new one starts: the first since ACCEPT.
+    flap_wifi(state, 1);
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count), 1U);
+
+    flap_wifi(state, 1);
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count), 2U);
+}
+
+HOST_TEST(the_occurrence_count_stops_at_its_display_limit)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    flap_wifi(state, 150);
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    alert_controller::sync(state);
+    EXPECT_EQ(static_cast<unsigned>(state.active_alerts[0].occurrence_count),
+              static_cast<unsigned>(kMaxAlertOccurrenceCount));
+}
+
+HOST_TEST(the_alert_list_holds_every_alert_code_at_once)
+{
+    ConsoleState state = make_healthy_state();
+    state.alert_count = 0U;
+    for (size_t code = 0U; code < kAlertCodeCount; ++code)
+    {
+        ActiveAlert& alert = state.active_alerts[state.alert_count++];
+        alert.code = static_cast<uint8_t>(code);
+    }
+    EXPECT_EQ(static_cast<size_t>(state.alert_count), kActiveAlertCapacity);
+    EXPECT_EQ(alert_controller::page_count(state),
+              static_cast<uint8_t>((kAlertCodeCount + kAlertsPerPage - 1U) / kAlertsPerPage));
+}

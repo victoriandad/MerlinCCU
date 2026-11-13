@@ -418,11 +418,7 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     }
     if (console_state.active_page == MenuPage::AlertList)
     {
-        constexpr uint8_t kAlertsPerPage = 9U;
-        const uint8_t page_count = static_cast<uint8_t>(
-            (console_state.alert_count == 0U)
-                ? 1U
-                : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
+        const uint8_t page_count = alert_list_page_count(console_state.alert_count);
         std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
                       static_cast<unsigned>(console_state.alert_list_page_index + 1U),
                       static_cast<unsigned>(page_count));

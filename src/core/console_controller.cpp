@@ -1152,7 +1152,6 @@ void update_softkeys_from_state()
         std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
         uint8_t sorted_count = 0U;
         alert_controller::build_display_indices(g_console_state, alert_indices, &sorted_count);
-        constexpr uint8_t kAlertsPerPage = 9U;
         const uint8_t page_start =
             static_cast<uint8_t>(g_console_state.alert_list_page_index * kAlertsPerPage);
         const std::array<SoftKeyId, 9> slots = {
@@ -1626,9 +1625,7 @@ bool apply_softkey_route(SoftKeyRoute route)
         {
             return false;
         }
-        alert_controller::suppress_alert_code(
-            g_console_state.active_alerts[g_console_state.alert_detail_index].code);
-        alert_controller::erase_active_alert(g_console_state, g_console_state.alert_detail_index);
+        alert_controller::accept_alert(g_console_state, g_console_state.alert_detail_index);
         g_console_state.active_page = MenuPage::AlertList;
         return true;
     case SoftKeyRoute::AlertIgnore:

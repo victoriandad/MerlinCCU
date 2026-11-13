@@ -20,8 +20,17 @@ failure modes are handled consistently across firmware features.
   `console_controller`.
 - Alert conditions are synchronised in `alert_controller::sync()`, via the
   internal `set_alert_condition()` helper.
-- Active alerts carry severity, summary, detail text, occurrence time, and a
-  sequence for acknowledgement behaviour.
+- Active alerts carry severity, summary, detail text, occurrence time, an
+  occurrence count, and a sequence for acknowledgement behaviour.
+- Alert types are listed in `AlertCode` (`include/core/alert_codes.h`). The
+  list holds at most one entry per type and is sized from `AlertCode::Count`,
+  so adding a code grows the list and its page count with no other edit.
+- Each time an alert's condition goes from clear to active, its occurrence
+  count rises, even if the alert cleared in between. Once the count is above
+  one, the alert key shows it after the time (`[12:34 x3]`) and the detail page
+  ends with an "Occurred N times" line. The count stops at 99.
+- ACCEPT hides the alert until its condition clears and resets its count;
+  the next recurrence counts as the first. A restart also resets every count.
 - The alert list is newest-first; detail pages support accept and ignore flows.
 
 ## Severity Guide

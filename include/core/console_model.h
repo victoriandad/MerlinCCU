@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "alert_codes.h"
 #include "environment_sensor_manager.h"
 
 /// @brief Physical softkeys mounted beside the display.
@@ -658,7 +659,23 @@ enum class SoftKeyRoute : uint8_t
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
-inline constexpr size_t kActiveAlertCapacity = 24;
+/// @details One entry per alert type, so this follows the alert code list and
+/// never needs raising by hand (NAV-6a).
+inline constexpr size_t kActiveAlertCapacity = kAlertCodeCount;
+
+/// @brief Alerts shown on one Alert list page: L1-L5 and R1-R4 (NAV-6).
+inline constexpr uint8_t kAlertsPerPage = 9U;
+
+/// @brief Alert list pages needed for `alert_count` alerts; always at least one.
+constexpr uint8_t alert_list_page_count(uint8_t alert_count)
+{
+    return alert_count == 0U
+               ? 1U
+               : static_cast<uint8_t>((alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage);
+}
+
+/// @brief Highest occurrence count kept for one alert; shown as `x99`.
+inline constexpr uint8_t kMaxAlertOccurrenceCount = 99U;
 
 /// @brief One active alert surfaced by the CCU alert workflow.
 struct ActiveAlert
@@ -667,6 +684,9 @@ struct ActiveAlert
     uint8_t code;
     uint32_t sequence;
     std::array<char, 6> occurred_time_text;
+    /// Times this alert has gone from clear to active since it was last
+    /// accepted or the CCU restarted, capped at kMaxAlertOccurrenceCount.
+    uint8_t occurrence_count;
     std::array<char, 32> summary;
     std::array<char, 320> detail;
 };

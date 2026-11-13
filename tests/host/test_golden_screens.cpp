@@ -542,6 +542,50 @@ HOST_TEST(alert_detail_cursor_keys_stop_at_the_scroll_limit)
     EXPECT_EQ(state.alert_detail_scroll_line, 0U);
 }
 
+HOST_TEST(a_recurring_alert_shows_its_count_on_the_key_and_in_the_detail)
+{
+    console_controller::init();
+    WifiStatus wifi = {};
+    for (int i = 0; i < 3; ++i)
+    {
+        wifi.state = WifiConnectionState::Disabled;
+        (void)console_controller::set_wifi_status(wifi);
+        wifi.state = WifiConnectionState::Connected;
+        (void)console_controller::set_wifi_status(wifi);
+    }
+    wifi.state = WifiConnectionState::Disabled;
+    (void)console_controller::set_wifi_status(wifi);
+
+    (void)console_controller::handle_button_event({ButtonId::Alert, ButtonEventType::Pressed});
+    const ConsoleState& list = console_controller::state();
+    EXPECT_TRUE(list.active_page == MenuPage::AlertList);
+    const char* label = list.softkeys[static_cast<size_t>(SoftKeyId::Left1)].label;
+    EXPECT_TRUE(std::strstr(label, " x4]") != nullptr);
+    EXPECT_TRUE(golden_test::check_golden("alert_list_recurring", render_page(list).data()));
+
+    (void)console_controller::handle_button_event({ButtonId::LeftTop, ButtonEventType::Pressed});
+    const ConsoleState& detail = console_controller::state();
+    EXPECT_TRUE(detail.active_page == MenuPage::AlertDetail);
+    EXPECT_TRUE(alert_detail_stays_in_bounds(detail));
+    EXPECT_TRUE(golden_test::check_golden("alert_detail_recurring", render_page(detail).data()));
+}
+
+HOST_TEST(the_largest_alert_count_fits_the_alert_key)
+{
+    // The alert list uses the 8x12 font with two label lines; the count must
+    // stay inside the value's brackets on the second line.
+    const screens::SoftkeyLabelLayout layout =
+        screens::layout_softkey_label("NETWORK\n[--:-- x99]", fonts::FontFace::Font8x12, 2);
+    EXPECT_EQ(layout.count, 2);
+    EXPECT_TRUE(layout.lines[1].bracketed);
+    EXPECT_TRUE(std::strcmp(layout.lines[1].text, "--:-- x99") == 0);
+
+    // The longest detail text plus the count line still fits the page.
+    ConsoleState state = make_alert_detail_state(kLongAlertDetail);
+    state.active_alerts[0].occurrence_count = kMaxAlertOccurrenceCount;
+    EXPECT_TRUE(alert_detail_stays_in_bounds(state));
+}
+
 HOST_TEST(alert_detail_short_and_empty_states_render_consistently)
 {
     const auto short_fb = render_page(make_alert_detail_state(
