@@ -55,6 +55,20 @@ quickly without relying only on photographs of the physical panel.
 - Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
   fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.
 
+## Local Conditions
+
+- With no sensor board fitted, the page shows `NO SENSOR BOARD` with a hint
+  pointing to Status > Sensors, all four reading keys are blank, and the
+  `ENV SENSOR` alert is raised.
+- Before the first reading, the page shows `WAITING FOR SENSOR`.
+- With the board, `TEMP`, `HUMIDITY`, `AIR PRESSURE` and `VOC CHANGE` show the
+  same values as Status > Sensors and the graph's current value, and the
+  footer reads `Sensor board - LIVE`; unplugging the board turns it to `STALE`
+  after about 40 seconds.
+- A graph with fewer than two history points shows `NO HISTORY YET` and the
+  current reading. The graph page has only `HOME`; BACK STEP returns to Local
+  Conditions.
+
 ## Pinter Page
 
 Recipe selection is on-the-fly: there is no pre-planned brew queue or pack

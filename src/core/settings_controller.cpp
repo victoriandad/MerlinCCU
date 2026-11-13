@@ -17,11 +17,6 @@ namespace
 
 namespace cci = console_controller::console_controller_internal;
 
-// pico/error.h's PICO_ERROR_NONE is always 0; kept as a local constant
-// (rather than including the Pico-SDK header) so this file stays
-// host-testable -- see issue #78.
-constexpr int kNoErrorCode = 0;
-
 std::array<std::array<char, 16>, static_cast<size_t>(SoftKeyId::Count)> g_dynamic_softkey_values =
     {};
 std::array<char, 16> g_screen_saver_timeout_selection_text = {};
@@ -522,76 +517,6 @@ const char* share_period_selection_text(const ConsoleState& console_state)
 const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
 {
     return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
-}
-
-const char* local_temperature_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left1)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const int32_t raw_value = status.bme_temperature_centi_celsius;
-    const bool negative = raw_value < 0;
-    const uint32_t absolute_value =
-        static_cast<uint32_t>(negative ? -static_cast<int64_t>(raw_value) : raw_value);
-    std::snprintf(buffer.data(), buffer.size(), "%s%lu.%02luC", negative ? "-" : "",
-                  static_cast<unsigned long>(absolute_value / 100U),
-                  static_cast<unsigned long>(absolute_value % 100U));
-    return buffer.data();
-}
-
-const char* local_humidity_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left2)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%lu%%",
-                  static_cast<unsigned long>(tenths_percent / 10U),
-                  static_cast<unsigned long>(tenths_percent % 10U));
-    return buffer.data();
-}
-
-const char* local_pressure_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left3)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "-");
-        return buffer.data();
-    }
-
-    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
-    std::snprintf(buffer.data(), buffer.size(), "%lu.%luhPa",
-                  static_cast<unsigned long>(tenths_hpa / 10U),
-                  static_cast<unsigned long>(tenths_hpa % 10U));
-    return buffer.data();
-}
-
-const char* local_air_quality_selection_text(const ConsoleState& console_state)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(SoftKeyId::Left4)];
-    const auto& status = console_state.environment_sensor_status;
-    if (!status.enabled || !status.air_quality_score_valid)
-    {
-        std::snprintf(buffer.data(), buffer.size(), "%s",
-                      status.air_quality_read_error == kNoErrorCode ? "-" : "ERR");
-        return buffer.data();
-    }
-
-    std::snprintf(buffer.data(), buffer.size(), "%s",
-                  environment_sensor_manager::air_quality_band_text(status.air_quality_score));
-    return buffer.data();
 }
 
 const char* screen_saver_selection_text(const ConsoleState& console_state)

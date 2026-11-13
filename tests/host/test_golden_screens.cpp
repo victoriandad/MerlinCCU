@@ -13,6 +13,7 @@
 #include "console_model.h"
 #include "framebuffer.h"
 #include "input.h"
+#include "local_conditions.h"
 #include "golden_test_support.h"
 #include "panel_config.h"
 #include "screens.h"
@@ -1028,4 +1029,179 @@ HOST_TEST(weather_page_waiting_failed_and_no_data_use_the_empty_state_block)
     no_data.home_assistant_status.weather_condition.fill('\0');
     EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(no_data).state),
               static_cast<int>(WeatherPageState::NoData));
+}
+
+namespace
+{
+
+using environment_sensor_manager::EnvironmentSensorHealth;
+using environment_sensor_manager::EnvironmentSensorStatus;
+
+constexpr uint32_t kSensorTestNowMs = 900000U;
+
+constexpr std::array<SoftKeyId, 4> kReadingKeyIds = {SoftKeyId::Left1, SoftKeyId::Left2,
+                                                     SoftKeyId::Left3, SoftKeyId::Left4};
+constexpr std::array<LocalConditionMetric, 4> kReadingMetrics = {
+    LocalConditionMetric::Temperature, LocalConditionMetric::Humidity,
+    LocalConditionMetric::AirPressure, LocalConditionMetric::AirQuality};
+
+/// @brief A board that is fitted and was just read, with `history_points`
+/// five-minute averages behind it.
+EnvironmentSensorStatus make_live_sensor(uint16_t history_points)
+{
+    EnvironmentSensorStatus sensor = {};
+    sensor.enabled = true;
+    sensor.health = EnvironmentSensorHealth::BoardDetected;
+    sensor.bme_reading_valid = true;
+    sensor.bme_temperature_centi_celsius = 2150;
+    sensor.bme_humidity_milli_percent = 45200U;
+    sensor.bme_pressure_pa = 101320U;
+    sensor.bme_last_read_ms = kSensorTestNowMs - 5000U;
+    sensor.air_quality_score_valid = true;
+    sensor.air_quality_score = 97U;
+    sensor.air_quality_last_read_ms = kSensorTestNowMs - 5000U;
+    sensor.bme_history_count = history_points;
+    sensor.air_quality_history_count = history_points;
+    for (uint16_t i = 0U; i < history_points; ++i)
+    {
+        const int wave = static_cast<int>(i % 24U) - 12;
+        sensor.bme_temperature_history_centi_celsius[i] = static_cast<int16_t>(2000 + (wave * 15));
+        sensor.bme_humidity_history_centi_percent[i] = static_cast<uint16_t>(4500 + (wave * 40));
+        sensor.bme_pressure_history_deci_hpa[i] = static_cast<uint16_t>(10130 + wave);
+        sensor.air_quality_history_score[i] = static_cast<uint8_t>(90 + (wave / 3));
+    }
+    return sensor;
+}
+
+/// @brief A board that is enabled but has produced no reading, in `health`.
+EnvironmentSensorStatus make_unread_sensor(EnvironmentSensorHealth health)
+{
+    EnvironmentSensorStatus sensor = {};
+    sensor.enabled = true;
+    sensor.health = health;
+    return sensor;
+}
+
+/// @brief Opens Local Conditions (Home R3) with `sensor` already reported.
+const ConsoleState& open_local_conditions(const EnvironmentSensorStatus& sensor)
+{
+    console_controller::init();
+    (void)console_controller::set_environment_sensor_status(sensor);
+    (void)console_controller::handle_button_event(
+        {ButtonId::RightMiddle, ButtonEventType::Pressed});
+    return console_controller::state();
+}
+
+/// @brief True when the page body stays out of every labelled softkey cell row
+/// it could meet: rows 1-4 on the left when labelled, and row 5.
+bool local_body_stays_clear(const ConsoleState& state)
+{
+    ConsoleState body_only = state;
+    for (SoftKeyAction& key : body_only.softkeys)
+    {
+        key.label = "";
+    }
+    const auto fb = render_page(body_only, kSensorTestNowMs);
+    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1, kFooterTopY - 1) &&
+           !any_pixel_lit(fb.data(), kUiWidth - 11, kBodyTopY, kUiWidth - 1, kFooterTopY - 1);
+}
+
+} // namespace
+
+HOST_TEST(local_conditions_without_a_board_blank_every_reading_key)
+{
+    const ConsoleState& state =
+        open_local_conditions(make_unread_sensor(EnvironmentSensorHealth::BoardMissing));
+    EXPECT_TRUE(state.active_page == MenuPage::LocalConditions);
+    for (const SoftKeyId id : kReadingKeyIds)
+    {
+        EXPECT_TRUE(state.softkeys[static_cast<size_t>(id)].label[0] == '\0');
+    }
+    EXPECT_TRUE(local_body_stays_clear(state));
+    EXPECT_TRUE(golden_test::check_golden("local_conditions_no_board",
+                                          render_page(state, kSensorTestNowMs).data()));
+
+    // No key on the page opens a graph.
+    for (const ButtonId button : {ButtonId::LeftTop, ButtonId::LeftUpper, ButtonId::LeftMiddle,
+                                  ButtonId::LeftLower})
+    {
+        (void)open_local_conditions(make_unread_sensor(EnvironmentSensorHealth::BoardMissing));
+        (void)console_controller::handle_button_event({button, ButtonEventType::Pressed});
+        EXPECT_TRUE(console_controller::state().active_page == MenuPage::LocalConditions);
+    }
+}
+
+HOST_TEST(local_conditions_states_render_consistently)
+{
+    const ConsoleState& waiting =
+        open_local_conditions(make_unread_sensor(EnvironmentSensorHealth::BoardDetected));
+    EXPECT_TRUE(waiting.softkeys[0].label[0] == '\0');
+    EXPECT_TRUE(local_body_stays_clear(waiting));
+    EXPECT_TRUE(golden_test::check_golden("local_conditions_waiting",
+                                          render_page(waiting, kSensorTestNowMs).data()));
+
+    const ConsoleState& live = open_local_conditions(make_live_sensor(48U));
+    EXPECT_TRUE(golden_test::check_golden("local_conditions_live",
+                                          render_page(live, kSensorTestNowMs).data()));
+
+    EnvironmentSensorStatus old = make_live_sensor(48U);
+    old.bme_last_read_ms = 1000U;
+    old.air_quality_last_read_ms = 1000U;
+    const ConsoleState& stale = open_local_conditions(old);
+    EXPECT_TRUE(golden_test::check_golden("local_conditions_stale",
+                                          render_page(stale, kSensorTestNowMs).data()));
+
+    ConsoleState off = open_local_conditions(EnvironmentSensorStatus{});
+    EXPECT_EQ(static_cast<int>(local_conditions::board_state(off.environment_sensor_status)),
+              static_cast<int>(local_conditions::BoardState::SensorOff));
+    EXPECT_TRUE(local_body_stays_clear(off));
+}
+
+HOST_TEST(local_condition_keys_and_graph_use_the_same_reading_text)
+{
+    const EnvironmentSensorStatus sensor = make_live_sensor(48U);
+    const ConsoleState& state = open_local_conditions(sensor);
+    for (size_t i = 0U; i < kReadingKeyIds.size(); ++i)
+    {
+        char value[20] = {};
+        local_conditions::format_metric(kReadingMetrics[i], sensor, value, sizeof(value));
+        const std::string label = state.softkeys[static_cast<size_t>(kReadingKeyIds[i])].label;
+        EXPECT_TRUE(label.find(std::string("[") + value + "]") != std::string::npos);
+    }
+}
+
+HOST_TEST(local_condition_graph_states_render_consistently)
+{
+    // L1 opens the temperature graph; the graph page keeps only R5 HOME.
+    (void)open_local_conditions(make_live_sensor(48U));
+    (void)console_controller::handle_button_event({ButtonId::LeftTop, ButtonEventType::Pressed});
+    const ConsoleState live = console_controller::state();
+    EXPECT_TRUE(live.active_page == MenuPage::LocalConditionGraph);
+    EXPECT_TRUE(live.softkeys[static_cast<size_t>(SoftKeyId::Right4)].label[0] == '\0');
+    EXPECT_TRUE(local_body_stays_clear(live));
+    EXPECT_TRUE(golden_test::check_golden("local_graph_live",
+                                          render_page(live, kSensorTestNowMs).data()));
+
+    ConsoleState stale = live;
+    stale.environment_sensor_status.bme_last_read_ms = 1000U;
+    stale.environment_sensor_status.air_quality_last_read_ms = 1000U;
+    EXPECT_TRUE(golden_test::check_golden("local_graph_stale",
+                                          render_page(stale, kSensorTestNowMs).data()));
+
+    ConsoleState no_history = live;
+    no_history.environment_sensor_status.bme_history_count = 1U;
+    EXPECT_TRUE(local_body_stays_clear(no_history));
+    EXPECT_TRUE(golden_test::check_golden("local_graph_no_history",
+                                          render_page(no_history, kSensorTestNowMs).data()));
+
+    ConsoleState waiting = live;
+    waiting.environment_sensor_status = make_unread_sensor(EnvironmentSensorHealth::BoardDetected);
+    EXPECT_TRUE(golden_test::check_golden("local_graph_waiting",
+                                          render_page(waiting, kSensorTestNowMs).data()));
+
+    ConsoleState no_board = live;
+    no_board.environment_sensor_status = make_unread_sensor(EnvironmentSensorHealth::BoardMissing);
+    EXPECT_TRUE(local_body_stays_clear(no_board));
+    EXPECT_TRUE(golden_test::check_golden("local_graph_no_board",
+                                          render_page(no_board, kSensorTestNowMs).data()));
 }

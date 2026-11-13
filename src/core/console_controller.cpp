@@ -13,6 +13,7 @@
 #include "calendar_controller.h"
 #include "console_controller_internal.h"
 #include "debug_logging.h"
+#include "local_conditions.h"
 #include "pinter_controller.h"
 #include "pinter_scheduling.h"
 #include "settings_controller.h"
@@ -744,34 +745,45 @@ void update_softkeys_from_state()
         // Body pages: only R5 HOME, added below (PAGE-4). BACK STEP returns to Status.
         break;
     case MenuPage::LocalConditions:
-        softkeys[softkey_index(SoftKeyId::Left1)] = {
-            build_selection_softkey_label(SoftKeyId::Left1, "TEMP",
-                                          settings_controller::local_temperature_selection_text(g_console_state)),
-            SoftKeyRoute::ShowLocalTemperatureGraph,
-            true,
+    {
+        // One reading key per quantity, opening its graph. A quantity with no
+        // reading and no history has nothing to open, so its key is blank
+        // (SK-5); with no board at all every key is blank and the body says
+        // why. Values come from the one formatter per quantity (BODY-5).
+        struct ReadingKey
+        {
+            SoftKeyId key;
+            const char* caption;
+            LocalConditionMetric metric;
+            SoftKeyRoute route;
         };
-        softkeys[softkey_index(SoftKeyId::Left2)] = {
-            build_selection_softkey_label(SoftKeyId::Left2, "HUMIDITY",
-                                          settings_controller::local_humidity_selection_text(g_console_state)),
-            SoftKeyRoute::ShowLocalHumidityGraph,
-            true,
-        };
-        softkeys[softkey_index(SoftKeyId::Left3)] = {
-            build_selection_softkey_label(SoftKeyId::Left3, "AIR PRESSURE",
-                                          settings_controller::local_pressure_selection_text(g_console_state)),
-            SoftKeyRoute::ShowLocalPressureGraph,
-            true,
-        };
-        softkeys[softkey_index(SoftKeyId::Left4)] = {
-            build_selection_softkey_label(SoftKeyId::Left4, "VOC CHANGE",
-                                          settings_controller::local_air_quality_selection_text(g_console_state)),
-            SoftKeyRoute::ShowLocalAirQualityGraph,
-            true,
-        };
+        constexpr std::array<ReadingKey, 4> kReadingKeys = {{
+            {SoftKeyId::Left1, "TEMP", LocalConditionMetric::Temperature,
+             SoftKeyRoute::ShowLocalTemperatureGraph},
+            {SoftKeyId::Left2, "HUMIDITY", LocalConditionMetric::Humidity,
+             SoftKeyRoute::ShowLocalHumidityGraph},
+            {SoftKeyId::Left3, "AIR PRESSURE", LocalConditionMetric::AirPressure,
+             SoftKeyRoute::ShowLocalPressureGraph},
+            {SoftKeyId::Left4, "VOC CHANGE", LocalConditionMetric::AirQuality,
+             SoftKeyRoute::ShowLocalAirQualityGraph},
+        }};
+        const auto& sensor = g_console_state.environment_sensor_status;
+        for (const ReadingKey& reading : kReadingKeys)
+        {
+            if (!local_conditions::metric_has_data(reading.metric, sensor))
+            {
+                continue;
+            }
+            char value[20] = {};
+            local_conditions::format_metric(reading.metric, sensor, value, sizeof(value));
+            softkeys[softkey_index(reading.key)] = {
+                build_selection_softkey_label(reading.key, reading.caption, value), reading.route,
+                true};
+        }
         break;
+    }
     case MenuPage::LocalConditionGraph:
-        softkeys[softkey_index(SoftKeyId::Right4)] = {
-            "BACK", SoftKeyRoute::GoLocalConditions, true};
+        // Body page: BACK STEP returns to Local Conditions (NAV-5); R5 HOME below.
         break;
     case MenuPage::Settings:
         if (g_console_state.settings_page_index == 0U)

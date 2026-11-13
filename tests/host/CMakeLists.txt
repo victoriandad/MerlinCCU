@@ -65,6 +65,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/network/bounded_json.cpp
     ${MERLIN_ROOT}/src/network/share_feed_parser.cpp
     ${MERLIN_ROOT}/src/network/air_traffic_response_parser.cpp
+    ${MERLIN_ROOT}/src/sensors/local_conditions.cpp
     ${MERLIN_ROOT}/src/display/framebuffer.cpp
     ${MERLIN_ROOT}/src/display/screen_banners.cpp
     ${MERLIN_ROOT}/src/display/screens.cpp

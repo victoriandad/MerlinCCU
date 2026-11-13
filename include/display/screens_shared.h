@@ -37,18 +37,6 @@ struct DetailRow
 void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y,
                               int row_pitch);
 
-/// @brief Formats a fixed-point centi-Celsius temperature for the Status page.
-void build_environment_temperature_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
-/// @brief Formats BME280 humidity as percent relative humidity.
-void build_environment_humidity_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
-/// @brief Formats BME280 pressure as hPa, which is easier to scan than raw Pa.
-void build_environment_pressure_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out, size_t out_size);
-
 /// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
 void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size);
 

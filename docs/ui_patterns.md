@@ -133,7 +133,8 @@ corrected.
 - Use When: no alerts, shares, events, or selected records exist.
 - Source: `screens::draw_empty_state()` in `src/display/screens.cpp`
   (declared in `include/display/screens_shared.h`); used by
-  `draw_weather_page()` in `src/display/weather_screens.cpp`. Other pages
+  `draw_weather_page()` in `src/display/weather_screens.cpp` and the Local
+  Conditions page and graph in `src/display/screens.cpp`. Other pages
   still centre their own message with `draw_centered_text()` and move to the
   block under #117.
 - Rules: one uppercase headline at `kEmptyStateHeadlineY` and an optional

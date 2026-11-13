@@ -14,6 +14,7 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
+#include "local_conditions.h"
 #include "panel_config.h"
 #include "pinter_screens.h"
 #include "screen_banners.h"
@@ -160,77 +161,6 @@ const char* weather_fetch_state_text(HomeAssistantConnectionState state)
     return "?";
 }
 
-/// @brief Formats a fixed-point centi-Celsius temperature for the Status page.
-/// @details Declared in screens_shared.h -- shared between the Status Sensors
-/// page and the Local Conditions history graph.
-void build_environment_temperature_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
-    size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(out, out_size, "-");
-        return;
-    }
-
-    const int64_t raw_value = status.bme_temperature_centi_celsius;
-    const bool negative = raw_value < 0;
-    const uint32_t absolute_value =
-        static_cast<uint32_t>(negative ? -raw_value : raw_value);
-    std::snprintf(out, out_size, "%s%lu.%02luC", negative ? "-" : "",
-                  static_cast<unsigned long>(absolute_value / 100U),
-                  static_cast<unsigned long>(absolute_value % 100U));
-}
-
-/// @brief Formats BME280 humidity as percent relative humidity.
-void build_environment_humidity_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
-    size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(out, out_size, "-");
-        return;
-    }
-
-    const uint32_t tenths_percent = (status.bme_humidity_milli_percent + 50U) / 100U;
-    std::snprintf(out, out_size, "%lu.%lu%%",
-                  static_cast<unsigned long>(tenths_percent / 10U),
-                  static_cast<unsigned long>(tenths_percent % 10U));
-}
-
-/// @brief Formats BME280 pressure as hPa, which is easier to scan than raw Pa.
-void build_environment_pressure_text(
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
-    size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    if (!status.enabled || !status.bme_reading_valid)
-    {
-        std::snprintf(out, out_size, "-");
-        return;
-    }
-
-    const uint32_t tenths_hpa = (status.bme_pressure_pa + 5U) / 10U;
-    std::snprintf(out, out_size, "%lu.%luhPa",
-                  static_cast<unsigned long>(tenths_hpa / 10U),
-                  static_cast<unsigned long>(tenths_hpa % 10U));
-}
-
 /// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
 void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size)
 {
@@ -346,47 +276,6 @@ void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
     constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
     framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
                            true, kAxisFont, 1);
-}
-
-/// @brief Formats one local-condition value according to its stored fixed-point unit.
-void build_local_condition_value_text(
-    LocalConditionMetric metric,
-    const environment_sensor_manager::EnvironmentSensorStatus& status, char* out,
-    size_t out_size)
-{
-    if (out == nullptr || out_size == 0U)
-    {
-        return;
-    }
-
-    switch (metric)
-    {
-    case LocalConditionMetric::Temperature:
-        build_environment_temperature_text(status, out, out_size);
-        return;
-    case LocalConditionMetric::Humidity:
-        build_environment_humidity_text(status, out, out_size);
-        return;
-    case LocalConditionMetric::AirPressure:
-        build_environment_pressure_text(status, out, out_size);
-        return;
-    case LocalConditionMetric::AirQuality:
-        if (!status.enabled || !status.air_quality_score_valid)
-        {
-            // PICO_ERROR_NONE is stably 0 across the Pico SDK; named locally
-            // rather than including pico/error.h so this file has no Pico
-            // SDK dependency (issue #71).
-            constexpr int kNoErrorCode = 0;
-            std::snprintf(out, out_size, "%s",
-                          status.air_quality_read_error == kNoErrorCode ? "-" : "ERR");
-            return;
-        }
-        std::snprintf(out, out_size, "%s",
-                      environment_sensor_manager::air_quality_band_text(status.air_quality_score));
-        return;
-    }
-
-    std::snprintf(out, out_size, "-");
 }
 
 /// @brief Copies the selected 24-hour five-minute average history into a work buffer.
@@ -1427,8 +1316,52 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
                            true, kHomeIpFont, 1);
 }
 
+/// @brief Draws the sensor board's freshness in the footer (STATE-3).
+/// @details The stale age comes from environment_sensor_manager (STATE-4).
+/// Drawn only once the board has produced something, so the empty states
+/// carry the whole message.
+void draw_local_conditions_footer(uint8_t* fb,
+                                  const environment_sensor_manager::EnvironmentSensorStatus& status,
+                                  uint32_t now_ms)
+{
+    constexpr int kFooterX = 12;
+    constexpr int kFooterY = kUiHeight - 18;
+    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
+
+    char freshness_text[16] = {};
+    build_data_freshness_text(local_conditions::reading_current(status),
+                              local_conditions::last_reading_ms(status), now_ms,
+                              environment_sensor_manager::kLocalConditionStaleAfterMs,
+                              freshness_text, sizeof(freshness_text));
+    char footer_text[32] = {};
+    std::snprintf(footer_text, sizeof(footer_text), "Sensor board - %s", freshness_text);
+    framebuffer::draw_text(fb, kFooterX, kFooterY, footer_text, true, kFooterFont, 1);
+}
+
+/// @brief Draws the Local Conditions body.
+/// @details With readings, the values are on the softkeys and the body holds
+/// only the footer freshness line. Without, the shared empty state says why
+/// and where to look, and the keys are blank (SK-5).
+void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
+{
+    const auto& status = console_state.environment_sensor_status;
+    const local_conditions::BoardState kState = local_conditions::board_state(status);
+    if (kState != local_conditions::BoardState::Reading)
+    {
+        draw_empty_state(fb, local_conditions::empty_state_headline(kState),
+                         local_conditions::empty_state_hint(kState));
+        return;
+    }
+    draw_local_conditions_footer(fb, status, now_ms);
+}
+
 /// @brief Draws one local-condition history graph using the compact status history.
-void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state)
+/// @details With fewer than two history points there is nothing to plot, so
+/// the page shows the shared empty state: the board's own state when it has
+/// no readings, otherwise that history is still building, with the current
+/// reading as the hint.
+void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state,
+                                        uint32_t now_ms)
 {
     constexpr int kGraphX = 42;
     constexpr int kGraphY = 52;
@@ -1439,25 +1372,36 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     constexpr int kPlotInset = 1;
     constexpr int kAxisLabelRightX = kGraphX - 6;
 
+    const auto& status = console_state.environment_sensor_status;
     std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount> values = {};
-    const std::size_t count = copy_local_condition_history(
-        console_state.local_condition_metric, console_state.environment_sensor_status, values);
+    const std::size_t count =
+        copy_local_condition_history(console_state.local_condition_metric, status, values);
     const LocalConditionGraphScale scale =
         local_condition_graph_scale(console_state.local_condition_metric);
     if (count < 2U)
     {
-        const char* metric_label = local_condition_metric_text(console_state.local_condition_metric);
+        const local_conditions::BoardState kState = local_conditions::board_state(status);
+        if (kState != local_conditions::BoardState::Reading)
+        {
+            draw_empty_state(fb, local_conditions::empty_state_headline(kState),
+                             local_conditions::empty_state_hint(kState));
+            return;
+        }
+
         char current_text[20] = {};
-        build_local_condition_value_text(console_state.local_condition_metric,
-                                         console_state.environment_sensor_status, current_text,
-                                         sizeof(current_text));
-        draw_centered_text(fb, kUiWidth / 2, 106, metric_label, true, fonts::FontFace::Font8x12,
-                           1);
-        draw_centered_text(fb, kUiWidth / 2, 136,
-                           current_text[0] != '\0' && std::strcmp(current_text, "-") != 0
-                               ? current_text
-                               : "NO DATA",
-                           true, fonts::FontFace::Font8x12, 1);
+        local_conditions::format_metric(console_state.local_condition_metric, status,
+                                        current_text, sizeof(current_text));
+        char hint[32] = {};
+        if (std::strcmp(current_text, "-") != 0)
+        {
+            std::snprintf(hint, sizeof(hint), "Now: %s", current_text);
+        }
+        else
+        {
+            std::snprintf(hint, sizeof(hint), "A point is added every 5 min");
+        }
+        draw_empty_state(fb, "NO HISTORY YET", hint);
+        draw_local_conditions_footer(fb, status, now_ms);
         return;
     }
 
@@ -1484,9 +1428,9 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
     }
 
     char current_text[20] = {};
-    build_local_condition_value_text(console_state.local_condition_metric,
-                                     console_state.environment_sensor_status, current_text,
-                                     sizeof(current_text));
+    local_conditions::format_metric(console_state.local_condition_metric, status, current_text,
+                                    sizeof(current_text));
+    draw_local_conditions_footer(fb, status, now_ms);
 
     framebuffer::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", true,
                            fonts::FontFace::Font5x7, 1);
@@ -1582,8 +1526,11 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::StatusIntegrations:
         status_screens::draw_status_page(fb, console_state, now_ms);
         break;
+    case MenuPage::LocalConditions:
+        draw_local_conditions_page(fb, console_state, now_ms);
+        break;
     case MenuPage::LocalConditionGraph:
-        draw_local_condition_history_graph(fb, console_state);
+        draw_local_condition_history_graph(fb, console_state, now_ms);
         break;
     case MenuPage::Settings:
         settings_screens::draw_settings_page(fb, console_state);
@@ -1592,7 +1539,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
         settings_screens::draw_screen_saver_page(fb, console_state);
         break;
     case MenuPage::Status:
-    case MenuPage::LocalConditions:
     case MenuPage::DeviceSettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:

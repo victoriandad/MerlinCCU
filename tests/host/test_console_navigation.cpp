@@ -277,6 +277,7 @@ HOST_TEST(every_page_is_reachable_and_back_step_returns_to_a_page_that_leads_the
         static_cast<int>(MenuPage::CalendarDetail), // Needs calendar events.
         static_cast<int>(MenuPage::AlertList),      // Opened by the ALERT hard key.
         static_cast<int>(MenuPage::AlertDetail),    // Needs an active alert.
+        static_cast<int>(MenuPage::LocalConditionGraph), // Needs sensor readings.
     };
 
     std::set<int> reached;

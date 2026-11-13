@@ -102,18 +102,6 @@ const char* share_period_selection_text(const ConsoleState& console_state);
 /// @brief Returns the Local Traffic page's current presentation mode label.
 const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state);
 
-/// @brief Formats local temperature for softkey value brackets.
-const char* local_temperature_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats local humidity for softkey value brackets.
-const char* local_humidity_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats local pressure for softkey value brackets.
-const char* local_pressure_selection_text(const ConsoleState& console_state);
-
-/// @brief Formats the local VOC-change band for softkey value brackets.
-const char* local_air_quality_selection_text(const ConsoleState& console_state);
-
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
 const char* screen_saver_selection_text(const ConsoleState& console_state);
 
