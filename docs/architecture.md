@@ -431,6 +431,26 @@ pixel-snapshot regression tests so a layout bug (a softkey label overlapping
 content, a margin collision) fails a test run instead of needing a human to
 spot it on a screenshot -- the project's actual bug history per the issue.
 
+**Whole-UI coverage (#112).** `tests/host/test_page_coverage.cpp` drives the
+real `console_controller` from Home with the presses an operator would use:
+softkeys, the cursor keys and ALERT. It starts from a fixture with data:
+Wi-Fi, shares, a live sensor board, nearby aircraft and one active alert. It
+visits every reachable page state and checks each one in three ways:
+
+- It compares a golden image rendered with the real softkey map
+  (`page_<name>.pbm`).
+- It checks that every label lays out within its page's line limit without
+  dropping text (LBL-1, LBL-6).
+- It checks that no body pixel falls inside the cell of a labelled key
+  (SCR-5).
+
+Existing fit or overlap problems are listed in the test, each with the issue
+that fixes it. The test fails on a problem that is not listed, and also on a
+listed one that has been fixed, so the list stays accurate. A page that no key
+reaches fails the completeness check, unless it is listed with a reason. At
+present the only such page is Calendar detail, because nothing feeds calendar
+events to the controller until #8.
+
 **What was blocking host-compilation, and how each was resolved:**
 
 - **`program_flash_bytes()`/`static_ram_bytes()`/`total_ram_bytes()`**

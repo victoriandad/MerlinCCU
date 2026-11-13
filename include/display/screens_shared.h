@@ -84,6 +84,12 @@ struct WrappedSoftkeyLabel
 /// @brief Most lines any softkey label may use (LBL-1).
 inline constexpr int kMaxSoftkeyLabelLines = 5;
 
+/// @brief Text style of every softkey label on `page`.
+TextStyle softkey_label_style(MenuPage page);
+
+/// @brief Lines one softkey label on `page` may wrap onto (LBL-1).
+int softkey_label_max_lines(MenuPage page);
+
 /// @brief One rendered line of a softkey label.
 struct SoftkeyLabelLine
 {

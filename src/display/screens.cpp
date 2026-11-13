@@ -436,9 +436,6 @@ int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, in
     return area.y + area.height - 1 - area.inset - normalised;
 }
 
-namespace
-{
-
 /// @brief Chooses the softkey text style for the active page.
 /// @details Selection-heavy pages use the dense style so two-line labels fit
 /// comfortably, while diagnostic/detail pages use the standard one.
@@ -496,10 +493,13 @@ constexpr size_t kSoftkeyLabelPartCapacity = 96U;
 /// countdown (LBL-1). A five-line block still ends above the next key's label
 /// at the 57-pixel key pitch. Its vessel keys are on rows 1-4 only; row 5
 /// keeps one or two lines.
-constexpr int softkey_label_max_lines(MenuPage page)
+int softkey_label_max_lines(MenuPage page)
 {
     return page == MenuPage::Pinter ? kMaxSoftkeyLabelLines : 2;
 }
+
+namespace
+{
 
 /// @brief Copies one bounded label slice into a temporary line buffer.
 /// @details Wrapping is done with fixed local buffers so the UI can stay

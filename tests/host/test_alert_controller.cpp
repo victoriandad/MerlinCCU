@@ -13,6 +13,9 @@ namespace
 // deliberately inert so a test can't accidentally trip an unrelated alert.
 ConsoleState make_healthy_state()
 {
+    // Alert counters and history are module state; start each test from a
+    // reset so tests do not depend on what ran before them.
+    alert_controller::reset();
     ConsoleState state = {};
     state.wifi_status.state = WifiConnectionState::Connected;
     state.time_status.synced = true;

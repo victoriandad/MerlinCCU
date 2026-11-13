@@ -38,6 +38,7 @@ add_executable(host_tests
     test_share_feed_parser.cpp
     test_air_traffic_response_parser.cpp
     test_golden_screens.cpp
+    test_page_coverage.cpp
     test_pinter_controller.cpp
     test_alert_controller.cpp
     test_calendar_controller.cpp
