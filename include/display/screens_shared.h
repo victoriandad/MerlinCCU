@@ -153,6 +153,33 @@ struct GraphPlotArea
     int inset;
 };
 
+/// @brief Labels of the shared history graph frame (BODY-4).
+struct HistoryGraphLabels
+{
+    /// Left axis, top to bottom: the values at the top, middle and bottom
+    /// of the plot.
+    const char* maximum;
+    const char* middle;
+    const char* minimum;
+    /// Under the plot: where the history starts (left) and ends (right).
+    const char* start;
+    const char* end;
+};
+
+/// @brief Draws the shared history graph frame and returns its plot area.
+/// @details Every history graph uses it, so they share one plot position
+/// and labelling scheme: the plot spans ui_layout::kGraphLeftX to the same
+/// margin on the right and starts at the content-top line, with the axis
+/// values right-aligned to its left and a tick at the middle value, and the
+/// start and end of the period beneath it. Only the height differs: a page
+/// with rows beneath its graph uses a shorter plot (BODY-4).
+GraphPlotArea draw_history_graph_frame(uint8_t* fb, int plot_height,
+                                       const HistoryGraphLabels& labels);
+
+/// @brief Top of the line under a history graph frame of `plot_height`,
+/// below its start and end labels, where a page may add a caption.
+int history_graph_caption_y(int plot_height);
+
 /// @brief Draws a graph plot area's border rect.
 void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area);
 

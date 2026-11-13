@@ -145,14 +145,36 @@ corrected.
   says what the operator can do; a not-configured hint names where to
   configure (STATE-2, STATE-5).
 
-### Graph Plot Area
+### History Graph
 
-- Intent: give every history graph the same bordered plot and scaling.
+- Intent: give every history graph the same position, border, scaling and
+  labels (BODY-4).
 - Use When: drawing a value-over-time plot.
-- Source: `GraphPlotArea`, `draw_graph_plot_border()`, `graph_plot_x()`, and
-  `graph_plot_y()` in `include/display/screens_shared.h`.
-- Rules: describe the plot with a `GraphPlotArea` and map points through the
+- Source: `screens::draw_history_graph_frame()` and
+  `history_graph_caption_y()`, with `GraphPlotArea`, `graph_plot_x()` and
+  `graph_plot_y()` for the points, in `include/display/screens_shared.h`.
+  Used by the Share detail graph and the Local Conditions graph.
+- Rules: the plot starts at the content-top line and spans
+  `ui_layout::kGraphLeftX` to the same margin on the right. The maximum,
+  middle and minimum axis values are right-aligned to its left, with a tick
+  at the middle. The start and end of the period sit beneath it, for example
+  `24H AGO` and `NOW`, or the share period and `NOW`. Only the plot height
+  varies: a page with rows beneath its graph uses a shorter plot. An optional
+  caption line goes at `history_graph_caption_y()`. Map points through the
   shared helpers rather than page-local arithmetic.
+
+### Table
+
+- Intent: line up repeated records in columns the same way on every page
+  (BODY-3).
+- Use When: showing several records with the same fields, such as forecast
+  rows or nearby aircraft.
+- Source: `ui_layout::table_frame()` in `include/display/ui_layout.h`, which
+  gives the header line, divider, first row, row pitch and margins. Used by
+  the Weather forecast tables and the Local Traffic table.
+- Rules: a page defines only its columns (x and header text). Headers use the
+  `TableHeader` style and may be mixed case (TXT-5). Cells use `TableCell`.
+  The divider runs margin to margin under the headers.
 
 ## Anti-Patterns
 

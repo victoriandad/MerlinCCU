@@ -61,12 +61,8 @@ bool share_history_has_values(const ShareWatchEntry& share)
 /// @brief Draws one full-width share history graph in the centre detail region.
 void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
 {
-    constexpr int kGraphX = ui_layout::kGraphLeftX;
-    constexpr int kGraphY = ui_layout::kContentTopY;
-    constexpr int kGraphWidth = ui_layout::kGraphWidth;
+    // Shorter than a full-page graph: the share's rows sit beneath it.
     constexpr int kGraphHeight = 94;
-    constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kPeriodLabelInsetY = 2;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
@@ -82,9 +78,19 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const screens::GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight,
-                                           ui_layout::kGraphPlotInset};
-    screens::draw_graph_plot_border(fb, plot_area);
+    char max_text[16] = {};
+    char middle_text[16] = {};
+    char min_text[16] = {};
+    format_share_graph_value(max_value, max_text, sizeof(max_text));
+    format_share_graph_value(static_cast<uint16_t>((min_value + max_value) / 2U), middle_text,
+                             sizeof(middle_text));
+    format_share_graph_value(min_value, min_text, sizeof(min_text));
+    char period_label[16] = {};
+    text_case::copy_uppercase(settings_controller::share_period_name(period), period_label,
+                              sizeof(period_label));
+
+    const screens::GraphPlotArea plot_area = screens::draw_history_graph_frame(
+        fb, kGraphHeight, {max_text, middle_text, min_text, period_label, "NOW"});
     const int base_y = screens::graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
     {
@@ -93,26 +99,6 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         const int y = screens::graph_plot_y(plot_area, value, min_value, max_value);
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
-
-    char period_label[16] = {};
-    text_case::copy_uppercase(settings_controller::share_period_name(period), period_label,
-                              sizeof(period_label));
-    screens::draw_text(fb, kGraphX, kGraphY + kPeriodLabelInsetY, period_label,
-                       TextStyle::Annotation);
-
-    char min_value_text[16] = {};
-    char max_value_text[16] = {};
-    char min_label[24] = {};
-    char max_label[24] = {};
-    format_share_graph_value(min_value, min_value_text, sizeof(min_value_text));
-    format_share_graph_value(max_value, max_value_text, sizeof(max_value_text));
-    std::snprintf(min_label, sizeof(min_label), "MIN %s", min_value_text);
-    std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
-
-    const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
-    screens::draw_text(fb, kGraphX, label_y, min_label, TextStyle::Annotation);
-    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, label_y, max_label,
-                                     TextStyle::Annotation);
 }
 
 } // namespace

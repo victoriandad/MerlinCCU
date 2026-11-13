@@ -366,6 +366,56 @@ void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
     framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
 }
 
+namespace
+{
+
+/// @brief Gap between the plot's left edge and its axis labels.
+constexpr int kGraphAxisLabelGapX = 6;
+
+/// @brief Length of the tick marking the middle axis value.
+constexpr int kGraphAxisTickLength = 3;
+
+/// @brief Gap between the plot's bottom edge and the start/end labels.
+constexpr int kGraphTimelineGapY = 5;
+
+/// @brief Top of the start/end labels under a plot of `plot_height`.
+int history_graph_timeline_y(int plot_height)
+{
+    return ui_layout::kContentTopY + plot_height + kGraphTimelineGapY;
+}
+
+} // namespace
+
+GraphPlotArea draw_history_graph_frame(uint8_t* fb, int plot_height,
+                                       const HistoryGraphLabels& labels)
+{
+    constexpr TextStyle kStyle = TextStyle::Annotation;
+    const GraphPlotArea kArea{ui_layout::kGraphLeftX, ui_layout::kContentTopY,
+                              ui_layout::kGraphWidth, plot_height, ui_layout::kGraphPlotInset};
+    draw_graph_plot_border(fb, kArea);
+
+    // Each axis value is centred on its line; the bottom one sits just
+    // above the plot's bottom edge so it stays clear of the start label.
+    const int kLineHeight = text_styles::line_height(kStyle);
+    const int kLabelRightX = kArea.x - kGraphAxisLabelGapX;
+    const int kMiddleY = kArea.y + (plot_height / 2);
+    draw_right_aligned_text(fb, kLabelRightX, kArea.y - (kLineHeight / 2), labels.maximum, kStyle);
+    draw_right_aligned_text(fb, kLabelRightX, kMiddleY - (kLineHeight / 2), labels.middle, kStyle);
+    draw_right_aligned_text(fb, kLabelRightX, kArea.y + plot_height - 1 - kLineHeight,
+                            labels.minimum, kStyle);
+    framebuffer::draw_hline(fb, kArea.x - kGraphAxisTickLength, kArea.x - 1, kMiddleY, true);
+
+    const int kTimelineY = history_graph_timeline_y(plot_height);
+    draw_text(fb, kArea.x, kTimelineY, labels.start, kStyle);
+    draw_right_aligned_text(fb, kArea.x + kArea.width, kTimelineY, labels.end, kStyle);
+    return kArea;
+}
+
+int history_graph_caption_y(int plot_height)
+{
+    return history_graph_timeline_y(plot_height) + ui_layout::row_pitch(TextStyle::Annotation);
+}
+
 /// @brief Maps a 0-based point index across `point_count` evenly spaced points
 /// to an x pixel coordinate within the inset plot area.
 int graph_plot_x(const GraphPlotArea& area, int index, int point_count)

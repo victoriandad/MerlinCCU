@@ -70,12 +70,6 @@ LocalConditionGraphScale local_condition_graph_scale(LocalConditionMetric metric
     return {0, 50, 100, "0", "50", "100", ""};
 }
 
-/// @brief Draws a graph axis label right-aligned against the plot edge.
-void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
-{
-    screens::draw_right_aligned_text(fb, right_x, y, text, TextStyle::Annotation);
-}
-
 /// @brief Copies the selected 24-hour five-minute average history into a work buffer.
 std::size_t copy_local_condition_history(
     LocalConditionMetric metric, const environment_sensor_manager::EnvironmentSensorStatus& status,
@@ -160,16 +154,7 @@ void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state, 
 void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state,
                                         uint32_t now_ms)
 {
-    constexpr int kGraphX = ui_layout::kGraphLeftX;
-    // Eight pixels below ui_layout::kContentTopY; to be aligned with the
-    // Shares graph (BODY-4).
-    constexpr int kGraphY = 52;
-    constexpr int kGraphWidth = ui_layout::kGraphWidth;
     constexpr int kGraphHeight = 128;
-    constexpr int kTimelineLabelY = kGraphY + kGraphHeight + 5;
-    constexpr int kPlotInset = ui_layout::kGraphPlotInset;
-    constexpr int kAxisLabelRightX = kGraphX - 6;
-    const int kMetricLabelY = kTimelineLabelY + ui_layout::row_pitch(TextStyle::Annotation);
 
     const auto& status = console_state.environment_sensor_status;
     std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount> values = {};
@@ -204,15 +189,12 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
         return;
     }
 
-    const screens::GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
-    screens::draw_graph_plot_border(fb, plot_area);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3, scale.middle_label);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY + kGraphHeight - 8, scale.minimum_label);
-    framebuffer::draw_hline(fb, kGraphX - 3, kGraphX - 1, kGraphY + (kGraphHeight / 2), true);
+    const screens::GraphPlotArea plot_area = screens::draw_history_graph_frame(
+        fb, kGraphHeight,
+        {scale.maximum_label, scale.middle_label, scale.minimum_label, "24H AGO", "NOW"});
 
-    int previous_x = kGraphX + kPlotInset;
-    int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
+    int previous_x = plot_area.x + plot_area.inset;
+    int previous_y = plot_area.y + plot_area.height - 1 - plot_area.inset;
     for (std::size_t i = 0U; i < count; ++i)
     {
         const int x =
@@ -231,19 +213,16 @@ void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console
                                     sizeof(current_text));
     draw_local_conditions_footer(fb, status, now_ms);
 
-    screens::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", TextStyle::Annotation);
-    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, kTimelineLabelY, "NOW",
-                                     TextStyle::Annotation);
-
+    const int kCaptionY = screens::history_graph_caption_y(kGraphHeight);
     const char* metric_text = local_condition_metric_text(console_state.local_condition_metric);
-    screens::draw_text(fb, kGraphX, kMetricLabelY, metric_text, TextStyle::Annotation);
-    const int unit_x = kGraphX + screens::text_width(metric_text, TextStyle::Annotation) +
+    screens::draw_text(fb, plot_area.x, kCaptionY, metric_text, TextStyle::Annotation);
+    const int unit_x = plot_area.x + screens::text_width(metric_text, TextStyle::Annotation) +
                        screens::text_width(" ", TextStyle::Annotation);
-    screens::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, TextStyle::Annotation);
+    screens::draw_text(fb, unit_x, kCaptionY, scale.unit_label, TextStyle::Annotation);
     // The large value shares a bottom edge with the small metric label.
-    const int kValueY = kMetricLabelY + text_styles::line_height(TextStyle::Annotation) -
+    const int kValueY = kCaptionY + text_styles::line_height(TextStyle::Annotation) -
                         text_styles::line_height(TextStyle::EmphasisValue) + 2;
-    screens::draw_right_aligned_text(fb, kGraphX + kGraphWidth, kValueY, current_text,
+    screens::draw_right_aligned_text(fb, plot_area.x + plot_area.width, kValueY, current_text,
                                      TextStyle::EmphasisValue);
 }
 
