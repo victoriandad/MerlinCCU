@@ -67,6 +67,20 @@ int text_width(const char* text, fonts::FontFace font = fonts::FontFace::Font5x7
 void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool on,
                         fonts::FontFace font = fonts::FontFace::Font5x7, int spacing = 1);
 
+/// @brief Top of the empty-state headline. The block sits in the gap between
+/// the row 2 and row 3 softkey cells (y 116-155), so it never meets a label.
+inline constexpr int kEmptyStateHeadlineY = 124;
+
+/// @brief Top of the empty-state hint line, beneath the headline.
+inline constexpr int kEmptyStateHintY = 142;
+
+/// @brief Draws the shared empty-state block (STATE-2).
+/// @details One uppercase headline at a fixed position, and an optional
+/// one-line, mixed-case hint beneath it saying what the operator can do.
+/// Both are centred. `hint` may be null or empty. The caller writes text that
+/// fits the body width; the hint is never wrapped.
+void draw_empty_state(uint8_t* fb, const char* headline, const char* hint);
+
 /// @brief One softkey/footer label wrapped into up to three fixed-size lines.
 struct WrappedSoftkeyLabel
 {

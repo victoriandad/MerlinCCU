@@ -44,10 +44,16 @@ quickly without relying only on photographs of the physical panel.
 - `Next 24 Hours` period represents the next 24 hours using the same single-line
   table columns, including `Conditions`.
 - `Next 7 Days` period shows provider daily rows (typically up to 7 entries) with
-  labels (`Today`, `Tmrw`, then date labels like `DD/MM`).
+  labels (`Today`, `Tomorrow`, then date labels like `DD/MM`), in the same
+  table frame and row pitch as the hourly tables.
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.
-- Source footer is visible and readable.
+- Source footer is visible and readable, and reads `LIVE` through a refresh
+  rather than flicking to `STALE` while the fetch is in progress.
+- With each source not set up (no weather entity; no or bad coordinates), the
+  page shows `WEATHER NOT SET UP` with a hint naming the web config page.
+- Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
+  fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.
 
 ## Pinter Page
 

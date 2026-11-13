@@ -7,6 +7,7 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
+#include "home_assistant_manager.h"
 #include "panel_config.h"
 #include "screens_shared.h"
 
@@ -535,9 +536,9 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     // summary page reads consistently with the pages it's summarizing.
     char weather_data_text[16] = {};
     screens::build_data_freshness_text(
-        console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
+        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.state),
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
-        4U * 5U * 60U * 1000U, weather_data_text, sizeof(weather_data_text));
+        home_assistant_manager::kWeatherStaleAfterMs, weather_data_text, sizeof(weather_data_text));
 
     char share_data_text[16] = {};
     if (console_state.share_data_last_success_ms == 0U)

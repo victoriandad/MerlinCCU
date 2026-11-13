@@ -1226,6 +1226,22 @@ void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool
                            spacing);
 }
 
+/// @brief Draws the shared empty-state block. Declared in screens_shared.h.
+void draw_empty_state(uint8_t* fb, const char* headline, const char* hint)
+{
+    constexpr fonts::FontFace kHeadlineFont = fonts::FontFace::Font8x12;
+    constexpr fonts::FontFace kHintFont = fonts::FontFace::Font5x7;
+    if (headline != nullptr && headline[0] != '\0')
+    {
+        draw_centered_text(fb, kUiWidth / 2, kEmptyStateHeadlineY, headline, true, kHeadlineFont,
+                           1);
+    }
+    if (hint != nullptr && hint[0] != '\0')
+    {
+        draw_centered_text(fb, kUiWidth / 2, kEmptyStateHintY, hint, true, kHintFont, 1);
+    }
+}
+
 namespace
 {
 

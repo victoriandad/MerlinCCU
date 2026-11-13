@@ -292,3 +292,32 @@ HOST_TEST(sync_air_traffic_unavailable_needs_consecutive_failures_and_clears_on_
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 0U);
 }
+
+HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
+{
+    alert_controller::reset();
+    ConsoleState state = make_healthy_state();
+    state.weather_source = WeatherSource::OpenMeteo;
+    state.wifi_status.internet_reachable = true;
+    state.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    state.home_assistant_status.last_error = -5;
+
+    // One failed sample is not enough to raise it.
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "WEATHER") == 0);
+
+    // A good fetch clears it.
+    std::strncpy(state.home_assistant_status.weather_condition.data(), "cloudy",
+                 state.home_assistant_status.weather_condition.size());
+    state.home_assistant_status.state = HomeAssistantConnectionState::Connected;
+    state.home_assistant_status.last_error = 0;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+}

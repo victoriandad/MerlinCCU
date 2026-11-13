@@ -131,11 +131,16 @@ corrected.
 
 - Intent: make absence of data explicit without adding synthetic rows.
 - Use When: no alerts, shares, events, or selected records exist.
-- Source: `draw_centered_text()` in `src/display/screens.cpp`, called from
-  each page family (for example `draw_alert_list_page()`). There is no shared
-  empty-state block yet.
-- Rules: concise uppercase message, centred in the content area (STATE rules
-  in `docs/ui_requirements.md`).
+- Source: `screens::draw_empty_state()` in `src/display/screens.cpp`
+  (declared in `include/display/screens_shared.h`); used by
+  `draw_weather_page()` in `src/display/weather_screens.cpp`. Other pages
+  still centre their own message with `draw_centered_text()` and move to the
+  block under #117.
+- Rules: one uppercase headline at `kEmptyStateHeadlineY` and an optional
+  one-line, mixed-case hint at `kEmptyStateHintY`, both centred. The block
+  sits between the row 2 and row 3 softkey cells, so it never meets a label.
+  The hint says what the operator can do; a not-configured hint names where
+  to configure (STATE-2, STATE-5).
 
 ### Graph Plot Area
 
@@ -158,4 +163,3 @@ corrected.
 
 - Standard graph footer/min/max labelling.
 - Shared table column definitions for weather/share-like data.
-- Common empty/error/loading state helper.

@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "framebuffer.h"
+#include "home_assistant_manager.h"
 #include "panel_config.h"
 #include "screens_shared.h"
 
@@ -92,15 +93,50 @@ struct ForecastRenderSlice
     int current_hour_floor;
 };
 
+// One table frame for every forecast period (BODY-3): header line, divider,
+// first row and row pitch are shared; only the columns differ.
 constexpr size_t kForecastVisibleRows = 10U;
 constexpr int kForecastHeaderY = 36;
 constexpr int kForecastDividerY = 46;
 constexpr int kForecastFirstRowY = 54;
 constexpr int kForecastRowPitchY = 18;
-constexpr int kForecastTimeX = 12;
-constexpr int kForecastTemperatureX = 60;
-constexpr int kForecastWindX = 102;
-constexpr int kForecastConditionX = 160;
+constexpr int kForecastTableLeftX = 12;
+constexpr int kForecastTableRightX = kUiWidth - 12;
+constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
+constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
+
+/// @brief One forecast table column: where it starts and its header.
+struct ForecastColumn
+{
+    int x;
+    const char* header;
+};
+
+/// @brief Columns of a forecast table, left to right: when, temperature,
+/// wind, and conditions.
+using ForecastColumns = std::array<ForecastColumn, 4>;
+
+// The wind unit is written the same way in both tables (TXT-6).
+constexpr ForecastColumns kHourlyColumns = {{
+    {kForecastTableLeftX, "Time"},
+    {60, "Temp"},
+    {102, "Wind mph"},
+    {160, "Conditions"},
+}};
+
+// The day column is wider than the time column so "Tomorrow" fits.
+constexpr ForecastColumns kDailyColumns = {{
+    {kForecastTableLeftX, "Day"},
+    {66, "Temp"},
+    {102, "Wind mph"},
+    {160, "Conditions"},
+}};
+
+/// @brief Returns the top of forecast table row `index`.
+constexpr int forecast_row_y(size_t index)
+{
+    return kForecastFirstRowY + (static_cast<int>(index) * kForecastRowPitchY);
+}
 
 /// @brief Reconstructs monotonic forecast minutes and drops stale pre-now rows.
 /// @details Weather rows expose only local `HH:MM` text, so this helper rebuilds
@@ -303,7 +339,7 @@ const char* next_seven_days_label_text(uint8_t row_index, const char* date_text,
     }
     else if (row_index == 1)
     {
-        std::snprintf(buffer, buffer_size, "Tmrw");
+        std::snprintf(buffer, buffer_size, "Tomorrow");
     }
     else
     {
@@ -395,15 +431,15 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
 {
     constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
     constexpr int kFooterLineGap = 2;
-    // 4x the manager's own 5-minute refresh interval (home_assistant_manager.cpp
-    // kRefreshIntervalMs) -- issue #16's stale-data display policy.
-    constexpr uint32_t kWeatherStaleAfterMs = 4U * 5U * 60U * 1000U;
 
+    // The fetcher owns the stale threshold and what counts as a failed fetch
+    // (STATE-4). Both sources fill the same status struct, so this is right
+    // for Open-Meteo as well as Home Assistant.
     char freshness_text[16] = {};
     screens::build_data_freshness_text(
-        console_state.home_assistant_status.state == HomeAssistantConnectionState::Connected,
-        console_state.home_assistant_status.weather_last_success_ms, now_ms, kWeatherStaleAfterMs,
-        freshness_text, sizeof(freshness_text));
+        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.state),
+        console_state.home_assistant_status.weather_last_success_ms, now_ms,
+        home_assistant_manager::kWeatherStaleAfterMs, freshness_text, sizeof(freshness_text));
 
     char footer_label[80] = {};
     std::snprintf(footer_label, sizeof(footer_label), "%s - %s",
@@ -427,47 +463,6 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
                                kFirstLineY + kLineHeight + kFooterLineGap, kWrapped.line_two, true,
                                kFooterFont, 1);
     }
-}
-
-/// @brief Produces a short user-facing weather-status fallback string.
-/// @details Home Assistant keeps the old end-user wording, while direct
-/// providers expose compact transport details because they are the only way to
-/// tell an HTTPS/API failure from an unsupported response payload in the field.
-const char* weather_status_detail(const ConsoleState& console_state, char* buffer,
-                                  size_t buffer_size)
-{
-    if (buffer == nullptr || buffer_size == 0)
-    {
-        return "";
-    }
-
-    buffer[0] = '\0';
-    const HomeAssistantStatus& status = console_state.home_assistant_status;
-
-    if (status.last_http_status > 0 || status.last_error != 0)
-    {
-        if (console_state.weather_source == WeatherSource::HomeAssistant)
-        {
-            std::snprintf(buffer, buffer_size, "NO DATA AVAILABLE");
-        }
-        else if (status.last_http_status > 0 && status.last_http_status != 200)
-        {
-            std::snprintf(buffer, buffer_size, "HTTP %d", status.last_http_status);
-        }
-        else if (status.last_error != 0)
-        {
-            std::snprintf(buffer, buffer_size, "ERR %d", status.last_error);
-        }
-        else
-        {
-            std::snprintf(buffer, buffer_size, "BAD DATA");
-        }
-        return buffer;
-    }
-
-    return console_state.weather_source == WeatherSource::HomeAssistant
-               ? screens::home_assistant_state_text(status.state)
-               : screens::weather_fetch_state_text(status.state);
 }
 
 /// @brief Converts a weather phrase to simple title case for display.
@@ -512,32 +507,40 @@ void format_weather_phrase(const char* source, char* dest, size_t dest_size)
     dest[out_index] = '\0';
 }
 
-/// @brief Draws the shared forecast table header for hourly-derived rows.
-void draw_weather_forecast_table_header(uint8_t* fb, fonts::FontFace font)
+/// @brief Draws a forecast table's column headers and divider in the shared frame.
+void draw_forecast_table_header(uint8_t* fb, const ForecastColumns& columns)
 {
-    framebuffer::draw_text(fb, kForecastTimeX, kForecastHeaderY, "Time", true, font, 1);
-    framebuffer::draw_text(fb, kForecastTemperatureX, kForecastHeaderY, "Temp", true, font, 1);
-    framebuffer::draw_text(fb, kForecastWindX, kForecastHeaderY, "Wind mph", true, font, 1);
-    framebuffer::draw_text(fb, kForecastConditionX, kForecastHeaderY, "Conditions", true, font, 1);
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, kForecastDividerY, true);
+    for (const ForecastColumn& column : columns)
+    {
+        framebuffer::draw_text(fb, column.x, kForecastHeaderY, column.header, true,
+                               kForecastHeaderFont, 1);
+    }
+    framebuffer::draw_hline(fb, kForecastTableLeftX, kForecastTableRightX, kForecastDividerY,
+                            true);
 }
 
-/// @brief Draws one single-line hourly forecast table row.
-void draw_weather_forecast_table_row(uint8_t* fb, const WeatherForecastEntry& entry, int row_y,
-                                     fonts::FontFace font)
+/// @brief Draws one forecast table row: when, temperature, wind, conditions.
+void draw_forecast_table_row(uint8_t* fb, const ForecastColumns& columns, size_t index,
+                             const char* when, const char* temperature, const char* wind,
+                             const char* condition)
 {
     char formatted_condition[24] = {};
-    format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                          sizeof(formatted_condition));
+    format_weather_phrase(condition, formatted_condition, sizeof(formatted_condition));
+    const std::array<const char*, 4> cells = {
+        when, temperature, wind, formatted_condition[0] != '\0' ? formatted_condition : condition};
+    for (size_t i = 0U; i < cells.size(); ++i)
+    {
+        framebuffer::draw_text(fb, columns[i].x, forecast_row_y(index), cells[i], true,
+                               kForecastBodyFont, 1);
+    }
+}
 
-    framebuffer::draw_text(fb, kForecastTimeX, row_y, entry.time_text.data(), true, font, 1);
-    framebuffer::draw_text(fb, kForecastTemperatureX, row_y, entry.temperature_text.data(), true,
-                           font, 1);
-    framebuffer::draw_text(fb, kForecastWindX, row_y, entry.wind_text.data(), true, font, 1);
-    framebuffer::draw_text(fb, kForecastConditionX, row_y,
-                           formatted_condition[0] != '\0' ? formatted_condition
-                                                          : entry.condition_text.data(),
-                           true, font, 1);
+/// @brief Draws one hourly forecast entry as a table row.
+void draw_hourly_forecast_row(uint8_t* fb, const WeatherForecastEntry& entry, size_t index)
+{
+    draw_forecast_table_row(fb, kHourlyColumns, index, entry.time_text.data(),
+                            entry.temperature_text.data(), entry.wind_text.data(),
+                            entry.condition_text.data());
 }
 
 /// @brief Draws the dense forecast table used by the Hourly range mode.
@@ -549,19 +552,16 @@ bool draw_hourly_forecast_period(uint8_t* fb, const ConsoleState& console_state,
         return false;
     }
 
-    constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
-    constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-    draw_weather_forecast_table_header(fb, kForecastHeaderFont);
+    draw_forecast_table_header(fb, kHourlyColumns);
 
     const uint8_t row_count =
         std::min(forecast_slice.count, static_cast<uint8_t>(kForecastVisibleRows));
     for (uint8_t i = 0; i < row_count; ++i)
     {
-        const WeatherForecastEntry& entry =
-            console_state.home_assistant_status
-                .weather_forecast[forecast_slice.entries[i].forecast_index];
-        const int row_y = kForecastFirstRowY + (static_cast<int>(i) * kForecastRowPitchY);
-        draw_weather_forecast_table_row(fb, entry, row_y, kForecastBodyFont);
+        draw_hourly_forecast_row(fb,
+                                 console_state.home_assistant_status
+                                     .weather_forecast[forecast_slice.entries[i].forecast_index],
+                                 i);
     }
 
     return true;
@@ -579,16 +579,12 @@ bool draw_next_twenty_four_hours_forecast_period(uint8_t* fb, const ConsoleState
         return false;
     }
 
-    constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
-    constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-    draw_weather_forecast_table_header(fb, kForecastHeaderFont);
+    draw_forecast_table_header(fb, kHourlyColumns);
 
     for (uint8_t i = 0; i < row_count; ++i)
     {
-        const WeatherForecastEntry& entry =
-            console_state.home_assistant_status.weather_forecast[forecast_sample_indices[i]];
-        const int row_y = kForecastFirstRowY + (static_cast<int>(i) * kForecastRowPitchY);
-        draw_weather_forecast_table_row(fb, entry, row_y, kForecastBodyFont);
+        draw_hourly_forecast_row(
+            fb, console_state.home_assistant_status.weather_forecast[forecast_sample_indices[i]], i);
     }
 
     return true;
@@ -608,40 +604,17 @@ bool draw_next_seven_days_forecast_period(uint8_t* fb, const ConsoleState& conso
         return false;
     }
 
-    constexpr fonts::FontFace kForecastHeaderFont = fonts::FontFace::Font5x7;
-    constexpr fonts::FontFace kForecastBodyFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, 12, 36, "Day", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 56, 36, "Temp", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 106, 36, "Wind", true, kForecastHeaderFont, 1);
-    framebuffer::draw_text(fb, 148, 36, "Conditions", true, kForecastHeaderFont, 1);
-    framebuffer::draw_hline(fb, 12, kUiWidth - 12, 46, true);
+    draw_forecast_table_header(fb, kDailyColumns);
 
     char day_label[16] = {};
-    char formatted_condition[24] = {};
     for (uint8_t i = 0; i < row_count; ++i)
     {
         const WeatherDailyForecastEntry& entry =
             console_state.home_assistant_status.weather_daily_forecast[i];
-        const int row_y = 54 + (static_cast<int>(i) * 24);
-        format_weather_phrase(entry.condition_text.data(), formatted_condition,
-                              sizeof(formatted_condition));
-
-        framebuffer::draw_text(
-            fb, 12, row_y,
+        draw_forecast_table_row(
+            fb, kDailyColumns, i,
             next_seven_days_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)),
-            true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 56, row_y, entry.temperature_text.data(), true,
-                               kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 106, row_y, entry.wind_text.data(), true, kForecastBodyFont, 1);
-        framebuffer::draw_text(fb, 148, row_y,
-                               formatted_condition[0] != '\0' ? formatted_condition
-                                                              : entry.condition_text.data(),
-                               true, kForecastBodyFont, 1);
-
-        if (i + 1 < row_count)
-        {
-            framebuffer::draw_hline(fb, 12, kUiWidth - 12, row_y + 16, true);
-        }
+            entry.temperature_text.data(), entry.wind_text.data(), entry.condition_text.data());
     }
 
     return true;
@@ -666,111 +639,155 @@ bool draw_weather_forecast_period(uint8_t* fb, const ConsoleState& console_state
 
 } // namespace
 
-void draw_weather_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
+namespace
 {
-    char status_detail[24] = {};
-    char formatted_condition[32] = {};
-    char direct_config_detail[48] = {};
-    const bool kWeatherConfigured =
-        (console_state.weather_source == WeatherSource::HomeAssistant)
-            ? (console_state.home_assistant_status.weather_entity_id[0] != '\0')
-            : true;
-    const ForecastRenderSlice kForecastSlice = build_forecast_render_slice(console_state);
-    const char* weather_condition = "WEATHER OFF";
-    const char* weather_temperature = "";
-    const char* weather_footer = "";
 
-    if (kWeatherConfigured)
+/// @brief True when the selected period has forecast rows to show.
+bool weather_period_has_data(const ConsoleState& console_state,
+                             const ForecastRenderSlice& forecast_slice)
+{
+    switch (console_state.weather_period)
     {
-        if (console_state.weather_source != WeatherSource::HomeAssistant &&
-            console_state.home_assistant_status.state == HomeAssistantConnectionState::Unconfigured)
+    case WeatherPeriod::Hourly:
+        return forecast_slice.count > 0U;
+    case WeatherPeriod::NextTwentyFourHours:
+    {
+        std::array<uint8_t, kForecastVisibleRows> sample = {};
+        return build_next_twenty_four_hours_forecast_sample(forecast_slice, sample) > 0U;
+    }
+    case WeatherPeriod::NextSevenDays:
+        return console_state.home_assistant_status.weather_daily_forecast_count > 0U;
+    }
+    return false;
+}
+
+/// @brief Says where the selected source is set up, or null when it is set up.
+/// @details Both sources are set up on the web config page's Weather Source
+/// card (STATE-5).
+const char* weather_setup_hint(const ConsoleState& console_state)
+{
+    const HomeAssistantStatus& status = console_state.home_assistant_status;
+    const bool kSourceOff = status.state == HomeAssistantConnectionState::Unconfigured ||
+                            status.state == HomeAssistantConnectionState::Disabled;
+    if (console_state.weather_source == WeatherSource::HomeAssistant)
+    {
+        if (kSourceOff)
         {
-            weather_condition = "SET COORDS";
-            if (console_state.home_assistant_status.weather_entity_id[0] != '\0')
-            {
-                std::snprintf(direct_config_detail, sizeof(direct_config_detail), "GOT %.32s",
-                              console_state.home_assistant_status.weather_entity_id.data());
-                weather_footer = direct_config_detail;
-            }
-            else
-            {
-                weather_footer = "NO COORDS SAVED";
-            }
+            return "Set up Home Assistant in web config";
+        }
+        return status.weather_entity_id[0] == '\0' ? "Set the weather entity in web config"
+                                                    : nullptr;
+    }
+    if (kSourceOff)
+    {
+        // The status carries the saved coordinate text, empty when none is saved.
+        return status.weather_entity_id[0] == '\0' ? "Set coordinates in web config"
+                                                    : "Check coordinates in web config";
+    }
+    return nullptr;
+}
+
+} // namespace
+
+WeatherPageMessage weather_page_message(const ConsoleState& console_state)
+{
+    constexpr const char* kWaitingHeadline = "WAITING FOR WEATHER";
+    constexpr const char* kFailedHeadline = "WEATHER UNAVAILABLE";
+
+    WeatherPageMessage message = {WeatherPageState::Forecast, nullptr, {}};
+    const HomeAssistantStatus& status = console_state.home_assistant_status;
+    auto set_message = [&message](WeatherPageState state, const char* headline,
+                                  const char* hint)
+    {
+        message.state = state;
+        message.headline = headline;
+        std::snprintf(message.hint.data(), message.hint.size(), "%s", hint);
+    };
+
+    if (const char* setup_hint = weather_setup_hint(console_state); setup_hint != nullptr)
+    {
+        set_message(WeatherPageState::NotConfigured, "WEATHER NOT SET UP", setup_hint);
+        return message;
+    }
+
+    if (weather_period_has_data(console_state, build_forecast_render_slice(console_state)))
+    {
+        return message;
+    }
+
+    // Transport detail (HTTP status, error codes) stays on Status
+    // Integrations; this page uses operator wording.
+    switch (status.state)
+    {
+    case HomeAssistantConnectionState::Unauthorized:
+        set_message(WeatherPageState::Failed, kFailedHeadline, "Check the HA token in web config");
+        return message;
+    case HomeAssistantConnectionState::Error:
+        set_message(WeatherPageState::Failed, kFailedHeadline, "Details in Status > Integrations");
+        return message;
+    case HomeAssistantConnectionState::WaitingForWifi:
+        set_message(WeatherPageState::Waiting, kWaitingHeadline, "Waiting for Wi-Fi");
+        return message;
+    case HomeAssistantConnectionState::Disabled:
+    case HomeAssistantConnectionState::Unconfigured:
+    case HomeAssistantConnectionState::Resolving:
+    case HomeAssistantConnectionState::Connecting:
+    case HomeAssistantConnectionState::Authorizing:
+    case HomeAssistantConnectionState::Connected:
+        break;
+    }
+
+    char hint[48] = {};
+    if (status.weather_last_success_ms == 0U)
+    {
+        std::snprintf(hint, sizeof(hint), "Fetching from %s",
+                      weather_source_label_text(console_state));
+        set_message(WeatherPageState::Waiting, kWaitingHeadline, hint);
+        return message;
+    }
+
+    if (status.weather_condition[0] != '\0')
+    {
+        char condition[32] = {};
+        format_weather_phrase(status.weather_condition.data(), condition, sizeof(condition));
+        if (status.weather_temperature[0] != '\0')
+        {
+            std::snprintf(hint, sizeof(hint), "Now: %s, %s", condition,
+                          status.weather_temperature.data());
         }
         else
         {
-            weather_condition = console_state.home_assistant_status.weather_condition[0]
-                                    ? console_state.home_assistant_status.weather_condition.data()
-                                    : (console_state.home_assistant_status.state ==
-                                               HomeAssistantConnectionState::Connected
-                                           ? "NO DATA AVAILABLE"
-                                           : weather_status_detail(console_state, status_detail,
-                                                                   sizeof(status_detail)));
-            weather_temperature = console_state.home_assistant_status.weather_temperature.data();
-
-            if (console_state.home_assistant_status.state ==
-                HomeAssistantConnectionState::Connected)
-            {
-                weather_footer = "NO DATA AVAILABLE";
-            }
-            else if (console_state.home_assistant_status.state ==
-                         HomeAssistantConnectionState::Resolving ||
-                     console_state.home_assistant_status.state ==
-                         HomeAssistantConnectionState::Connecting ||
-                     console_state.home_assistant_status.state ==
-                         HomeAssistantConnectionState::Authorizing ||
-                     console_state.home_assistant_status.state ==
-                         HomeAssistantConnectionState::WaitingForWifi)
-            {
-                weather_footer = "WAITING FOR WEATHER";
-            }
-            else
-            {
-                weather_footer =
-                    weather_status_detail(console_state, status_detail, sizeof(status_detail));
-            }
-
-            if (console_state.home_assistant_status.weather_condition[0] != '\0')
-            {
-                format_weather_phrase(console_state.home_assistant_status.weather_condition.data(),
-                                      formatted_condition, sizeof(formatted_condition));
-                weather_condition = formatted_condition;
-            }
+            std::snprintf(hint, sizeof(hint), "Now: %s", condition);
         }
+        set_message(WeatherPageState::CurrentOnly, "NO FORECAST", hint);
+        return message;
     }
 
-    const bool have_active_period_data =
-        (console_state.weather_period == WeatherPeriod::NextSevenDays)
-            ? (console_state.home_assistant_status.weather_daily_forecast_count > 0)
-            : (kForecastSlice.count > 0);
-    if (have_active_period_data && draw_weather_forecast_period(fb, console_state, kForecastSlice))
+    std::snprintf(hint, sizeof(hint), "%s sent no forecast",
+                  weather_source_label_text(console_state));
+    set_message(WeatherPageState::NoData, "NO WEATHER DATA", hint);
+    return message;
+}
+
+void draw_weather_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
+{
+    const WeatherPageMessage kMessage = weather_page_message(console_state);
+    if (kMessage.state == WeatherPageState::Forecast)
     {
-        if (kWeatherConfigured && weather_sun_times_available(console_state))
+        (void)draw_weather_forecast_period(fb, console_state,
+                                           build_forecast_render_slice(console_state));
+        if (weather_sun_times_available(console_state))
         {
             draw_weather_sun_times(fb, console_state);
         }
-        if (kWeatherConfigured)
-        {
-            draw_weather_source_footer(fb, console_state, now_ms);
-        }
-        return;
     }
-
-    screens::draw_centered_text(fb, kUiWidth / 2, 92, weather_condition, true,
-                                fonts::FontFace::Font8x12, 1);
-    if (weather_temperature[0] != '\0')
+    else
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 120, weather_temperature, true,
-                                    fonts::FontFace::Font8x14, 1);
+        screens::draw_empty_state(fb, kMessage.headline, kMessage.hint.data());
     }
 
-    if (kWeatherConfigured && weather_footer[0] != '\0')
-    {
-        screens::draw_centered_text(fb, kUiWidth / 2, 162, weather_footer, true,
-                                    fonts::FontFace::Font5x7, 1);
-    }
-
-    if (kWeatherConfigured)
+    // Provenance and freshness stay in the footer once the source is set up.
+    if (kMessage.state != WeatherPageState::NotConfigured)
     {
         draw_weather_source_footer(fb, console_state, now_ms);
     }

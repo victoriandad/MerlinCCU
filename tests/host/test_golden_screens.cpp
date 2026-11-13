@@ -18,6 +18,7 @@
 #include "screens.h"
 #include "screens_shared.h"
 #include "test_framework.h"
+#include "weather_screens.h"
 
 namespace
 {
@@ -833,4 +834,198 @@ HOST_TEST(detail_rows_cut_values_with_a_marker_once_the_block_reaches_row_5)
     std::array<uint8_t, static_cast<size_t>(kUiFbSize)> info = {};
     screens::draw_info_page_rows(info.data(), rows.data(), 8U);
     EXPECT_TRUE(detail_rows_stay_in_bounds(info.data()));
+}
+
+namespace
+{
+
+constexpr uint32_t kWeatherTestNowMs = 600000U;
+
+template <size_t N> void set_text(std::array<char, N>& field, const char* text)
+{
+    std::snprintf(field.data(), field.size(), "%s", text);
+}
+
+/// @brief Opens the Weather page through real key presses (Home R2), with
+/// `period_presses` presses of PERIOD (L5), and returns a copy to fill in.
+ConsoleState open_weather_page(int period_presses)
+{
+    console_controller::init();
+    (void)console_controller::handle_button_event({ButtonId::RightUpper, ButtonEventType::Pressed});
+    for (int i = 0; i < period_presses; ++i)
+    {
+        (void)console_controller::handle_button_event(
+            {ButtonId::LeftBottom, ButtonEventType::Pressed});
+    }
+    ConsoleState state = console_controller::state();
+    state.weather_source = WeatherSource::HomeAssistant;
+    state.time_status.synced = false;
+    HomeAssistantStatus& status = state.home_assistant_status;
+    status = {};
+    status.configured = true;
+    status.state = HomeAssistantConnectionState::Connected;
+    set_text(status.weather_entity_id, "weather.home");
+    set_text(status.weather_source_hint, "Met Office");
+    return state;
+}
+
+/// @brief Fills a day of hourly rows and a week of daily rows, fetched just now.
+void fill_weather_data(ConsoleState& state)
+{
+    constexpr std::array<const char*, 4> kConditions = {"partlycloudy", "rainy", "sunny",
+                                                        "cloudy"};
+    HomeAssistantStatus& status = state.home_assistant_status;
+    set_text(status.weather_condition, "partlycloudy");
+    set_text(status.weather_temperature, "12.5 C");
+    set_text(status.sunrise_text, "07:12");
+    set_text(status.sunset_text, "16:31");
+    status.weather_forecast_count = static_cast<uint8_t>(kWeatherForecastEntryCount);
+    for (size_t i = 0U; i < kWeatherForecastEntryCount; ++i)
+    {
+        WeatherForecastEntry& entry = status.weather_forecast[i];
+        std::snprintf(entry.time_text.data(), entry.time_text.size(), "%02u:00",
+                      static_cast<unsigned>((8U + i) % 24U));
+        std::snprintf(entry.temperature_text.data(), entry.temperature_text.size(), "%u.0 C",
+                      static_cast<unsigned>(8U + (i % 7U)));
+        std::snprintf(entry.wind_text.data(), entry.wind_text.size(), "%u SW",
+                      static_cast<unsigned>(5U + (i % 9U)));
+        set_text(entry.condition_text, kConditions[i % kConditions.size()]);
+    }
+    status.weather_daily_forecast_count = static_cast<uint8_t>(kWeatherDailyForecastEntryCount);
+    for (size_t i = 0U; i < kWeatherDailyForecastEntryCount; ++i)
+    {
+        WeatherDailyForecastEntry& entry = status.weather_daily_forecast[i];
+        std::snprintf(entry.date_text.data(), entry.date_text.size(), "2026-11-%02u",
+                      static_cast<unsigned>(13U + i));
+        std::snprintf(entry.temperature_text.data(), entry.temperature_text.size(), "%u-%uC",
+                      static_cast<unsigned>(3U + i), static_cast<unsigned>(11U + i));
+        std::snprintf(entry.wind_text.data(), entry.wind_text.size(), "%u NW",
+                      static_cast<unsigned>(10U + i));
+        set_text(entry.condition_text, kConditions[i % kConditions.size()]);
+    }
+    status.weather_last_success_ms = kWeatherTestNowMs - 60000U;
+}
+
+/// @brief True when the Weather body stays clear of the labelled row 5 cells
+/// and of the right margin. The table and sun-time dividers end on x 240, the
+/// last pixel inside the 12-pixel margin, so the check starts one pixel right.
+bool weather_body_stays_out_of_row_5(const ConsoleState& state)
+{
+    ConsoleState body_only = state;
+    for (SoftKeyAction& key : body_only.softkeys)
+    {
+        key.label = "";
+    }
+    const auto fb = render_page(body_only, kWeatherTestNowMs);
+    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1, kFooterTopY - 1) &&
+           !any_pixel_lit(fb.data(), kUiWidth - 11, kBodyTopY, kUiWidth - 1, kFooterTopY - 1);
+}
+
+/// @brief Checks a Weather state's page decision, bounds, and golden image.
+void check_weather_state(const ConsoleState& state, weather_screens::WeatherPageState expected,
+                         const char* golden)
+{
+    EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(state).state),
+              static_cast<int>(expected));
+    EXPECT_TRUE(weather_body_stays_out_of_row_5(state));
+    EXPECT_TRUE(golden_test::check_golden(golden, render_page(state, kWeatherTestNowMs).data()));
+}
+
+} // namespace
+
+HOST_TEST(weather_page_forecast_periods_share_one_table_frame)
+{
+    static constexpr std::array<WeatherPeriod, 3> kPeriods = {
+        WeatherPeriod::Hourly, WeatherPeriod::NextTwentyFourHours, WeatherPeriod::NextSevenDays};
+    static constexpr std::array<const char*, 3> kGoldens = {
+        "weather_hourly", "weather_next_24_hours", "weather_next_7_days"};
+    for (size_t presses = 0U; presses < kPeriods.size(); ++presses)
+    {
+        ConsoleState state = open_weather_page(static_cast<int>(presses));
+        fill_weather_data(state);
+        EXPECT_EQ(static_cast<int>(state.weather_period), static_cast<int>(kPeriods[presses]));
+        check_weather_state(state, weather_screens::WeatherPageState::Forecast, kGoldens[presses]);
+    }
+}
+
+HOST_TEST(weather_page_shows_stale_data_in_the_footer)
+{
+    ConsoleState state = open_weather_page(0);
+    fill_weather_data(state);
+    // Older than the fetcher's stale threshold, and the latest fetch failed.
+    state.home_assistant_status.weather_last_success_ms = 1000U;
+    state.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    check_weather_state(state, weather_screens::WeatherPageState::Forecast, "weather_stale");
+}
+
+HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)
+{
+    using weather_screens::WeatherPageState;
+
+    ConsoleState ha_no_entity = open_weather_page(0);
+    ha_no_entity.home_assistant_status.weather_entity_id.fill('\0');
+    check_weather_state(ha_no_entity, WeatherPageState::NotConfigured,
+                        "weather_not_configured_home_assistant");
+
+    ConsoleState ha_off = open_weather_page(0);
+    ha_off.home_assistant_status.state = HomeAssistantConnectionState::Unconfigured;
+
+    ConsoleState meteo_no_coords = open_weather_page(0);
+    meteo_no_coords.weather_source = WeatherSource::OpenMeteo;
+    meteo_no_coords.home_assistant_status.state = HomeAssistantConnectionState::Unconfigured;
+    meteo_no_coords.home_assistant_status.weather_entity_id.fill('\0');
+    check_weather_state(meteo_no_coords, WeatherPageState::NotConfigured,
+                        "weather_not_configured_open_meteo");
+
+    ConsoleState meteo_bad_coords = meteo_no_coords;
+    set_text(meteo_bad_coords.home_assistant_status.weather_entity_id, "not,a,place");
+
+    for (const ConsoleState* state : {&ha_no_entity, &ha_off, &meteo_no_coords, &meteo_bad_coords})
+    {
+        const weather_screens::WeatherPageMessage message =
+            weather_screens::weather_page_message(*state);
+        EXPECT_EQ(static_cast<int>(message.state),
+                  static_cast<int>(WeatherPageState::NotConfigured));
+        EXPECT_TRUE(std::strstr(message.hint.data(), "web config") != nullptr);
+        EXPECT_TRUE(screens::text_width(message.hint.data(), fonts::FontFace::Font5x7) <=
+                    kUiWidth - 24);
+    }
+}
+
+HOST_TEST(weather_page_waiting_failed_and_no_data_use_the_empty_state_block)
+{
+    using weather_screens::WeatherPageState;
+
+    ConsoleState waiting = open_weather_page(0);
+    waiting.home_assistant_status.state = HomeAssistantConnectionState::Connecting;
+    check_weather_state(waiting, WeatherPageState::Waiting, "weather_waiting");
+
+    ConsoleState no_wifi = open_weather_page(0);
+    no_wifi.home_assistant_status.state = HomeAssistantConnectionState::WaitingForWifi;
+    EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(no_wifi).state),
+              static_cast<int>(WeatherPageState::Waiting));
+
+    // Open-Meteo and Home Assistant failures read the same on this page.
+    ConsoleState failed = open_weather_page(0);
+    failed.weather_source = WeatherSource::OpenMeteo;
+    failed.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    failed.home_assistant_status.last_http_status = 404;
+    set_text(failed.home_assistant_status.weather_entity_id, "51.5,-0.1");
+    check_weather_state(failed, WeatherPageState::Failed, "weather_failed");
+    ConsoleState ha_failed = failed;
+    ha_failed.weather_source = WeatherSource::HomeAssistant;
+    EXPECT_TRUE(std::strcmp(weather_screens::weather_page_message(ha_failed).hint.data(),
+                            weather_screens::weather_page_message(failed).hint.data()) == 0);
+
+    ConsoleState current_only = open_weather_page(0);
+    fill_weather_data(current_only);
+    current_only.home_assistant_status.weather_forecast_count = 0U;
+    EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(current_only).state),
+              static_cast<int>(WeatherPageState::CurrentOnly));
+    EXPECT_TRUE(weather_body_stays_out_of_row_5(current_only));
+
+    ConsoleState no_data = current_only;
+    no_data.home_assistant_status.weather_condition.fill('\0');
+    EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(no_data).state),
+              static_cast<int>(WeatherPageState::NoData));
 }
