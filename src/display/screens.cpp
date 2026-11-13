@@ -14,7 +14,7 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "framebuffer.h"
-#include "local_conditions.h"
+#include "local_conditions_screens.h"
 #include "panel_config.h"
 #include "pinter_screens.h"
 #include "screen_banners.h"
@@ -22,6 +22,9 @@
 #include "settings_screens.h"
 #include "shares_screens.h"
 #include "status_screens.h"
+#include "text_case.h"
+#include "text_styles.h"
+#include "ui_layout.h"
 #include "weather_screens.h"
 
 namespace screens
@@ -29,33 +32,6 @@ namespace screens
 
 namespace
 {
-
-/// @brief Copies a label while forcing uppercase presentation for UI field names.
-/// @details This normalises label casing on rendered info/status pages without
-/// mutating the underlying model value strings.
-void build_uppercase_label(const char* input, char* output, size_t output_size)
-{
-    if (output == nullptr || output_size == 0U)
-    {
-        return;
-    }
-
-    output[0] = '\0';
-    if (input == nullptr || input[0] == '\0')
-    {
-        return;
-    }
-
-    size_t write_index = 0U;
-    while (input[write_index] != '\0' && write_index + 1U < output_size)
-    {
-        output[write_index] =
-            static_cast<char>(std::toupper(static_cast<unsigned char>(input[write_index])));
-        ++write_index;
-    }
-
-    output[write_index] = '\0';
-}
 
 /// @brief Returns the Home-page network footer text.
 /// @details A connected CCU advertises the address a browser should use for
@@ -133,32 +109,21 @@ const char* home_assistant_state_text(HomeAssistantConnectionState state)
 
 /// @brief Returns a provider-neutral weather fetch state label.
 /// @details Declared in screens_shared.h so status_screens.cpp (and other
-/// split-out page families) can call it without duplicating the switch.
+/// split-out page families) can call it. Matches home_assistant_state_text()
+/// except where a weather fetch reads differently: Open-Meteo has no HA
+/// token, so the authorising step is just the fetch, and an auth failure
+/// names the step rather than the token.
 const char* weather_fetch_state_text(HomeAssistantConnectionState state)
 {
-    switch (state)
+    if (state == HomeAssistantConnectionState::Authorizing)
     {
-    case HomeAssistantConnectionState::Disabled:
-        return "Disabled";
-    case HomeAssistantConnectionState::Unconfigured:
-        return "Unconfig";
-    case HomeAssistantConnectionState::WaitingForWifi:
-        return "Wait wifi";
-    case HomeAssistantConnectionState::Resolving:
-        return "Resolve";
-    case HomeAssistantConnectionState::Connecting:
-        return "Connect";
-    case HomeAssistantConnectionState::Authorizing:
         return "Fetch";
-    case HomeAssistantConnectionState::Connected:
-        return "Up";
-    case HomeAssistantConnectionState::Unauthorized:
-        return "Auth";
-    case HomeAssistantConnectionState::Error:
-        return "Error";
     }
-
-    return "?";
+    if (state == HomeAssistantConnectionState::Unauthorized)
+    {
+        return "Auth";
+    }
+    return home_assistant_state_text(state);
 }
 
 /// @brief Formats a compact "Xs"/"Xm"/"Xh" elapsed-time label.
@@ -220,102 +185,6 @@ void build_data_freshness_text(bool currently_valid, uint32_t last_success_ms, u
 
 namespace
 {
-
-/// @brief Returns the display label for one local condition metric.
-const char* local_condition_metric_text(LocalConditionMetric metric)
-{
-    switch (metric)
-    {
-    case LocalConditionMetric::Temperature:
-        return "TEMP";
-    case LocalConditionMetric::Humidity:
-        return "HUMIDITY";
-    case LocalConditionMetric::AirPressure:
-        return "AIR PRESSURE";
-    case LocalConditionMetric::AirQuality:
-        return "VOC CHANGE";
-    }
-
-    return "LOCAL";
-}
-
-struct LocalConditionGraphScale
-{
-    int32_t minimum;
-    int32_t middle;
-    int32_t maximum;
-    const char* minimum_label;
-    const char* middle_label;
-    const char* maximum_label;
-    const char* unit_label;
-};
-
-/// @brief Returns the fixed operator-facing graph range for one local metric.
-/// @details Fixed ranges make short histories readable and comparable. Pressure
-/// is displayed as local station pressure, not corrected sea-level pressure.
-LocalConditionGraphScale local_condition_graph_scale(LocalConditionMetric metric)
-{
-    switch (metric)
-    {
-    case LocalConditionMetric::Temperature:
-        return {-1000, 1500, 4000, "-10C", "15C", "40C", "C"};
-    case LocalConditionMetric::Humidity:
-        return {0, 50000, 100000, "0%", "50%", "100%", "%RH"};
-    case LocalConditionMetric::AirPressure:
-        return {95000, 100000, 105000, "950", "1000", "1050", "hPa"};
-    case LocalConditionMetric::AirQuality:
-        return {0, 50, 100, "0", "50", "100", "VOC score"};
-    }
-
-    return {0, 50, 100, "0", "50", "100", ""};
-}
-
-/// @brief Draws a graph axis label right-aligned against the plot edge.
-void draw_axis_label(uint8_t* fb, int right_x, int y, const char* text)
-{
-    constexpr fonts::FontFace kAxisFont = fonts::FontFace::Font5x7;
-    framebuffer::draw_text(fb, right_x - framebuffer::measure_text(text, kAxisFont, 1), y, text,
-                           true, kAxisFont, 1);
-}
-
-/// @brief Copies the selected 24-hour five-minute average history into a work buffer.
-std::size_t copy_local_condition_history(
-    LocalConditionMetric metric,
-    const environment_sensor_manager::EnvironmentSensorStatus& status,
-    std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount>& out)
-{
-    out.fill(0);
-
-    switch (metric)
-    {
-    case LocalConditionMetric::Temperature:
-        for (std::size_t i = 0; i < status.bme_history_count; ++i)
-        {
-            out[i] = status.bme_temperature_history_centi_celsius[i];
-        }
-        return status.bme_history_count;
-    case LocalConditionMetric::Humidity:
-        for (std::size_t i = 0; i < status.bme_history_count; ++i)
-        {
-            out[i] = static_cast<int32_t>(status.bme_humidity_history_centi_percent[i]) * 10;
-        }
-        return status.bme_history_count;
-    case LocalConditionMetric::AirPressure:
-        for (std::size_t i = 0; i < status.bme_history_count; ++i)
-        {
-            out[i] = static_cast<int32_t>(status.bme_pressure_history_deci_hpa[i]) * 10;
-        }
-        return status.bme_history_count;
-    case LocalConditionMetric::AirQuality:
-        for (std::size_t i = 0; i < status.air_quality_history_count; ++i)
-        {
-            out[i] = static_cast<int32_t>(status.air_quality_history_score[i]);
-        }
-        return status.air_quality_history_count;
-    }
-
-    return 0U;
-}
 
 /// @brief Returns the page title that matches the active menu route.
 const char* menu_page_title(MenuPage page)
@@ -418,11 +287,7 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     }
     if (console_state.active_page == MenuPage::AlertList)
     {
-        constexpr uint8_t kAlertsPerPage = 9U;
-        const uint8_t page_count = static_cast<uint8_t>(
-            (console_state.alert_count == 0U)
-                ? 1U
-                : ((console_state.alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage));
+        const uint8_t page_count = alert_list_page_count(console_state.alert_count);
         std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
                       static_cast<unsigned>(console_state.alert_list_page_index + 1U),
                       static_cast<unsigned>(page_count));
@@ -445,10 +310,8 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     if (console_state.active_page == MenuPage::AirTraffic &&
         console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
     {
-        constexpr uint8_t kRowsPerPage = kAirTrafficRowsPerPage;
-        const uint8_t count = console_state.air_traffic_status.aircraft_count;
-        const uint8_t page_count = static_cast<uint8_t>(
-            (count == 0U) ? 1U : ((count + (kRowsPerPage - 1U)) / kRowsPerPage));
+        const uint8_t page_count =
+            air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
         if (page_count > 1U)
         {
             std::snprintf(buffer, buffer_size, "ADS-B TRAFFIC %u/%u",
@@ -461,19 +324,35 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     return menu_page_title(console_state.active_page);
 }
 
-} // namespace
-
-/// @brief Measures text through one shared helper so layout math stays consistent.
-/// @details Declared in screens_shared.h -- used broadly across split-out page
-/// families for label centring/width measurement.
-int text_width(const char* text, fonts::FontFace font, int spacing)
+/// @brief Width of `text` in one font face; 0 for null or empty text.
+/// @details The face-level helper behind text_width(); softkey layout and
+/// wrapping work in the face a style resolves to.
+int measure(const char* text, fonts::FontFace font)
 {
     if (text == nullptr || text[0] == '\0')
     {
         return 0;
     }
 
-    return framebuffer::measure_text(text, font, spacing);
+    return framebuffer::measure_text(text, font, 1);
+}
+
+} // namespace
+
+int text_width(const char* text, TextStyle style)
+{
+    return measure(text, text_styles::font(style));
+}
+
+void draw_text(uint8_t* fb, int x, int y, const char* text, TextStyle style, bool on)
+{
+    framebuffer::draw_text(fb, x, y, text, on, text_styles::font(style), 1);
+}
+
+void draw_right_aligned_text(uint8_t* fb, int right_x, int y, const char* text, TextStyle style,
+                             bool on)
+{
+    draw_text(fb, right_x - text_width(text, style), y, text, style, on);
 }
 
 /// @brief Draws a graph plot area's border rect.
@@ -483,6 +362,56 @@ int text_width(const char* text, fonts::FontFace font, int spacing)
 void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area)
 {
     framebuffer::draw_rect(fb, area.x, area.y, area.width, area.height, true);
+}
+
+namespace
+{
+
+/// @brief Gap between the plot's left edge and its axis labels.
+constexpr int kGraphAxisLabelGapX = 6;
+
+/// @brief Length of the tick marking the middle axis value.
+constexpr int kGraphAxisTickLength = 3;
+
+/// @brief Gap between the plot's bottom edge and the start/end labels.
+constexpr int kGraphTimelineGapY = 5;
+
+/// @brief Top of the start/end labels under a plot of `plot_height`.
+int history_graph_timeline_y(int plot_height)
+{
+    return ui_layout::kContentTopY + plot_height + kGraphTimelineGapY;
+}
+
+} // namespace
+
+GraphPlotArea draw_history_graph_frame(uint8_t* fb, int plot_height,
+                                       const HistoryGraphLabels& labels)
+{
+    constexpr TextStyle kStyle = TextStyle::Annotation;
+    const GraphPlotArea kArea{ui_layout::kGraphLeftX, ui_layout::kContentTopY,
+                              ui_layout::kGraphWidth, plot_height, ui_layout::kGraphPlotInset};
+    draw_graph_plot_border(fb, kArea);
+
+    // Each axis value is centred on its line; the bottom one sits just
+    // above the plot's bottom edge so it stays clear of the start label.
+    const int kLineHeight = text_styles::line_height(kStyle);
+    const int kLabelRightX = kArea.x - kGraphAxisLabelGapX;
+    const int kMiddleY = kArea.y + (plot_height / 2);
+    draw_right_aligned_text(fb, kLabelRightX, kArea.y - (kLineHeight / 2), labels.maximum, kStyle);
+    draw_right_aligned_text(fb, kLabelRightX, kMiddleY - (kLineHeight / 2), labels.middle, kStyle);
+    draw_right_aligned_text(fb, kLabelRightX, kArea.y + plot_height - 1 - kLineHeight,
+                            labels.minimum, kStyle);
+    framebuffer::draw_hline(fb, kArea.x - kGraphAxisTickLength, kArea.x - 1, kMiddleY, true);
+
+    const int kTimelineY = history_graph_timeline_y(plot_height);
+    draw_text(fb, kArea.x, kTimelineY, labels.start, kStyle);
+    draw_right_aligned_text(fb, kArea.x + kArea.width, kTimelineY, labels.end, kStyle);
+    return kArea;
+}
+
+int history_graph_caption_y(int plot_height)
+{
+    return history_graph_timeline_y(plot_height) + ui_layout::row_pitch(TextStyle::Annotation);
 }
 
 /// @brief Maps a 0-based point index across `point_count` evenly spaced points
@@ -507,46 +436,10 @@ int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, in
     return area.y + area.height - 1 - area.inset - normalised;
 }
 
-namespace
-{
-
-struct SoftkeyLayout
-{
-    int left_x;
-    int width;
-    int height;
-    int top_y;
-    int pitch;
-    int text_inset;
-    int line_gap;
-};
-
-constexpr SoftkeyLayout kSoftkeyLayout = {
-    .left_x = 2,
-    .width = 34,
-    .height = 18,
-    .top_y = 41,
-    .pitch = 57,
-    .text_inset = 4,
-    .line_gap = 4,
-};
-
-/// @brief Returns the top edge of the indexed softkey label block.
-constexpr int softkey_y_for_index(int index)
-{
-    return kSoftkeyLayout.top_y + (index * kSoftkeyLayout.pitch);
-}
-
-/// @brief Returns the vertical centre line of the indexed softkey position.
-constexpr int softkey_center_y_for_index(int index)
-{
-    return softkey_y_for_index(index) + (kSoftkeyLayout.height / 2);
-}
-
-/// @brief Chooses the softkey font for the active page.
-/// @details Selection-heavy pages use the denser face so two-line labels fit
-/// comfortably, while diagnostic/detail pages can use the larger font.
-fonts::FontFace softkey_label_font(MenuPage page)
+/// @brief Chooses the softkey text style for the active page.
+/// @details Selection-heavy pages use the dense style so two-line labels fit
+/// comfortably, while diagnostic/detail pages use the standard one.
+TextStyle softkey_label_style(MenuPage page)
 {
     switch (page)
     {
@@ -569,7 +462,7 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::PinterStartTiming:
     case MenuPage::Shares:
     case MenuPage::ShareDetail:
-        return fonts::FontFace::Font5x7;
+        return TextStyle::SoftkeyDense;
     case MenuPage::Weather:
     case MenuPage::AirTraffic:
     case MenuPage::Status:
@@ -582,17 +475,13 @@ fonts::FontFace softkey_label_font(MenuPage page)
     case MenuPage::GreyscaleTest:
     case MenuPage::AlertList:
     case MenuPage::AlertDetail:
-        return fonts::FontFace::Font8x12;
+        return TextStyle::Softkey;
     case MenuPage::ScreenSaverSettings:
-        return fonts::FontFace::Font5x7;
+        return TextStyle::SoftkeyDense;
     }
 
-    return fonts::FontFace::Font5x7;
+    return TextStyle::SoftkeyDense;
 }
-
-/// @brief Lines a label block is centred on its key over; a longer block
-/// (a wrapped value) extends downward so it never rises into the header.
-constexpr int kCentredSoftkeyLabelLines = 3;
 
 /// @brief Longest single newline-separated part of a label, in characters.
 constexpr size_t kSoftkeyLabelPartCapacity = 96U;
@@ -604,16 +493,13 @@ constexpr size_t kSoftkeyLabelPartCapacity = 96U;
 /// countdown (LBL-1). A five-line block still ends above the next key's label
 /// at the 57-pixel key pitch. Its vessel keys are on rows 1-4 only; row 5
 /// keeps one or two lines.
-constexpr int softkey_label_max_lines(MenuPage page)
+int softkey_label_max_lines(MenuPage page)
 {
     return page == MenuPage::Pinter ? kMaxSoftkeyLabelLines : 2;
 }
 
-/// @brief Returns the maximum drawable width for one softkey label line.
-constexpr int softkey_label_max_width()
+namespace
 {
-    return (kUiWidth / 2) - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset;
-}
 
 /// @brief Copies one bounded label slice into a temporary line buffer.
 /// @details Wrapping is done with fixed local buffers so the UI can stay
@@ -641,7 +527,7 @@ size_t fit_wrapped_label_prefix(const char* text, fonts::FontFace font, int max_
     while (text[length] != '\0' && text[length] != '\n')
     {
         copy_softkey_label_slice(candidate, sizeof(candidate), text, length + 1);
-        if (text_width(candidate, font) > max_width)
+        if (measure(candidate, font) > max_width)
         {
             break;
         }
@@ -697,9 +583,10 @@ size_t skip_wrapped_label_breaks(const char* text, size_t start)
 /// as the width allows, preferring to break on whitespace. Declared in
 /// screens_shared.h -- split-out page families (weather footer wrapping, etc.)
 /// need it too.
-WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
+WrappedSoftkeyLabel wrap_label_lines(const char* label, TextStyle style, int max_width,
                                      int max_lines)
 {
+    const fonts::FontFace font = text_styles::font(style);
     WrappedSoftkeyLabel wrapped = {};
     wrapped.line_count = 0;
 
@@ -739,12 +626,15 @@ WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, in
     return wrapped;
 }
 
-/// @brief Wraps free text into lines no wider than `max_width` pixels.
+namespace
+{
+
+/// @brief Wraps free text into lines no wider than `max_width` pixels in `font`.
 /// @details Widths are accumulated glyph by glyph with the same one-pixel
 /// spacing `framebuffer::measure_text()` uses, so a span measured here
-/// renders at exactly this width. Declared in screens_shared.h.
-size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
-                 size_t max_spans)
+/// renders at exactly this width.
+size_t wrap_text_in_font(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
+                         size_t max_spans)
 {
     if (text == nullptr || out == nullptr || max_spans == 0U)
     {
@@ -754,7 +644,7 @@ size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan
     auto glyph_width = [font](char c)
     {
         const char glyph[2] = {c, '\0'};
-        return text_width(glyph, font);
+        return measure(glyph, font);
     };
 
     size_t count = 0U;
@@ -823,16 +713,20 @@ size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan
     return count;
 }
 
+} // namespace
+
+/// @brief Wraps free text in `style`. Declared in screens_shared.h.
+size_t wrap_text(const char* text, TextStyle style, int max_width, TextSpan* out, size_t max_spans)
+{
+    return wrap_text_in_font(text, text_styles::font(style), max_width, out, max_spans);
+}
+
 namespace
 {
 
-/// @brief Right edge of a detail-row value: the same 12-pixel margin the Text
-/// block keeps, so no value reaches the screen edge (SCR-6).
-constexpr int kDetailValueRightX = kUiWidth - 12;
-
 /// @brief Lowest y a detail block may grow to when its values wrap: the top
-/// of the row 5 softkey cell, so wrapped lines never reach row 5 or the footer.
-constexpr int kDetailRowsWrapLimitY = softkey_y_for_index(4);
+/// of the row 5 softkey slot, so wrapped lines never reach row 5 or the footer.
+constexpr int kDetailRowsWrapLimitY = ui_layout::softkey_slot_top_y(4);
 
 /// @brief Most lines one detail value may wrap onto.
 constexpr size_t kMaxDetailValueLines = 8U;
@@ -850,10 +744,10 @@ const char* detail_value_text(const char* value)
 }
 
 /// @brief Returns how many lines `value` needs at `max_width`, at least one.
-int detail_value_line_count(const char* value, fonts::FontFace font, int max_width)
+int detail_value_line_count(const char* value, TextStyle style, int max_width)
 {
     std::array<TextSpan, kMaxDetailValueLines> spans = {};
-    const size_t kCount = wrap_text(value, font, max_width, spans.data(), spans.size());
+    const size_t kCount = wrap_text(value, style, max_width, spans.data(), spans.size());
     return std::max(1, static_cast<int>(kCount));
 }
 
@@ -872,15 +766,15 @@ int detail_wrap_budget(int natural_bottom_y, int line_pitch)
 /// character that fits and ends with the cut marker. Returns the lines drawn.
 /// @details The single long-value policy for both detail-row blocks
 /// (docs/ui_patterns.md). The stored value is never shortened.
-int draw_detail_value(uint8_t* fb, int x, int y, const char* value, fonts::FontFace font,
-                      int line_pitch, int max_lines)
+int draw_detail_value(uint8_t* fb, int x, int y, const char* value, TextStyle style, int line_pitch,
+                      int max_lines)
 {
-    const int kMaxWidth = kDetailValueRightX - x;
+    const int kMaxWidth = ui_layout::kRightEdgeX - x;
     const size_t kLineLimit =
         static_cast<size_t>(std::clamp(max_lines, 1, static_cast<int>(kMaxDetailValueLines)));
     // One spare span shows whether the value runs past the line limit.
     std::array<TextSpan, kMaxDetailValueLines + 1U> spans = {};
-    const size_t kCount = wrap_text(value, font, kMaxWidth, spans.data(), kLineLimit + 1U);
+    const size_t kCount = wrap_text(value, style, kMaxWidth, spans.data(), kLineLimit + 1U);
     const size_t kShown = std::min(kCount, kLineLimit);
     const bool kCut = kCount > kLineLimit;
 
@@ -900,7 +794,7 @@ int draw_detail_value(uint8_t* fb, int x, int y, const char* value, fonts::FontF
                 }
                 std::snprintf(marked, sizeof(marked), "%.*s%s", static_cast<int>(length), line,
                               kDetailValueCutMarker);
-                if (length == 0U || text_width(marked, font) <= kMaxWidth)
+                if (length == 0U || text_width(marked, style) <= kMaxWidth)
                 {
                     break;
                 }
@@ -908,8 +802,7 @@ int draw_detail_value(uint8_t* fb, int x, int y, const char* value, fonts::FontF
             }
             copy_softkey_label_slice(line, sizeof(line), marked, std::strlen(marked));
         }
-        framebuffer::draw_text(fb, x, y + (static_cast<int>(i) * line_pitch), line, true, font,
-                               1);
+        draw_text(fb, x, y + (static_cast<int>(i) * line_pitch), line, style);
     }
     return std::max(1, static_cast<int>(kShown));
 }
@@ -924,15 +817,16 @@ int draw_detail_value(uint8_t* fb, int x, int y, const char* value, fonts::FontF
 /// Declared in screens_shared.h -- used by split-out page families too.
 void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
 {
-    constexpr int kStartY = 42;
-    constexpr int kRowPitch = 18;
     constexpr int kLabelX = 50;
     constexpr int kValueX = 156;
     constexpr int kValueOffsetY = 1;
-    constexpr fonts::FontFace kLabelFont = fonts::FontFace::FontTitle8x12;
-    constexpr fonts::FontFace kValueFont = fonts::FontFace::Font5x7;
+    constexpr TextStyle kLabelStyle = TextStyle::InfoRowLabel;
+    constexpr TextStyle kValueStyle = TextStyle::BodyValue;
     // Wrapped value lines sit closer together than rows, so they read as one value.
-    const int kValueLinePitch = framebuffer::font_height(kValueFont) + 3;
+    constexpr int kWrappedLineGapY = 3;
+    const int kStartY = ui_layout::kContentTopY;
+    const int kRowPitch = ui_layout::row_pitch(kLabelStyle);
+    const int kValueLinePitch = text_styles::line_height(kValueStyle) + kWrappedLineGapY;
     constexpr size_t kLabelBufferSize = 32U;
 
     if (count == 0U)
@@ -941,20 +835,21 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
     }
 
     const int kNaturalBottomY = kStartY + ((static_cast<int>(count) - 1) * kRowPitch) +
-                                framebuffer::font_height(kLabelFont);
+                                text_styles::line_height(kLabelStyle);
     int spare_lines = detail_wrap_budget(kNaturalBottomY, kValueLinePitch);
     int y = kStartY;
     for (size_t i = 0U; i < count; ++i)
     {
         char label_text[kLabelBufferSize] = {};
-        build_uppercase_label(rows[i].label, label_text, sizeof(label_text));
-        framebuffer::draw_text(fb, kLabelX, y, label_text, true, kLabelFont, 1);
+        text_case::copy_uppercase(rows[i].label, label_text, sizeof(label_text));
+        draw_text(fb, kLabelX, y, label_text, kLabelStyle);
 
         const char* value = detail_value_text(rows[i].value);
-        const int kNeeded = detail_value_line_count(value, kValueFont, kDetailValueRightX - kValueX);
+        const int kNeeded =
+            detail_value_line_count(value, kValueStyle, ui_layout::kRightEdgeX - kValueX);
         const int kAllowed = 1 + std::min(kNeeded - 1, spare_lines);
         spare_lines -= kAllowed - 1;
-        const int kDrawn = draw_detail_value(fb, kValueX, y + kValueOffsetY, value, kValueFont,
+        const int kDrawn = draw_detail_value(fb, kValueX, y + kValueOffsetY, value, kValueStyle,
                                              kValueLinePitch, kAllowed);
         y += kRowPitch + ((kDrawn - 1) * kValueLinePitch);
     }
@@ -966,11 +861,12 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
 /// screens_shared.h -- used by split-out page families too (Air Traffic).
 void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
 {
-    constexpr int kArrowY = kUiHeight - 18;
+    constexpr int kArrowY = ui_layout::kFooterLineY;
     constexpr int kArrowHalfWidth = 5;
     constexpr int kArrowHalfHeight = 6;
-    constexpr int kLeftArrowX = (kUiWidth / 2) - 26;
-    constexpr int kRightArrowX = (kUiWidth / 2) + 26;
+    constexpr int kArrowOffsetX = 26;
+    constexpr int kLeftArrowX = ui_layout::kCentreX - kArrowOffsetX;
+    constexpr int kRightArrowX = ui_layout::kCentreX + kArrowOffsetX;
 
     if (show_left)
     {
@@ -992,20 +888,12 @@ void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
 namespace
 {
 
-/// @brief Returns the bracket depth used around one rendered softkey selection.
-constexpr int softkey_bracket_depth(fonts::FontFace font)
+/// @brief Returns how far a bracket's serifs reach in from its upright: about
+/// a quarter of the line height (2 for 5x7 text, 3 for 8x12 and 8x14), so
+/// the brackets scale with whatever font the value is drawn in (TXT-3).
+int softkey_bracket_depth(fonts::FontFace font)
 {
-    switch (font)
-    {
-    case fonts::FontFace::Font5x7:
-        return 2;
-    case fonts::FontFace::FontTitle8x12:
-    case fonts::FontFace::Font8x12:
-    case fonts::FontFace::Font8x14:
-        return 3;
-    }
-
-    return 2;
+    return (framebuffer::font_height(font) + 1) / 4;
 }
 
 } // namespace
@@ -1017,9 +905,9 @@ constexpr int softkey_bracket_depth(fonts::FontFace font)
 /// renderer below and by Settings' screen-saver timeout scratchpad
 /// (settings_screens.cpp).
 void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
-                                     int total_width, fonts::FontFace font, bool on)
+                                     int total_width, TextStyle style, bool on)
 {
-    const int kDepth = softkey_bracket_depth(font);
+    const int kDepth = softkey_bracket_depth(text_styles::font(style));
     const int kRightX = left_x + total_width - 1;
     const int kBottomY = top_y + total_height - 1;
 
@@ -1041,7 +929,7 @@ constexpr int kSoftkeyBracketGapX = 2;
 constexpr int kSoftkeyBracketPadY = 2;
 
 /// @brief Width the brackets and their gaps add around a bracketed value.
-constexpr int softkey_bracket_overhead(fonts::FontFace font)
+int softkey_bracket_overhead(fonts::FontFace font)
 {
     return (softkey_bracket_depth(font) * 2) + (kSoftkeyBracketGapX * 2);
 }
@@ -1055,8 +943,9 @@ constexpr int softkey_bracket_overhead(fonts::FontFace font)
 /// value cut short still gets its closing bracket. Widths are measured, since
 /// the fonts are proportional.
 /// Declared in screens_shared.h so tests can check how a label lays out.
-SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font, int max_lines)
+SoftkeyLabelLayout layout_softkey_label(const char* label, TextStyle style, int max_lines)
 {
+    const fonts::FontFace font = text_styles::font(style);
     SoftkeyLabelLayout layout = {};
     const int kMaxLines = std::min(max_lines, kMaxSoftkeyLabelLines);
     const char* cursor = label;
@@ -1075,7 +964,7 @@ SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font,
         copy_softkey_label_slice(part, sizeof(part), kBracketed ? cursor + 1 : cursor,
                                  kBracketed ? kPartLength - 2U : kPartLength);
         const int kWidth =
-            softkey_label_max_width() - (kBracketed ? softkey_bracket_overhead(font) : 0);
+            ui_layout::kSoftkeyLabelMaxWidth - (kBracketed ? softkey_bracket_overhead(font) : 0);
 
         // Keep one line for each part still to come, so a long value wraps
         // into the space left over rather than pushing later parts off the key.
@@ -1091,7 +980,7 @@ SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font,
 
         std::array<TextSpan, kMaxSoftkeyLabelLines> spans = {};
         const size_t kSpanCount =
-            wrap_text(part, font, kWidth, spans.data(), static_cast<size_t>(kLinesForPart));
+            wrap_text_in_font(part, font, kWidth, spans.data(), static_cast<size_t>(kLinesForPart));
         for (size_t i = 0U; i < kSpanCount; ++i)
         {
             SoftkeyLabelLine& line = layout.lines[static_cast<size_t>(layout.count++)];
@@ -1108,26 +997,35 @@ SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font,
 /// @details Centralizing the centering math keeps titles and status callouts
 /// aligned consistently across the different page renderers. Declared in
 /// screens_shared.h -- used by split-out page families too.
-void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool on,
-                        fonts::FontFace font, int spacing)
+void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, TextStyle style,
+                        bool on)
 {
-    framebuffer::draw_text(fb, center_x - (text_width(text, font, spacing) / 2), y, text, on, font,
-                           spacing);
+    draw_text(fb, center_x - (text_width(text, style) / 2), y, text, style, on);
 }
 
 /// @brief Draws the shared empty-state block. Declared in screens_shared.h.
 void draw_empty_state(uint8_t* fb, const char* headline, const char* hint)
 {
-    constexpr fonts::FontFace kHeadlineFont = fonts::FontFace::Font8x12;
-    constexpr fonts::FontFace kHintFont = fonts::FontFace::Font5x7;
     if (headline != nullptr && headline[0] != '\0')
     {
-        draw_centered_text(fb, kUiWidth / 2, kEmptyStateHeadlineY, headline, true, kHeadlineFont,
-                           1);
+        draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kEmptyStateHeadlineY, headline,
+                           TextStyle::Headline);
     }
-    if (hint != nullptr && hint[0] != '\0')
+    if (hint == nullptr || hint[0] == '\0')
     {
-        draw_centered_text(fb, kUiWidth / 2, kEmptyStateHintY, hint, true, kHintFont, 1);
+        return;
+    }
+    std::array<TextSpan, ui_layout::kMaxEmptyStateHintLines> spans = {};
+    const size_t kCount =
+        wrap_text(hint, TextStyle::Hint, ui_layout::kContentWidth, spans.data(), spans.size());
+    const int kPitch = ui_layout::row_pitch(TextStyle::Hint);
+    for (size_t i = 0U; i < kCount; ++i)
+    {
+        char line[kDetailValueLineCapacity] = {};
+        copy_softkey_label_slice(line, sizeof(line), spans[i].text, spans[i].length);
+        draw_centered_text(fb, ui_layout::kCentreX,
+                           ui_layout::kEmptyStateHintY + (static_cast<int>(i) * kPitch), line,
+                           TextStyle::Hint);
     }
 }
 
@@ -1139,26 +1037,24 @@ namespace
 /// wrapped text still reads like it belongs to one button location. A
 /// bracketed value is drawn as one run: a single bracket pair, and on an
 /// inverted key a single highlight, around all of its lines.
-void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool left_side,
-                        fonts::FontFace font, int max_lines)
+void draw_softkey_label(uint8_t* fb, int row, const SoftKeyAction& action, bool left_side,
+                        TextStyle style, int max_lines)
 {
+    const fonts::FontFace font = text_styles::font(style);
     if (action.label == nullptr || action.label[0] == '\0')
     {
         return;
     }
 
-    const SoftkeyLabelLayout kLayout = layout_softkey_label(action.label, font, max_lines);
+    const SoftkeyLabelLayout kLayout = layout_softkey_label(action.label, style, max_lines);
     if (kLayout.count == 0)
     {
         return;
     }
 
     const int kLineHeight = framebuffer::font_height(font);
-    const int kLinePitch = kLineHeight + kSoftkeyLayout.line_gap;
-    const int kCentredLines = std::min(kLayout.count, kCentredSoftkeyLabelLines);
-    const int kCentredHeight =
-        (kCentredLines * kLineHeight) + ((kCentredLines - 1) * kSoftkeyLayout.line_gap);
-    const int kBlockTopY = y + ((kSoftkeyLayout.height - kCentredHeight) / 2);
+    const int kLinePitch = kLineHeight + ui_layout::kSoftkeyLineGap;
+    const int kBlockTopY = ui_layout::softkey_label_top_y(row, kLayout.count, kLineHeight);
     const bool kTextOn = !action.inverted;
 
     int first = 0;
@@ -1179,16 +1075,15 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         for (int i = first; i < end; ++i)
         {
             widest_text =
-                std::max(widest_text, text_width(kLayout.lines[static_cast<size_t>(i)].text, font));
+                std::max(widest_text, measure(kLayout.lines[static_cast<size_t>(i)].text, font));
         }
         const int kRunWidth = widest_text + (kBracketed ? softkey_bracket_overhead(font) : 0);
-        const int kRunX =
-            left_side ? (kSoftkeyLayout.left_x + kSoftkeyLayout.text_inset)
-                      : (kUiWidth - kSoftkeyLayout.left_x - kSoftkeyLayout.text_inset - kRunWidth);
+        const int kRunX = left_side ? ui_layout::kSoftkeyLeftLabelX
+                                    : (ui_layout::kSoftkeyRightLabelEndX - kRunWidth);
         const int kRunLines = end - first;
         const int kRunTextTopY = kBlockTopY + (first * kLinePitch);
         const int kRunTextHeight =
-            (kRunLines * kLineHeight) + ((kRunLines - 1) * kSoftkeyLayout.line_gap);
+            (kRunLines * kLineHeight) + ((kRunLines - 1) * ui_layout::kSoftkeyLineGap);
         const int kPadY = kBracketed ? kSoftkeyBracketPadY : 0;
 
         if (action.inverted)
@@ -1205,7 +1100,7 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
         if (kBracketed)
         {
             draw_softkey_selection_brackets(fb, kRunX, kRunTextTopY - kPadY,
-                                            kRunTextHeight + (kPadY * 2), kRunWidth, font,
+                                            kRunTextHeight + (kPadY * 2), kRunWidth, style,
                                             kTextOn);
             text_x += softkey_bracket_depth(font) + kSoftkeyBracketGapX;
         }
@@ -1223,20 +1118,25 @@ void draw_softkey_label(uint8_t* fb, int y, const SoftKeyAction& action, bool le
 /// share the same bezel framing while only the content region changes.
 void draw_softkeys(uint8_t* fb, const ConsoleState& console_state)
 {
-    const fonts::FontFace kLabelFont = softkey_label_font(console_state.active_page);
+    const TextStyle kLabelStyle = softkey_label_style(console_state.active_page);
     const int kMaxLines = softkey_label_max_lines(console_state.active_page);
 
-    for (int i = 0; i < 5; ++i)
+    for (int row = 0; row < ui_layout::kSoftkeyRowCount; ++row)
     {
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i], true, kLabelFont,
-                           kMaxLines);
-        draw_softkey_label(fb, softkey_y_for_index(i), console_state.softkeys[i + 5], false,
-                           kLabelFont, kMaxLines);
+        const size_t kLeft = static_cast<size_t>(row);
+        const size_t kRight = kLeft + static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+        draw_softkey_label(fb, row, console_state.softkeys[kLeft], true, kLabelStyle, kMaxLines);
+        draw_softkey_label(fb, row, console_state.softkeys[kRight], false, kLabelStyle, kMaxLines);
     }
 }
 
-constexpr int kCompactDetailTextX = 10;
-constexpr fonts::FontFace kCompactDetailFont = fonts::FontFace::Font5x7;
+/// @brief Left edge of compact row labels.
+constexpr int kCompactDetailTextX = ui_layout::kMarginX;
+
+/// @brief Space between the widest `LABEL:` and the value column, so no
+/// value ever touches its label's colon.
+constexpr int kCompactLabelValueGapX = 6;
+constexpr TextStyle kCompactDetailStyle = TextStyle::CompactRow;
 
 /// @brief Returns the value-column x-coordinate for compact detail pages.
 /// @details The compact font is proportional, so spaces cannot be used for
@@ -1252,10 +1152,10 @@ int compact_detail_value_x(const DetailRow* rows, size_t count)
         std::snprintf(label_text, sizeof(label_text),
                       "%s:", rows[i].label != nullptr ? rows[i].label : "");
         widest_label_width =
-            std::max(widest_label_width, text_width(label_text, kCompactDetailFont, 1));
+            std::max(widest_label_width, text_width(label_text, kCompactDetailStyle));
     }
 
-    return kCompactDetailTextX + widest_label_width + text_width(" ", kCompactDetailFont, 1);
+    return kCompactDetailTextX + widest_label_width + kCompactLabelValueGapX;
 }
 
 } // namespace
@@ -1276,7 +1176,7 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
 
     const int kValueX = compact_detail_value_x(rows, count);
     const int kNaturalBottomY = start_y + ((static_cast<int>(count) - 1) * row_pitch) +
-                                framebuffer::font_height(kCompactDetailFont);
+                                text_styles::line_height(kCompactDetailStyle);
     int spare_lines = detail_wrap_budget(kNaturalBottomY, row_pitch);
     int y = start_y;
     for (size_t i = 0U; i < count; ++i)
@@ -1284,16 +1184,15 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
         char label_text[kLabelBufferSize] = {};
         std::snprintf(label_text, sizeof(label_text),
                       "%s:", rows[i].label != nullptr ? rows[i].label : "");
-        framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text, true, kCompactDetailFont,
-                               1);
+        draw_text(fb, kCompactDetailTextX, y, label_text, kCompactDetailStyle);
 
         const char* value = detail_value_text(rows[i].value);
         const int kNeeded =
-            detail_value_line_count(value, kCompactDetailFont, kDetailValueRightX - kValueX);
+            detail_value_line_count(value, kCompactDetailStyle, ui_layout::kRightEdgeX - kValueX);
         const int kAllowed = 1 + std::min(kNeeded - 1, spare_lines);
         spare_lines -= kAllowed - 1;
         const int kDrawn =
-            draw_detail_value(fb, kValueX, y, value, kCompactDetailFont, row_pitch, kAllowed);
+            draw_detail_value(fb, kValueX, y, value, kCompactDetailStyle, row_pitch, kAllowed);
         y += row_pitch * kDrawn;
     }
 }
@@ -1306,150 +1205,10 @@ namespace
 /// are the surrounding labels for the next level of navigation.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kHomeIpX = 12;
-    constexpr int kHomeIpY = kUiHeight - 18;
-    constexpr fonts::FontFace kHomeIpFont = fonts::FontFace::Font5x7;
-
     char ip_text[32] = {};
-    framebuffer::draw_text(fb, kHomeIpX, kHomeIpY,
-                           home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
-                           true, kHomeIpFont, 1);
-}
-
-/// @brief Draws the sensor board's freshness in the footer (STATE-3).
-/// @details The stale age comes from environment_sensor_manager (STATE-4).
-/// Drawn only once the board has produced something, so the empty states
-/// carry the whole message.
-void draw_local_conditions_footer(uint8_t* fb,
-                                  const environment_sensor_manager::EnvironmentSensorStatus& status,
-                                  uint32_t now_ms)
-{
-    constexpr int kFooterX = 12;
-    constexpr int kFooterY = kUiHeight - 18;
-    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
-
-    char freshness_text[16] = {};
-    build_data_freshness_text(local_conditions::reading_current(status),
-                              local_conditions::last_reading_ms(status), now_ms,
-                              environment_sensor_manager::kLocalConditionStaleAfterMs,
-                              freshness_text, sizeof(freshness_text));
-    char footer_text[32] = {};
-    std::snprintf(footer_text, sizeof(footer_text), "Sensor board - %s", freshness_text);
-    framebuffer::draw_text(fb, kFooterX, kFooterY, footer_text, true, kFooterFont, 1);
-}
-
-/// @brief Draws the Local Conditions body.
-/// @details With readings, the values are on the softkeys and the body holds
-/// only the footer freshness line. Without, the shared empty state says why
-/// and where to look, and the keys are blank (SK-5).
-void draw_local_conditions_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
-{
-    const auto& status = console_state.environment_sensor_status;
-    const local_conditions::BoardState kState = local_conditions::board_state(status);
-    if (kState != local_conditions::BoardState::Reading)
-    {
-        draw_empty_state(fb, local_conditions::empty_state_headline(kState),
-                         local_conditions::empty_state_hint(kState));
-        return;
-    }
-    draw_local_conditions_footer(fb, status, now_ms);
-}
-
-/// @brief Draws one local-condition history graph using the compact status history.
-/// @details With fewer than two history points there is nothing to plot, so
-/// the page shows the shared empty state: the board's own state when it has
-/// no readings, otherwise that history is still building, with the current
-/// reading as the hint.
-void draw_local_condition_history_graph(uint8_t* fb, const ConsoleState& console_state,
-                                        uint32_t now_ms)
-{
-    constexpr int kGraphX = 42;
-    constexpr int kGraphY = 52;
-    constexpr int kGraphWidth = kUiWidth - (kGraphX * 2);
-    constexpr int kGraphHeight = 128;
-    constexpr int kTimelineLabelY = kGraphY + kGraphHeight + 5;
-    constexpr int kMetricLabelY = kTimelineLabelY + 13;
-    constexpr int kPlotInset = 1;
-    constexpr int kAxisLabelRightX = kGraphX - 6;
-
-    const auto& status = console_state.environment_sensor_status;
-    std::array<int32_t, environment_sensor_manager::kLocalConditionHistoryPointCount> values = {};
-    const std::size_t count =
-        copy_local_condition_history(console_state.local_condition_metric, status, values);
-    const LocalConditionGraphScale scale =
-        local_condition_graph_scale(console_state.local_condition_metric);
-    if (count < 2U)
-    {
-        const local_conditions::BoardState kState = local_conditions::board_state(status);
-        if (kState != local_conditions::BoardState::Reading)
-        {
-            draw_empty_state(fb, local_conditions::empty_state_headline(kState),
-                             local_conditions::empty_state_hint(kState));
-            return;
-        }
-
-        char current_text[20] = {};
-        local_conditions::format_metric(console_state.local_condition_metric, status,
-                                        current_text, sizeof(current_text));
-        char hint[32] = {};
-        if (std::strcmp(current_text, "-") != 0)
-        {
-            std::snprintf(hint, sizeof(hint), "Now: %s", current_text);
-        }
-        else
-        {
-            std::snprintf(hint, sizeof(hint), "A point is added every 5 min");
-        }
-        draw_empty_state(fb, "NO HISTORY YET", hint);
-        draw_local_conditions_footer(fb, status, now_ms);
-        return;
-    }
-
-    const GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight, kPlotInset};
-    draw_graph_plot_border(fb, plot_area);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY - 3, scale.maximum_label);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY + (kGraphHeight / 2) - 3,
-                    scale.middle_label);
-    draw_axis_label(fb, kAxisLabelRightX, kGraphY + kGraphHeight - 8, scale.minimum_label);
-    framebuffer::draw_hline(fb, kGraphX - 3, kGraphX - 1, kGraphY + (kGraphHeight / 2), true);
-
-    int previous_x = kGraphX + kPlotInset;
-    int previous_y = kGraphY + kGraphHeight - 1 - kPlotInset;
-    for (std::size_t i = 0U; i < count; ++i)
-    {
-        const int x = graph_plot_x(plot_area, static_cast<int>(i), static_cast<int>(count));
-        const int y = graph_plot_y(plot_area, values[i], scale.minimum, scale.maximum);
-        if (i > 0U)
-        {
-            framebuffer::draw_line(fb, previous_x, previous_y, x, y, true);
-        }
-        previous_x = x;
-        previous_y = y;
-    }
-
-    char current_text[20] = {};
-    local_conditions::format_metric(console_state.local_condition_metric, status, current_text,
-                                    sizeof(current_text));
-    draw_local_conditions_footer(fb, status, now_ms);
-
-    framebuffer::draw_text(fb, kGraphX, kTimelineLabelY, "24H AGO", true,
-                           fonts::FontFace::Font5x7, 1);
-    const int now_width = text_width("NOW", fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - now_width, kTimelineLabelY, "NOW", true,
-                           fonts::FontFace::Font5x7, 1);
-
-    framebuffer::draw_text(fb, kGraphX, kMetricLabelY,
-                           local_condition_metric_text(console_state.local_condition_metric), true,
-                           fonts::FontFace::Font5x7, 1);
-    const int unit_x =
-        kGraphX + text_width(local_condition_metric_text(console_state.local_condition_metric),
-                             fonts::FontFace::Font5x7, 1) +
-        text_width(" ", fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, unit_x, kMetricLabelY, scale.unit_label, true,
-                           fonts::FontFace::Font5x7, 1);
-    const int current_width = text_width(current_text, fonts::FontFace::Font8x12, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - current_width, kMetricLabelY - 3,
-                           current_text, true, fonts::FontFace::Font8x12, 1);
+    draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY,
+              home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
+              TextStyle::Footer);
 }
 
 } // namespace
@@ -1527,10 +1286,10 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
         status_screens::draw_status_page(fb, console_state, now_ms);
         break;
     case MenuPage::LocalConditions:
-        draw_local_conditions_page(fb, console_state, now_ms);
+        local_conditions_screens::draw_local_conditions_page(fb, console_state, now_ms);
         break;
     case MenuPage::LocalConditionGraph:
-        draw_local_condition_history_graph(fb, console_state, now_ms);
+        local_conditions_screens::draw_local_condition_history_graph(fb, console_state, now_ms);
         break;
     case MenuPage::Settings:
         settings_screens::draw_settings_page(fb, console_state);

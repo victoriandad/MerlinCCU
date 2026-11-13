@@ -18,9 +18,6 @@
 namespace settings_controller
 {
 
-/// @brief Number of top-level Settings menu section-group pages.
-inline constexpr uint8_t kSettingsPageCount = 2U;
-
 /// @brief Static metadata for one selectable weather source.
 struct WeatherSourceDefinition
 {
@@ -95,6 +92,10 @@ const char* weather_source_selection_text(const ConsoleState& console_state);
 
 /// @brief Returns the currently selected weather period label for menu softkeys.
 const char* weather_period_selection_text(const ConsoleState& console_state);
+
+/// @brief Returns the mixed-case name of one share history period, such
+/// as "All-time".
+const char* share_period_name(SharePeriod period);
 
 /// @brief Returns the currently selected share history period label.
 const char* share_period_selection_text(const ConsoleState& console_state);

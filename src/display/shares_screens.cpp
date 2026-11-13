@@ -8,12 +8,21 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "settings_controller.h"
+#include "share_price_manager.h"
+#include "text_case.h"
+#include "ui_layout.h"
 
 namespace shares_screens
 {
 
 namespace
 {
+
+using screens::TextStyle;
+
+/// @brief Top of the share detail rows, beneath the graph and its labels.
+constexpr int kDetailRowsTopY = 164;
 
 /// @brief Formats one graph-axis share value using compact thousands separators.
 void format_share_graph_value(uint16_t value, char* output, size_t output_size)
@@ -52,17 +61,12 @@ bool share_history_has_values(const ShareWatchEntry& share)
 /// @brief Draws one full-width share history graph in the centre detail region.
 void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePeriod period)
 {
-    constexpr int kGraphX = 42;
-    constexpr int kGraphY = 44;
-    const int kGraphWidth = kUiWidth - (kGraphX * 2);
+    // Shorter than a full-page graph: the share's rows sit beneath it.
     constexpr int kGraphHeight = 94;
-    constexpr int kGraphMinLabelGapY = 6;
-    constexpr int kGraphPlotInset = 1;
     const int point_count = static_cast<int>(share.history_points.size());
     if (point_count < 2 || !share_history_has_values(share))
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 106, "NO PRICE HISTORY", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_empty_state(fb, "NO PRICE HISTORY", nullptr);
         return;
     }
 
@@ -74,9 +78,19 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         max_value = std::max(max_value, value);
     }
 
-    const screens::GraphPlotArea plot_area{kGraphX, kGraphY, kGraphWidth, kGraphHeight,
-                                           kGraphPlotInset};
-    screens::draw_graph_plot_border(fb, plot_area);
+    char max_text[16] = {};
+    char middle_text[16] = {};
+    char min_text[16] = {};
+    format_share_graph_value(max_value, max_text, sizeof(max_text));
+    format_share_graph_value(static_cast<uint16_t>((min_value + max_value) / 2U), middle_text,
+                             sizeof(middle_text));
+    format_share_graph_value(min_value, min_text, sizeof(min_text));
+    char period_label[16] = {};
+    text_case::copy_uppercase(settings_controller::share_period_name(period), period_label,
+                              sizeof(period_label));
+
+    const screens::GraphPlotArea plot_area = screens::draw_history_graph_frame(
+        fb, kGraphHeight, {max_text, middle_text, min_text, period_label, "NOW"});
     const int base_y = screens::graph_plot_y(plot_area, min_value, min_value, max_value);
     for (int i = 0; i < point_count; ++i)
     {
@@ -85,63 +99,6 @@ void draw_share_history_graph(uint8_t* fb, const ShareWatchEntry& share, SharePe
         const int y = screens::graph_plot_y(plot_area, value, min_value, max_value);
         framebuffer::draw_vline(fb, x, y, base_y, true);
     }
-
-    const char* period_label = "TODAY";
-    switch (period)
-    {
-    case SharePeriod::Today:
-        period_label = "TODAY";
-        break;
-    case SharePeriod::Week:
-        period_label = "WEEK";
-        break;
-    case SharePeriod::Month:
-        period_label = "MONTH";
-        break;
-    case SharePeriod::Year:
-        period_label = "YEAR";
-        break;
-    case SharePeriod::AllTime:
-        period_label = "ALL-TIME";
-        break;
-    }
-    framebuffer::draw_text(fb, kGraphX, kGraphY + 2, period_label, true, fonts::FontFace::Font5x7,
-                           1);
-
-    char min_value_text[16] = {};
-    char max_value_text[16] = {};
-    char min_label[24] = {};
-    char max_label[24] = {};
-    format_share_graph_value(min_value, min_value_text, sizeof(min_value_text));
-    format_share_graph_value(max_value, max_value_text, sizeof(max_value_text));
-    std::snprintf(min_label, sizeof(min_label), "MIN %s", min_value_text);
-    std::snprintf(max_label, sizeof(max_label), "MAX %s", max_value_text);
-
-    const int label_y = kGraphY + kGraphHeight + kGraphMinLabelGapY;
-    framebuffer::draw_text(fb, kGraphX, label_y, min_label, true, fonts::FontFace::Font5x7, 1);
-    const int max_label_width = screens::text_width(max_label, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, kGraphX + kGraphWidth - max_label_width, label_y, max_label, true,
-                           fonts::FontFace::Font5x7, 1);
-}
-
-/// @brief Returns a compact label for one share history period.
-const char* share_period_text(SharePeriod period)
-{
-    switch (period)
-    {
-    case SharePeriod::Today:
-        return "Today";
-    case SharePeriod::Week:
-        return "Week";
-    case SharePeriod::Month:
-        return "Month";
-    case SharePeriod::Year:
-        return "Year";
-    case SharePeriod::AllTime:
-        return "All-time";
-    }
-
-    return "Today";
 }
 
 } // namespace
@@ -154,10 +111,7 @@ void draw_shares_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.share_count == 0U)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARES", true,
-                                    fonts::FontFace::Font8x12, 1);
-        screens::draw_centered_text(fb, kUiWidth / 2, 142, "ADD VIA WEB CONFIG", true,
-                                    fonts::FontFace::Font5x7, 1);
+        screens::draw_empty_state(fb, "NO SHARES", "Add shares in web config");
         return;
     }
 
@@ -169,8 +123,7 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
 {
     if (console_state.selected_share_index >= console_state.share_count)
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO SHARE", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_empty_state(fb, "NO SHARE", nullptr);
         return;
     }
 
@@ -189,23 +142,22 @@ void draw_share_detail_page(uint8_t* fb, const ConsoleState& console_state, uint
     }
     else
     {
-        // 4x share_price_manager.cpp's own 5-minute kRefreshIntervalMs.
-        constexpr uint32_t kShareStaleAfterMs = 4U * 5U * 60U * 1000U;
-        screens::build_data_freshness_text(console_state.share_data_valid,
-                                           console_state.share_data_last_success_ms, now_ms,
-                                           kShareStaleAfterMs, data_text, sizeof(data_text));
+        screens::build_data_freshness_text(
+            console_state.share_data_valid, console_state.share_data_last_success_ms, now_ms,
+            share_price_manager::kShareStaleAfterMs, data_text, sizeof(data_text));
     }
 
     const screens::DetailRow rows[] = {
         {"NAME", share.display_name.data()},
         {"SYMBOL", share.symbol.data()},
-        {"PERIOD", share_period_text(console_state.share_period)},
+        {"PERIOD", settings_controller::share_period_name(console_state.share_period)},
         {"DATA", data_text},
         {"PRICE", share.price_text.data()},
         {"CHANGE", share.change_text.data()},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 164, 14);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kDetailRowsTopY,
+                                      ui_layout::row_pitch(TextStyle::CompactRow));
 }
 
 } // namespace shares_screens

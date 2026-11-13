@@ -1,7 +1,5 @@
 #include "pinter_screens.h"
 
-#include <array>
-#include <cctype>
 #include <cstdint>
 #include <cstdio>
 
@@ -10,6 +8,8 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "text_case.h"
+#include "ui_layout.h"
 
 namespace pinter_screens
 {
@@ -17,23 +17,14 @@ namespace pinter_screens
 namespace
 {
 
-/// @brief Footer text baseline shared by the Pinter pages, matching the Home
-/// page's footer line. Moves to the shared layout header under #113.
-constexpr int kPinterFooterTextY = kUiHeight - 18;
+using screens::TextStyle;
 
 /// @brief Draws the reset question in the otherwise empty body.
 /// @details Every softkey except CANCEL and RESET is blank in this state, so
-/// the body can say plainly which vessel and brew will be cleared. Uses the
-/// same headline position as the other centred empty-state headlines.
+/// the body can say plainly which vessel and brew will be cleared. Drawn as
+/// the shared empty-state block, its detail wrapping as the hint.
 void draw_reset_confirmation(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kHeadlineY = 112;
-    constexpr int kDetailFirstY = 142;
-    constexpr int kDetailPitch = 14;
-    constexpr int kDetailMarginX = 16;
-    constexpr size_t kMaxDetailLines = 4U;
-    constexpr fonts::FontFace kDetailFont = fonts::FontFace::Font5x7;
-
     const uint8_t index = console_state.selected_pinter_index < console_state.pinters.size()
                               ? console_state.selected_pinter_index
                               : 0U;
@@ -41,28 +32,12 @@ void draw_reset_confirmation(uint8_t* fb, const ConsoleState& console_state)
 
     char headline[40] = {};
     std::snprintf(headline, sizeof(headline), "RESET %s?", vessel.label.data());
-    for (char& c : headline)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    screens::draw_centered_text(fb, kUiWidth / 2, kHeadlineY, headline, true,
-                                fonts::FontFace::Font8x12, 1);
+    text_case::copy_uppercase(headline, headline, sizeof(headline));
 
     char detail[96] = {};
     std::snprintf(detail, sizeof(detail), "Clears %s and its stage timings. This cannot be undone.",
                   console_controller::pinter_brew_timing(vessel.brew_index).name);
-    std::array<screens::TextSpan, kMaxDetailLines> lines = {};
-    const size_t count = screens::wrap_text(detail, kDetailFont, kUiWidth - (kDetailMarginX * 2),
-                                            lines.data(), lines.size());
-    for (size_t i = 0U; i < count; ++i)
-    {
-        char line[96] = {};
-        std::snprintf(line, sizeof(line), "%.*s", static_cast<int>(lines[i].length),
-                      lines[i].text);
-        screens::draw_centered_text(fb, kUiWidth / 2,
-                                    kDetailFirstY + (static_cast<int>(i) * kDetailPitch), line,
-                                    true, kDetailFont, 1);
-    }
+    screens::draw_empty_state(fb, headline, detail);
 }
 
 } // namespace
@@ -94,9 +69,9 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
         // Home page's footer line.
         if (console_state.pinter_block_reason[0] != '\0')
         {
-            screens::draw_centered_text(fb, kUiWidth / 2, kPinterFooterTextY,
-                                        console_state.pinter_block_reason.data(), true,
-                                        fonts::FontFace::Font5x7, 1);
+            screens::draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kFooterLineY,
+                                        console_state.pinter_block_reason.data(),
+                                        TextStyle::Footer);
         }
         return;
     }
@@ -105,9 +80,9 @@ void draw_pinter_page(uint8_t* fb, const ConsoleState& console_state)
         // in use, and the operator should see what START will commit to.
         // The longest catalogue name fits the width (checked by a host test).
         screens::draw_centered_text(
-            fb, kUiWidth / 2, kPinterFooterTextY,
+            fb, ui_layout::kCentreX, ui_layout::kFooterLineY,
             console_controller::pinter_brew_timing(console_state.pinter_pending_brew_index).name,
-            true, fonts::FontFace::Font5x7, 1);
+            TextStyle::Footer);
         return;
     default:
         break;

@@ -509,9 +509,14 @@ const char* weather_period_selection_text(const ConsoleState& console_state)
     return weather_period_definition(console_state.weather_period).selection_label;
 }
 
+const char* share_period_name(SharePeriod period)
+{
+    return share_period_definition(period).selection_label;
+}
+
 const char* share_period_selection_text(const ConsoleState& console_state)
 {
-    return share_period_definition(console_state.share_period).selection_label;
+    return share_period_name(console_state.share_period);
 }
 
 const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
@@ -630,13 +635,7 @@ bool toggle_air_traffic_view_mode(ConsoleState& console_state)
 
 uint8_t air_traffic_page_count(const ConsoleState& console_state)
 {
-    const uint8_t count = console_state.air_traffic_status.aircraft_count;
-    if (count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage);
+    return air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
 }
 
 bool select_share_slot(ConsoleState& console_state, uint8_t slot)

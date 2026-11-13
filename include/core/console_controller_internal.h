@@ -23,9 +23,6 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
 /// for labels that need more than build_selection_softkey_label's two lines.
 char* dynamic_softkey_label_buffer(SoftKeyId key, size_t& out_capacity);
 
-/// @brief Copies a short label title and forces uppercase for consistent softkey headings.
-void build_uppercase_title(const char* input, char* output, size_t output_size);
-
 /// @brief Returns true when the current LTRS mode maps a button to a digit.
 /// @details Shared between core keypad text entry and settings_controller.cpp's
 /// screen-saver timeout scratchpad, both of which need the same digit mapping.

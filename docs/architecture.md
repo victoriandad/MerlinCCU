@@ -37,8 +37,24 @@ README history, chat context, or incidental source-code discovery.
   All page families have been split into their own files (issue #45,
   complete): `status_screens.cpp`, `weather_screens.cpp`,
   `air_traffic_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`,
-  `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`, and
-  `screen_banners.cpp` (top status banner).
+  `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`,
+  `local_conditions_screens.cpp` (Local Conditions page and history graph),
+  and `screen_banners.cpp` (top status banner).
+- `include/display/ui_layout.h`: the screen zones, softkey rows, margins,
+  content-top line, row pitch, table frame, graph frame, footer line and
+  empty-state position (SCR-2, BODY-2, BODY-3). Page renderers take positions
+  from here. Positions that depend on a font are functions measured from a text
+  style, so they follow a font change. A few pages still use their own
+  positions for a concept defined here; each is a named constant marked "to be
+  aligned".
+- `include/display/text_styles.h` / `src/display/text_styles.cpp`: every piece
+  of UI text is drawn in a named `TextStyle` (header title, softkey, compact
+  row, table header, headline, hint, footer, and so on). Each style's font is
+  held in one table that can be changed at run time (`set_font`), ready for a
+  Settings page that tries fonts on the panel (#123). Page renderers never name
+  a `fonts::FontFace`. They draw through `screens::draw_text`,
+  `draw_centered_text`, `draw_right_aligned_text` and `text_width`, which take
+  a style (TXT-1 to TXT-3).
 - `src/display/status_screens.cpp`: Status root/overview/connectivity/
   resources/sensors/integrations pages.
 - `src/display/weather_screens.cpp`: the live Weather page, its Hourly/Next
@@ -197,8 +213,13 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   `"STALE 12m"`, or `"NO DATA"`. `last_success_ms`/`now_ms` are boot-uptime
   milliseconds (`to_ms_since_boot`), matching the pre-existing
   `EnvironmentSensorStatus::bme_last_read_ms` idiom -- not wall-clock, so it
-  works before time sync. `stale_after_ms` is each subsystem's own threshold
-  (this codebase uses 4x that subsystem's own refresh interval throughout).
+  works before time sync. `stale_after_ms` is each subsystem's own threshold,
+  four missed refreshes, published by the subsystem that fetches the data
+  (`home_assistant_manager::kWeatherStaleAfterMs`,
+  `share_price_manager::kShareStaleAfterMs`,
+  `air_traffic_manager::kAirTrafficStaleAfterMs`,
+  `environment_sensor_manager::kLocalConditionStaleAfterMs`) so no renderer
+  holds its own copy (STATE-4).
   A companion `screens::build_elapsed_time_text(elapsed_ms, out, out_size)`
   formats the compact "Xs"/"Xm"/"Xh" age text on its own, reused by the
   Sensors page's `ENV SCAN` row (previously showed a raw uptime timestamp,
@@ -409,6 +430,26 @@ Issue #71 made `screens.cpp` and its eight page-family files
 pixel-snapshot regression tests so a layout bug (a softkey label overlapping
 content, a margin collision) fails a test run instead of needing a human to
 spot it on a screenshot -- the project's actual bug history per the issue.
+
+**Whole-UI coverage (#112).** `tests/host/test_page_coverage.cpp` drives the
+real `console_controller` from Home with the presses an operator would use:
+softkeys, the cursor keys and ALERT. It starts from a fixture with data:
+Wi-Fi, shares, a live sensor board, nearby aircraft and one active alert. It
+visits every reachable page state and checks each one in three ways:
+
+- It compares a golden image rendered with the real softkey map
+  (`page_<name>.pbm`).
+- It checks that every label lays out within its page's line limit without
+  dropping text (LBL-1, LBL-6).
+- It checks that no body pixel falls inside the cell of a labelled key
+  (SCR-5).
+
+Existing fit or overlap problems are listed in the test, each with the issue
+that fixes it. The test fails on a problem that is not listed, and also on a
+listed one that has been fixed, so the list stays accurate. A page that no key
+reaches fails the completeness check, unless it is listed with a reason. At
+present the only such page is Calendar detail, because nothing feeds calendar
+events to the controller until #8.
 
 **What was blocking host-compilation, and how each was resolved:**
 

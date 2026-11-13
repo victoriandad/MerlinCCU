@@ -5,6 +5,14 @@
 namespace share_price_manager
 {
 
+/// @brief How often the share feed is fetched while the Shares pages are open.
+inline constexpr uint32_t kRefreshIntervalMs = 5U * 60U * 1000U;
+
+/// @brief Age at which share data counts as stale: four missed refreshes.
+/// @details Owned here, by the subsystem that fetches the data, so every page
+/// that shows share freshness uses the same threshold (STATE-4).
+inline constexpr uint32_t kShareStaleAfterMs = 4U * kRefreshIntervalMs;
+
 /// @brief Initialises share-price status and any enabled market-data fetcher.
 /// @details Direct external provider fetching (the old Yahoo chart path,
 /// which caused share-page lockups -- see issue #19) has been replaced by a

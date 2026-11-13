@@ -7,6 +7,7 @@
 #include "console_controller_internal.h"
 #include "date_time_math.h"
 #include "pinter_store.h"
+#include "text_case.h"
 
 namespace pinter_controller
 {
@@ -103,13 +104,7 @@ uint8_t minimum_total_days(const PinterBrewTiming& brew)
 
 uint8_t list_page_count(size_t item_count)
 {
-    if (item_count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>(
-        (item_count + (kPinterBrewListVisibleCount - 1U)) / kPinterBrewListVisibleCount);
+    return ::list_page_count(item_count, kPinterBrewListVisibleCount);
 }
 
 void clamp_list_page(uint8_t& page_index, size_t item_count)
@@ -255,7 +250,7 @@ const char* build_slot_softkey_label(const ConsoleState& console_state, SoftKeyI
     size_t buffer_capacity = 0U;
     char* buffer = cci::dynamic_softkey_label_buffer(key, buffer_capacity);
     char title_upper[24] = {};
-    cci::build_uppercase_title(pinter.label.data(), title_upper, sizeof(title_upper));
+    text_case::copy_uppercase(pinter.label.data(), title_upper, sizeof(title_upper));
     std::snprintf(buffer, buffer_capacity, "%s\n[%s]\n[%s]", title_upper,
                   brew_timing(pinter.brew_index).name, stage);
     return buffer;
@@ -423,7 +418,7 @@ bool change_list_page(ConsoleState& console_state, int direction)
         return false;
     }
 
-    const uint8_t page_count = list_page_count(kPinterBrewCatalogue.size());
+    const uint8_t page_count = kPinterBrewListPageCount;
     const int next_page = static_cast<int>(console_state.pinter_catalogue_page_index) + direction;
     if (next_page < 0 || next_page >= static_cast<int>(page_count))
     {

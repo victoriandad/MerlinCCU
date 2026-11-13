@@ -542,6 +542,50 @@ HOST_TEST(alert_detail_cursor_keys_stop_at_the_scroll_limit)
     EXPECT_EQ(state.alert_detail_scroll_line, 0U);
 }
 
+HOST_TEST(a_recurring_alert_shows_its_count_on_the_key_and_in_the_detail)
+{
+    console_controller::init();
+    WifiStatus wifi = {};
+    for (int i = 0; i < 3; ++i)
+    {
+        wifi.state = WifiConnectionState::Disabled;
+        (void)console_controller::set_wifi_status(wifi);
+        wifi.state = WifiConnectionState::Connected;
+        (void)console_controller::set_wifi_status(wifi);
+    }
+    wifi.state = WifiConnectionState::Disabled;
+    (void)console_controller::set_wifi_status(wifi);
+
+    (void)console_controller::handle_button_event({ButtonId::Alert, ButtonEventType::Pressed});
+    const ConsoleState& list = console_controller::state();
+    EXPECT_TRUE(list.active_page == MenuPage::AlertList);
+    const char* label = list.softkeys[static_cast<size_t>(SoftKeyId::Left1)].label;
+    EXPECT_TRUE(std::strstr(label, " x4]") != nullptr);
+    EXPECT_TRUE(golden_test::check_golden("alert_list_recurring", render_page(list).data()));
+
+    (void)console_controller::handle_button_event({ButtonId::LeftTop, ButtonEventType::Pressed});
+    const ConsoleState& detail = console_controller::state();
+    EXPECT_TRUE(detail.active_page == MenuPage::AlertDetail);
+    EXPECT_TRUE(alert_detail_stays_in_bounds(detail));
+    EXPECT_TRUE(golden_test::check_golden("alert_detail_recurring", render_page(detail).data()));
+}
+
+HOST_TEST(the_largest_alert_count_fits_the_alert_key)
+{
+    // The alert list uses the 8x12 font with two label lines; the count must
+    // stay inside the value's brackets on the second line.
+    const screens::SoftkeyLabelLayout layout =
+        screens::layout_softkey_label("NETWORK\n[--:-- x99]", text_styles::TextStyle::Softkey, 2);
+    EXPECT_EQ(layout.count, 2);
+    EXPECT_TRUE(layout.lines[1].bracketed);
+    EXPECT_TRUE(std::strcmp(layout.lines[1].text, "--:-- x99") == 0);
+
+    // The longest detail text plus the count line still fits the page.
+    ConsoleState state = make_alert_detail_state(kLongAlertDetail);
+    state.active_alerts[0].occurrence_count = kMaxAlertOccurrenceCount;
+    EXPECT_TRUE(alert_detail_stays_in_bounds(state));
+}
+
 HOST_TEST(alert_detail_short_and_empty_states_render_consistently)
 {
     const auto short_fb = render_page(make_alert_detail_state(
@@ -614,7 +658,7 @@ HOST_TEST(every_recipe_name_fits_the_brew_timing_footer)
     for (uint8_t i = 0U; i < kPinterBrewCatalogueCount; ++i)
     {
         const char* name = console_controller::pinter_brew_timing(i).name;
-        const int width = framebuffer::measure_text(name, fonts::FontFace::Font5x7);
+        const int width = screens::text_width(name, text_styles::TextStyle::Footer);
         if (width > kUiWidth - (kFooterMarginX * 2))
         {
             host_tests::record_failure(__FILE__, __LINE__,
@@ -652,8 +696,8 @@ HOST_TEST(pinter_vessel_labels_wrap_long_recipe_names_and_keep_the_countdown)
     int widest_width = 0;
     for (uint8_t i = 0U; i < kPinterBrewCatalogueCount; ++i)
     {
-        const int width = framebuffer::measure_text(console_controller::pinter_brew_timing(i).name,
-                                                    fonts::FontFace::Font5x7);
+        const int width = screens::text_width(console_controller::pinter_brew_timing(i).name,
+                                              text_styles::TextStyle::SoftkeyDense);
         if (width > widest_width)
         {
             widest_width = width;
@@ -678,9 +722,8 @@ HOST_TEST(pinter_vessel_labels_wrap_long_recipe_names_and_keep_the_countdown)
     for (const SoftKeyId id : vessel_keys)
     {
         const std::string label = state.softkeys[static_cast<size_t>(id)].label;
-        const screens::SoftkeyLabelLayout layout =
-            screens::layout_softkey_label(label.c_str(), fonts::FontFace::Font5x7,
-                                          screens::kMaxSoftkeyLabelLines);
+        const screens::SoftkeyLabelLayout layout = screens::layout_softkey_label(
+            label.c_str(), text_styles::TextStyle::SoftkeyDense, screens::kMaxSoftkeyLabelLines);
 
         // Parts of the label as built: caption, [recipe], [stage and countdown].
         std::vector<std::string> parts;
@@ -988,7 +1031,7 @@ HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)
         EXPECT_EQ(static_cast<int>(message.state),
                   static_cast<int>(WeatherPageState::NotConfigured));
         EXPECT_TRUE(std::strstr(message.hint.data(), "web config") != nullptr);
-        EXPECT_TRUE(screens::text_width(message.hint.data(), fonts::FontFace::Font5x7) <=
+        EXPECT_TRUE(screens::text_width(message.hint.data(), text_styles::TextStyle::Hint) <=
                     kUiWidth - 24);
     }
 }

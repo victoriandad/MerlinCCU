@@ -34,7 +34,6 @@ constexpr uint32_t kRetryDelayMs = 20U * 1000U;
 // Aircraft positions update roughly every second at the source, but there is
 // no need to refresh that fast for a small onboard display -- see
 // docs/adsb-air-traffic-feature-design.md for the reasoning.
-constexpr uint32_t kRefreshIntervalMs = 15U * 1000U;
 constexpr size_t kRequestBufferSize = 320U;
 // Bounded so a busy airspace + large configured radius cannot grow this
 // without limit. A response that doesn't fit is treated as a partial

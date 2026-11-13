@@ -1,14 +1,20 @@
 #include "screen_banners.h"
 
+#include <algorithm>
+
 #include "config_manager.h"
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "text_styles.h"
+#include "ui_layout.h"
 
 namespace screen_banners
 {
 
 namespace
 {
+
+using text_styles::TextStyle;
 
 /// @brief Shared banner height in UI pixels.
 constexpr int kBannerHeight = 18;
@@ -40,11 +46,22 @@ constexpr int kHeaderStatusIconWidth = 16;
 /// @brief Width reserved for the compact Home Assistant status icon.
 constexpr int kHeaderHomeAssistantIconWidth = 12;
 
-/// @brief Width reserved for the compact LTRS input-mode indicator.
-constexpr int kHeaderInputModeIconWidth = 23;
+/// @brief Space between the LTRS indicator's box and its text.
+constexpr int kHeaderInputModeTextInsetX = 3;
+constexpr int kHeaderInputModeTextInsetY = 2;
 
-/// @brief Height reserved for the compact LTRS input-mode indicator.
-constexpr int kHeaderInputModeIconHeight = 11;
+/// @brief Draws `text` in a header style; the header is shared chrome, so it
+/// draws through the same text styles as the pages.
+void draw_header_text(uint8_t* fb, int x, int y, const char* text, TextStyle style)
+{
+    framebuffer::draw_text(fb, x, y, text, true, text_styles::font(style), 1);
+}
+
+/// @brief Width of `text` in a header style.
+int header_text_width(const char* text, TextStyle style)
+{
+    return framebuffer::measure_text(text, text_styles::font(style), 1);
+}
 
 /// @brief Y position of the header status icon.
 constexpr int kHeaderStatusIconY = 11;
@@ -69,10 +86,17 @@ const char* input_mode_icon_text(LetterMode mode)
 void draw_input_mode_icon(uint8_t* fb, int x, int y, LetterMode mode)
 {
     constexpr bool kIconOn = true;
-    framebuffer::draw_rect(fb, x, y, kHeaderInputModeIconWidth, kHeaderInputModeIconHeight,
-                           kIconOn);
-    framebuffer::draw_text(fb, x + 3, y + 2, input_mode_icon_text(mode), kIconOn,
-                           fonts::FontFace::Font5x7, 1);
+    // The box fits the widest of the three mode labels, so it keeps one size
+    // as the mode changes and follows the badge font (TXT-3).
+    const int kTextWidth = std::max({header_text_width("ABC", TextStyle::HeaderBadge),
+                                     header_text_width("abc", TextStyle::HeaderBadge),
+                                     header_text_width("123", TextStyle::HeaderBadge)});
+    const int kIconWidth = kTextWidth + (kHeaderInputModeTextInsetX * 2);
+    const int kIconHeight =
+        text_styles::line_height(TextStyle::HeaderBadge) + (kHeaderInputModeTextInsetY * 2);
+    framebuffer::draw_rect(fb, x, y, kIconWidth, kIconHeight, kIconOn);
+    draw_header_text(fb, x + kHeaderInputModeTextInsetX, y + kHeaderInputModeTextInsetY,
+                     input_mode_icon_text(mode), TextStyle::HeaderBadge);
 }
 
 /// @brief Draws the small Wi-Fi symbol used inside the compact header status icon.
@@ -214,8 +238,8 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     // every page can spend the rest of the screen on its own content.
     const char* time_text =
         console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--";
-    const int title_width = framebuffer::measure_text(title, fonts::FontFace::FontTitle8x12, 1);
-    const int time_width = framebuffer::measure_text(time_text, fonts::FontFace::Font8x12, 1);
+    const int title_width = header_text_width(title, TextStyle::HeaderTitle);
+    const int time_width = header_text_width(time_text, TextStyle::HeaderClock);
     const int home_assistant_icon_width = ha_config_present ? kHeaderHomeAssistantIconWidth : 0;
     const int time_x = kUiWidth - kHeaderStatusRightInset - time_width;
     const int icon_x = time_x - kHeaderStatusGap - kHeaderStatusIconWidth;
@@ -228,8 +252,8 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     framebuffer::draw_hline(fb, 0, kUiWidth - 1, kHeaderBannerY + kBannerHeight - 1, true);
     draw_input_mode_icon(fb, kHeaderInputModeLeftInset, kHeaderStatusIconY,
                          console_state.letter_mode);
-    framebuffer::draw_text(fb, (kUiWidth / 2) - (title_width / 2), kHeaderTextY, title, true,
-                           fonts::FontFace::FontTitle8x12, 1);
+    draw_header_text(fb, ui_layout::kCentreX - (title_width / 2), kHeaderTextY, title,
+                     TextStyle::HeaderTitle);
 
     // Connectivity icons are clustered next to the clock so they read as one
     // compact status area rather than competing with the centred page title.
@@ -256,8 +280,7 @@ void draw_header_banner(uint8_t* fb, const ConsoleState& console_state, const ch
     }
     draw_internet_icon(fb, icon_x, kHeaderStatusIconY, console_state.wifi_status.internet_reachable,
                        console_state.wifi_status.internet_probe_pending);
-    framebuffer::draw_text(fb, time_x, kHeaderTimeTextY, time_text, true,
-                           fonts::FontFace::Font8x12, 1);
+    draw_header_text(fb, time_x, kHeaderTimeTextY, time_text, TextStyle::HeaderClock);
 }
 
 /// @brief Draws the standard banner set used by the current UI pages.

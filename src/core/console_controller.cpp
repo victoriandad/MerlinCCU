@@ -18,6 +18,7 @@
 #include "pinter_scheduling.h"
 #include "settings_controller.h"
 #include "status_controller.h"
+#include "text_case.h"
 
 namespace console_controller
 {
@@ -101,30 +102,6 @@ void apply_softkey_label_overrides(SoftKeyMap& softkeys)
 namespace console_controller_internal
 {
 
-void build_uppercase_title(const char* input, char* output, size_t output_size)
-{
-    if (output == nullptr || output_size == 0U)
-    {
-        return;
-    }
-
-    output[0] = '\0';
-    if (input == nullptr || input[0] == '\0')
-    {
-        return;
-    }
-
-    size_t write_index = 0U;
-    while (input[write_index] != '\0' && write_index + 1U < output_size)
-    {
-        output[write_index] =
-            static_cast<char>(std::toupper(static_cast<unsigned char>(input[write_index])));
-        ++write_index;
-    }
-
-    output[write_index] = '\0';
-}
-
 /// @details The controller owns these buffers so menu pages can rebuild labels
 /// whenever integration state changes without leaving dangling pointers behind.
 const char* build_selection_softkey_label(SoftKeyId key, const char* title, const char* selection)
@@ -133,7 +110,7 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
     const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
     constexpr size_t kSoftkeyTitleBufferSize = 24U;
     char title_upper[kSoftkeyTitleBufferSize] = {};
-    build_uppercase_title(title, title_upper, sizeof(title_upper));
+    text_case::copy_uppercase(title, title_upper, sizeof(title_upper));
     std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper, value);
     return buffer.data();
 }
@@ -160,7 +137,6 @@ namespace
 // unqualified for brevity, exactly as before console_controller_internal was
 // split out into its own namespace.
 using console_controller_internal::build_selection_softkey_label;
-using console_controller_internal::build_uppercase_title;
 
 /// @brief Returns the parent page for one menu route in the current hierarchy.
 MenuPage parent_page(MenuPage page)
@@ -1152,7 +1128,6 @@ void update_softkeys_from_state()
         std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
         uint8_t sorted_count = 0U;
         alert_controller::build_display_indices(g_console_state, alert_indices, &sorted_count);
-        constexpr uint8_t kAlertsPerPage = 9U;
         const uint8_t page_start =
             static_cast<uint8_t>(g_console_state.alert_list_page_index * kAlertsPerPage);
         const std::array<SoftKeyId, 9> slots = {
@@ -1626,9 +1601,7 @@ bool apply_softkey_route(SoftKeyRoute route)
         {
             return false;
         }
-        alert_controller::suppress_alert_code(
-            g_console_state.active_alerts[g_console_state.alert_detail_index].code);
-        alert_controller::erase_active_alert(g_console_state, g_console_state.alert_detail_index);
+        alert_controller::accept_alert(g_console_state, g_console_state.alert_detail_index);
         g_console_state.active_page = MenuPage::AlertList;
         return true;
     case SoftKeyRoute::AlertIgnore:
@@ -2176,7 +2149,7 @@ bool handle_button_event(const ButtonEvent& event)
         PERIODIC_LOG("Console state updated: page=%u settings=%u/%u calendar_day=%d\n",
                      static_cast<unsigned>(g_console_state.active_page),
                      static_cast<unsigned>(g_console_state.settings_page_index + 1U),
-                     static_cast<unsigned>(settings_controller::kSettingsPageCount),
+                     static_cast<unsigned>(kSettingsPageCount),
                      static_cast<int>(g_console_state.calendar_day_offset));
         return true;
     }

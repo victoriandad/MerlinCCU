@@ -11,12 +11,25 @@
 #include "local_conditions.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "share_price_manager.h"
+#include "ui_layout.h"
 
 namespace status_screens
 {
 
 namespace
 {
+
+using screens::TextStyle;
+
+/// @brief Top of the Status pages' compact rows.
+constexpr int kStatusRowsTopY = ui_layout::kContentTopY;
+
+/// @brief Pitch of the Status pages' compact rows.
+int status_row_pitch()
+{
+    return ui_layout::row_pitch(TextStyle::CompactRow);
+}
 
 /// @brief Returns the terse test-state label shown on status-oriented screens.
 const char* test_state_text(SystemTestState state)
@@ -221,11 +234,21 @@ void draw_resource_bar(uint8_t* fb, int x, int y, int width, int height, size_t 
     {
         framebuffer::fill_rect(fb, x + 1, y + 1, fill_width, inner_height, true);
     }
-    framebuffer::draw_text(fb, x + 2, y - 10, label, true, fonts::FontFace::Font5x7, 1);
-    framebuffer::draw_text(fb, x + width - framebuffer::measure_text(value_text,
-                                                                      fonts::FontFace::Font5x7, 1),
-                           y - 10, value_text, true, fonts::FontFace::Font5x7, 1);
+    // The label line sits just above the bar.
+    constexpr int kLabelGapY = 3;
+    constexpr int kLabelInsetX = 2;
+    const int kLabelY = y - kLabelGapY - text_styles::line_height(TextStyle::Annotation);
+    screens::draw_text(fb, x + kLabelInsetX, kLabelY, label, TextStyle::Annotation);
+    screens::draw_right_aligned_text(fb, x + width, kLabelY, value_text, TextStyle::Annotation);
 }
+
+/// @brief Resources page geometry: two usage bars, then compact rows.
+constexpr int kResourceBarX = 54;
+constexpr int kResourceBarWidth = 160;
+constexpr int kResourceBarHeight = 20;
+constexpr int kFlashBarY = 46;
+constexpr int kRamBarY = 96;
+constexpr int kResourceRowsTopY = 136;
 
 /// @brief Formats byte counts as rounded-up KiB for compact resource rows.
 void build_kib_text(size_t bytes, char* out, size_t out_size)
@@ -280,7 +303,8 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
         {"TEST", test_state_text(console_state.test_state)},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kStatusRowsTopY,
+                                      status_row_pitch());
 }
 
 /// @brief Draws network and Home Assistant connectivity state.
@@ -319,7 +343,8 @@ void draw_status_connectivity_page(uint8_t* fb, const ConsoleState& console_stat
         {"HA MQTT", mqtt_state_text(console_state.mqtt_status.state)},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kStatusRowsTopY,
+                                      status_row_pitch());
 }
 
 /// @brief Draws fixed-memory and foreground-loop resource usage.
@@ -423,9 +448,10 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
                   static_cast<unsigned long>(
                       console_state.display_timing_status.present_skipped_count));
 
-    draw_resource_bar(fb, 54, 46, 160, 20, program_flash, flash_budget, "PROGRAM FLASH",
-                      flash_value_text);
-    draw_resource_bar(fb, 54, 96, 160, 20, static_ram, total_ram, "STATIC RAM", ram_value_text);
+    draw_resource_bar(fb, kResourceBarX, kFlashBarY, kResourceBarWidth, kResourceBarHeight,
+                      program_flash, flash_budget, "PROGRAM FLASH", flash_value_text);
+    draw_resource_bar(fb, kResourceBarX, kRamBarY, kResourceBarWidth, kResourceBarHeight,
+                      static_ram, total_ram, "STATIC RAM", ram_value_text);
 
     const screens::DetailRow rows[] = {
         {"PROG FLASH", flash_value_text},
@@ -442,7 +468,8 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
         {"STACK FREE", stack_text},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 136, 13);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kResourceRowsTopY,
+                                      status_row_pitch());
 }
 
 /// @brief Draws local sensor health and readings.
@@ -502,7 +529,8 @@ void draw_status_sensors_page(uint8_t* fb, const ConsoleState& console_state, ui
         {"ENV ERR", sensor_error_text},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kStatusRowsTopY,
+                                      status_row_pitch());
 }
 
 /// @brief Draws external integration state.
@@ -548,10 +576,9 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     }
     else
     {
-        screens::build_data_freshness_text(console_state.share_data_valid,
-                                           console_state.share_data_last_success_ms, now_ms,
-                                           4U * 5U * 60U * 1000U, share_data_text,
-                                           sizeof(share_data_text));
+        screens::build_data_freshness_text(
+            console_state.share_data_valid, console_state.share_data_last_success_ms, now_ms,
+            share_price_manager::kShareStaleAfterMs, share_data_text, sizeof(share_data_text));
     }
 
     const screens::DetailRow rows[] = {
@@ -568,7 +595,8 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
         {"SHARE HTTP", share_http_text},
     };
 
-    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), 34, 13);
+    screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kStatusRowsTopY,
+                                      status_row_pitch());
 }
 
 } // namespace

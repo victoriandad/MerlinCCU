@@ -7,6 +7,8 @@
 #include "console_model.h"
 #include "environment_sensor_manager.h"
 #include "fonts.h"
+#include "text_styles.h"
+#include "ui_layout.h"
 
 /// @brief Small cross-page-family primitives from `screens.cpp` that other
 /// split-out page renderer files (e.g. `status_screens.cpp`) also need.
@@ -15,10 +17,7 @@
 namespace screens
 {
 
-/// @brief Number of top-level Settings root pages, used both by the header's
-/// "SETTINGS N/M" title (screens.cpp) and Settings' own page-navigation
-/// arrows (settings_screens.cpp).
-inline constexpr uint8_t kSettingsPageCount = 2U;
+using text_styles::TextStyle;
 
 /// @brief Returns the Home Assistant state label used on diagnostics screens.
 const char* home_assistant_state_text(HomeAssistantConnectionState state);
@@ -48,25 +47,29 @@ void build_elapsed_time_text(uint32_t elapsed_ms, char* out, size_t out_size);
 void build_data_freshness_text(bool currently_valid, uint32_t last_success_ms, uint32_t now_ms,
                                uint32_t stale_after_ms, char* out, size_t out_size);
 
-/// @brief Measures text through one shared helper so layout math stays consistent.
-int text_width(const char* text, fonts::FontFace font = fonts::FontFace::Font5x7, int spacing = 1);
+/// @brief Width in pixels of `text` in `style`'s current font; 0 for null or
+/// empty text.
+int text_width(const char* text, TextStyle style);
 
-/// @brief Draws text centred around a given x-coordinate.
-void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, bool on,
-                        fonts::FontFace font = fonts::FontFace::Font5x7, int spacing = 1);
+/// @brief Draws `text` in `style` with its top-left corner at (`x`, `y`).
+void draw_text(uint8_t* fb, int x, int y, const char* text, TextStyle style, bool on = true);
 
-/// @brief Top of the empty-state headline. The block sits in the gap between
-/// the row 2 and row 3 softkey cells (y 116-155), so it never meets a label.
-inline constexpr int kEmptyStateHeadlineY = 124;
+/// @brief Draws `text` in `style` centred on `center_x`.
+void draw_centered_text(uint8_t* fb, int center_x, int y, const char* text, TextStyle style,
+                        bool on = true);
 
-/// @brief Top of the empty-state hint line, beneath the headline.
-inline constexpr int kEmptyStateHintY = 142;
+/// @brief Draws `text` in `style` so it ends at `right_x` (exclusive).
+void draw_right_aligned_text(uint8_t* fb, int right_x, int y, const char* text, TextStyle style,
+                             bool on = true);
 
 /// @brief Draws the shared empty-state block (STATE-2).
 /// @details One uppercase headline at a fixed position, and an optional
-/// one-line, mixed-case hint beneath it saying what the operator can do.
-/// Both are centred. `hint` may be null or empty. The caller writes text that
-/// fits the body width; the hint is never wrapped.
+/// mixed-case hint beneath it saying what the operator can do or what will
+/// happen. Both are centred. `hint` may be null or empty; it wraps to the
+/// content width over at most kMaxEmptyStateHintLines lines. The first line
+/// ends above the row 3 softkey cells; later lines reach into them, so a
+/// hint longer than one line is only for pages whose row 3 keys are blank
+/// (SCR-5).
 void draw_empty_state(uint8_t* fb, const char* headline, const char* hint);
 
 /// @brief One softkey/footer label wrapped into up to three fixed-size lines.
@@ -80,6 +83,12 @@ struct WrappedSoftkeyLabel
 
 /// @brief Most lines any softkey label may use (LBL-1).
 inline constexpr int kMaxSoftkeyLabelLines = 5;
+
+/// @brief Text style of every softkey label on `page`.
+TextStyle softkey_label_style(MenuPage page);
+
+/// @brief Lines one softkey label on `page` may wrap onto (LBL-1).
+int softkey_label_max_lines(MenuPage page);
 
 /// @brief One rendered line of a softkey label.
 struct SoftkeyLabelLine
@@ -99,16 +108,16 @@ struct SoftkeyLabelLayout
     int count;
 };
 
-/// @brief Lays out a softkey label into lines that each fit the cell at
-/// `font`; a `[value]` part wraps inside one bracket pair.
-SoftkeyLabelLayout layout_softkey_label(const char* label, fonts::FontFace font, int max_lines);
+/// @brief Lays out a softkey label into lines that each fit the cell in
+/// `style`; a `[value]` part wraps inside one bracket pair.
+SoftkeyLabelLayout layout_softkey_label(const char* label, TextStyle style, int max_lines);
 
 /// @brief Wraps one label into at most `max_lines` renderable lines.
 /// @details Softkeys are deliberately capped (two lines for most pages, three
 /// where a page opts in) so long labels degrade gracefully without taking
 /// over the rest of the screen layout. Each line greedily fits as much text
 /// as the width allows, preferring to break on whitespace.
-WrappedSoftkeyLabel wrap_label_lines(const char* label, fonts::FontFace font, int max_width,
+WrappedSoftkeyLabel wrap_label_lines(const char* label, TextStyle style, int max_width,
                                      int max_lines);
 
 /// @brief One wrapped line of a longer text: a view into the source string.
@@ -124,8 +133,7 @@ struct TextSpan
 /// and hard-breaks a single word wider than the line. Spans point into
 /// `text`, so it must outlive them. Returns the number of spans written,
 /// at most `max_spans`; lines beyond that are dropped.
-size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan* out,
-                 size_t max_spans);
+size_t wrap_text(const char* text, TextStyle style, int max_width, TextSpan* out, size_t max_spans);
 
 /// @brief Draws the standard row-based presentation used by information pages.
 /// @details The top banner carries the page title, so the body can stay clean
@@ -145,6 +153,33 @@ struct GraphPlotArea
     int height;
     int inset;
 };
+
+/// @brief Labels of the shared history graph frame (BODY-4).
+struct HistoryGraphLabels
+{
+    /// Left axis, top to bottom: the values at the top, middle and bottom
+    /// of the plot.
+    const char* maximum;
+    const char* middle;
+    const char* minimum;
+    /// Under the plot: where the history starts (left) and ends (right).
+    const char* start;
+    const char* end;
+};
+
+/// @brief Draws the shared history graph frame and returns its plot area.
+/// @details Every history graph uses it, so they share one plot position
+/// and labelling scheme: the plot spans ui_layout::kGraphLeftX to the same
+/// margin on the right and starts at the content-top line, with the axis
+/// values right-aligned to its left and a tick at the middle value, and the
+/// start and end of the period beneath it. Only the height differs: a page
+/// with rows beneath its graph uses a shorter plot (BODY-4).
+GraphPlotArea draw_history_graph_frame(uint8_t* fb, int plot_height,
+                                       const HistoryGraphLabels& labels);
+
+/// @brief Top of the line under a history graph frame of `plot_height`,
+/// below its start and end labels, where a page may add a caption.
+int history_graph_caption_y(int plot_height);
 
 /// @brief Draws a graph plot area's border rect.
 void draw_graph_plot_border(uint8_t* fb, const GraphPlotArea& area);
@@ -166,6 +201,6 @@ int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, in
 /// Used both by the core softkey label renderer (screens.cpp) and by
 /// Settings' screen-saver timeout scratchpad.
 void draw_softkey_selection_brackets(uint8_t* fb, int left_x, int top_y, int total_height,
-                                     int total_width, fonts::FontFace font, bool on);
+                                     int total_width, TextStyle style, bool on);
 
 } // namespace screens

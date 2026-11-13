@@ -11,6 +11,14 @@
 namespace air_traffic_manager
 {
 
+/// @brief How often the ADS-B feed is fetched while the Local Traffic page is open.
+inline constexpr uint32_t kRefreshIntervalMs = 15U * 1000U;
+
+/// @brief Age at which traffic data counts as stale: four missed refreshes.
+/// @details Owned here, by the subsystem that fetches the data, so every page
+/// that shows traffic freshness uses the same threshold (STATE-4).
+inline constexpr uint32_t kAirTrafficStaleAfterMs = 4U * kRefreshIntervalMs;
+
 /// @brief Initialises air-traffic status to its unconfigured default.
 void init();
 

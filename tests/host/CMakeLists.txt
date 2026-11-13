@@ -38,6 +38,7 @@ add_executable(host_tests
     test_share_feed_parser.cpp
     test_air_traffic_response_parser.cpp
     test_golden_screens.cpp
+    test_page_coverage.cpp
     test_pinter_controller.cpp
     test_alert_controller.cpp
     test_calendar_controller.cpp
@@ -72,7 +73,9 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/calendar_screens.cpp
     ${MERLIN_ROOT}/src/display/pinter_screens.cpp
     ${MERLIN_ROOT}/src/display/alert_screens.cpp
+    ${MERLIN_ROOT}/src/display/local_conditions_screens.cpp
     ${MERLIN_ROOT}/src/display/shares_screens.cpp
+    ${MERLIN_ROOT}/src/display/text_styles.cpp
     ${MERLIN_ROOT}/src/display/settings_screens.cpp
     ${MERLIN_ROOT}/src/display/status_screens.cpp
     ${MERLIN_ROOT}/src/display/weather_screens.cpp

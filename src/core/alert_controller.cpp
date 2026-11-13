@@ -38,31 +38,16 @@ constexpr uint32_t kStormLowPressurePa = 98000U;
 constexpr uint32_t kStormRapidPressureFallPa = 200U;
 constexpr uint8_t kStormPressureMinimumSamples = 6U;
 
-enum class AlertCode : uint8_t
-{
-    WifiDisconnected = 0,
-    WifiAuthFailed,
-    TimeNotSynced,
-    HomeAssistantOffline,
-    HomeAssistantUnauthorized,
-    HomeAssistantEntityMissing,
-    WeatherUnavailable,
-    WeatherProviderWarning,
-    WeatherTemperatureWarning,
-    WeatherWindWarning,
-    MqttOffline,
-    KeypadLineFault,
-    EnvironmentSensorFault,
-    LocalPressureStormWarning,
-    DisplayPipelineLag,
-    ShareDataUnavailable,
-    PinterScheduleConflict,
-    AirTrafficUnavailable,
-    Count,
-};
+static_assert(kActiveAlertCapacity == kAlertCodeCount,
+              "the active alert list must hold one entry per alert code (NAV-6a)");
+static_assert(kAlertCodeCount <= UINT8_MAX, "ConsoleState::alert_count is a uint8_t");
 
-std::array<bool, static_cast<size_t>(AlertCode::Count)> g_alert_suppressed = {};
-std::array<bool, static_cast<size_t>(AlertCode::Count)> g_alert_was_active = {};
+std::array<bool, kAlertCodeCount> g_alert_suppressed = {};
+std::array<bool, kAlertCodeCount> g_alert_was_active = {};
+/// Clear-to-active transitions per code since the last ACCEPT or reset. Kept
+/// here rather than on the list entry, which is erased whenever the alert
+/// clears, so a recurring alert's count keeps rising.
+std::array<uint8_t, kAlertCodeCount> g_alert_occurrences = {};
 
 constexpr size_t alert_code_index(AlertCode code)
 {
@@ -99,6 +84,11 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
         return;
     }
 
+    if (!g_alert_was_active[code_idx])
+    {
+        g_alert_occurrences[code_idx] = static_cast<uint8_t>(
+            std::min<unsigned>(g_alert_occurrences[code_idx] + 1U, kMaxAlertOccurrenceCount));
+    }
     g_alert_was_active[code_idx] = true;
     if (g_alert_suppressed[code_idx])
     {
@@ -112,20 +102,24 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
         alert.severity = severity;
         std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
         std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
+        alert.occurrence_count = g_alert_occurrences[code_idx];
         // Existing active alerts keep their original arrival sequence/time so
         // periodic state re-evaluation does not retrigger annunciation.
         return;
     }
 
+    // The list holds one entry per code (see the static_asserts above), so it
+    // cannot be full here; this only guards the array bound.
     if (console_state.alert_count >= console_state.active_alerts.size())
     {
-        erase_active_alert(console_state, 0U);
+        return;
     }
 
     ActiveAlert& alert = console_state.active_alerts[console_state.alert_count++];
     alert.severity = severity;
     alert.code = static_cast<uint8_t>(code);
     alert.sequence = g_alert_sequence_counter++;
+    alert.occurrence_count = g_alert_occurrences[code_idx];
     std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%s",
                   console_state.time_status.synced ? console_state.time_status.time_text.data()
                                                    : "--:--");
@@ -623,14 +617,7 @@ void sync(ConsoleState& console_state)
 
 uint8_t page_count(const ConsoleState& console_state)
 {
-    constexpr uint8_t kAlertsPerPage = 9U;
-    if (console_state.alert_count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((console_state.alert_count + (kAlertsPerPage - 1U)) /
-                                kAlertsPerPage);
+    return alert_list_page_count(console_state.alert_count);
 }
 
 void build_display_indices(const ConsoleState& console_state,
@@ -649,7 +636,15 @@ const char* build_softkey_label(SoftKeyId key, const ActiveAlert& alert)
     char* buffer = cci::dynamic_softkey_label_buffer(key, buffer_capacity);
     const char* time_text =
         (alert.occurred_time_text[0] != '\0') ? alert.occurred_time_text.data() : "--:--";
-    std::snprintf(buffer, buffer_capacity, "%s\n[%s]", alert.summary.data(), time_text);
+    if (alert.occurrence_count > 1U)
+    {
+        std::snprintf(buffer, buffer_capacity, "%s\n[%s x%u]", alert.summary.data(), time_text,
+                      static_cast<unsigned>(alert.occurrence_count));
+    }
+    else
+    {
+        std::snprintf(buffer, buffer_capacity, "%s\n[%s]", alert.summary.data(), time_text);
+    }
     return buffer;
 }
 
@@ -678,7 +673,6 @@ bool open_detail_from_slot(ConsoleState& console_state, uint8_t page_slot)
     std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
     uint8_t sorted_count = 0U;
     build_display_indices(console_state, alert_indices, &sorted_count);
-    constexpr uint8_t kAlertsPerPage = 9U;
     const uint8_t absolute =
         static_cast<uint8_t>((console_state.alert_list_page_index * kAlertsPerPage) + page_slot);
     if (absolute >= sorted_count)
@@ -708,6 +702,21 @@ void erase_active_alert(ConsoleState& console_state, uint8_t index)
     }
 }
 
+void accept_alert(ConsoleState& console_state, uint8_t index)
+{
+    if (index >= console_state.alert_count)
+    {
+        return;
+    }
+    const uint8_t code = console_state.active_alerts[index].code;
+    suppress_alert_code(code);
+    if (code < g_alert_occurrences.size())
+    {
+        g_alert_occurrences[code] = 0U;
+    }
+    erase_active_alert(console_state, index);
+}
+
 void suppress_alert_code(uint8_t alert_code_index)
 {
     if (alert_code_index >= g_alert_suppressed.size())
@@ -729,6 +738,7 @@ void reset()
     g_keypad_fault_samples = 0U;
     g_alert_suppressed.fill(false);
     g_alert_was_active.fill(false);
+    g_alert_occurrences.fill(0U);
 }
 
 } // namespace alert_controller

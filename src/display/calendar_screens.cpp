@@ -8,6 +8,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "ui_layout.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -20,6 +21,8 @@ namespace calendar_screens
 
 namespace
 {
+
+using screens::TextStyle;
 
 /// @brief Returns the owner label used by Calendar labels and details.
 const char* calendar_owner_text(CalendarOwner owner)
@@ -188,10 +191,9 @@ void draw_calendar_footer_arrow(uint8_t* fb, int centre_x, int centre_y, int dir
 /// the active day bracketed by visible left/right arrow markers.
 void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_state)
 {
-    constexpr int kFooterY = kUiHeight - 25;
+    constexpr int kFooterY = ui_layout::kFooterLineY;
     constexpr int kArrowGap = 12;
-    constexpr int kArrowCentreYOffset = 3;
-    constexpr fonts::FontFace kFooterFont = fonts::FontFace::Font5x7;
+    const int kArrowCentreYOffset = text_styles::line_height(TextStyle::Footer) / 2;
     char day_label[32] = {};
     const char* day_text = calendar_day_text(console_state, console_state.calendar_day_offset,
                                              day_label, sizeof(day_label));
@@ -202,9 +204,9 @@ void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_st
         day_text = day_label;
     }
 
-    const int label_width = screens::text_width(day_text, kFooterFont, 1);
+    const int label_width = screens::text_width(day_text, TextStyle::Footer);
     const int label_x = (kUiWidth - label_width) / 2;
-    framebuffer::draw_text(fb, label_x, kFooterY, day_text, true, kFooterFont, 1);
+    screens::draw_text(fb, label_x, kFooterY, day_text, TextStyle::Footer);
     draw_calendar_footer_arrow(fb, label_x - kArrowGap, kFooterY + kArrowCentreYOffset, -1);
     draw_calendar_footer_arrow(fb, label_x + label_width + kArrowGap,
                                kFooterY + kArrowCentreYOffset, 1);
@@ -228,8 +230,7 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
 {
     if (console_state.selected_calendar_event_index >= console_state.calendar_events.size())
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO EVENT", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_empty_state(fb, "NO EVENT", nullptr);
         return;
     }
 
@@ -237,8 +238,7 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
         console_state.calendar_events[console_state.selected_calendar_event_index];
     if (event.title[0] == '\0')
     {
-        screens::draw_centered_text(fb, kUiWidth / 2, 112, "NO EVENT", true,
-                                    fonts::FontFace::Font8x12, 1);
+        screens::draw_empty_state(fb, "NO EVENT", nullptr);
         return;
     }
 
@@ -250,16 +250,18 @@ void draw_calendar_detail_page(uint8_t* fb, const ConsoleState& console_state)
                   event.end_time[0] != '\0' ? event.end_time.data() : "--:--");
 
     const screens::DetailRow rows[] = {
-        {"Event", event.title.data()},
-        {"Time", time_line},
-        {"Owner", owner_line},
-        {"Location", event.location[0] != '\0' ? event.location.data() : "-"},
-        {"Alarm", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
-        {"Attendees", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
-        {"Detail", event.description[0] != '\0' ? event.description.data() : "-"},
+        {"EVENT", event.title.data()},
+        {"TIME", time_line},
+        {"OWNER", owner_line},
+        {"LOCATION", event.location[0] != '\0' ? event.location.data() : "-"},
+        {"ALARM", event.reminder[0] != '\0' ? event.reminder.data() : "-"},
+        {"ATTENDEES", event.attendees[0] != '\0' ? event.attendees.data() : "-"},
+        {"DETAIL", event.description[0] != '\0' ? event.description.data() : "-"},
     };
-    constexpr int kStartY = 42;
-    constexpr int kRowPitch = 18;
+    // The event has few rows, so they take the looser 8x12 pitch for
+    // readability; it is one of the shared pitches (BODY-2).
+    constexpr int kStartY = ui_layout::kContentTopY;
+    const int kRowPitch = ui_layout::row_pitch(TextStyle::BodyText);
     constexpr size_t kRowCount = sizeof(rows) / sizeof(rows[0]);
 
     screens::draw_compact_detail_rows(fb, rows, kRowCount, kStartY, kRowPitch);
