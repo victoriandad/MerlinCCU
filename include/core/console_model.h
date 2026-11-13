@@ -862,13 +862,35 @@ struct CalendarEvent
     std::array<char, 64> description;
 };
 
+/// @brief The role of a softkey (docs/ui_requirements.md section 3, SK-1).
+/// @details The role fixes how the label is written and what a press does.
+/// Keys are only ever built by the matching builder in softkey_builders.h.
+enum class SoftKeyRole : uint8_t
+{
+    Blank,    ///< No label; a press does nothing.
+    Navigate, ///< Opens the named page; may summarise it in brackets.
+    Select,   ///< Opens a page of option keys for its value.
+    Action,   ///< Does the named thing immediately.
+    Toggle,   ///< Switches a two-state setting in place.
+    View,     ///< At L5: steps what the whole page shows.
+    Step,     ///< Moves a number down or up by one step.
+    Status,   ///< Shows a value reported from elsewhere; inert.
+    Option,   ///< One choice on the page a select key opens.
+    Item,     ///< One entry of a list.
+};
+
 /// @brief Semantic action currently assigned to a contextual softkey.
 struct SoftKeyAction
 {
     const char* label;
     SoftKeyRoute route;
+    /// False when a press must do nothing (status and blank keys, and a
+    /// field while it is being edited).
     bool enabled;
+    /// Inverse video: the selected option or item, or the field being
+    /// edited, and nothing else (LBL-5).
     bool inverted = false;
+    SoftKeyRole role = SoftKeyRole::Blank;
 };
 
 /// @brief The ten softkey assignments around the screen.

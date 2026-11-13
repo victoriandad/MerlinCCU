@@ -260,10 +260,28 @@ const char* build_home_softkey_label(SoftKeyId key, const ConsoleState& console_
 {
     size_t buffer_capacity = 0U;
     char* buffer = cci::dynamic_softkey_label_buffer(key, buffer_capacity);
+    // One stage in words (LBL-4), the one most worth acting on: beer that is
+    // ready, then conditioning, then brewing. The Pinter page has the rest.
     const pinter_scheduling::SummaryCounts counts = summary_counts(console_state);
-    std::snprintf(buffer, buffer_capacity, "PINTER\n[%uB, %uC, %uR]",
-                  static_cast<unsigned>(counts.brewing), static_cast<unsigned>(counts.conditioning),
-                  static_cast<unsigned>(counts.ready));
+    if (counts.ready > 0U)
+    {
+        std::snprintf(buffer, buffer_capacity, "PINTER\n[%u ready]",
+                      static_cast<unsigned>(counts.ready));
+    }
+    else if (counts.conditioning > 0U)
+    {
+        std::snprintf(buffer, buffer_capacity, "PINTER\n[%u conditioning]",
+                      static_cast<unsigned>(counts.conditioning));
+    }
+    else if (counts.brewing > 0U)
+    {
+        std::snprintf(buffer, buffer_capacity, "PINTER\n[%u brewing]",
+                      static_cast<unsigned>(counts.brewing));
+    }
+    else
+    {
+        std::snprintf(buffer, buffer_capacity, "PINTER\n[All idle]");
+    }
     return buffer;
 }
 
