@@ -19,11 +19,6 @@ namespace screens
 
 using text_styles::TextStyle;
 
-/// @brief Number of top-level Settings root pages, used both by the header's
-/// "SETTINGS N/M" title (screens.cpp) and Settings' own page-navigation
-/// arrows (settings_screens.cpp).
-inline constexpr uint8_t kSettingsPageCount = 2U;
-
 /// @brief Returns the Home Assistant state label used on diagnostics screens.
 const char* home_assistant_state_text(HomeAssistantConnectionState state);
 

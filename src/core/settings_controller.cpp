@@ -635,13 +635,7 @@ bool toggle_air_traffic_view_mode(ConsoleState& console_state)
 
 uint8_t air_traffic_page_count(const ConsoleState& console_state)
 {
-    const uint8_t count = console_state.air_traffic_status.aircraft_count;
-    if (count == 0U)
-    {
-        return 1U;
-    }
-
-    return static_cast<uint8_t>((count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage);
+    return air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
 }
 
 bool select_share_slot(ConsoleState& console_state, uint8_t slot)

@@ -18,9 +18,6 @@
 namespace settings_controller
 {
 
-/// @brief Number of top-level Settings menu section-group pages.
-inline constexpr uint8_t kSettingsPageCount = 2U;
-
 /// @brief Static metadata for one selectable weather source.
 struct WeatherSourceDefinition
 {

@@ -74,10 +74,7 @@ void draw_provenance_line(uint8_t* fb, const AirTrafficStatus& status, uint32_t 
 void draw_tabular_view(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
     const AirTrafficStatus& status = console_state.air_traffic_status;
-    const uint8_t page_count = static_cast<uint8_t>(
-        (status.aircraft_count == 0U)
-            ? 1U
-            : ((status.aircraft_count + (kAirTrafficRowsPerPage - 1U)) / kAirTrafficRowsPerPage));
+    const uint8_t page_count = air_traffic_list_page_count(status.aircraft_count);
     const uint8_t page_index = console_state.air_traffic_page_index;
     const uint8_t start = static_cast<uint8_t>(page_index * kAirTrafficRowsPerPage);
     const uint8_t end = static_cast<uint8_t>(

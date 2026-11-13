@@ -41,8 +41,7 @@ HOST_TEST(change_page_is_gated_to_the_settings_page_and_stays_in_bounds)
     EXPECT_TRUE(settings_controller::change_page(state, 1));
     EXPECT_EQ(state.settings_page_index, 1U);
 
-    EXPECT_FALSE(settings_controller::change_page(
-        state, static_cast<int>(settings_controller::kSettingsPageCount)));
+    EXPECT_FALSE(settings_controller::change_page(state, static_cast<int>(kSettingsPageCount)));
 }
 
 HOST_TEST(change_page_zero_direction_is_a_no_op)

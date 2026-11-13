@@ -2149,7 +2149,7 @@ bool handle_button_event(const ButtonEvent& event)
         PERIODIC_LOG("Console state updated: page=%u settings=%u/%u calendar_day=%d\n",
                      static_cast<unsigned>(g_console_state.active_page),
                      static_cast<unsigned>(g_console_state.settings_page_index + 1U),
-                     static_cast<unsigned>(settings_controller::kSettingsPageCount),
+                     static_cast<unsigned>(kSettingsPageCount),
                      static_cast<int>(g_console_state.calendar_day_offset));
         return true;
     }

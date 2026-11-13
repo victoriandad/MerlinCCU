@@ -419,3 +419,15 @@ HOST_TEST(the_alert_list_holds_every_alert_code_at_once)
     EXPECT_EQ(alert_controller::page_count(state),
               static_cast<uint8_t>((kAlertCodeCount + kAlertsPerPage - 1U) / kAlertsPerPage));
 }
+
+HOST_TEST(list_page_count_rounds_up_and_never_returns_zero)
+{
+    EXPECT_EQ(list_page_count(0U, 8U), 1U);
+    EXPECT_EQ(list_page_count(1U, 8U), 1U);
+    EXPECT_EQ(list_page_count(8U, 8U), 1U);
+    EXPECT_EQ(list_page_count(9U, 8U), 2U);
+    EXPECT_EQ(list_page_count(35U, 8U), 5U);
+    EXPECT_EQ(list_page_count(5U, 0U), 1U);
+    EXPECT_EQ(kTimeZonePageCount,
+              list_page_count(kTimeZoneSelectionCount, kTimeZoneOptionsPerPage));
+}

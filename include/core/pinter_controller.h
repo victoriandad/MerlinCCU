@@ -30,7 +30,8 @@ uint8_t recommended_total_days(const PinterBrewTiming& brew);
 /// @brief Returns the shortest supported start-to-ready duration for one brew pack.
 uint8_t minimum_total_days(const PinterBrewTiming& brew);
 
-/// @brief Returns the number of pages needed to show a Pinter list.
+/// @brief Returns the number of pages needed to show a Pinter list of
+/// `item_count` entries, via the shared list_page_count() rule.
 uint8_t list_page_count(size_t item_count);
 
 /// @brief Clamps a Pinter list page index after the catalogue page size changes.

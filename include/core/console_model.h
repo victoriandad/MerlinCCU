@@ -497,6 +497,21 @@ enum class TimeZoneSelection : uint8_t
     GulfStandard,
 };
 
+/// @brief Pages needed to list `item_count` items `per_page` to a page;
+/// always at least one, so an empty list still has a page to show.
+/// @details The one page-count rule (BODY-6). Every paged list derives its
+/// page count from this, and the controller's paging, the header title
+/// (`NAME n/m`) and the footer arrows all read that one count.
+constexpr uint8_t list_page_count(size_t item_count, size_t per_page)
+{
+    return item_count == 0U || per_page == 0U
+               ? 1U
+               : static_cast<uint8_t>((item_count + per_page - 1U) / per_page);
+}
+
+/// @brief Number of top-level Settings menu section-group pages.
+inline constexpr uint8_t kSettingsPageCount = 2U;
+
 /// @brief Number of selectable time-zone presets (settings_controller's table).
 inline constexpr uint8_t kTimeZoneSelectionCount = 9U;
 static_assert(static_cast<uint8_t>(TimeZoneSelection::GulfStandard) + 1U == kTimeZoneSelectionCount,
@@ -505,8 +520,8 @@ static_assert(static_cast<uint8_t>(TimeZoneSelection::GulfStandard) + 1U == kTim
 inline constexpr uint8_t kTimeZoneOptionsPerPage = 8U;
 /// @brief Pages needed to list every time zone, shared by the controller's
 /// paging, the header title, and the footer arrows.
-inline constexpr uint8_t kTimeZonePageCount = static_cast<uint8_t>(
-    (kTimeZoneSelectionCount + kTimeZoneOptionsPerPage - 1U) / kTimeZoneOptionsPerPage);
+inline constexpr uint8_t kTimeZonePageCount =
+    list_page_count(kTimeZoneSelectionCount, kTimeZoneOptionsPerPage);
 
 /// @brief Local environmental metric selected for the graph detail page.
 enum class LocalConditionMetric : uint8_t
@@ -537,8 +552,8 @@ inline constexpr size_t kPinterBrewListVisibleCount = 8;
 /// @brief Pages needed to show the whole brew catalogue on Select Brew.
 /// @details Shared by the header title (`SELECT BREW n/m`) and the footer
 /// arrows so both agree with the controller's cursor paging.
-inline constexpr uint8_t kPinterBrewListPageCount = static_cast<uint8_t>(
-    (kPinterBrewCatalogueCount + kPinterBrewListVisibleCount - 1U) / kPinterBrewListVisibleCount);
+inline constexpr uint8_t kPinterBrewListPageCount =
+    list_page_count(kPinterBrewCatalogueCount, kPinterBrewListVisibleCount);
 
 /// @brief Semantic action currently assigned to a contextual softkey.
 enum class SoftKeyRoute : uint8_t
@@ -669,9 +684,7 @@ inline constexpr uint8_t kAlertsPerPage = 9U;
 /// @brief Alert list pages needed for `alert_count` alerts; always at least one.
 constexpr uint8_t alert_list_page_count(uint8_t alert_count)
 {
-    return alert_count == 0U
-               ? 1U
-               : static_cast<uint8_t>((alert_count + (kAlertsPerPage - 1U)) / kAlertsPerPage);
+    return list_page_count(alert_count, kAlertsPerPage);
 }
 
 /// @brief Highest occurrence count kept for one alert; shown as `x99`.
@@ -740,6 +753,12 @@ inline constexpr size_t kAirTrafficEntryCapacity = 24U;
 
 /// @brief Aircraft rows shown per page of the tabular Local Traffic view.
 inline constexpr uint8_t kAirTrafficRowsPerPage = 8U;
+
+/// @brief Local Traffic table pages needed for `aircraft_count` aircraft.
+constexpr uint8_t air_traffic_list_page_count(uint8_t aircraft_count)
+{
+    return list_page_count(aircraft_count, kAirTrafficRowsPerPage);
+}
 
 /// @brief Snail-trail depth (refresh cycles of position history) kept per
 /// continuously-tracked aircraft for the Plot view.

@@ -66,9 +66,9 @@ void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state
 /// after the operator opens a focused settings subpage.
 void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    screens::draw_page_navigation_arrows(
-        fb, console_state.settings_page_index > 0U,
-        (console_state.settings_page_index + 1U) < screens::kSettingsPageCount);
+    screens::draw_page_navigation_arrows(fb, console_state.settings_page_index > 0U,
+                                         (console_state.settings_page_index + 1U) <
+                                             kSettingsPageCount);
 }
 
 /// @brief Draws only the paging arrows of the Time Zone option list.

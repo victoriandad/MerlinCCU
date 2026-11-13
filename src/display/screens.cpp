@@ -310,10 +310,8 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     if (console_state.active_page == MenuPage::AirTraffic &&
         console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
     {
-        constexpr uint8_t kRowsPerPage = kAirTrafficRowsPerPage;
-        const uint8_t count = console_state.air_traffic_status.aircraft_count;
-        const uint8_t page_count = static_cast<uint8_t>(
-            (count == 0U) ? 1U : ((count + (kRowsPerPage - 1U)) / kRowsPerPage));
+        const uint8_t page_count =
+            air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
         if (page_count > 1U)
         {
             std::snprintf(buffer, buffer_size, "ADS-B TRAFFIC %u/%u",
