@@ -8,6 +8,7 @@
 
 #include "alert_controller.h"
 #include "alert_screens.h"
+#include "config_manager.h"
 #include "console_controller.h"
 #include "console_model.h"
 #include "framebuffer.h"
@@ -721,4 +722,115 @@ HOST_TEST(pinter_vessel_labels_wrap_long_recipe_names_and_keep_the_countdown)
     EXPECT_TRUE(std::string(state.softkeys[0].label).find("ready") != std::string::npos);
     const auto fb = render_page(state);
     EXPECT_TRUE(golden_test::check_golden("pinter_page_long_recipe", fb.data()));
+}
+
+namespace
+{
+
+/// @brief Fills a text field to capacity with the widest glyph, in words
+/// (`spaced`) or as one unbroken run like a host name.
+template <size_t N> void fill_wide(std::array<char, N>& field, bool spaced)
+{
+    constexpr size_t kWordLength = 7U;
+    for (size_t i = 0U; i + 1U < N; ++i)
+    {
+        field[i] = (spaced && (i % (kWordLength + 1U) == kWordLength)) ? ' ' : 'W';
+    }
+    field[N - 1U] = '\0';
+}
+
+// Detail-row values stop 12 px short of the right edge (kDetailValueRightX
+// in screens.cpp), and a wrapped block stops above the row 5 cell.
+constexpr int kDetailValueRightX = kUiWidth - 12;
+
+/// @brief True when a page draws nothing right of the value margin and
+/// nothing from the top of row 5 to the footer.
+bool detail_rows_stay_in_bounds(const uint8_t* fb)
+{
+    return !any_pixel_lit(fb, kDetailValueRightX, kBodyTopY, kUiWidth - 1, kFooterTopY - 1) &&
+           !any_pixel_lit(fb, 0, kRow5CellTopY, kUiWidth - 1, kFooterTopY - 1);
+}
+
+ConsoleState make_long_calendar_event_state()
+{
+    ConsoleState state = {};
+    state.active_page = MenuPage::CalendarDetail;
+    state.calendar_event_count = 1;
+    state.selected_calendar_event_index = 0;
+    CalendarEvent& event = state.calendar_events[0];
+    fill_wide(event.title, true);
+    fill_wide(event.location, true);
+    fill_wide(event.reminder, true);
+    fill_wide(event.attendees, true);
+    fill_wide(event.description, true);
+    std::strncpy(event.start_time.data(), "09:00", event.start_time.size());
+    std::strncpy(event.end_time.data(), "09:30", event.end_time.size());
+    event.owner = CalendarOwner::Owner1;
+    return state;
+}
+
+} // namespace
+
+HOST_TEST(detail_rows_wrap_or_cut_long_values_inside_the_body)
+{
+    const ConsoleState calendar = make_long_calendar_event_state();
+    const auto calendar_fb = render_page(calendar);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(calendar_fb.data()));
+    EXPECT_TRUE(golden_test::check_golden("calendar_detail_long_text", calendar_fb.data()));
+
+    // Status Integrations reads HA HOST from the saved configuration.
+    const RuntimeConfig saved_config = config_manager::settings();
+    RuntimeConfig long_host_config = saved_config;
+    fill_wide(long_host_config.home_assistant_host, false);
+    (void)config_manager::save(long_host_config);
+
+    ConsoleState integrations = {};
+    integrations.active_page = MenuPage::StatusIntegrations;
+    fill_wide(integrations.home_assistant_status.host, false);
+    const auto integrations_fb = render_page(integrations);
+    (void)config_manager::save(saved_config);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(integrations_fb.data()));
+    EXPECT_TRUE(golden_test::check_golden("status_integrations_long_host", integrations_fb.data()));
+
+    ConsoleState connectivity = {};
+    connectivity.active_page = MenuPage::StatusConnectivity;
+    connectivity.wifi_status.credentials_present = true;
+    fill_wide(connectivity.wifi_status.ssid, false);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(render_page(connectivity).data()));
+
+    ConsoleState share = {};
+    share.active_page = MenuPage::ShareDetail;
+    share.share_count = 1;
+    share.selected_share_index = 0;
+    fill_wide(share.watched_shares[0].display_name, true);
+    fill_wide(share.watched_shares[0].symbol, false);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(render_page(share).data()));
+
+    ConsoleState keypad = {};
+    keypad.active_page = MenuPage::KeypadDebug;
+    fill_wide(keypad.keypad_debug_status.active_panel_pins, true);
+    fill_wide(keypad.keypad_debug_status.probe_hit_panel_pins, true);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(render_page(keypad).data()));
+}
+
+HOST_TEST(detail_rows_cut_values_with_a_marker_once_the_block_reaches_row_5)
+{
+    // Twelve full-length rows need far more lines than fit above row 5, so the
+    // later values must be cut rather than wrap into row 5 or the footer.
+    std::array<char, 64> long_value = {};
+    fill_wide(long_value, true);
+    std::array<screens::DetailRow, 12> rows = {};
+    for (screens::DetailRow& row : rows)
+    {
+        row = {"FIELD", long_value.data()};
+    }
+
+    std::array<uint8_t, static_cast<size_t>(kUiFbSize)> compact = {};
+    screens::draw_compact_detail_rows(compact.data(), rows.data(), rows.size(), kBodyTopY, 13);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(compact.data()));
+    EXPECT_TRUE(golden_test::check_golden("detail_rows_cut", compact.data()));
+
+    std::array<uint8_t, static_cast<size_t>(kUiFbSize)> info = {};
+    screens::draw_info_page_rows(info.data(), rows.data(), 8U);
+    EXPECT_TRUE(detail_rows_stay_in_bounds(info.data()));
 }

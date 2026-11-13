@@ -937,56 +937,138 @@ size_t wrap_text(const char* text, fonts::FontFace font, int max_width, TextSpan
 namespace
 {
 
-/// @brief Draws one aligned detail row for information-oriented pages.
-/// @details Labels stay uppercase and compact on the left while values remain
-/// free to use mixed case on the right for readability.
-void draw_detail_row(uint8_t* fb, int y, const DetailRow& row, bool draw_divider)
+/// @brief Right edge of a detail-row value: the same 12-pixel margin the Text
+/// block keeps, so no value reaches the screen edge (SCR-6).
+constexpr int kDetailValueRightX = kUiWidth - 12;
+
+/// @brief Lowest y a detail block may grow to when its values wrap: the top
+/// of the row 5 softkey cell, so wrapped lines never reach row 5 or the footer.
+constexpr int kDetailRowsWrapLimitY = softkey_y_for_index(4);
+
+/// @brief Most lines one detail value may wrap onto.
+constexpr size_t kMaxDetailValueLines = 8U;
+
+/// @brief Longest single wrapped line of a detail value, in characters.
+constexpr size_t kDetailValueLineCapacity = 96U;
+
+/// @brief Ends a value that was cut because the block ran out of room.
+constexpr const char* kDetailValueCutMarker = "...";
+
+/// @brief Value shown for a missing or empty field (LBL-10).
+const char* detail_value_text(const char* value)
 {
-    constexpr int kLabelX = 50;
-    constexpr int kValueX = 156;
-    constexpr int kDividerLeftX = 46;
-    constexpr int kDividerRightX = kUiWidth - 46;
-    constexpr int kDividerOffsetY = 15;
-    constexpr int kValueBaselineOffsetY = 1;
-    constexpr size_t kLabelBufferSize = 32U;
-
-    const char* value = (row.value != nullptr && row.value[0] != '\0') ? row.value : "-";
-    char label_text[kLabelBufferSize] = {};
-    build_uppercase_label(row.label, label_text, sizeof(label_text));
-    framebuffer::draw_text(fb, kLabelX, y, label_text, true, fonts::FontFace::FontTitle8x12, 1);
-    framebuffer::draw_text(fb, kValueX, y + kValueBaselineOffsetY, value, true,
-                           fonts::FontFace::Font5x7, 1);
-
-    if (draw_divider)
-    {
-        framebuffer::draw_hline(fb, kDividerLeftX, kDividerRightX, y + kDividerOffsetY, true);
-    }
+    return (value != nullptr && value[0] != '\0') ? value : "-";
 }
 
-/// @brief Draws a consistent stacked detail layout without heavy framing.
-/// @details The same helper keeps diagnostics and status pages visually aligned
-/// once their surrounding boxes have been removed.
-void draw_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y = 46,
-                      int row_pitch = 18, bool draw_dividers = true)
+/// @brief Returns how many lines `value` needs at `max_width`, at least one.
+int detail_value_line_count(const char* value, fonts::FontFace font, int max_width)
 {
-    for (size_t i = 0; i < count; ++i)
+    std::array<TextSpan, kMaxDetailValueLines> spans = {};
+    const size_t kCount = wrap_text(value, font, max_width, spans.data(), spans.size());
+    return std::max(1, static_cast<int>(kCount));
+}
+
+/// @brief How many extra lines a detail block may add by wrapping.
+/// @details The block may grow down to `kDetailRowsWrapLimitY`. A block whose
+/// unwrapped rows already reach past that line keeps its layout and gets no
+/// extra lines, so pages that never overflowed render exactly as before.
+int detail_wrap_budget(int natural_bottom_y, int line_pitch)
+{
+    const int kLimitY = std::max(kDetailRowsWrapLimitY, natural_bottom_y);
+    return (kLimitY - natural_bottom_y) / line_pitch;
+}
+
+/// @brief Draws one detail value from `x` to the value margin, wrapped over at
+/// most `max_lines` lines; text that still does not fit is cut at the last
+/// character that fits and ends with the cut marker. Returns the lines drawn.
+/// @details The single long-value policy for both detail-row blocks
+/// (docs/ui_patterns.md). The stored value is never shortened.
+int draw_detail_value(uint8_t* fb, int x, int y, const char* value, fonts::FontFace font,
+                      int line_pitch, int max_lines)
+{
+    const int kMaxWidth = kDetailValueRightX - x;
+    const size_t kLineLimit =
+        static_cast<size_t>(std::clamp(max_lines, 1, static_cast<int>(kMaxDetailValueLines)));
+    // One spare span shows whether the value runs past the line limit.
+    std::array<TextSpan, kMaxDetailValueLines + 1U> spans = {};
+    const size_t kCount = wrap_text(value, font, kMaxWidth, spans.data(), kLineLimit + 1U);
+    const size_t kShown = std::min(kCount, kLineLimit);
+    const bool kCut = kCount > kLineLimit;
+
+    for (size_t i = 0U; i < kShown; ++i)
     {
-        draw_detail_row(fb, start_y + (static_cast<int>(i) * row_pitch), rows[i],
-                        draw_dividers && (i + 1 < count));
+        char line[kDetailValueLineCapacity] = {};
+        copy_softkey_label_slice(line, sizeof(line), spans[i].text, spans[i].length);
+        if (kCut && (i + 1U == kShown))
+        {
+            size_t length = std::strlen(line);
+            char marked[kDetailValueLineCapacity + 4U] = {};
+            while (true)
+            {
+                while (length > 0U && line[length - 1U] == ' ')
+                {
+                    --length;
+                }
+                std::snprintf(marked, sizeof(marked), "%.*s%s", static_cast<int>(length), line,
+                              kDetailValueCutMarker);
+                if (length == 0U || text_width(marked, font) <= kMaxWidth)
+                {
+                    break;
+                }
+                --length;
+            }
+            copy_softkey_label_slice(line, sizeof(line), marked, std::strlen(marked));
+        }
+        framebuffer::draw_text(fb, x, y + (static_cast<int>(i) * line_pitch), line, true, font,
+                               1);
     }
+    return std::max(1, static_cast<int>(kShown));
 }
 
 } // namespace
 
 /// @brief Draws the standard row-based presentation used by information pages.
 /// @details The top banner carries the page title, so the body can stay clean
-/// and consistent without extra boxes, subtitles, or divider lines. Declared
-/// in screens_shared.h -- used by split-out page families too (Weather, etc.).
+/// and consistent without extra boxes, subtitles, or divider lines. Labels
+/// stay uppercase on the left while values use mixed case on the right; a
+/// long value wraps under itself and later rows move down (draw_detail_value).
+/// Declared in screens_shared.h -- used by split-out page families too.
 void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
 {
-    constexpr int kInfoPageStartY = 42;
-    constexpr int kInfoPageRowPitch = 18;
-    draw_detail_rows(fb, rows, count, kInfoPageStartY, kInfoPageRowPitch, false);
+    constexpr int kStartY = 42;
+    constexpr int kRowPitch = 18;
+    constexpr int kLabelX = 50;
+    constexpr int kValueX = 156;
+    constexpr int kValueOffsetY = 1;
+    constexpr fonts::FontFace kLabelFont = fonts::FontFace::FontTitle8x12;
+    constexpr fonts::FontFace kValueFont = fonts::FontFace::Font5x7;
+    // Wrapped value lines sit closer together than rows, so they read as one value.
+    const int kValueLinePitch = framebuffer::font_height(kValueFont) + 3;
+    constexpr size_t kLabelBufferSize = 32U;
+
+    if (count == 0U)
+    {
+        return;
+    }
+
+    const int kNaturalBottomY = kStartY + ((static_cast<int>(count) - 1) * kRowPitch) +
+                                framebuffer::font_height(kLabelFont);
+    int spare_lines = detail_wrap_budget(kNaturalBottomY, kValueLinePitch);
+    int y = kStartY;
+    for (size_t i = 0U; i < count; ++i)
+    {
+        char label_text[kLabelBufferSize] = {};
+        build_uppercase_label(rows[i].label, label_text, sizeof(label_text));
+        framebuffer::draw_text(fb, kLabelX, y, label_text, true, kLabelFont, 1);
+
+        const char* value = detail_value_text(rows[i].value);
+        const int kNeeded = detail_value_line_count(value, kValueFont, kDetailValueRightX - kValueX);
+        const int kAllowed = 1 + std::min(kNeeded - 1, spare_lines);
+        spare_lines -= kAllowed - 1;
+        const int kDrawn = draw_detail_value(fb, kValueX, y + kValueOffsetY, value, kValueFont,
+                                             kValueLinePitch, kAllowed);
+        y += kRowPitch + ((kDrawn - 1) * kValueLinePitch);
+    }
 }
 
 /// @brief Draws shared left/right page-navigation arrows used by paged menus.
@@ -1271,31 +1353,43 @@ int compact_detail_value_x(const DetailRow* rows, size_t count)
     return kCompactDetailTextX + widest_label_width + text_width(" ", kCompactDetailFont, 1);
 }
 
-/// @brief Draws one compact detail line with pixel-aligned values.
-void draw_compact_detail_line(uint8_t* fb, int y, const char* label, const char* value, int value_x)
-{
-    constexpr size_t kLabelBufferSize = 32U;
-    char label_text[kLabelBufferSize] = {};
-    std::snprintf(label_text, sizeof(label_text), "%s:", label != nullptr ? label : "");
-
-    framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text, true, kCompactDetailFont, 1);
-    framebuffer::draw_text(fb, value_x, y, (value != nullptr && value[0] != '\0') ? value : "-",
-                           true, kCompactDetailFont, 1);
-}
-
 } // namespace
 
 /// @brief Draws compact `Label: value` rows for data-dense pages.
-/// @details Declared in screens_shared.h -- used by every split-out page
-/// family that renders dense key/value diagnostics (Status, Sensors, etc.).
+/// @details A long value wraps under itself at the row pitch and later rows
+/// move down; once the block would reach row 5 it is cut with a marker
+/// instead (draw_detail_value). Declared in screens_shared.h -- used by every
+/// split-out page family that renders dense key/value diagnostics.
 void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, int start_y,
                               int row_pitch)
 {
-    const int value_x = compact_detail_value_x(rows, count);
-    for (size_t i = 0; i < count; ++i)
+    constexpr size_t kLabelBufferSize = 32U;
+    if (count == 0U)
     {
-        draw_compact_detail_line(fb, start_y + (static_cast<int>(i) * row_pitch), rows[i].label,
-                                 rows[i].value, value_x);
+        return;
+    }
+
+    const int kValueX = compact_detail_value_x(rows, count);
+    const int kNaturalBottomY = start_y + ((static_cast<int>(count) - 1) * row_pitch) +
+                                framebuffer::font_height(kCompactDetailFont);
+    int spare_lines = detail_wrap_budget(kNaturalBottomY, row_pitch);
+    int y = start_y;
+    for (size_t i = 0U; i < count; ++i)
+    {
+        char label_text[kLabelBufferSize] = {};
+        std::snprintf(label_text, sizeof(label_text),
+                      "%s:", rows[i].label != nullptr ? rows[i].label : "");
+        framebuffer::draw_text(fb, kCompactDetailTextX, y, label_text, true, kCompactDetailFont,
+                               1);
+
+        const char* value = detail_value_text(rows[i].value);
+        const int kNeeded =
+            detail_value_line_count(value, kCompactDetailFont, kDetailValueRightX - kValueX);
+        const int kAllowed = 1 + std::min(kNeeded - 1, spare_lines);
+        spare_lines -= kAllowed - 1;
+        const int kDrawn =
+            draw_detail_value(fb, kValueX, y, value, kCompactDetailFont, row_pitch, kAllowed);
+        y += row_pitch * kDrawn;
     }
 }
 

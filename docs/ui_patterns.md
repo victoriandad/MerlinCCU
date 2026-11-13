@@ -65,7 +65,7 @@ corrected.
   (declared in `include/display/screens_shared.h`), used by
   `draw_status_page()` in `src/display/status_screens.cpp`.
 - Rules: uppercase labels, concise mixed-case values, stable row pitch, no
-  right-edge clipping.
+  right-edge clipping. Long values follow the Long Detail Values policy below.
 
 ### Info Page Rows
 
@@ -74,7 +74,25 @@ corrected.
 - Source: `draw_info_page_rows()` in `src/display/screens.cpp` (declared in
   `include/display/screens_shared.h`); keypad debug is
   `draw_keypad_debug_page()` in `src/display/settings_screens.cpp`.
-- Rules: use shared row rendering rather than bespoke boxes.
+- Rules: use shared row rendering rather than bespoke boxes. Long values
+  follow the Long Detail Values policy below.
+
+### Long Detail Values
+
+- Intent: never lose a value off the screen edge (SCR-6), and never cut one
+  that there is room to show.
+- Use When: any detail row whose value can be wider than its column, such as
+  calendar text, host names, SSIDs, and share names.
+- Source: `draw_detail_value()` in `src/display/screens.cpp`, used by both
+  `draw_compact_detail_rows()` and `draw_info_page_rows()`.
+- Rules: a value runs from its column to 12 pixels short of the right edge,
+  the same margin as the Text block. A wider value wraps under itself (on
+  spaces, hard-breaking a long word such as a host name) and later rows move
+  down. A block may grow by wrapping only down to the top of the row 5
+  softkey cell; once that room is used up, a value is cut at the last
+  character that fits and ends with `...`. Earlier rows take the room first.
+  A block whose unwrapped rows already reach row 5 gets no extra lines. The
+  stored value is never shortened.
 
 ### Paged Arrows
 
@@ -138,7 +156,6 @@ corrected.
 
 ## Candidates For New Shared Helpers
 
-- Long-value elision or marquee policy.
 - Standard graph footer/min/max labelling.
 - Shared table column definitions for weather/share-like data.
 - Common empty/error/loading state helper.
