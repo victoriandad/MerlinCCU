@@ -12,6 +12,7 @@
 #include "alert_screens.h"
 #include "calendar_controller.h"
 #include "console_controller_internal.h"
+#include "cursor_navigation.h"
 #include "debug_logging.h"
 #include "local_conditions.h"
 #include "pinter_controller.h"
@@ -650,7 +651,6 @@ void update_softkeys_from_state()
                 softkey::view(SoftKeyId::Left5, "PERIOD",
                               settings_controller::share_period_selection_text(g_console_state),
                               SoftKeyRoute::CycleSharePeriod));
-        set_key(SoftKeyId::Right4, softkey::navigate("SHARES", SoftKeyRoute::GoShares));
         break;
     case MenuPage::Status:
         set_key(SoftKeyId::Left1, softkey::navigate("OVERVIEW", SoftKeyRoute::GoStatusOverview));
@@ -942,7 +942,6 @@ void update_softkeys_from_state()
             set_key(slots[i], softkey::item(alert_controller::build_softkey_label(slots[i], alert),
                                             routes[i]));
         }
-        set_key(SoftKeyId::Right5, softkey::navigate("HOME", SoftKeyRoute::GoHome));
         break;
     }
     case MenuPage::AlertDetail:
@@ -951,15 +950,13 @@ void update_softkeys_from_state()
         break;
     }
 
+    // R5 is HOME on every page except Home itself and a page asking for a
+    // decision or entry, where R5 confirms (NAV-2, NAV-3). Calendar is the
+    // one exception: R5 is its filter RESET while a filter is set, until
+    // live calendar data decides how that page should work (#8).
     if (g_console_state.active_page != MenuPage::Home &&
         g_console_state.active_page != MenuPage::Calendar &&
-        g_console_state.active_page != MenuPage::AlertList &&
-        g_console_state.active_page != MenuPage::AlertDetail &&
-        !(g_console_state.active_page == MenuPage::ScreenSaverSettings &&
-          g_console_state.screen_saver_timeout_editing) &&
-        g_console_state.active_page != MenuPage::PinterStartTiming &&
-        !(g_console_state.active_page == MenuPage::Pinter &&
-          g_console_state.pinter_reset_confirming))
+        !page_is_asking_for_decision(g_console_state))
     {
         set_key(SoftKeyId::Right5, softkey::navigate("HOME", SoftKeyRoute::GoHome));
     }
@@ -1847,53 +1844,9 @@ bool handle_button_event(const ButtonEvent& event)
     if (event.id == ButtonId::CursorLeft || event.id == ButtonId::CursorRight)
     {
         const int direction = (event.id == ButtonId::CursorLeft) ? -1 : 1;
-        bool changed = false;
-        if (g_console_state.active_page == MenuPage::Settings)
-        {
-            changed = settings_controller::change_page(g_console_state, direction);
-        }
-        else if (g_console_state.active_page == MenuPage::Calendar)
-        {
-            changed = calendar_controller::change_day(g_console_state, direction);
-        }
-        else if (g_console_state.active_page == MenuPage::AlertList)
-        {
-            const int next_page =
-                static_cast<int>(g_console_state.alert_list_page_index) + direction;
-            if (next_page >= 0 && next_page < static_cast<int>(alert_controller::page_count(g_console_state)))
-            {
-                g_console_state.alert_list_page_index = static_cast<uint8_t>(next_page);
-                changed = true;
-            }
-        }
-        else if (g_console_state.active_page == MenuPage::AlertDetail &&
-                 g_console_state.alert_detail_index < g_console_state.alert_count)
-        {
-            const ActiveAlert& alert =
-                g_console_state.active_alerts[g_console_state.alert_detail_index];
-            // Scroll range comes from the renderer's own line wrapping so the
-            // two cannot disagree.
-            const uint8_t max_lines = alert_screens::detail_max_scroll(alert);
-            if (direction < 0 && g_console_state.alert_detail_scroll_line > 0U)
-            {
-                --g_console_state.alert_detail_scroll_line;
-                changed = true;
-            }
-            else if (direction > 0 && g_console_state.alert_detail_scroll_line < max_lines)
-            {
-                ++g_console_state.alert_detail_scroll_line;
-                changed = true;
-            }
-        }
-        else if (g_console_state.active_page == MenuPage::TimeZoneSettings)
-        {
-            changed = settings_controller::change_time_zone_page(g_console_state, direction);
-        }
-        else if (g_console_state.active_page == MenuPage::PinterSelectBrew)
-        {
-            changed = pinter_controller::change_list_page(g_console_state, direction);
-        }
-
+        // One definition per page of what the cursor keys move through
+        // (cursor_navigation), shared with the footer arrows and title.
+        const bool changed = cursor_navigation::move(g_console_state, direction);
         if (!changed)
         {
             return false;

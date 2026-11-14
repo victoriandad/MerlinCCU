@@ -140,8 +140,9 @@ size_t wrap_text(const char* text, TextStyle style, int max_width, TextSpan* out
 /// and consistent without extra boxes, subtitles, or divider lines.
 void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count);
 
-/// @brief Draws shared left/right page-navigation arrows used by paged menus.
-void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right);
+/// @brief Draws the footer's left and right arrows, each only while its
+/// cursor key would change the page (NAV-8, cursor_navigation::can_move).
+void draw_cursor_arrows(uint8_t* fb, const ConsoleState& console_state);
 
 /// @brief Bordered graph plot rect shared by every page-family history graph
 /// (Shares, Local Conditions), with a symmetric one-pixel inset on all sides.

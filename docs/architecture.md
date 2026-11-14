@@ -62,7 +62,7 @@ README history, chat context, or incidental source-code discovery.
 - `include/display/screens_shared.h`: primitives split-out page-family files
   need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`,
   `draw_centered_text`, `text_width`, `WrappedSoftkeyLabel`/`wrap_label_lines`,
-  `draw_page_navigation_arrows`, a few state-label lookups) that aren't part
+  `draw_cursor_arrows`, a few state-label lookups) that aren't part
   of the public `screens.h` API.
 - `src/display/display.cpp`: framebuffer-to-panel raster composition and DMA/PIO
   presentation.
@@ -416,6 +416,18 @@ visits every reachable page state and checks each one in three ways:
   (SCR-5).
 - It checks that every key's role agrees with its label, route, inverse
   state and position (SK-1, SK-5, SK-9, LBL-5, NAV-4).
+- It checks the navigation rules by pressing keys: R5 is `HOME` unless the
+  page is Home or asking for a decision (NAV-2, NAV-3), each footer arrow
+  shows exactly when its cursor key acts (NAV-8), and no key other than
+  `HOME` leads where `BACK STEP` does (NAV-5).
+
+**Cursor keys (#116).** `include/core/cursor_navigation.h` is the one
+definition of what cursor left and right do on each page: the position
+and bounds of a list page, the calendar day or a scrolled line. The key
+handling in `console_controller.cpp`, the footer arrows drawn by
+`draw_menu_screen()` and the header's `TITLE n/m` all read it, so they
+cannot disagree. Which pages keep R5 for a decision is
+`page_is_asking_for_decision()` in `console_model.h`.
 
 **Softkey roles (#114).** Every softkey is built by one builder per role in
 `include/core/softkey_builders.h` (`navigate`, `select`, `action`, `toggle`,

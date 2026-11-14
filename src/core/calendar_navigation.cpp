@@ -47,23 +47,6 @@ bool filters_are_default(CalendarOwner owner, int8_t day_offset)
     return owner == CalendarOwner::Combined && day_offset == 0;
 }
 
-bool step_day_offset(int direction, int8_t current_offset, int8_t& out_offset)
-{
-    if (direction == 0)
-    {
-        return false;
-    }
-
-    const int target = static_cast<int>(current_offset) + direction;
-    if (target < kCalendarMinDayOffset || target > kCalendarMaxDayOffset)
-    {
-        return false;
-    }
-
-    out_offset = static_cast<int8_t>(target);
-    return true;
-}
-
 uint8_t event_index_for_visible_slot(const std::array<CalendarEvent, kCalendarEventCapacity>& events,
                                      uint8_t event_count, CalendarOwner owner, int8_t day_offset,
                                      uint8_t visible_slot)

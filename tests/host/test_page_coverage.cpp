@@ -15,9 +15,11 @@
 #include <utility>
 #include <vector>
 
+#include "calendar_controller.h"
 #include "config_manager.h"
 #include "console_controller.h"
 #include "console_model.h"
+#include "cursor_navigation.h"
 #include "environment_sensor_manager.h"
 #include "framebuffer.h"
 #include "golden_test_support.h"
@@ -398,6 +400,92 @@ HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
     EXPECT_FALSE(body_overlaps(state).empty());
 }
 
+namespace
+{
+
+/// @brief Replays `path` from the data fixture.
+void replay(const std::vector<ButtonId>& path)
+{
+    start_with_data();
+    for (const ButtonId step : path)
+    {
+        press(step);
+    }
+}
+
+/// @brief Replays `path`, then presses `id`; returns whether the press
+/// changed anything.
+bool press_after(const std::vector<ButtonId>& path, ButtonId id)
+{
+    replay(path);
+    return console_controller::handle_button_event({id, ButtonEventType::Pressed});
+}
+
+/// @brief Names the navigation rules the page reached by `path` breaks:
+/// R5 is HOME unless the page is Home or asking for a decision (NAV-2,
+/// NAV-3), a cursor arrow shows exactly when its key would act (NAV-8), and
+/// no softkey other than HOME leads where BACK STEP does (NAV-5).
+std::vector<std::string> navigation_problems(const std::vector<ButtonId>& path)
+{
+    std::vector<std::string> out;
+    replay(path);
+    const ConsoleState state = console_controller::state();
+
+    const SoftKeyAction& r5 = state.softkeys[static_cast<size_t>(SoftKeyId::Right5)];
+    // Calendar's R5 is its filter RESET while a filter is set, by decision
+    // in #116, until live calendar data decides how the page should work.
+    const bool calendar_reset =
+        state.active_page == MenuPage::Calendar && !calendar_controller::filters_are_default(state);
+    if (state.active_page != MenuPage::Home && !page_is_asking_for_decision(state) &&
+        !calendar_reset && r5.route != SoftKeyRoute::GoHome)
+    {
+        out.push_back("nav R5 is not HOME");
+    }
+
+    const std::array<std::pair<ButtonId, int>, 2> kCursorKeys = {
+        {{ButtonId::CursorLeft, -1}, {ButtonId::CursorRight, 1}}};
+    for (const auto& [button, direction] : kCursorKeys)
+    {
+        const bool arrow = cursor_navigation::can_move(state, direction);
+        const bool acted = press_after(path, button);
+        if (arrow != acted)
+        {
+            out.push_back(std::string("nav ") + (direction < 0 ? "left" : "right") +
+                          (arrow ? " arrow but the key does nothing" : " key acts with no arrow"));
+        }
+    }
+
+    if (page_is_asking_for_decision(state))
+    {
+        return out;
+    }
+    (void)press_after(path, ButtonId::BackStep);
+    const MenuPage back_page = console_controller::state().active_page;
+    if (back_page == state.active_page)
+    {
+        return out;
+    }
+    for (size_t key = 0U; key < state.softkeys.size(); ++key)
+    {
+        const SoftKeyAction& action = state.softkeys[key];
+        if (!action.enabled || action.route == SoftKeyRoute::GoHome)
+        {
+            continue;
+        }
+        if (press_after(path, kSoftkeyButtons[key]) &&
+            console_controller::state().active_page == back_page)
+        {
+            const bool left = key < static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+            const size_t row = key % static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+            out.push_back(std::string("nav ") + (left ? "L" : "R") + std::to_string(row + 1U) +
+                          " duplicates BACK STEP");
+        }
+    }
+    return out;
+}
+
+} // namespace
+
 /// @details Fit and overlap problems that already exist are listed here with
 /// the issue that fixes them, rather than hidden by loosening the checks. The
 /// test fails on any problem not listed, and on a listed one that has gone,
@@ -464,6 +552,10 @@ HOST_TEST(
         for (const std::string& role : role_problems(state.softkeys))
         {
             problems.insert(name + " role " + role);
+        }
+        for (const std::string& navigation : navigation_problems(path))
+        {
+            problems.insert(name + " " + navigation);
         }
     }
 

@@ -96,12 +96,18 @@ corrected.
 
 ### Paged Arrows
 
-- Intent: indicate additional list/settings pages.
-- Use When: cursor-left/right can change visible page content.
-- Source: `draw_page_navigation_arrows()` in `src/display/screens.cpp`
-  (declared in `include/display/screens_shared.h`).
-- Rules: use the shared helper so arrow placement remains consistent. Show an
-  arrow only for a direction that does something (NAV-8).
+- Intent: show that cursor left or right will change the page: another
+  list page, or more scrolled text.
+- Use When: always drawn for the page by `draw_menu_screen()`; a page does
+  not draw its own.
+- Source: `draw_cursor_arrows()` in `src/display/screens.cpp`, which asks
+  `cursor_navigation::can_move()` (`include/core/cursor_navigation.h`).
+- Rules: a page that uses the cursor keys adds its range to
+  `cursor_navigation::cursor_range()`. The key handling, these arrows and
+  the header's `TITLE n/m` all read that one range, so an arrow shows
+  exactly when its key would act (NAV-7 to NAV-9). Calendar is the one
+  page that draws its own arrows, either side of the day they step, and
+  takes their visibility from the same range.
 
 ### Alert List And Detail
 

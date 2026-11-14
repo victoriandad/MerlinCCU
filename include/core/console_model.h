@@ -983,6 +983,24 @@ struct ConsoleState
     SoftKeyMap softkeys;
 };
 
+/// @brief True when the page is asking for a decision or accepting entry,
+/// so R5 confirms and L5 declines instead of R5 being HOME (NAV-3).
+inline bool page_is_asking_for_decision(const ConsoleState& console_state)
+{
+    switch (console_state.active_page)
+    {
+    case MenuPage::AlertDetail:
+    case MenuPage::PinterStartTiming:
+        return true;
+    case MenuPage::Pinter:
+        return console_state.pinter_reset_confirming;
+    case MenuPage::ScreenSaverSettings:
+        return console_state.screen_saver_timeout_editing;
+    default:
+        return false;
+    }
+}
+
 /// @brief Returns the physical legends printed on a hard key.
 const KeyLegend& key_legend(HardKeyId key);
 

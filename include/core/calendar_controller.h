@@ -32,9 +32,6 @@ bool filters_are_default(const ConsoleState& console_state);
 /// @brief Restores the Calendar page to the default combined-today view.
 bool reset_filters(ConsoleState& console_state);
 
-/// @brief Moves the Calendar page day selection within a bounded preview window.
-bool change_day(ConsoleState& console_state, int direction);
-
 /// @brief Opens the detail page for one visible calendar event slot.
 bool open_detail_from_slot(ConsoleState& console_state, uint8_t visible_slot);
 

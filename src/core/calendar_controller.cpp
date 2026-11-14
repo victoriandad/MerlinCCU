@@ -151,19 +151,6 @@ bool reset_filters(ConsoleState& console_state)
     return true;
 }
 
-/// @details The current UI slice stores days as offsets from today so the same
-/// model can be filled by Home Assistant calendar data later.
-bool change_day(ConsoleState& console_state, int direction)
-{
-    if (console_state.active_page != MenuPage::Calendar)
-    {
-        return false;
-    }
-
-    return calendar_navigation::step_day_offset(direction, console_state.calendar_day_offset,
-                                                console_state.calendar_day_offset);
-}
-
 bool open_detail_from_slot(ConsoleState& console_state, uint8_t visible_slot)
 {
     const uint8_t event_index = event_index_for_visible_slot(console_state, visible_slot);

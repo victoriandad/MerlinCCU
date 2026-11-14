@@ -42,6 +42,7 @@ add_executable(host_tests
     test_pinter_controller.cpp
     test_alert_controller.cpp
     test_calendar_controller.cpp
+    test_cursor_navigation.cpp
     test_settings_controller.cpp
     test_status_controller.cpp
     test_console_navigation.cpp
@@ -84,6 +85,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/calendar_controller.cpp
     ${MERLIN_ROOT}/src/core/settings_controller.cpp
     ${MERLIN_ROOT}/src/core/softkey_builders.cpp
+    ${MERLIN_ROOT}/src/core/cursor_navigation.cpp
     ${MERLIN_ROOT}/src/core/status_controller.cpp
 )
 

@@ -74,9 +74,6 @@ uint8_t max_scroll_for(size_t line_count)
 /// @brief Draws compact status lines for the alert-list page.
 void draw_alert_list_page(uint8_t* fb, const ConsoleState& console_state)
 {
-    const uint8_t page_count = alert_list_page_count(console_state.alert_count);
-    screens::draw_page_navigation_arrows(fb, console_state.alert_list_page_index > 0U,
-                                         (console_state.alert_list_page_index + 1U) < page_count);
     if (console_state.alert_count == 0U)
     {
         screens::draw_empty_state(fb, "NO ACTIVE ALERTS", nullptr);
@@ -122,8 +119,6 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state)
                            ui_layout::kContentTopY + (static_cast<int>(row) * kPitch), line,
                            kDetailStyle);
     }
-
-    screens::draw_page_navigation_arrows(fb, first > 0U, first < max_scroll);
 }
 
 } // namespace alert_screens

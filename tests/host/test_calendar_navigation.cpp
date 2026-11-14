@@ -62,43 +62,6 @@ HOST_TEST(filters_are_default_is_true_only_for_combined_owner_and_zero_offset)
     EXPECT_FALSE(calendar_navigation::filters_are_default(CalendarOwner::Owner1, 0));
 }
 
-HOST_TEST(step_day_offset_is_a_no_op_for_zero_direction)
-{
-    int8_t offset = 5;
-    EXPECT_FALSE(calendar_navigation::step_day_offset(0, 5, offset));
-    EXPECT_EQ(offset, 5);
-}
-
-HOST_TEST(step_day_offset_moves_within_the_supported_window)
-{
-    int8_t offset = 0;
-    EXPECT_TRUE(calendar_navigation::step_day_offset(1, 0, offset));
-    EXPECT_EQ(offset, 1);
-
-    EXPECT_TRUE(calendar_navigation::step_day_offset(-1, 1, offset));
-    EXPECT_EQ(offset, 0);
-}
-
-HOST_TEST(step_day_offset_rejects_moves_outside_the_supported_window)
-{
-    int8_t offset = 99;
-    EXPECT_FALSE(calendar_navigation::step_day_offset(1, static_cast<int8_t>(kCalendarMaxDayOffset),
-                                                      offset));
-    EXPECT_EQ(offset, 99); // unchanged
-
-    EXPECT_FALSE(calendar_navigation::step_day_offset(-1, static_cast<int8_t>(kCalendarMinDayOffset),
-                                                      offset));
-    EXPECT_EQ(offset, 99); // unchanged
-}
-
-HOST_TEST(step_day_offset_allows_reaching_the_exact_boundary_values)
-{
-    int8_t offset = 0;
-    EXPECT_TRUE(calendar_navigation::step_day_offset(
-        kCalendarMaxDayOffset - 1, 1, offset)); // 1 + (max-1) == max
-    EXPECT_EQ(offset, static_cast<int8_t>(kCalendarMaxDayOffset));
-}
-
 HOST_TEST(event_index_for_visible_slot_skips_non_matching_events)
 {
     std::array<CalendarEvent, kCalendarEventCapacity> events = {};
