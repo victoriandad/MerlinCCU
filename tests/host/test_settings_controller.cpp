@@ -8,7 +8,7 @@
 // through key presses in test_console_navigation.cpp),
 // select_screen_saver(), toggle_remote_config_enabled(),
 // toggle_home_assistant_enabled(), toggle_mqtt_enabled(),
-// toggle_air_traffic_enabled(), and confirm_timeout_edit(). All of them
+// and confirm_timeout_edit(). All of them
 // route their actual mutation through console_controller's own
 // persist_runtime_config_change() -> console_controller::apply_runtime_config(),
 // which writes to console_controller.cpp's private g_console_state rather
@@ -73,27 +73,6 @@ HOST_TEST(cycle_share_period_advances_through_all_five_and_wraps)
         EXPECT_TRUE(settings_controller::cycle_share_period(state));
         EXPECT_TRUE(state.share_period == next);
     }
-}
-
-HOST_TEST(toggle_air_traffic_view_mode_flips_and_resets_the_page_index)
-{
-    ConsoleState state = make_state();
-    state.air_traffic_view_mode = AirTrafficViewMode::Tabular;
-    state.air_traffic_page_index = 3U;
-    EXPECT_TRUE(settings_controller::toggle_air_traffic_view_mode(state));
-    EXPECT_TRUE(state.air_traffic_view_mode == AirTrafficViewMode::Plot);
-    EXPECT_EQ(state.air_traffic_page_index, 0U);
-}
-
-HOST_TEST(air_traffic_page_count_rounds_up)
-{
-    ConsoleState state = make_state();
-    state.air_traffic_status.aircraft_count = 0U;
-    EXPECT_EQ(settings_controller::air_traffic_page_count(state), 1U);
-    state.air_traffic_status.aircraft_count = kAirTrafficRowsPerPage;
-    EXPECT_EQ(settings_controller::air_traffic_page_count(state), 1U);
-    state.air_traffic_status.aircraft_count = static_cast<uint8_t>(kAirTrafficRowsPerPage + 1U);
-    EXPECT_EQ(settings_controller::air_traffic_page_count(state), 2U);
 }
 
 HOST_TEST(select_share_slot_rejects_a_slot_past_the_watchlist_count)

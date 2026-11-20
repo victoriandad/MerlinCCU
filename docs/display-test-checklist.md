@@ -159,7 +159,7 @@ full 35-item catalogue, right when you actually have a pack in hand.
 
 - Softkey top-line captions are uppercase.
 - Bracketed selected values remain mixed case.
-- On/off settings (`REMOTE CONFIG`, `REST API`, `MQTT`, `ADS-B`) show
+- On/off settings (`REMOTE CONFIG`, `REST API`, `MQTT`) show
   `[Enabled]` or `[Disabled]` and are never drawn inverse, whichever state
   they are in.
 - Selection changes update visible values immediately.

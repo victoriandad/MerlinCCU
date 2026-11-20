@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "air_traffic_screens.h"
 #include "alert_screens.h"
 #include "calendar_screens.h"
 #include "config_manager.h"
@@ -213,8 +212,6 @@ const char* menu_page_title(MenuPage page)
         return "INTEGRATIONS";
     case MenuPage::LocalConditions:
         return "LOCAL CONDITIONS";
-    case MenuPage::AirTraffic:
-        return "ADS-B TRAFFIC";
     case MenuPage::LocalConditionGraph:
         return "LOCAL GRAPH";
     case MenuPage::Settings:
@@ -227,8 +224,6 @@ const char* menu_page_title(MenuPage page)
         return "HOME ASSISTANT";
     case MenuPage::MqttSettings:
         return "MQTT DISCOVERY";
-    case MenuPage::AirTrafficSettings:
-        return "ADS-B TRAFFIC";
     case MenuPage::ScreenSaverSettings:
         return "SCREEN SAVER";
     case MenuPage::ScreenSaverOptions:
@@ -306,19 +301,6 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
                       static_cast<unsigned>(console_state.pinter_catalogue_page_index + 1U),
                       static_cast<unsigned>(kPinterBrewListPageCount));
         return buffer;
-    }
-    if (console_state.active_page == MenuPage::AirTraffic &&
-        console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
-    {
-        const uint8_t page_count =
-            air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
-        if (page_count > 1U)
-        {
-            std::snprintf(buffer, buffer_size, "ADS-B TRAFFIC %u/%u",
-                          static_cast<unsigned>(console_state.air_traffic_page_index + 1U),
-                          static_cast<unsigned>(page_count));
-            return buffer;
-        }
     }
 
     return menu_page_title(console_state.active_page);
@@ -453,7 +435,6 @@ TextStyle softkey_label_style(MenuPage page)
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
-    case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
     case MenuPage::ScreenSaverOptions:
@@ -464,7 +445,6 @@ TextStyle softkey_label_style(MenuPage page)
     case MenuPage::ShareDetail:
         return TextStyle::SoftkeyDense;
     case MenuPage::Weather:
-    case MenuPage::AirTraffic:
     case MenuPage::Status:
     case MenuPage::StatusOverview:
     case MenuPage::StatusConnectivity:
@@ -1264,9 +1244,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::Weather:
         weather_screens::draw_weather_page(fb, console_state, now_ms);
         break;
-    case MenuPage::AirTraffic:
-        air_traffic_screens::draw_air_traffic_page(fb, console_state, now_ms);
-        break;
     case MenuPage::Pinter:
     case MenuPage::PinterSelectBrew:
     case MenuPage::PinterStartTiming:
@@ -1302,7 +1279,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
-    case MenuPage::AirTrafficSettings:
     case MenuPage::WeatherSources:
     case MenuPage::ScreenSaverOptions:
         // Key pages with no body: every value they show is on a softkey label

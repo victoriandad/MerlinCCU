@@ -145,7 +145,6 @@ enum class MenuPage : uint8_t
     WifiSettings,
     HomeAssistantSettings,
     MqttSettings,
-    AirTrafficSettings,
     ScreenSaverSettings,
     ScreenSaverOptions,
     WeatherSources,
@@ -159,7 +158,6 @@ enum class MenuPage : uint8_t
     PinterStartTiming,
     Shares,
     ShareDetail,
-    AirTraffic,
 };
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
@@ -573,7 +571,6 @@ enum class SoftKeyRoute : uint8_t
     GoWifiSettings,
     GoHomeAssistantSettings,
     GoMqttSettings,
-    GoAirTrafficSettings,
     GoScreenSaverSettings,
     GoScreenSaverOptions,
     EditScreenSaverTimeout,
@@ -586,7 +583,6 @@ enum class SoftKeyRoute : uint8_t
     ToggleRemoteConfig,
     ToggleHomeAssistantEnabled,
     ToggleMqttEnabled,
-    ToggleAirTrafficEnabled,
     SelectScreenSaverLife,
     SelectScreenSaverClock,
     SelectScreenSaverStarfield,
@@ -659,8 +655,6 @@ enum class SoftKeyRoute : uint8_t
     SelectShareSlot5,
     SelectShareSlot6,
     CycleSharePeriod,
-    GoAirTraffic,
-    ToggleAirTrafficViewMode,
     CycleCalendarOwner,
     ResetCalendarFilters,
     SelectCalendarSlot1,
@@ -747,101 +741,6 @@ struct ShareMarketStatus
     /// HomeAssistantStatus::weather_last_success_ms is excluded there.
     uint32_t last_success_ms;
 };
-
-/// @brief Maximum nearby aircraft tracked and rendered on the Local Traffic page.
-inline constexpr size_t kAirTrafficEntryCapacity = 24U;
-
-/// @brief Aircraft rows shown per page of the tabular Local Traffic view.
-inline constexpr uint8_t kAirTrafficRowsPerPage = 8U;
-
-/// @brief Local Traffic table pages needed for `aircraft_count` aircraft.
-constexpr uint8_t air_traffic_list_page_count(uint8_t aircraft_count)
-{
-    return list_page_count(aircraft_count, kAirTrafficRowsPerPage);
-}
-
-/// @brief Snail-trail depth (refresh cycles of position history) kept per
-/// continuously-tracked aircraft for the Plot view.
-inline constexpr size_t kAirTrafficTrailDepth = 10U;
-
-/// @brief One historical position sample for the Plot view's snail trail.
-/// @details Fixed-point (tenths of a nautical mile / whole degrees) keeps
-/// this compact -- ten samples per aircraft, times up to
-/// `kAirTrafficEntryCapacity` aircraft, adds up.
-struct AirTrafficTrailPoint
-{
-    int16_t distance_deci_nm;
-    int16_t bearing_deg;
-};
-
-inline bool operator==(const AirTrafficTrailPoint& lhs, const AirTrafficTrailPoint& rhs)
-{
-    return lhs.distance_deci_nm == rhs.distance_deci_nm && lhs.bearing_deg == rhs.bearing_deg;
-}
-
-/// @brief One nearby aircraft row, pre-formatted for the compact table page,
-/// plus the raw position and trail history the Plot (radar) view needs.
-struct AirTrafficEntry
-{
-    std::array<char, 12> callsign;
-    std::array<char, 10> distance_text;
-    std::array<char, 10> altitude_text;
-    std::array<char, 8> bearing_text;
-    int16_t distance_deci_nm;
-    int16_t bearing_deg;
-    uint8_t trail_count;
-    std::array<AirTrafficTrailPoint, kAirTrafficTrailDepth> trail;
-};
-
-/// @brief Compares two aircraft rows field-by-field for redraw detection.
-inline bool operator==(const AirTrafficEntry& lhs, const AirTrafficEntry& rhs)
-{
-    return lhs.callsign == rhs.callsign && lhs.distance_text == rhs.distance_text &&
-           lhs.altitude_text == rhs.altitude_text && lhs.bearing_text == rhs.bearing_text &&
-           lhs.distance_deci_nm == rhs.distance_deci_nm && lhs.bearing_deg == rhs.bearing_deg &&
-           lhs.trail_count == rhs.trail_count && lhs.trail == rhs.trail;
-}
-
-/// @brief Local Traffic page presentation mode, toggled from the page itself.
-enum class AirTrafficViewMode : uint8_t
-{
-    Tabular = 0,
-    Plot,
-};
-
-/// @brief Snapshot of the local ADS-B air-traffic feed suitable for UI use.
-struct AirTrafficStatus
-{
-    bool enabled;
-    bool configured;
-    bool data_valid;
-    int last_error;
-    int last_http_status;
-    uint16_t configured_radius_nm;
-    uint8_t aircraft_count;
-    std::array<AirTrafficEntry, kAirTrafficEntryCapacity> aircraft;
-    /// @brief Boot-uptime of the last successful fetch, 0 if never. See
-    /// HomeAssistantStatus::weather_last_success_ms for why this is excluded
-    /// from operator== below.
-    uint32_t last_success_ms;
-};
-
-/// @brief Compares two air-traffic snapshots field-by-field.
-/// @details `last_success_ms` is deliberately excluded -- see
-/// HomeAssistantStatus::weather_last_success_ms's comment.
-inline bool operator==(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
-{
-    return lhs.enabled == rhs.enabled && lhs.configured == rhs.configured &&
-           lhs.data_valid == rhs.data_valid && lhs.last_error == rhs.last_error &&
-           lhs.last_http_status == rhs.last_http_status &&
-           lhs.configured_radius_nm == rhs.configured_radius_nm &&
-           lhs.aircraft_count == rhs.aircraft_count && lhs.aircraft == rhs.aircraft;
-}
-
-inline bool operator!=(const AirTrafficStatus& lhs, const AirTrafficStatus& rhs)
-{
-    return !(lhs == rhs);
-}
 
 inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
@@ -1071,9 +970,6 @@ struct ConsoleState
     DisplayTimingStatus display_timing_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;
     KeypadDebugStatus keypad_debug_status;
-    AirTrafficStatus air_traffic_status;
-    AirTrafficViewMode air_traffic_view_mode;
-    uint8_t air_traffic_page_index;
     uint8_t alert_count;
     uint8_t alert_list_page_index;
     uint8_t alert_detail_index;

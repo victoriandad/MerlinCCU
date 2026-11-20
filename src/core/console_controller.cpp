@@ -146,7 +146,6 @@ MenuPage parent_page(MenuPage page)
     {
     case MenuPage::Home:
     case MenuPage::Weather:
-    case MenuPage::AirTraffic:
     case MenuPage::Calendar:
     case MenuPage::Status:
     case MenuPage::LocalConditions:
@@ -170,7 +169,6 @@ MenuPage parent_page(MenuPage page)
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
     case MenuPage::MqttSettings:
-    case MenuPage::AirTrafficSettings:
     case MenuPage::ScreenSaverSettings:
     case MenuPage::WeatherSources:
     case MenuPage::TimeZoneSettings:
@@ -397,12 +395,6 @@ void update_softkeys_from_state()
 {
     alert_controller::sync(g_console_state);
 
-    const uint8_t air_traffic_pages = settings_controller::air_traffic_page_count(g_console_state);
-    if (g_console_state.air_traffic_page_index >= air_traffic_pages)
-    {
-        g_console_state.air_traffic_page_index = static_cast<uint8_t>(air_traffic_pages - 1U);
-    }
-
     if (g_console_state.active_page != MenuPage::Pinter)
     {
         g_console_state.pinter_reset_confirming = false;
@@ -435,7 +427,6 @@ void update_softkeys_from_state()
                               SoftKeyRoute::GoWeather));
         set_key(SoftKeyId::Right3,
                 softkey::navigate("LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions));
-        set_key(SoftKeyId::Left5, softkey::navigate("ADS-B\nTRAFFIC", SoftKeyRoute::GoAirTraffic));
         break;
     case MenuPage::Calendar:
     {
@@ -478,13 +469,6 @@ void update_softkeys_from_state()
                 softkey::view(SoftKeyId::Left5, "PERIOD",
                               settings_controller::weather_period_selection_text(g_console_state),
                               SoftKeyRoute::CycleWeatherPeriod));
-        break;
-    case MenuPage::AirTraffic:
-        set_key(SoftKeyId::Left5,
-                softkey::view(
-                    SoftKeyId::Left5, "VIEW",
-                    settings_controller::air_traffic_view_mode_selection_text(g_console_state),
-                    SoftKeyRoute::ToggleAirTrafficViewMode));
         break;
     case MenuPage::Pinter:
     {
@@ -767,11 +751,6 @@ void update_softkeys_from_state()
                 softkey::navigate(SoftKeyId::Left4, "SCREEN SAVER",
                                   settings_controller::screen_saver_selection_text(g_console_state),
                                   SoftKeyRoute::GoScreenSaverSettings));
-            set_key(SoftKeyId::Right1,
-                    softkey::navigate(
-                        SoftKeyId::Right1, "ADS-B TRAFFIC",
-                        settings_controller::enabled_selection_text(config.air_traffic_enabled),
-                        SoftKeyRoute::GoAirTrafficSettings));
         }
         break;
     case MenuPage::DeviceSettings:
@@ -826,25 +805,6 @@ void update_softkeys_from_state()
                 softkey::status(SoftKeyId::Right1, "PREFIX", config.mqtt_discovery_prefix.data()));
         set_key(SoftKeyId::Right2,
                 softkey::status(SoftKeyId::Right2, "TOPIC", config.mqtt_base_topic.data()));
-        break;
-    case MenuPage::AirTrafficSettings:
-        set_key(SoftKeyId::Left1,
-                softkey::toggle(SoftKeyId::Left1, "ADS-B", config.air_traffic_enabled,
-                                SoftKeyRoute::ToggleAirTrafficEnabled));
-        set_key(SoftKeyId::Left2,
-                softkey::status(SoftKeyId::Left2, "HOST", config.air_traffic_host.data()));
-        set_key(SoftKeyId::Left3, softkey::status(SoftKeyId::Left3, "PORT",
-                                                  settings_controller::port_selection_text(
-                                                      SoftKeyId::Left3, config.air_traffic_port)));
-        set_key(SoftKeyId::Left4,
-                softkey::status(SoftKeyId::Left4, "RADIUS",
-                                settings_controller::radius_nm_selection_text(
-                                    SoftKeyId::Left4, config.air_traffic_radius_nm)));
-        set_key(SoftKeyId::Left5,
-                softkey::status(SoftKeyId::Left5, "COORDS", config.air_traffic_coordinates.data()));
-        set_key(SoftKeyId::Right1, softkey::status(SoftKeyId::Right1, "API KEY",
-                                                   settings_controller::secret_selection_text(
-                                                       config.air_traffic_api_key[0] != '\0')));
         break;
     case MenuPage::ScreenSaverSettings:
         // Two select keys (SK-7). TIMEOUT opens a numeric entry state on this
@@ -1128,11 +1088,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Weather;
         return true;
-    case SoftKeyRoute::GoAirTraffic:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::AirTraffic;
-        g_console_state.air_traffic_page_index = 0U;
-        return true;
     case SoftKeyRoute::GoPinter:
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::Pinter;
@@ -1288,10 +1243,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::MqttSettings;
         return true;
-    case SoftKeyRoute::GoAirTrafficSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::AirTrafficSettings;
-        return true;
     case SoftKeyRoute::GoScreenSaverSettings:
         settings_controller::stop_timeout_editing(g_console_state);
         g_console_state.active_page = MenuPage::ScreenSaverSettings;
@@ -1331,8 +1282,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return settings_controller::toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:
         return settings_controller::toggle_mqtt_enabled();
-    case SoftKeyRoute::ToggleAirTrafficEnabled:
-        return settings_controller::toggle_air_traffic_enabled();
     case SoftKeyRoute::SelectScreenSaverLife:
         return settings_controller::select_screen_saver(ScreenSaverSelection::Life);
     case SoftKeyRoute::SelectScreenSaverClock:
@@ -1369,8 +1318,6 @@ bool apply_softkey_route(SoftKeyRoute route)
         return settings_controller::select_share_slot(g_console_state, 5U);
     case SoftKeyRoute::CycleSharePeriod:
         return settings_controller::cycle_share_period(g_console_state);
-    case SoftKeyRoute::ToggleAirTrafficViewMode:
-        return settings_controller::toggle_air_traffic_view_mode(g_console_state);
     case SoftKeyRoute::CycleCalendarOwner:
         return calendar_controller::cycle_owner(g_console_state);
     case SoftKeyRoute::ResetCalendarFilters:
@@ -1605,18 +1552,6 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
     if (!status_controller::set_mqtt_status(g_console_state, mqtt_status))
-    {
-        return false;
-    }
-
-    update_softkeys_from_state();
-    return true;
-}
-
-/// @brief Updates the cached local air-traffic snapshot in the console model.
-bool set_air_traffic_status(const AirTrafficStatus& air_traffic_status)
-{
-    if (!status_controller::set_air_traffic_status(g_console_state, air_traffic_status))
     {
         return false;
     }
@@ -1957,16 +1892,6 @@ bool handle_button_event(const ButtonEvent& event)
         else if (g_console_state.active_page == MenuPage::PinterSelectBrew)
         {
             changed = pinter_controller::change_list_page(g_console_state, direction);
-        }
-        else if (g_console_state.active_page == MenuPage::AirTraffic &&
-                g_console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
-        {
-            const int next_page = static_cast<int>(g_console_state.air_traffic_page_index) + direction;
-            if (next_page >= 0 && next_page < static_cast<int>(settings_controller::air_traffic_page_count(g_console_state)))
-            {
-                g_console_state.air_traffic_page_index = static_cast<uint8_t>(next_page);
-                changed = true;
-            }
         }
 
         if (!changed)

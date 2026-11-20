@@ -12,10 +12,12 @@ using config_persistence::LegacyConfigSlotV1;
 using config_persistence::LegacyConfigSlotV2;
 using config_persistence::LegacyConfigSlotV3;
 using config_persistence::LegacyConfigSlotV4;
+using config_persistence::LegacyConfigSlotV5;
 using config_persistence::LegacyRuntimeConfigV1;
 using config_persistence::LegacyRuntimeConfigV2;
 using config_persistence::LegacyRuntimeConfigV3;
 using config_persistence::LegacyRuntimeConfigV4;
+using config_persistence::LegacyRuntimeConfigV5;
 
 namespace
 {
@@ -154,10 +156,6 @@ HOST_TEST(migrate_legacy_settings_v2_carries_every_field_forward)
     LegacyRuntimeConfigV2 legacy = {};
     text_utils::copy_text(legacy.device_name, "OldName2");
     text_utils::copy_text(legacy.wifi_ssid, "OldWifi2");
-    text_utils::copy_text(legacy.air_traffic_host, "api.adsb.lol");
-    legacy.air_traffic_enabled = true;
-    legacy.air_traffic_port = 80;
-    legacy.air_traffic_radius_nm = 40;
     legacy.mqtt_port = 1885;
     legacy.screen_saver_timeout_minutes = 17;
     legacy.weather_source = WeatherSource::OpenMeteo;
@@ -166,9 +164,6 @@ HOST_TEST(migrate_legacy_settings_v2_carries_every_field_forward)
 
     EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName2") == 0);
     EXPECT_TRUE(std::strcmp(migrated.wifi_ssid.data(), "OldWifi2") == 0);
-    EXPECT_TRUE(std::strcmp(migrated.air_traffic_host.data(), "api.adsb.lol") == 0);
-    EXPECT_TRUE(migrated.air_traffic_enabled);
-    EXPECT_EQ(migrated.air_traffic_radius_nm, 40U);
     EXPECT_EQ(migrated.mqtt_port, 1885U);
     EXPECT_EQ(migrated.screen_saver_timeout_minutes, 17U);
     EXPECT_TRUE(migrated.weather_source == WeatherSource::OpenMeteo);
@@ -282,6 +277,54 @@ HOST_TEST(validate_legacy_slot_v4_accepts_a_correctly_built_slot)
                                           sizeof(LegacyRuntimeConfigV4));
 
     EXPECT_TRUE(config_persistence::validate_legacy_slot_v4(slot));
+}
+
+HOST_TEST(migrate_legacy_settings_v5_drops_air_traffic_and_keeps_everything_else)
+{
+    LegacyRuntimeConfigV5 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName5");
+    text_utils::copy_text(legacy.home_assistant_host, "ha.lan");
+    legacy.home_assistant_port = 80;
+    legacy.home_assistant_enabled = true;
+    text_utils::copy_text(legacy.home_assistant_token, "token-five");
+    text_utils::copy_text(legacy.home_assistant_self_entity_id, "sensor.merlinccu_status");
+    legacy.air_traffic_enabled = true;
+    text_utils::copy_text(legacy.air_traffic_host, "api.adsb.lol");
+    legacy.screen_saver_timeout_minutes = 11;
+    legacy.watched_share_count = 1U;
+    text_utils::copy_text(legacy.watched_shares[0].symbol, "DDD");
+    legacy.shares_feed_enabled = true;
+    text_utils::copy_text(legacy.shares_feed_token, "feed-five");
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v5(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName5") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_host.data(), "ha.lan") == 0);
+    EXPECT_EQ(migrated.home_assistant_port, 80U);
+    EXPECT_TRUE(migrated.home_assistant_enabled);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_token.data(), "token-five") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_self_entity_id.data(),
+                            "sensor.merlinccu_status") == 0);
+    EXPECT_EQ(migrated.screen_saver_timeout_minutes, 11U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].symbol.data(), "DDD") == 0);
+    EXPECT_TRUE(migrated.shares_feed_enabled);
+    EXPECT_TRUE(std::strcmp(migrated.shares_feed_token.data(), "feed-five") == 0);
+}
+
+HOST_TEST(validate_legacy_slot_v5_accepts_a_correctly_built_slot)
+{
+    LegacyRuntimeConfigV5 legacy = {};
+    text_utils::copy_text(legacy.device_name, "V5Device");
+    LegacyConfigSlotV5 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV5;
+    slot.sequence = 6U;
+    slot.payload_size = sizeof(LegacyRuntimeConfigV5);
+    slot.settings = legacy;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(LegacyRuntimeConfigV5));
+
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v5(slot));
 }
 
 HOST_TEST(current_slot_round_trips_a_full_length_home_assistant_token)

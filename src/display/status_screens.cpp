@@ -561,7 +561,7 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     }
 
     // Issue #16's stale-data display policy: same helper and "DEMO vs
-    // freshness" split used by the Weather/Shares/Air Traffic pages, so this
+    // freshness" split used by the Weather/Shares pages, so this
     // summary page reads consistently with the pages it's summarizing.
     char weather_data_text[16] = {};
     screens::build_data_freshness_text(

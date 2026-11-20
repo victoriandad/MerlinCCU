@@ -26,7 +26,6 @@ enum class AlertCode : uint8_t
     DisplayPipelineLag,
     ShareDataUnavailable,
     PinterScheduleConflict,
-    AirTrafficUnavailable,
     Count,
 };
 

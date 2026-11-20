@@ -144,5 +144,4 @@ rather than on the Pico.
 - The response buffer is 4KB (`kResponseBufferSize` in
   `share_price_manager.cpp`), sized for a compact multi-share JSON payload,
   not a paste of full provider chart data. A response that doesn't fit is
-  treated as a partial success and parsed up to the truncation point, same
-  pattern as `air_traffic_manager.cpp`'s bounded response handling.
+  treated as a partial success and parsed up to the truncation point.

@@ -230,16 +230,6 @@ namespace
 
 constexpr int kAlertRetryThreshold = 5;
 
-ConsoleState make_failing_air_traffic_state()
-{
-    ConsoleState state = make_healthy_state();
-    state.air_traffic_status.enabled = true;
-    state.air_traffic_status.configured = true;
-    state.air_traffic_status.data_valid = false;
-    state.air_traffic_status.last_http_status = 503;
-    return state;
-}
-
 void sync_times(ConsoleState& state, int times)
 {
     for (int i = 0; i < times; ++i)
@@ -249,52 +239,6 @@ void sync_times(ConsoleState& state, int times)
 }
 
 } // namespace
-
-HOST_TEST(sync_raises_air_traffic_unavailable_after_repeated_failures)
-{
-    alert_controller::reset();
-    ConsoleState state = make_failing_air_traffic_state();
-    sync_times(state, kAlertRetryThreshold - 1);
-    EXPECT_EQ(state.alert_count, 0U);
-    alert_controller::sync(state);
-    EXPECT_EQ(state.alert_count, 1U);
-    EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "ADS-B") == 0);
-}
-
-HOST_TEST(sync_does_not_raise_air_traffic_unavailable_when_disabled_or_unconfigured)
-{
-    alert_controller::reset();
-    ConsoleState disabled = make_failing_air_traffic_state();
-    disabled.air_traffic_status.enabled = false;
-    sync_times(disabled, kAlertRetryThreshold * 2);
-    EXPECT_EQ(disabled.alert_count, 0U);
-
-    alert_controller::reset();
-    ConsoleState unconfigured = make_failing_air_traffic_state();
-    unconfigured.air_traffic_status.configured = false;
-    sync_times(unconfigured, kAlertRetryThreshold * 2);
-    EXPECT_EQ(unconfigured.alert_count, 0U);
-}
-
-HOST_TEST(sync_air_traffic_unavailable_needs_consecutive_failures_and_clears_on_valid_data)
-{
-    alert_controller::reset();
-    ConsoleState state = make_failing_air_traffic_state();
-    sync_times(state, kAlertRetryThreshold - 1);
-
-    // One good fetch resets the run, so a single later failure does not alert.
-    state.air_traffic_status.data_valid = true;
-    alert_controller::sync(state);
-    state.air_traffic_status.data_valid = false;
-    alert_controller::sync(state);
-    EXPECT_EQ(state.alert_count, 0U);
-
-    sync_times(state, kAlertRetryThreshold);
-    EXPECT_EQ(state.alert_count, 1U);
-    state.air_traffic_status.data_valid = true;
-    alert_controller::sync(state);
-    EXPECT_EQ(state.alert_count, 0U);
-}
 
 HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
 {

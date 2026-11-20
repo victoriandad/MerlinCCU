@@ -134,7 +134,7 @@ corrected.
 - Source: `screens::draw_empty_state()` in `src/display/screens.cpp`
   (declared in `include/display/screens_shared.h`). Every page with an empty,
   waiting or failed body uses it: Weather, Local Conditions and its graph,
-  Local Traffic, Alerts, Shares and Share detail, Calendar detail, and the
+  Alerts, Shares and Share detail, Calendar detail, and the
   Pinter reset confirmation.
 - Rules: one uppercase headline at `ui_layout::kEmptyStateHeadlineY` and an
   optional mixed-case hint at `ui_layout::kEmptyStateHintY`, both centred.
@@ -168,10 +168,10 @@ corrected.
 - Intent: line up repeated records in columns the same way on every page
   (BODY-3).
 - Use When: showing several records with the same fields, such as forecast
-  rows or nearby aircraft.
+  rows.
 - Source: `ui_layout::table_frame()` in `include/display/ui_layout.h`, which
   gives the header line, divider, first row, row pitch and margins. Used by
-  the Weather forecast tables and the Local Traffic table.
+  the Weather forecast tables.
 - Rules: a page defines only its columns (x and header text). Headers use the
   `TableHeader` style and may be mixed case (TXT-5). Cells use `TableCell`.
   The divider runs margin to margin under the headers.
