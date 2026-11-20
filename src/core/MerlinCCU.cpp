@@ -328,6 +328,7 @@ int main()
         .sleep_us = 0U,
     };
     uint32_t last_sampled_frame_count = display::frame_count();
+    uint32_t display_timing_sample_sequence = 0U;
 
     // Initialize the state-producing subsystems before the first frame is drawn
     // so the initial UI reflects real status rather than placeholder defaults.
@@ -737,6 +738,8 @@ int main()
                     UINT16_MAX)),
                 .last_rebuild_us = display::last_rebuild_us(),
                 .present_skipped_count = display::present_skipped_count(),
+                .nominal_frame_rate_hz = display::nominal_frame_rate_hz(),
+                .sample_sequence = ++display_timing_sample_sequence,
             };
             const bool timing_changed = console_controller::set_display_timing_status(timing_status);
             if (timing_changed &&

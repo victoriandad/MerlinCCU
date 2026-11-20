@@ -423,6 +423,96 @@ HOST_TEST(the_alert_list_holds_every_alert_code_at_once)
               static_cast<uint8_t>((kAlertCodeCount + kAlertsPerPage - 1U) / kAlertsPerPage));
 }
 
+namespace
+{
+
+// Bench figures from a Pico 2 W at 150 MHz, clkdiv 2.51 (issue #144).
+constexpr uint16_t kBenchNominalFrameRateHz = 297U;
+constexpr uint16_t kBenchSlowFrameRateHz = 150U;
+
+/// Delivers one new one-second display timing sample, as the main loop does.
+void feed_display_timing(ConsoleState& state, uint16_t frame_rate_hz)
+{
+    state.display_timing_status.valid = true;
+    state.display_timing_status.frame_rate_hz = frame_rate_hz;
+    state.display_timing_status.nominal_frame_rate_hz = kBenchNominalFrameRateHz;
+    ++state.display_timing_status.sample_sequence;
+    alert_controller::sync(state);
+}
+
+bool has_alert(const ConsoleState& state, AlertCode code)
+{
+    for (uint8_t i = 0U; i < state.alert_count; ++i)
+    {
+        if (state.active_alerts[i].code == static_cast<uint8_t>(code))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+HOST_TEST(display_lag_needs_five_consecutive_slow_samples)
+{
+    ConsoleState state = make_healthy_state();
+    for (int i = 0; i < 4; ++i)
+    {
+        feed_display_timing(state, kBenchSlowFrameRateHz);
+    }
+    EXPECT_FALSE(has_alert(state, AlertCode::DisplayPipelineLag));
+
+    feed_display_timing(state, kBenchSlowFrameRateHz);
+    EXPECT_TRUE(has_alert(state, AlertCode::DisplayPipelineLag));
+}
+
+HOST_TEST(display_lag_ignores_a_single_slow_sample)
+{
+    ConsoleState state = make_healthy_state();
+    feed_display_timing(state, kBenchSlowFrameRateHz);
+    // Many state changes inside one sample window must not count as more samples.
+    for (int i = 0; i < 10; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    feed_display_timing(state, kBenchNominalFrameRateHz);
+    for (int i = 0; i < 4; ++i)
+    {
+        feed_display_timing(state, kBenchSlowFrameRateHz);
+    }
+    EXPECT_FALSE(has_alert(state, AlertCode::DisplayPipelineLag));
+}
+
+HOST_TEST(display_lag_clears_once_the_frame_rate_recovers)
+{
+    ConsoleState state = make_healthy_state();
+    for (int i = 0; i < 5; ++i)
+    {
+        feed_display_timing(state, kBenchSlowFrameRateHz);
+    }
+    EXPECT_TRUE(has_alert(state, AlertCode::DisplayPipelineLag));
+    const ActiveAlert& alert = state.active_alerts[0];
+    EXPECT_TRUE(std::strstr(alert.detail.data(), "150 Hz, expected 297 Hz") != nullptr);
+
+    feed_display_timing(state, kBenchNominalFrameRateHz);
+    EXPECT_FALSE(has_alert(state, AlertCode::DisplayPipelineLag));
+}
+
+HOST_TEST(display_lag_needs_a_valid_sample_with_a_known_nominal_rate)
+{
+    ConsoleState state = make_healthy_state();
+    for (int i = 0; i < 5; ++i)
+    {
+        state.display_timing_status.nominal_frame_rate_hz = 0U;
+        state.display_timing_status.frame_rate_hz = 0U;
+        state.display_timing_status.valid = true;
+        ++state.display_timing_status.sample_sequence;
+        alert_controller::sync(state);
+    }
+    EXPECT_FALSE(has_alert(state, AlertCode::DisplayPipelineLag));
+}
+
 HOST_TEST(list_page_count_rounds_up_and_never_returns_zero)
 {
     EXPECT_EQ(list_page_count(0U, 8U), 1U);

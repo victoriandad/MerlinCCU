@@ -30,7 +30,16 @@ uint8_t g_mqtt_connect_failures = 0U;
 uint8_t g_air_traffic_fetch_failures = 0U;
 uint8_t g_time_unsynced_samples = 0U;
 uint8_t g_keypad_fault_samples = 0U;
+uint8_t g_display_slow_frame_samples = 0U;
+uint32_t g_display_timing_last_sequence = 0U;
 constexpr uint8_t kAlertRetryThreshold = 5U;
+/// Scanout is counted as lagging when the measured frame-boundary rate falls
+/// below this share of the rate the clocks should give. The bench rate tracks
+/// the nominal one exactly (297 Hz on a Pico 2 W, issue #144), and a flash
+/// erase that holds off interrupts costs only a few percent of one sample, so
+/// a quarter lost is a real stall rather than noise.
+constexpr uint32_t kDisplayFrameRateFloorPercent = 75U;
+constexpr uint32_t kPercentScale = 100U;
 constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
 constexpr float kHighTemperatureAlertCelsius = 30.0F;
 constexpr float kHighWindAlertMph = 40.0F;
@@ -318,6 +327,31 @@ bool local_pressure_storm_warning(
     return true;
 }
 
+/// @brief Debounces the display scanout rate once per new timing sample.
+/// @details `sync()` runs on every console state change, so counting calls
+/// would make the debounce depend on keypresses. The sample sequence moves once
+/// per one-second window, so five slow samples mean five slow seconds.
+bool display_pipeline_lagging(const DisplayTimingStatus& timing)
+{
+    if (timing.sample_sequence != g_display_timing_last_sequence)
+    {
+        g_display_timing_last_sequence = timing.sample_sequence;
+        const bool slow_now =
+            timing.valid && timing.nominal_frame_rate_hz > 0U &&
+            static_cast<uint32_t>(timing.frame_rate_hz) * kPercentScale <
+                static_cast<uint32_t>(timing.nominal_frame_rate_hz) * kDisplayFrameRateFloorPercent;
+        if (!slow_now)
+        {
+            g_display_slow_frame_samples = 0U;
+        }
+        else if (g_display_slow_frame_samples < UINT8_MAX)
+        {
+            ++g_display_slow_frame_samples;
+        }
+    }
+    return g_display_slow_frame_samples >= kAlertRetryThreshold;
+}
+
 } // namespace
 
 void sync(ConsoleState& console_state)
@@ -556,12 +590,19 @@ void sync(ConsoleState& console_state)
                         AlertSeverity::Warning, "STORM WARN",
                         pressure_storm_warning ? alert_detail_scratch : "");
 
-    // Placeholder: enable this once render/frame timing counters are exposed to console state.
-    const bool display_pipeline_lag = false;
+    const DisplayTimingStatus& display_timing = console_state.display_timing_status;
+    const bool display_pipeline_lag = display_pipeline_lagging(display_timing);
+    if (display_pipeline_lag)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "Display scanout is running at %u Hz, expected %u Hz.\nScreen updates may "
+                      "be delayed and the panel may flicker.\nRestart the CCU if it persists.",
+                      static_cast<unsigned>(display_timing.frame_rate_hz),
+                      static_cast<unsigned>(display_timing.nominal_frame_rate_hz));
+    }
     set_alert_condition(console_state, AlertCode::DisplayPipelineLag, display_pipeline_lag,
-                        AlertSeverity::Message, "DISPLAY LAG",
-                        "Display update pipeline is lagging.\nAdd frame timing telemetry to "
-                        "activate this alert.");
+                        AlertSeverity::Warning, "DISPLAY LAG",
+                        display_pipeline_lag ? alert_detail_scratch : "");
 
     const bool share_data_unavailable = console_state.share_data_configured &&
                                         !console_state.share_data_valid &&
@@ -736,6 +777,8 @@ void reset()
     g_air_traffic_fetch_failures = 0U;
     g_time_unsynced_samples = 0U;
     g_keypad_fault_samples = 0U;
+    g_display_slow_frame_samples = 0U;
+    g_display_timing_last_sequence = 0U;
     g_alert_suppressed.fill(false);
     g_alert_was_active.fill(false);
     g_alert_occurrences.fill(0U);

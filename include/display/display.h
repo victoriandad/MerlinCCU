@@ -43,4 +43,11 @@ uint32_t last_rebuild_us();
 /// presenting faster than the panel can adopt frames.
 uint32_t present_skipped_count();
 
+/// @brief Returns the scanout frame rate the current clocks should produce.
+/// @details Derived from `clk_sys`, the active PIO clock divider and the raster
+/// size, so it follows live `set_clkdiv()` changes. `frame_count()` measured
+/// against this tells whether scanout or its frame-boundary interrupt is
+/// falling behind, without hard-coding a rate that #55 may still retune.
+uint16_t nominal_frame_rate_hz();
+
 } // namespace display
