@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string_view>
 
 /// @brief Small bounded text/endpoint helpers shared across config persistence
 /// and the network managers (see issue #64). Kept header-only and dependency
@@ -125,6 +126,80 @@ inline bool parse_host_and_optional_port(const char* text, char* host_out, size_
         *end_out = end;
     }
 
+    return true;
+}
+
+/// @brief One endpoint scheme a client accepts, and the port it implies.
+struct EndpointScheme
+{
+    std::string_view prefix;
+    uint16_t default_port;
+    bool uses_tls;
+};
+
+inline constexpr uint16_t kHttpDefaultPort = 80U;
+inline constexpr uint16_t kHttpsDefaultPort = 443U;
+inline constexpr uint16_t kMqttDefaultPort = 1883U;
+
+/// @brief Schemes accepted for Home Assistant REST and the shares feed.
+inline constexpr std::array<EndpointScheme, 2> kHttpSchemes = {{
+    {"http://", kHttpDefaultPort, false},
+    {"https://", kHttpsDefaultPort, true},
+}};
+
+/// @brief Schemes accepted for the MQTT broker. Both mean plain TCP.
+inline constexpr std::array<EndpointScheme, 2> kMqttSchemes = {{
+    {"mqtt://", kMqttDefaultPort, false},
+    {"tcp://", kMqttDefaultPort, false},
+}};
+
+/// @brief Parses `[scheme://]host[:port]` the way a URL is read.
+/// @details A URL carries its own port: `http://ha.lan/` means port 80 and
+/// `https://` means 443, just as a browser reads them. Only a bare host falls
+/// back to `configured_port`, the separate Port setting. An explicit `:port`
+/// always wins. Without this, `http://ha.lan/` silently kept the 8123 default
+/// and never reached a Home Assistant served on port 80.
+/// @param text Endpoint text from config.
+/// @param schemes Schemes this client accepts; anything else is read as a host.
+/// @param configured_port Port used when `text` has neither a scheme nor `:port`.
+/// @param tls_out Optional; set when the matched scheme uses TLS.
+/// @param end_out Optional; receives the first unparsed character (a path or '\0').
+/// @return false if the host is empty or too long, or the `:port` is invalid.
+template <size_t N>
+inline bool parse_endpoint(const char* text, const std::array<EndpointScheme, N>& schemes,
+                           uint16_t configured_port, char* host_out, size_t host_out_size,
+                           uint16_t* port_out, bool* tls_out = nullptr,
+                           const char** end_out = nullptr)
+{
+    if (text == nullptr || host_out == nullptr || port_out == nullptr)
+    {
+        return false;
+    }
+
+    const char* host_start = text;
+    uint16_t port = configured_port;
+    bool uses_tls = false;
+    for (const EndpointScheme& scheme : schemes)
+    {
+        if (std::strncmp(text, scheme.prefix.data(), scheme.prefix.size()) == 0)
+        {
+            host_start = text + scheme.prefix.size();
+            port = scheme.default_port;
+            uses_tls = scheme.uses_tls;
+            break;
+        }
+    }
+
+    if (!parse_host_and_optional_port(host_start, host_out, host_out_size, &port, end_out))
+    {
+        return false;
+    }
+
+    *port_out = port;
+    if (tls_out != nullptr)
+    {
+        *tls_out = uses_tls;
+    }
     return true;
 }
 

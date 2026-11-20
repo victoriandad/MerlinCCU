@@ -37,6 +37,7 @@ add_executable(host_tests
     test_bounded_json.cpp
     test_share_feed_parser.cpp
     test_air_traffic_response_parser.cpp
+    test_text_utils.cpp
     test_golden_screens.cpp
     test_page_coverage.cpp
     test_pinter_controller.cpp
