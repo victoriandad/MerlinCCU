@@ -67,7 +67,6 @@ add_executable(MerlinCCU
     src/config/config_persistence.cpp
     src/display/display.cpp
     src/display/framebuffer.cpp
-    src/display/air_traffic_screens.cpp
     src/display/alert_screens.cpp
     src/display/calendar_screens.cpp
     src/display/pinter_screens.cpp
@@ -87,8 +86,6 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_starfield.cpp
     src/display/screensavers/screensaver_worms.cpp
     src/network/date_time_math.cpp
-    src/network/air_traffic_manager.cpp
-    src/network/air_traffic_response_parser.cpp
     src/network/bounded_json.cpp
     src/network/home_assistant_manager.cpp
     src/network/home_assistant_weather_parser.cpp

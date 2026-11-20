@@ -37,7 +37,7 @@ using text_styles::TextStyle;
 /// @brief Fixed boot-uptime for every render, so freshness text is stable.
 constexpr uint32_t kCoverageNowMs = 900000U;
 
-constexpr int kMenuPageCount = static_cast<int>(MenuPage::AirTraffic) + 1;
+constexpr int kMenuPageCount = static_cast<int>(MenuPage::ShareDetail) + 1;
 
 constexpr std::array<ButtonId, static_cast<size_t>(SoftKeyId::Count)> kSoftkeyButtons = {
     ButtonId::LeftTop,    ButtonId::LeftUpper,  ButtonId::LeftMiddle, ButtonId::LeftLower,
@@ -63,7 +63,6 @@ constexpr std::array<const char*, kMenuPageCount> kPageNames = {
     "wifi_settings",
     "home_assistant_settings",
     "mqtt_settings",
-    "air_traffic_settings",
     "screen_saver_settings",
     "screen_saver_options",
     "weather_sources",
@@ -77,7 +76,6 @@ constexpr std::array<const char*, kMenuPageCount> kPageNames = {
     "pinter_start_timing",
     "shares",
     "share_detail",
-    "air_traffic",
 };
 
 void press(ButtonId id)
@@ -86,7 +84,7 @@ void press(ButtonId id)
 }
 
 /// @brief Resets the controller and feeds it the data a working CCU has:
-/// Wi-Fi, two watched shares, a live sensor board, nearby aircraft, and one
+/// Wi-Fi, two watched shares, a live sensor board, and one
 /// active alert (a keypad line fault), so every page has something to
 /// show and every data-gated key exists.
 void start_with_data()
@@ -145,29 +143,6 @@ void start_with_data()
         sensor.air_quality_history_score[i] = static_cast<uint8_t>(90 + (wave / 3));
     }
     (void)console_controller::set_environment_sensor_status(sensor);
-
-    AirTrafficStatus traffic = {};
-    traffic.enabled = true;
-    traffic.configured = true;
-    traffic.data_valid = true;
-    traffic.configured_radius_nm = 30U;
-    traffic.aircraft_count = 3U;
-    traffic.last_success_ms = kCoverageNowMs - 5000U;
-    const std::array<const char*, 3> callsigns = {"BAW123", "EZY45", "RYR8KJ"};
-    for (uint8_t i = 0U; i < traffic.aircraft_count; ++i)
-    {
-        AirTrafficEntry& entry = traffic.aircraft[i];
-        std::snprintf(entry.callsign.data(), entry.callsign.size(), "%s", callsigns[i]);
-        std::snprintf(entry.distance_text.data(), entry.distance_text.size(), "%u.0nm",
-                      static_cast<unsigned>(4U + (i * 7U)));
-        std::snprintf(entry.altitude_text.data(), entry.altitude_text.size(), "%u00ft",
-                      static_cast<unsigned>(80U + (i * 90U)));
-        std::snprintf(entry.bearing_text.data(), entry.bearing_text.size(), "%u",
-                      static_cast<unsigned>(40U + (i * 110U)));
-        entry.distance_deci_nm = static_cast<int16_t>(40 + (i * 70));
-        entry.bearing_deg = static_cast<int16_t>(40 + (i * 110));
-    }
-    (void)console_controller::set_air_traffic_status(traffic);
 
     TimeStatus time = {};
     time.synced = true;
@@ -400,7 +375,7 @@ HOST_TEST(the_role_check_catches_an_inverse_toggle_and_an_inert_labelled_key)
 
     softkeys.fill(softkey::blank());
     softkeys[static_cast<size_t>(SoftKeyId::Right5)] =
-        softkey::view(SoftKeyId::Right5, "VIEW", "Map", SoftKeyRoute::ToggleAirTrafficViewMode);
+        softkey::view(SoftKeyId::Right5, "PERIOD", "Today", SoftKeyRoute::CycleWeatherPeriod);
     EXPECT_EQ(role_problems(softkeys).size(), 1U);
 }
 
@@ -414,10 +389,10 @@ HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
     EXPECT_FALSE(softkey_label_fits("A VERY LONG CAPTION THAT WRAPS\n[and a long value too]",
                                     TextStyle::Softkey, 2));
 
-    // Local Traffic without coordinates draws Info rows from x 50, y 44: a
-    // label on L1 would sit on top of them.
+    // Resources draws its PROGRAM FLASH bar from the top-left of the body: a
+    // label on L1 would sit on top of it.
     ConsoleState state = {};
-    state.active_page = MenuPage::AirTraffic;
+    state.active_page = MenuPage::StatusResources;
     EXPECT_TRUE(body_overlaps(state).empty());
     state.softkeys[static_cast<size_t>(SoftKeyId::Left1)] = {"TEST", SoftKeyRoute::None, true};
     EXPECT_FALSE(body_overlaps(state).empty());

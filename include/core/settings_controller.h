@@ -54,9 +54,6 @@ const char* device_identity_selection_text();
 /// @brief Formats a numeric port for bracketed softkey labels.
 const char* port_selection_text(SoftKeyId key, uint16_t port);
 
-/// @brief Formats a nautical-mile radius for bracketed softkey labels.
-const char* radius_nm_selection_text(SoftKeyId key, uint16_t radius_nm);
-
 /// @brief Moves the top-level settings menu between paged section groups.
 bool change_page(ConsoleState& console_state, int direction);
 
@@ -100,9 +97,6 @@ const char* share_period_name(SharePeriod period);
 /// @brief Returns the currently selected share history period label.
 const char* share_period_selection_text(const ConsoleState& console_state);
 
-/// @brief Returns the Local Traffic page's current presentation mode label.
-const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state);
-
 /// @brief Returns the currently selected screen-saver label for menu softkeys.
 const char* screen_saver_selection_text(const ConsoleState& console_state);
 
@@ -121,12 +115,6 @@ bool cycle_weather_period(ConsoleState& console_state);
 /// @brief Advances the active share detail period without touching persisted config.
 bool cycle_share_period(ConsoleState& console_state);
 
-/// @brief Toggles the Local Traffic page between the Tabular and Plot views.
-bool toggle_air_traffic_view_mode(ConsoleState& console_state);
-
-/// @brief Returns the number of tabular Local Traffic pages for the current aircraft count.
-uint8_t air_traffic_page_count(const ConsoleState& console_state);
-
 /// @brief Opens the requested share detail page from the current watchlist.
 bool select_share_slot(ConsoleState& console_state, uint8_t slot);
 
@@ -144,9 +132,6 @@ bool toggle_home_assistant_enabled();
 
 /// @brief Toggles the MQTT discovery integration enable flag.
 bool toggle_mqtt_enabled();
-
-/// @brief Toggles the local ADS-B air-traffic feed enable flag.
-bool toggle_air_traffic_enabled();
 
 /// @brief Leaves the timeout scratchpad and restores normal page navigation.
 bool stop_timeout_editing(ConsoleState& console_state);

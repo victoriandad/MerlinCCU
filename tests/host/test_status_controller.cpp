@@ -65,18 +65,6 @@ HOST_TEST(set_home_assistant_status_always_copies_but_excludes_last_success_ms_f
     EXPECT_EQ(state.home_assistant_status.weather_last_success_ms, 12345U);
 }
 
-HOST_TEST(set_air_traffic_status_always_copies_but_excludes_last_success_ms_from_change_detection)
-{
-    ConsoleState state = {};
-    AirTrafficStatus status = {};
-    status.enabled = true;
-    EXPECT_TRUE(status_controller::set_air_traffic_status(state, status));
-
-    status.last_success_ms = 999U;
-    EXPECT_FALSE(status_controller::set_air_traffic_status(state, status));
-    EXPECT_EQ(state.air_traffic_status.last_success_ms, 999U);
-}
-
 HOST_TEST(set_share_market_status_always_copies_last_success_ms_but_excludes_it_from_change_detection)
 {
     ConsoleState state = {};

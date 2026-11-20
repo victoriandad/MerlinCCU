@@ -50,17 +50,6 @@ HOST_TEST(extract_bounded_number_returns_false_when_key_is_missing)
     EXPECT_FALSE(bounded_json::extract_bounded_number(json, end, "\"dst\"", &value));
 }
 
-HOST_TEST(bounded_value_is_string_distinguishes_quoted_from_numeric)
-{
-    const char* json = "{\"alt_baro\":\"ground\"}";
-    const char* end = json + std::strlen(json);
-    EXPECT_TRUE(bounded_json::bounded_value_is_string(json, end, "\"alt_baro\""));
-
-    const char* numeric_json = "{\"alt_baro\":5000}";
-    const char* numeric_end = numeric_json + std::strlen(numeric_json);
-    EXPECT_FALSE(bounded_json::bounded_value_is_string(numeric_json, numeric_end, "\"alt_baro\""));
-}
-
 HOST_TEST(find_object_end_is_string_aware)
 {
     const char* json = "{\"note\":\"a } inside a string\",\"x\":1}";

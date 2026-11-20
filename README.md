@@ -256,7 +256,7 @@ Core firmware:
 - `include/core/calendar_controller.h` / `src/core/calendar_controller.cpp`: calendar owner/day filtering and event-detail lookup.
 - `include/core/settings_controller.h` / `src/core/settings_controller.cpp`: Settings page navigation and runtime-config selection helpers.
 - `include/core/status_controller.h` / `src/core/status_controller.cpp`: manager-status ingestion (`set_*_status()`).
-- `include/display/screens.h` / `src/display/screens.cpp`: shared drawing primitives and page dispatch; per-page-family rendering lives in `status_screens.cpp`, `weather_screens.cpp`, `air_traffic_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`, `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`, and `screen_banners.cpp`.
+- `include/display/screens.h` / `src/display/screens.cpp`: shared drawing primitives and page dispatch; per-page-family rendering lives in `status_screens.cpp`, `weather_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`, `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`, and `screen_banners.cpp`.
 - `include/core/input.h` / `src/core/input.cpp`: keypad polling, matrix probing, debounced button events, and diagnostics.
 
 Network/config managers:

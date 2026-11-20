@@ -267,9 +267,6 @@ void make_default_console_state(ConsoleState& out)
     out.keypad_debug_status.probe_hit_mask = 0;
     out.keypad_debug_status.probe_hit_count = 0;
     out.keypad_debug_status.probe_hit_panel_pins.fill('\0');
-    out.air_traffic_status = {};
-    out.air_traffic_view_mode = AirTrafficViewMode::Tabular;
-    out.air_traffic_page_index = 0U;
     out.alert_count = 0U;
     out.alert_list_page_index = 0U;
     out.alert_detail_index = 0U;

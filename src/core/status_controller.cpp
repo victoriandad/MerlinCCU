@@ -205,16 +205,6 @@ bool set_mqtt_status(ConsoleState& console_state, const MqttStatus& mqtt_status)
     return true;
 }
 
-bool set_air_traffic_status(ConsoleState& console_state,
-                            const AirTrafficStatus& air_traffic_status)
-{
-    // See set_home_assistant_status() above: last_success_ms is deliberately
-    // excluded from operator== but must still always be copied through.
-    const bool changed = !(console_state.air_traffic_status == air_traffic_status);
-    console_state.air_traffic_status = air_traffic_status;
-    return changed;
-}
-
 bool set_share_market_status(ConsoleState& console_state,
                              const ShareMarketStatus& share_market_status)
 {

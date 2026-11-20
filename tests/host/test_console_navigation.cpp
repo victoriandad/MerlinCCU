@@ -286,7 +286,7 @@ HOST_TEST(every_page_is_reachable_and_back_step_returns_to_a_page_that_leads_the
         reached.insert(entry.first.first);
     }
 
-    for (int value = 0; value <= static_cast<int>(MenuPage::AirTraffic); ++value)
+    for (int value = 0; value <= static_cast<int>(MenuPage::ShareDetail); ++value)
     {
         if (not_softkey_reachable.count(value) != 0U)
         {

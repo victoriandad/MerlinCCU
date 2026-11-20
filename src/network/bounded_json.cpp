@@ -110,24 +110,6 @@ bool extract_bounded_number(const char* start, const char* end, const char* key,
     return true;
 }
 
-bool bounded_value_is_string(const char* start, const char* end, const char* key)
-{
-    const char* cursor = find_bounded(start, end, key);
-    if (cursor == nullptr)
-    {
-        return false;
-    }
-
-    cursor = std::strchr(cursor, ':');
-    if (cursor == nullptr || cursor >= end)
-    {
-        return false;
-    }
-
-    cursor = skip_space(cursor + 1);
-    return cursor != nullptr && cursor < end && *cursor == '"';
-}
-
 const char* find_object_end(const char* obj_start, const char* buffer_end)
 {
     if (obj_start >= buffer_end || *obj_start != '{')

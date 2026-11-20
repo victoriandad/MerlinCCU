@@ -68,13 +68,6 @@ struct RuntimeConfig
     std::array<char, 32> mqtt_discovery_prefix;
     std::array<char, 64> mqtt_base_topic;
 
-    bool air_traffic_enabled;
-    std::array<char, 64> air_traffic_host;
-    uint16_t air_traffic_port;
-    std::array<char, 128> air_traffic_api_key;
-    std::array<char, 64> air_traffic_coordinates;
-    uint16_t air_traffic_radius_nm;
-
     WeatherSource weather_source;
     TimeZoneSelection time_zone;
     ScreenSaverSelection screen_saver;
@@ -85,9 +78,8 @@ struct RuntimeConfig
 
     /// @brief Local share-price feed (issue #42), reusing home_assistant_host/
     /// home_assistant_port -- kept as its own enable flag and token rather
-    /// than folded into the Home Assistant section, matching how
-    /// air_traffic_enabled/air_traffic_api_key stay independent of it even
-    /// though both are "local integrations". See docs/share-feed-design.md.
+    /// than folded into the Home Assistant section, so the feed can be
+    /// switched off without touching HA. See docs/share-feed-design.md.
     bool shares_feed_enabled;
     std::array<char, 128> shares_feed_token;
 };
