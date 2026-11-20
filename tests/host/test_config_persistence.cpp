@@ -11,9 +11,11 @@ using config_persistence::ConfigSlot;
 using config_persistence::LegacyConfigSlotV1;
 using config_persistence::LegacyConfigSlotV2;
 using config_persistence::LegacyConfigSlotV3;
+using config_persistence::LegacyConfigSlotV4;
 using config_persistence::LegacyRuntimeConfigV1;
 using config_persistence::LegacyRuntimeConfigV2;
 using config_persistence::LegacyRuntimeConfigV3;
+using config_persistence::LegacyRuntimeConfigV4;
 
 namespace
 {
@@ -234,6 +236,72 @@ HOST_TEST(validate_legacy_slot_v3_accepts_a_correctly_built_slot)
                                           sizeof(LegacyRuntimeConfigV3));
 
     EXPECT_TRUE(config_persistence::validate_legacy_slot_v3(slot));
+}
+
+HOST_TEST(migrate_legacy_settings_v4_carries_every_field_forward)
+{
+    LegacyRuntimeConfigV4 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName4");
+    text_utils::copy_text(legacy.home_assistant_host, "ha.lan");
+    legacy.home_assistant_port = 80;
+    legacy.home_assistant_enabled = true;
+    text_utils::copy_text(legacy.home_assistant_token, "short-old-token");
+    text_utils::copy_text(legacy.home_assistant_entity_id, "sensor.thing");
+    legacy.watched_share_count = 1U;
+    text_utils::copy_text(legacy.watched_shares[0].symbol, "CCC");
+    legacy.shares_feed_enabled = true;
+    text_utils::copy_text(legacy.shares_feed_token, "feed-token");
+    legacy.mqtt_port = 1887;
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v4(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName4") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_host.data(), "ha.lan") == 0);
+    EXPECT_EQ(migrated.home_assistant_port, 80U);
+    EXPECT_TRUE(migrated.home_assistant_enabled);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_token.data(), "short-old-token") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_entity_id.data(), "sensor.thing") == 0);
+    EXPECT_EQ(migrated.watched_share_count, 1U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[0].symbol.data(), "CCC") == 0);
+    EXPECT_TRUE(migrated.shares_feed_enabled);
+    EXPECT_TRUE(std::strcmp(migrated.shares_feed_token.data(), "feed-token") == 0);
+    EXPECT_EQ(migrated.mqtt_port, 1887U);
+}
+
+HOST_TEST(validate_legacy_slot_v4_accepts_a_correctly_built_slot)
+{
+    LegacyRuntimeConfigV4 legacy = {};
+    text_utils::copy_text(legacy.device_name, "V4Device");
+    LegacyConfigSlotV4 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV4;
+    slot.sequence = 5U;
+    slot.payload_size = sizeof(LegacyRuntimeConfigV4);
+    slot.settings = legacy;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(LegacyRuntimeConfigV4));
+
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v4(slot));
+}
+
+HOST_TEST(current_slot_round_trips_a_full_length_home_assistant_token)
+{
+    // Real HA long-lived tokens are ~183 characters; the old 128-byte field
+    // could not hold one, so the web form always refused to save HA settings.
+    constexpr size_t kTypicalHaTokenLength = 183U;
+    std::array<char, kTypicalHaTokenLength + 1U> token = {};
+    for (size_t i = 0U; i < kTypicalHaTokenLength; ++i)
+    {
+        token[i] = static_cast<char>('a' + (i % 26U));
+    }
+
+    RuntimeConfig settings = config_persistence::make_default_settings();
+    text_utils::copy_text(settings.home_assistant_token, token.data());
+    const ConfigSlot slot = make_valid_slot(settings, 9U);
+
+    EXPECT_TRUE(config_persistence::validate_slot(slot));
+    EXPECT_EQ(std::strlen(slot.settings.home_assistant_token.data()), kTypicalHaTokenLength);
+    EXPECT_TRUE(std::strcmp(slot.settings.home_assistant_token.data(), token.data()) == 0);
 }
 
 HOST_TEST(make_default_settings_disables_the_shares_feed_by_default)
