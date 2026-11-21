@@ -3,10 +3,12 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <limits>
 
 #include "console_controller_internal.h"
 #include "date_time_math.h"
 #include "pinter_store.h"
+#include "softkey_builders.h"
 #include "text_case.h"
 
 namespace pinter_controller
@@ -514,7 +516,7 @@ bool confirm_start(ConsoleState& console_state)
 }
 
 /// @details Idle is not handled here: R1 navigates straight to the recipe
-/// catalogue (SoftKeyRoute::GoPinterSelectBrew) instead of calling this,
+/// catalogue (MenuPage::PinterSelectBrew) instead of calling this,
 /// since starting needs a recipe choice made on the fly first.
 bool apply_primary_action(ConsoleState& console_state)
 {
@@ -562,6 +564,161 @@ bool flush_pending_save(ConsoleState& console_state)
 
     g_pinter_save_pending = false;
     return pinter_store::save(console_state.pinters);
+}
+
+void enter_select_brew(ConsoleState& console_state)
+{
+    clamp_list_page(console_state.pinter_catalogue_page_index, brew_catalogue_count());
+}
+
+void build_pinter_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    if (console_state.pinter_reset_confirming)
+    {
+        // Decision state: only decline (L5) and confirm (R5) (NAV-3).
+        update_block_reason(console_state);
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CANCEL", SoftKeyRoute::CancelPinterReset));
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action("RESET", SoftKeyRoute::ConfirmPinterReset));
+        return;
+    }
+
+    for (size_t i = 0U; i < console_state.pinters.size(); ++i)
+    {
+        const SoftKeyId slot = softkey::kListSlots[i];
+        softkey::set(softkeys, slot,
+                     softkey::item(build_slot_softkey_label(console_state, slot,
+                                                            console_state.pinters[i]),
+                                   SoftKeyRoute::SelectPinterSlot, static_cast<uint8_t>(i),
+                                   i == console_state.selected_pinter_index));
+    }
+
+    // R1 starts a brew on an idle vessel (opening Select Brew) or applies the
+    // selected vessel's next event. When it cannot act, it becomes a status
+    // key showing why (SK-5), and the footer repeats the reason.
+    const bool selected_idle = selected_const(console_state).state == PinterState::Idle;
+    const bool primary_can_act = selected_idle
+                                     ? brew_dock_count(console_state) < kPinterBrewDockCapacity
+                                     : primary_action_enabled(console_state);
+    const char* primary_label = build_primary_action_label(SoftKeyId::Right1, console_state);
+    if (!primary_can_act)
+    {
+        softkey::set(softkeys, SoftKeyId::Right1, softkey::status(primary_label));
+    }
+    else if (selected_idle)
+    {
+        softkey::set(softkeys, SoftKeyId::Right1,
+                     softkey::navigate(primary_label, MenuPage::PinterSelectBrew));
+    }
+    else
+    {
+        softkey::set(softkeys, SoftKeyId::Right1,
+                     softkey::action(primary_label, SoftKeyRoute::ApplyPinterPrimaryAction));
+    }
+    update_block_reason(console_state);
+
+    // Keys that cannot act are left blank rather than shown as bare labels
+    // that do nothing (SK-5).
+    if (!selected_idle)
+    {
+        softkey::set(softkeys, SoftKeyId::Right3,
+                     softkey::action("RESET", SoftKeyRoute::RequestPinterReset));
+    }
+    const uint8_t stage_days =
+        pinter_scheduling::current_stage_planned_days(selected_const(console_state));
+    if (stage_days > 1U)
+    {
+        softkey::set(softkeys, SoftKeyId::Right2,
+                     softkey::step("-1 DAY", SoftKeyRoute::DecreaseSelectedPinterDay));
+    }
+    if (stage_days > 0U && stage_days < std::numeric_limits<uint8_t>::max())
+    {
+        softkey::set(softkeys, SoftKeyId::Right4,
+                     softkey::step("+1 DAY", SoftKeyRoute::IncreaseSelectedPinterDay));
+    }
+}
+
+void build_select_brew_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // On-the-fly recipe pick: whichever pack is in hand right now, straight
+    // from the full catalogue -- no pre-planned reservation step. R4 carries
+    // the eighth item; BACK STEP returns to Pinter (NAV-5).
+    const size_t base_index =
+        static_cast<size_t>(console_state.pinter_catalogue_page_index) * kPinterBrewListVisibleCount;
+    for (uint8_t i = 0U; i < kPinterBrewListVisibleCount; ++i)
+    {
+        const size_t brew_index = base_index + i;
+        if (brew_index >= brew_catalogue_count())
+        {
+            break;
+        }
+        const SoftKeyId key = softkey::kListSlots[i];
+        softkey::set(softkeys, key,
+                     softkey::item(build_catalogue_item_label(key, static_cast<uint8_t>(brew_index)),
+                                   SoftKeyRoute::SelectPinterListItem, i));
+    }
+}
+
+void build_start_timing_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // Decision state for a brew start: presets on row 1, one duration per row
+    // with -/+ on opposite sides, CANCEL at L5 and START at R5 (NAV-3). A step
+    // key is blank when its value is at the limit, so every labelled key acts
+    // (SK-5).
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::action("MINIMUM", SoftKeyRoute::SelectPinterMinimumTiming));
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::action("RECOMMENDED", SoftKeyRoute::SelectPinterRecommendedTiming));
+
+    struct DurationRow
+    {
+        SoftKeyId minus_key;
+        SoftKeyId plus_key;
+        const char* minus_caption;
+        const char* plus_caption;
+        uint8_t days;
+        uint8_t min_days;
+        uint8_t max_days;
+        SoftKeyRoute minus_route;
+        SoftKeyRoute plus_route;
+    };
+    const std::array<DurationRow, 3> rows = {{
+        {SoftKeyId::Left2, SoftKeyId::Right2, "CRASH -", "CRASH +",
+         console_state.pinter_pending_cold_crash_days, kMinColdCrashDays, kMaxColdCrashDays,
+         SoftKeyRoute::DecreasePinterColdCrashDays, SoftKeyRoute::IncreasePinterColdCrashDays},
+        {SoftKeyId::Left3, SoftKeyId::Right3, "BREW -", "BREW +",
+         console_state.pinter_pending_brewing_days, kMinBrewDays, kMaxBrewDays,
+         SoftKeyRoute::DecreasePinterBrewDays, SoftKeyRoute::IncreasePinterBrewDays},
+        {SoftKeyId::Left4, SoftKeyId::Right4, "COND -", "COND +",
+         console_state.pinter_pending_conditioning_days, kMinConditioningDays,
+         kMaxConditioningDays, SoftKeyRoute::DecreasePinterConditioningDays,
+         SoftKeyRoute::IncreasePinterConditioningDays},
+    }};
+    for (const DurationRow& row : rows)
+    {
+        if (row.days > row.min_days)
+        {
+            softkey::set(softkeys, row.minus_key,
+                         softkey::step(build_days_label(row.minus_key, row.minus_caption, row.days),
+                                       row.minus_route));
+        }
+        if (row.days < row.max_days)
+        {
+            softkey::set(softkeys, row.plus_key,
+                         softkey::step(build_days_label(row.plus_key, row.plus_caption, row.days),
+                                       row.plus_route));
+        }
+    }
+
+    softkey::set(softkeys, SoftKeyId::Left5, softkey::action("CANCEL", MenuPage::PinterSelectBrew));
+    if (can_start(console_state))
+    {
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action(SoftKeyId::Right5, "START",
+                                     selected_const(console_state).label.data(),
+                                     SoftKeyRoute::ConfirmPinterStart));
+    }
 }
 
 } // namespace pinter_controller

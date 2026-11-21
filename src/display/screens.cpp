@@ -8,24 +8,16 @@
 #include <cstdio>
 #include <cstring>
 
-#include "alert_screens.h"
-#include "calendar_screens.h"
-#include "config_manager.h"
 #include "console_model.h"
 #include "cursor_navigation.h"
 #include "framebuffer.h"
-#include "local_conditions_screens.h"
+#include "page_table.h"
 #include "panel_config.h"
-#include "pinter_screens.h"
 #include "screen_banners.h"
 #include "screens_shared.h"
-#include "settings_screens.h"
-#include "shares_screens.h"
-#include "status_screens.h"
 #include "text_case.h"
 #include "text_styles.h"
 #include "ui_layout.h"
-#include "weather_screens.h"
 
 namespace screens
 {
@@ -186,77 +178,7 @@ void build_data_freshness_text(bool currently_valid, uint32_t last_success_ms, u
 namespace
 {
 
-/// @brief Returns the page title that matches the active menu route.
-const char* menu_page_title(MenuPage page)
-{
-    switch (page)
-    {
-    case MenuPage::Home:
-        return "HOME";
-    case MenuPage::Calendar:
-        return "CALENDAR";
-    case MenuPage::CalendarDetail:
-        return "EVENT";
-    case MenuPage::Weather:
-        return "WEATHER";
-    case MenuPage::Status:
-        return "STATUS";
-    case MenuPage::StatusOverview:
-        return "OVERVIEW";
-    case MenuPage::StatusConnectivity:
-        return "CONNECT";
-    case MenuPage::StatusResources:
-        return "RESOURCES";
-    case MenuPage::StatusSensors:
-        return "SENSORS";
-    case MenuPage::StatusIntegrations:
-        return "INTEGRATIONS";
-    case MenuPage::LocalConditions:
-        return "LOCAL CONDITIONS";
-    case MenuPage::LocalConditionGraph:
-        return "LOCAL GRAPH";
-    case MenuPage::Settings:
-        return "SETTINGS";
-    case MenuPage::DeviceSettings:
-        return "DEVICE IDENTITY";
-    case MenuPage::WifiSettings:
-        return "NETWORK";
-    case MenuPage::HomeAssistantSettings:
-        return "HOME ASSISTANT";
-    case MenuPage::MqttSettings:
-        return "MQTT DISCOVERY";
-    case MenuPage::ScreenSaverSettings:
-        return "SCREEN SAVER";
-    case MenuPage::ScreenSaverOptions:
-        return "SAVER";
-    case MenuPage::WeatherSources:
-        return "WEATHER SOURCE";
-    case MenuPage::TimeZoneSettings:
-        return "TIME ZONE";
-    case MenuPage::KeypadDebug:
-        return "KEYPAD DEBUG";
-    case MenuPage::GreyscaleTest:
-        return "GREYSCALE";
-    case MenuPage::AlertList:
-        return "ALERTS";
-    case MenuPage::AlertDetail:
-        return "ALERT";
-    case MenuPage::Pinter:
-        return "PINTER";
-    case MenuPage::PinterSelectBrew:
-        return "SELECT BREW";
-    case MenuPage::PinterStartTiming:
-        return "BREW TIMING";
-    case MenuPage::Shares:
-        return "SHARES";
-    case MenuPage::ShareDetail:
-        return "SHARE";
-    }
-
-    return "MENU";
-}
-
-/// @brief Builds the header title for pages that carry a visible page index.
+/// @brief Builds the header title, adding the page position on paged lists.
 const char* menu_page_title(const ConsoleState& console_state, char* buffer, size_t buffer_size)
 {
     if (buffer == nullptr || buffer_size == 0)
@@ -267,16 +189,16 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
     // A paged list shows its position whenever it has more than one page
     // (NAV-9); the position comes from the same definition the cursor keys
     // and footer arrows use.
+    const char* title = page_table::describe(console_state.active_page).title;
     unsigned page = 0U;
     unsigned count = 0U;
     if (cursor_navigation::list_page_position(console_state, page, count))
     {
-        std::snprintf(buffer, buffer_size, "%s %u/%u", menu_page_title(console_state.active_page),
-                      page, count);
+        std::snprintf(buffer, buffer_size, "%s %u/%u", title, page, count);
         return buffer;
     }
 
-    return menu_page_title(console_state.active_page);
+    return title;
 }
 
 /// @brief Width of `text` in one font face; 0 for null or empty text.
@@ -391,64 +313,22 @@ int graph_plot_y(const GraphPlotArea& area, int64_t value, int64_t min_value, in
     return area.y + area.height - 1 - area.inset - normalised;
 }
 
-/// @brief Chooses the softkey text style for the active page.
-/// @details Selection-heavy pages use the dense style so two-line labels fit
-/// comfortably, while diagnostic/detail pages use the standard one.
+/// @details Read from the page's table entry: selection-heavy pages use the
+/// dense style so two-line labels fit, diagnostic and detail pages the
+/// standard one.
 TextStyle softkey_label_style(MenuPage page)
 {
-    switch (page)
-    {
-    case MenuPage::Home:
-    case MenuPage::Settings:
-    case MenuPage::Calendar:
-    case MenuPage::CalendarDetail:
-    case MenuPage::LocalConditions:
-    case MenuPage::LocalConditionGraph:
-    case MenuPage::DeviceSettings:
-    case MenuPage::WifiSettings:
-    case MenuPage::HomeAssistantSettings:
-    case MenuPage::MqttSettings:
-    case MenuPage::WeatherSources:
-    case MenuPage::TimeZoneSettings:
-    case MenuPage::ScreenSaverOptions:
-    case MenuPage::Pinter:
-    case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterStartTiming:
-    case MenuPage::Shares:
-    case MenuPage::ShareDetail:
-        return TextStyle::SoftkeyDense;
-    case MenuPage::Weather:
-    case MenuPage::Status:
-    case MenuPage::StatusOverview:
-    case MenuPage::StatusConnectivity:
-    case MenuPage::StatusResources:
-    case MenuPage::StatusSensors:
-    case MenuPage::StatusIntegrations:
-    case MenuPage::KeypadDebug:
-    case MenuPage::GreyscaleTest:
-    case MenuPage::AlertList:
-    case MenuPage::AlertDetail:
-        return TextStyle::Softkey;
-    case MenuPage::ScreenSaverSettings:
-        return TextStyle::SoftkeyDense;
-    }
-
-    return TextStyle::SoftkeyDense;
+    return page_table::describe(page).label_style;
 }
 
 /// @brief Longest single newline-separated part of a label, in characters.
 constexpr size_t kSoftkeyLabelPartCapacity = 96U;
 
-/// @brief Returns how many lines one softkey label may wrap onto for a page.
-/// @details Most pages cap this at two lines so long labels degrade
-/// gracefully. The Pinter page allows five, so each vessel key can carry its
-/// name, a recipe value wrapped over up to three lines, and the stage with its
-/// countdown (LBL-1). A five-line block still ends above the next key's label
-/// at the 57-pixel key pitch. Its vessel keys are on rows 1-4 only; row 5
-/// keeps one or two lines.
+/// @details Read from the page's table entry; see page_table.cpp for why the
+/// Pinter page allows more than two.
 int softkey_label_max_lines(MenuPage page)
 {
-    return page == MenuPage::Pinter ? kMaxSoftkeyLabelLines : 2;
+    return page_table::describe(page).label_max_lines;
 }
 
 namespace
@@ -1150,21 +1030,15 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
     }
 }
 
-namespace
-{
-
-/// @brief Draws the clean top-level home menu.
 /// @details The page body is intentionally empty so the only visual affordances
 /// are the surrounding labels for the next level of navigation.
-void draw_home_page(uint8_t* fb, const ConsoleState& console_state)
+void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*now_ms*/)
 {
     char ip_text[32] = {};
     draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY,
               home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
               TextStyle::Footer);
 }
-
-} // namespace
 
 /// @brief Draws a simple geometry and fill-pattern test screen.
 /// @details This is meant for quick panel sanity checks, not realistic UI, so it
@@ -1203,71 +1077,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
                                           menu_page_title(console_state, title, sizeof(title)));
     draw_softkeys(fb, console_state);
 
-    switch (console_state.active_page)
+    // A key page with no renderer has an empty body: every value it shows is
+    // on a softkey label (PAGE-2).
+    const page_table::PageRenderer render = page_table::describe(console_state.active_page).render;
+    if (render != nullptr)
     {
-    case MenuPage::Home:
-        draw_home_page(fb, console_state);
-        break;
-    case MenuPage::Calendar:
-        calendar_screens::draw_calendar_page(fb, console_state);
-        break;
-    case MenuPage::CalendarDetail:
-        calendar_screens::draw_calendar_detail_page(fb, console_state);
-        break;
-    case MenuPage::Weather:
-        weather_screens::draw_weather_page(fb, console_state, now_ms);
-        break;
-    case MenuPage::Pinter:
-    case MenuPage::PinterSelectBrew:
-    case MenuPage::PinterStartTiming:
-        pinter_screens::draw_pinter_page(fb, console_state);
-        break;
-    case MenuPage::Shares:
-        shares_screens::draw_shares_page(fb, console_state);
-        break;
-    case MenuPage::ShareDetail:
-        shares_screens::draw_share_detail_page(fb, console_state, now_ms);
-        break;
-    case MenuPage::StatusOverview:
-    case MenuPage::StatusConnectivity:
-    case MenuPage::StatusResources:
-    case MenuPage::StatusSensors:
-    case MenuPage::StatusIntegrations:
-        status_screens::draw_status_page(fb, console_state, now_ms);
-        break;
-    case MenuPage::LocalConditions:
-        local_conditions_screens::draw_local_conditions_page(fb, console_state, now_ms);
-        break;
-    case MenuPage::LocalConditionGraph:
-        local_conditions_screens::draw_local_condition_history_graph(fb, console_state, now_ms);
-        break;
-    case MenuPage::ScreenSaverSettings:
-        settings_screens::draw_screen_saver_page(fb, console_state);
-        break;
-    case MenuPage::Status:
-    case MenuPage::Settings:
-    case MenuPage::TimeZoneSettings:
-    case MenuPage::DeviceSettings:
-    case MenuPage::WifiSettings:
-    case MenuPage::HomeAssistantSettings:
-    case MenuPage::MqttSettings:
-    case MenuPage::WeatherSources:
-    case MenuPage::ScreenSaverOptions:
-        // Key pages with no body: every value they show is on a softkey label
-        // (PAGE-2), so the body is deliberately left empty.
-        break;
-    case MenuPage::KeypadDebug:
-        settings_screens::draw_keypad_debug_page(fb, console_state);
-        break;
-    case MenuPage::GreyscaleTest:
-        settings_screens::draw_greyscale_test_card(fb, console_state);
-        break;
-    case MenuPage::AlertList:
-        alert_screens::draw_alert_list_page(fb, console_state);
-        break;
-    case MenuPage::AlertDetail:
-        alert_screens::draw_alert_detail_page(fb, console_state);
-        break;
+        render(fb, console_state, now_ms);
     }
 
     // Footer arrows for every page, from the same definition the cursor

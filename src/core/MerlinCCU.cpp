@@ -22,6 +22,7 @@
 #include "home_assistant_manager.h"
 #include "input.h"
 #include "mqtt_manager.h"
+#include "page_table.h"
 #include "panel_config.h"
 #include "pinter_store.h"
 #include "screens.h"
@@ -490,14 +491,15 @@ int main()
         log_if_slow("mqtt_manager::update", update_start);
 
         const ConsoleState& console_state = console_controller::state();
-        const bool on_shares_landing = console_state.active_page == MenuPage::Shares;
-        const bool on_share_detail = console_state.active_page == MenuPage::ShareDetail;
+        const page_table::ShareFetch share_fetch =
+            page_table::describe(console_state.active_page).share_fetch;
         // Key handling should always remain snappy, so share-network work backs
         // off while keys are actively being pressed or held.
         const bool share_fetch_enabled =
-            (on_shares_landing || on_share_detail) && !any_key_activity;
-        const SharePeriod share_fetch_period =
-            on_shares_landing ? SharePeriod::Today : console_state.share_period;
+            share_fetch != page_table::ShareFetch::None && !any_key_activity;
+        const SharePeriod share_fetch_period = share_fetch == page_table::ShareFetch::Today
+                                                   ? SharePeriod::Today
+                                                   : console_state.share_period;
         // Local web control should stay responsive even when share data refresh
         // is active, so service the web server before optional market fetches.
         update_start = get_absolute_time();
@@ -627,12 +629,9 @@ int main()
 
             if (absolute_time_diff_us(get_absolute_time(), next_freshness_redraw) <= 0)
             {
-                const MenuPage freshness_page = console_controller::state().active_page;
                 const bool page_shows_freshness =
-                    freshness_page == MenuPage::Weather || freshness_page == MenuPage::Shares ||
-                    freshness_page == MenuPage::ShareDetail ||
-                    freshness_page == MenuPage::StatusIntegrations ||
-                    freshness_page == MenuPage::StatusSensors;
+                    page_table::describe(console_controller::state().active_page).refresh ==
+                    page_table::Refresh::DataAge;
                 if (page_shows_freshness && active_mode != ScreenMode::LifeScreensaver)
                 {
                     console_controller::request_redraw();
@@ -679,9 +678,12 @@ int main()
                 .overflow_reset = stack_guard::last_reset_was_stack_overflow(),
             };
             const bool stack_status_changed = console_controller::set_stack_status(stack_status);
+            const bool page_shows_telemetry =
+                page_table::describe(console_controller::state().active_page).refresh ==
+                    page_table::Refresh::Telemetry &&
+                active_mode != ScreenMode::LifeScreensaver;
             if ((loop_load_changed || heap_status_changed || stack_status_changed) &&
-                console_controller::state().active_page == MenuPage::StatusResources &&
-                active_mode != ScreenMode::LifeScreensaver)
+                page_shows_telemetry)
             {
                 console_controller::request_redraw();
             }
@@ -704,9 +706,7 @@ int main()
                 .sample_sequence = ++display_timing_sample_sequence,
             };
             const bool timing_changed = console_controller::set_display_timing_status(timing_status);
-            if (timing_changed &&
-                console_controller::state().active_page == MenuPage::StatusResources &&
-                active_mode != ScreenMode::LifeScreensaver)
+            if (timing_changed && page_shows_telemetry)
             {
                 console_controller::request_redraw();
             }

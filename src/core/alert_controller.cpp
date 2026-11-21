@@ -8,6 +8,7 @@
 #include "alert_ordering.h"
 #include "config_manager.h"
 #include "console_controller_internal.h"
+#include "softkey_builders.h"
 
 namespace alert_controller
 {
@@ -781,6 +782,38 @@ void reset()
     g_alert_suppressed.fill(false);
     g_alert_was_active.fill(false);
     g_alert_occurrences.fill(0U);
+}
+
+void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
+    uint8_t sorted_count = 0U;
+    build_display_indices(console_state, alert_indices, &sorted_count);
+    const uint8_t page_start =
+        static_cast<uint8_t>(console_state.alert_list_page_index * kAlertsPerPage);
+    // The Alert list also uses L5 (NAV-6).
+    constexpr std::array<SoftKeyId, kAlertsPerPage> kSlots = {
+        SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
+        SoftKeyId::Left4,  SoftKeyId::Left5,  SoftKeyId::Right1,
+        SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
+    for (uint8_t i = 0U; i < kSlots.size(); ++i)
+    {
+        const uint8_t index = static_cast<uint8_t>(page_start + i);
+        if (index >= sorted_count)
+        {
+            continue;
+        }
+        const ActiveAlert& alert = console_state.active_alerts[alert_indices[index]];
+        softkey::set(softkeys, kSlots[i],
+                     softkey::item(build_softkey_label(kSlots[i], alert),
+                                   SoftKeyRoute::SelectAlertSlot, i));
+    }
+}
+
+void build_detail_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    softkey::set(softkeys, SoftKeyId::Left5, softkey::action("IGNORE", SoftKeyRoute::AlertIgnore));
+    softkey::set(softkeys, SoftKeyId::Right5, softkey::action("ACCEPT", SoftKeyRoute::AlertAccept));
 }
 
 } // namespace alert_controller

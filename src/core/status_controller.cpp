@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "settings_controller.h"
+#include "softkey_builders.h"
 
 namespace status_controller
 {
@@ -350,6 +351,22 @@ bool set_display_timing_status(ConsoleState& console_state, const DisplayTimingS
 
     console_state.display_timing_status = status;
     return true;
+}
+
+void build_status_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::navigate("OVERVIEW", MenuPage::StatusOverview));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::navigate("CONNECT", MenuPage::StatusConnectivity));
+    softkey::set(softkeys, SoftKeyId::Left3,
+                 softkey::navigate("RESOURCES", MenuPage::StatusResources));
+    softkey::set(softkeys, SoftKeyId::Left4, softkey::navigate("SENSORS", MenuPage::StatusSensors));
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::navigate("INTEGRATIONS", MenuPage::StatusIntegrations));
+    softkey::set(softkeys, SoftKeyId::Right3,
+                 softkey::navigate("GREYSCALE", MenuPage::GreyscaleTest));
+    softkey::set(softkeys, SoftKeyId::Right4, softkey::navigate("KEYPAD", MenuPage::KeypadDebug));
 }
 
 } // namespace status_controller

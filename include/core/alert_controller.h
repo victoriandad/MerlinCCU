@@ -57,4 +57,10 @@ void suppress_alert_code(uint8_t alert_code_index);
 /// e.g. on device reset.
 void reset();
 
+/// @name Softkey maps (page_table.h)
+/// @{
+void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_detail_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+/// @}
+
 } // namespace alert_controller

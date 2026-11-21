@@ -51,7 +51,9 @@ add_executable(MerlinCCU
     src/core/console_controller.cpp
     src/core/cursor_navigation.cpp
     src/core/console_model.cpp
+    src/core/home_controller.cpp
     src/core/input.cpp
+    src/core/page_table.cpp
     src/core/pinter_controller.cpp
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp

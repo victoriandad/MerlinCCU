@@ -87,6 +87,8 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/softkey_builders.cpp
     ${MERLIN_ROOT}/src/core/cursor_navigation.cpp
     ${MERLIN_ROOT}/src/core/status_controller.cpp
+    ${MERLIN_ROOT}/src/core/home_controller.cpp
+    ${MERLIN_ROOT}/src/core/page_table.cpp
 )
 
 target_include_directories(host_tests PRIVATE

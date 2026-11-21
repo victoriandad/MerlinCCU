@@ -1,9 +1,11 @@
 #include "calendar_controller.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "calendar_navigation.h"
 #include "console_controller_internal.h"
+#include "softkey_builders.h"
 
 #if __has_include("calendar_identities.h")
 #include "calendar_identities.h"
@@ -162,6 +164,35 @@ bool open_detail_from_slot(ConsoleState& console_state, uint8_t visible_slot)
     console_state.selected_calendar_event_index = event_index;
     console_state.active_page = MenuPage::CalendarDetail;
     return true;
+}
+
+void build_calendar_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    uint8_t visible_index = 0U;
+    const uint8_t event_count = std::min(console_state.calendar_event_count,
+                                         static_cast<uint8_t>(console_state.calendar_events.size()));
+    for (uint8_t i = 0U; i < event_count && visible_index < softkey::kListSlots.size(); ++i)
+    {
+        const CalendarEvent& event = console_state.calendar_events[i];
+        if (!event_matches_filter(console_state, event))
+        {
+            continue;
+        }
+        const SoftKeyId slot = softkey::kListSlots[visible_index];
+        softkey::set(softkeys, slot,
+                     softkey::item(build_event_softkey_label(slot, event),
+                                   SoftKeyRoute::SelectCalendarSlot, visible_index));
+        ++visible_index;
+    }
+    softkey::set(softkeys, SoftKeyId::Left5,
+                 softkey::view(SoftKeyId::Left5, "PERSON", owner_selection_text(console_state),
+                               SoftKeyRoute::CycleCalendarOwner));
+    // R5 is the filter RESET while a filter is set, until live calendar data
+    // decides how this page should work (#8); otherwise the usual HOME.
+    softkey::set(softkeys, SoftKeyId::Right5,
+                 filters_are_default(console_state)
+                     ? softkey::navigate("HOME", MenuPage::Home)
+                     : softkey::action("RESET", SoftKeyRoute::ResetCalendarFilters));
 }
 
 } // namespace calendar_controller

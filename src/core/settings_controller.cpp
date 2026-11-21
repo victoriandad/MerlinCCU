@@ -1,13 +1,16 @@
 #include "settings_controller.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include "config_manager.h"
 #include "config_persistence.h"
 #include "console_controller.h"
 #include "console_controller_internal.h"
+#include "softkey_builders.h"
 
 namespace settings_controller
 {
@@ -791,6 +794,244 @@ bool confirm_timeout_edit(ConsoleState& console_state)
     }
 
     return stop_timeout_editing(console_state);
+}
+
+void enter_settings(ConsoleState& console_state)
+{
+    console_state.settings_page_index = 0U;
+}
+
+void enter_time_zone_settings(ConsoleState& console_state)
+{
+    console_state.time_zone_page_index = time_zone_page_of_current(console_state);
+}
+
+void build_weather_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    softkey::set(softkeys, SoftKeyId::Left5,
+                 softkey::view(SoftKeyId::Left5, "PERIOD",
+                               weather_period_selection_text(console_state),
+                               SoftKeyRoute::CycleWeatherPeriod));
+}
+
+void build_shares_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // Lists fill L1-L4 then R1-R4, leaving row 5 free (NAV-6).
+    const size_t share_count = std::min<size_t>(console_state.share_count, kMaxWatchedShares);
+    for (size_t i = 0U; i < share_count; ++i)
+    {
+        const SoftKeyId slot = softkey::kListSlots[i];
+        const ShareWatchEntry& share = console_state.watched_shares[i];
+        softkey::set(softkeys, slot,
+                     softkey::item(cci::build_selection_softkey_label(
+                                       slot, share.display_name.data(), share.price_text.data()),
+                                   SoftKeyRoute::SelectShareSlot, static_cast<uint8_t>(i)));
+    }
+}
+
+void build_share_detail_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    softkey::set(softkeys, SoftKeyId::Left5,
+                 softkey::view(SoftKeyId::Left5, "PERIOD",
+                               share_period_selection_text(console_state),
+                               SoftKeyRoute::CycleSharePeriod));
+}
+
+void build_settings_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // Section keys open their sub-page and summarise it; WEATHER SOURCE and
+    // TIME ZONE open option pages; REMOTE CONFIG switches in place.
+    const RuntimeConfig& config = config_manager::settings();
+    if (console_state.settings_page_index == 0U)
+    {
+        softkey::set(softkeys, SoftKeyId::Left1,
+                     softkey::navigate(SoftKeyId::Left1, "DEVICE IDENTITY",
+                                       device_identity_selection_text(), MenuPage::DeviceSettings));
+        softkey::set(softkeys, SoftKeyId::Left2,
+                     softkey::toggle(SoftKeyId::Left2, "REMOTE CONFIG",
+                                     config.remote_config_enabled,
+                                     SoftKeyRoute::ToggleRemoteConfig));
+        softkey::set(softkeys, SoftKeyId::Left3,
+                     softkey::navigate(SoftKeyId::Left3, "NETWORK",
+                                       wifi_selection_text(console_state), MenuPage::WifiSettings));
+        softkey::set(softkeys, SoftKeyId::Left4,
+                     softkey::navigate(SoftKeyId::Left4, "HOME ASSISTANT",
+                                       enabled_selection_text(config.home_assistant_enabled),
+                                       MenuPage::HomeAssistantSettings));
+        return;
+    }
+
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::navigate(SoftKeyId::Left1, "MQTT DISCOVERY",
+                                   enabled_selection_text(config.mqtt_enabled),
+                                   MenuPage::MqttSettings));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::select(SoftKeyId::Left2, "WEATHER SOURCE",
+                                 weather_source_selection_text(console_state),
+                                 MenuPage::WeatherSources));
+    softkey::set(softkeys, SoftKeyId::Left3,
+                 softkey::select(SoftKeyId::Left3, "TIME ZONE",
+                                 time_zone_selection_text(console_state),
+                                 MenuPage::TimeZoneSettings));
+    softkey::set(softkeys, SoftKeyId::Left4,
+                 softkey::navigate(SoftKeyId::Left4, "SCREEN SAVER",
+                                   screen_saver_selection_text(console_state),
+                                   MenuPage::ScreenSaverSettings));
+}
+
+void build_device_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    // Set in the web config; shown here for reference.
+    const RuntimeConfig& config = config_manager::settings();
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::status(SoftKeyId::Left1, "NAME", config.device_name.data()));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::status(SoftKeyId::Left2, "LABEL", config.device_label.data()));
+    softkey::set(softkeys, SoftKeyId::Left3,
+                 softkey::status(SoftKeyId::Left3, "LOCATION", config.location.data()));
+    softkey::set(softkeys, SoftKeyId::Left4,
+                 softkey::status(SoftKeyId::Left4, "ROOM", config.room.data()));
+}
+
+void build_wifi_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    const RuntimeConfig& config = config_manager::settings();
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::status(SoftKeyId::Left1, "SSID", config.wifi_ssid.data()));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::status(SoftKeyId::Left2, "PASSWORD",
+                                 secret_selection_text(config.wifi_password[0] != '\0')));
+}
+
+void build_home_assistant_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    const RuntimeConfig& config = config_manager::settings();
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::toggle(SoftKeyId::Left1, "REST API", config.home_assistant_enabled,
+                                 SoftKeyRoute::ToggleHomeAssistantEnabled));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::status(SoftKeyId::Left2, "HOST", config.home_assistant_host.data()));
+    softkey::set(softkeys, SoftKeyId::Left3,
+                 softkey::status(SoftKeyId::Left3, "PORT",
+                                 port_selection_text(SoftKeyId::Left3, config.home_assistant_port)));
+    softkey::set(softkeys, SoftKeyId::Left4,
+                 softkey::status(SoftKeyId::Left4, "TOKEN",
+                                 secret_selection_text(config.home_assistant_token[0] != '\0')));
+    softkey::set(softkeys, SoftKeyId::Left5,
+                 softkey::status(SoftKeyId::Left5, "TRACKED",
+                                 config.home_assistant_entity_id.data()));
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::status(SoftKeyId::Right1, "SELF",
+                                 config.home_assistant_self_entity_id.data()));
+}
+
+void build_mqtt_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+{
+    const RuntimeConfig& config = config_manager::settings();
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::toggle(SoftKeyId::Left1, "MQTT", config.mqtt_enabled,
+                                 SoftKeyRoute::ToggleMqttEnabled));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::status(SoftKeyId::Left2, "BROKER", config.mqtt_host.data()));
+    softkey::set(softkeys, SoftKeyId::Left3,
+                 softkey::status(SoftKeyId::Left3, "PORT",
+                                 port_selection_text(SoftKeyId::Left3, config.mqtt_port)));
+    softkey::set(softkeys, SoftKeyId::Left4,
+                 softkey::status(SoftKeyId::Left4, "USERNAME", config.mqtt_username.data()));
+    softkey::set(softkeys, SoftKeyId::Left5,
+                 softkey::status(SoftKeyId::Left5, "PASSWORD",
+                                 secret_selection_text(config.mqtt_password[0] != '\0')));
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::status(SoftKeyId::Right1, "PREFIX",
+                                 config.mqtt_discovery_prefix.data()));
+    softkey::set(softkeys, SoftKeyId::Right2,
+                 softkey::status(SoftKeyId::Right2, "TOPIC", config.mqtt_base_topic.data()));
+}
+
+void build_screen_saver_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // Two select keys (SK-7). TIMEOUT opens a numeric entry state on this
+    // page: the field being edited stays inverse, CANCEL at L5 declines and
+    // ENTER at R5 confirms (NAV-3); every other key is blank (SK-5).
+    if (console_state.screen_saver_timeout_editing)
+    {
+        softkey::set(softkeys, SoftKeyId::Left1,
+                     softkey::select_editing(SoftKeyId::Left1, "TIMEOUT",
+                                             screen_saver_timeout_selection_text(console_state)));
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CANCEL", SoftKeyRoute::CancelScreenSaverTimeout));
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action("ENTER", SoftKeyRoute::ConfirmScreenSaverTimeout));
+        return;
+    }
+    softkey::set(softkeys, SoftKeyId::Left1,
+                 softkey::select(SoftKeyId::Left1, "TIMEOUT",
+                                 screen_saver_timeout_selection_text(console_state),
+                                 SoftKeyRoute::EditScreenSaverTimeout));
+    softkey::set(softkeys, SoftKeyId::Left2,
+                 softkey::select(SoftKeyId::Left2, "SAVER",
+                                 screen_saver_selection_text(console_state),
+                                 MenuPage::ScreenSaverOptions));
+}
+
+void build_screen_saver_options_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // A fixed list of option keys in L1-L4, R1-R4 with the current saver
+    // inverse (SK-7, NAV-6); choosing one takes effect at once.
+    constexpr std::array<ScreenSaverSelection, softkey::kListSlots.size()> kOptions = {
+        ScreenSaverSelection::Life,   ScreenSaverSelection::Clock, ScreenSaverSelection::Starfield,
+        ScreenSaverSelection::Random, ScreenSaverSelection::Matrix, ScreenSaverSelection::Radar,
+        ScreenSaverSelection::Rain,   ScreenSaverSelection::Worms};
+    for (size_t i = 0U; i < kOptions.size(); ++i)
+    {
+        softkey::set(softkeys, softkey::kListSlots[i],
+                     softkey::option(screen_saver_definition(kOptions[i]).option_label,
+                                     SoftKeyRoute::SelectScreenSaver,
+                                     static_cast<uint8_t>(kOptions[i]),
+                                     console_state.screen_saver_selection == kOptions[i]));
+    }
+}
+
+void build_weather_sources_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // Option keys for the source, then the selected source's settings from
+    // the web config for reference.
+    const RuntimeConfig& config = config_manager::settings();
+    constexpr std::array<std::pair<SoftKeyId, WeatherSource>, 2> kSources = {
+        {{SoftKeyId::Left1, WeatherSource::HomeAssistant},
+         {SoftKeyId::Left2, WeatherSource::OpenMeteo}}};
+    for (const auto& [key, source] : kSources)
+    {
+        softkey::set(softkeys, key,
+                     softkey::option(weather_source_definition(source).option_label,
+                                     SoftKeyRoute::SelectWeatherSource,
+                                     static_cast<uint8_t>(source),
+                                     console_state.weather_source == source));
+    }
+    const bool home_assistant = console_state.weather_source == WeatherSource::HomeAssistant;
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "COORDS",
+                                 home_assistant ? config.weather_entity_id.data()
+                                                : config.weather_coordinates.data()));
+    softkey::set(softkeys, SoftKeyId::Right2,
+                 softkey::status(SoftKeyId::Right2, "SUN", config.sun_entity_id.data()));
+}
+
+void build_time_zone_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // A fixed, ordered list of option keys: a zone keeps its key whichever
+    // zone is selected, and the selected one is shown inverse (SK-7).
+    for (uint8_t slot = 0U; slot < kTimeZoneOptionsPerPage; ++slot)
+    {
+        const TimeZoneDefinition* zone = time_zone_for_slot(console_state, slot);
+        if (zone == nullptr)
+        {
+            break;
+        }
+        softkey::set(softkeys, softkey::kListSlots[slot],
+                     softkey::option(zone->option_label, SoftKeyRoute::SelectTimeZoneSlot, slot,
+                                     zone->zone == console_state.time_zone));
+    }
 }
 
 } // namespace settings_controller
