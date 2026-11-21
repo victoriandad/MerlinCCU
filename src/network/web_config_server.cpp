@@ -763,14 +763,14 @@ void build_config_page(const char* message)
     (void)append(
         cursor, remaining,
         "<section class=\"card\"><h2>Location</h2><label>Find a place</label><div "
-        "class=\"row\"><input id=\"geo_q\" placeholder=\"Town, city or postcode district\">"
+        "class=\"row\"><input id=\"geo_q\" placeholder=\"Town, city or UK postcode\">"
         "<button type=\"button\" id=\"geo_find\">Find</button></div><div id=\"geo_results\" "
         "class=\"tools\" style=\"margin-top:10px\"></div><label>Coordinates</label><input "
         "name=\"weather_coordinates\" id=\"geo_coords\" maxlength=\"63\" value=\"%s\" "
         "placeholder=\"N50&#176;13.80' W002&#176;23.40'\"><p class=\"hint\">Pick a place above, "
         "or type the position: N50 13.80 W002 23.40, N50.23 W2.39 and 50.23, -2.39 all work. "
-        "Town-level accuracy is enough for the weather. Place search uses Open-Meteo from this "
-        "browser.</p></section>",
+        "Town-level accuracy is enough for the weather. Place search runs in this browser, "
+        "using Open-Meteo for names and postcodes.io for UK postcodes.</p></section>",
         weather_coordinates);
 
     (void)append(cursor, remaining,
@@ -823,16 +823,31 @@ void build_config_page(const char* message)
         "return (v<0?neg:pos)+String(Math.floor(t/6000)).padStart(w,'0')+'\\u00b0'+"
         "((t%%6000)/100).toFixed(2).padStart(5,'0')+\"'\"}"
         "var geoQ=byId('geo_q'),geoResults=byId('geo_results'),geoCoords=byId('geo_coords');"
-        "function findPlace(){var q=geoQ.value.trim();if(!q){return;}"
-        "geoResults.textContent='Searching...';"
-        "fetch('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json"
-        "&name='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(j){"
-        "var list=j.results||[];geoResults.textContent=list.length?'':'No matches.';"
+        "function getJson(u){return fetch(u).then(function(r){return r.json()})}"
+        "function place(label,lat,lon){return {label:label,lat:lat,lon:lon}}"
+        "function showPlaces(list){list=list.filter(function(p){return p.lat!=null&&p.lon!=null});"
+        "geoResults.textContent=list.length?'':'No matches.';"
         "list.forEach(function(p){var b=document.createElement('button');b.type='button';"
-        "b.className='ghost';b.textContent=[p.name,p.admin1,p.country].filter(Boolean)"
-        ".join(', ');b.onclick=function(){geoCoords.value=dm(p.latitude,'N','S',2)+' '+"
-        "dm(p.longitude,'E','W',3);geoResults.textContent='Using '+b.textContent+"
-        "'. Save to keep it.'};geoResults.appendChild(b)})}).catch(function(){"
+        "b.className='ghost';b.textContent=p.label;b.onclick=function(){"
+        "geoCoords.value=dm(p.lat,'N','S',2)+' '+dm(p.lon,'E','W',3);"
+        "geoResults.textContent='Using '+p.label+'. Save to keep it.'};"
+        "geoResults.appendChild(b)})}"
+        // Open-Meteo only knows place names, so a UK postcode or postcode
+        // district goes to postcodes.io instead.
+        "function findPostcode(pc,full){return getJson('https://api.postcodes.io/'+"
+        "(full?'postcodes/':'outcodes/')+pc).then(function(j){var p=j.result;if(!p){return []}"
+        "var area=[].concat(p.admin_district||[])[0];"
+        "return [place([full?p.postcode:p.outcode,area,'UK'].filter(Boolean).join(', '),"
+        "p.latitude,p.longitude)]})}"
+        "function findName(q){return getJson('https://geocoding-api.open-meteo.com/v1/search?"
+        "count=8&language=en&format=json&name='+encodeURIComponent(q)).then(function(j){"
+        "return (j.results||[]).map(function(p){return place([p.name,p.admin1,p.country]"
+        ".filter(Boolean).join(', '),p.latitude,p.longitude)})})}"
+        "function findPlace(){var q=geoQ.value.trim();if(!q){return;}"
+        "geoResults.textContent='Searching...';var pc=q.toUpperCase().replace(/\\s+/g,'');"
+        "var full=/^[A-Z]{1,2}\\d[A-Z\\d]?\\d[A-Z]{2}$/.test(pc),"
+        "district=/^[A-Z]{1,2}\\d[A-Z\\d]?$/.test(pc);"
+        "(full||district?findPostcode(pc,full):findName(q)).then(showPlaces).catch(function(){"
         "geoResults.textContent='Place search failed: this browser needs internet access.'})}"
         "if(geoQ){byId('geo_find').onclick=findPlace;geoQ.onkeydown=function(e){"
         "if(e.key==='Enter'){e.preventDefault();findPlace()}}}"
