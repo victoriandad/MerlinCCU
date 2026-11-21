@@ -42,10 +42,6 @@ inline constexpr char kMqttBaseTopic[] = "merlinccu";
 /// provides local defaults so runtime constants read consistently throughout the implementation.
 constexpr bool kMqttRuntimeEnabled = true;
 constexpr uint32_t kResolveTimeoutMs = 4000;
-constexpr char kMqttSchemePrefix[] = "mqtt://";
-constexpr size_t kMqttSchemePrefixLength = sizeof(kMqttSchemePrefix) - 1;
-constexpr char kTcpSchemePrefix[] = "tcp://";
-constexpr size_t kTcpSchemePrefixLength = sizeof(kTcpSchemePrefix) - 1;
 constexpr size_t kMacAddressHexDigitCount = 12;
 constexpr size_t kMacAddressHexTextCapacity = kMacAddressHexDigitCount + 1;
 constexpr size_t kDeviceNameSuffixLength = 6;
@@ -336,20 +332,10 @@ bool parse_mqtt_endpoint()
         return false;
     }
 
-    const char* host_start = mqtt_host;
-    if (std::strncmp(host_start, kMqttSchemePrefix, kMqttSchemePrefixLength) == 0)
+    if (!text_utils::parse_endpoint(mqtt_host, text_utils::kMqttSchemes, g_broker_port,
+                                    g_broker_host, sizeof(g_broker_host), &g_broker_port))
     {
-        host_start += kMqttSchemePrefixLength;
-    }
-    else if (std::strncmp(host_start, kTcpSchemePrefix, kTcpSchemePrefixLength) == 0)
-    {
-        host_start += kTcpSchemePrefixLength;
-    }
-
-    if (!text_utils::parse_host_and_optional_port(host_start, g_broker_host, sizeof(g_broker_host),
-                                                   &g_broker_port))
-    {
-        std::printf("MQTT config host/port is invalid: %s\n", host_start);
+        std::printf("MQTT config host/port is invalid: %s\n", mqtt_host);
         return false;
     }
 

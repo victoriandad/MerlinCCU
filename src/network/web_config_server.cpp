@@ -655,7 +655,9 @@ void build_config_page(const char* message)
         "name=\"ha_token\" type=\"password\" placeholder=\"Leave blank to keep current\">"
         "<label>Tracked entity</label><input name=\"ha_entity\" maxlength=\"63\" "
         "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"63\" "
-        "value=\"%s\"></fieldset></section>",
+        "value=\"%s\"><p class=\"hint\">A bare host such as ha.lan uses the Port above. A URL "
+        "brings its own port: http:// means 80 and https:// means 443, unless it ends in "
+        ":port.</p></fieldset></section>",
         cfg.home_assistant_enabled ? "checked" : "", cfg.home_assistant_enabled ? "" : "disabled",
         ha_host, static_cast<unsigned>(cfg.home_assistant_port), ha_entity, ha_self);
 

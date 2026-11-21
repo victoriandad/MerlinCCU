@@ -73,10 +73,6 @@ constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr size_t kHttpTargetBufferSize = 640;
-constexpr char kHttpSchemePrefix[] = "http://";
-constexpr size_t kHttpSchemePrefixLength = sizeof(kHttpSchemePrefix) - 1;
-constexpr char kHttpsSchemePrefix[] = "https://";
-constexpr size_t kHttpsSchemePrefixLength = sizeof(kHttpsSchemePrefix) - 1;
 constexpr bool kHomeAssistantRuntimeEnabled = true;
 constexpr char kOpenMeteoHost[] = "api.open-meteo.com";
 constexpr uint16_t kOpenMeteoPort = 80U;
@@ -731,23 +727,13 @@ bool parse_home_assistant_endpoint()
         return false;
     }
 
-    const char* host_start = active_home_assistant_host();
-    if (std::strncmp(host_start, kHttpSchemePrefix, kHttpSchemePrefixLength) == 0)
-    {
-        host_start += kHttpSchemePrefixLength;
-    }
-    else if (std::strncmp(host_start, kHttpsSchemePrefix, kHttpsSchemePrefixLength) == 0)
-    {
-        host_start += kHttpsSchemePrefixLength;
-        g_request_uses_tls = true;
-    }
-
     const char* host_end = nullptr;
-    if (!text_utils::parse_host_and_optional_port(host_start, g_configured_host,
-                                                   sizeof(g_configured_host), &g_configured_port,
-                                                   &host_end))
+    if (!text_utils::parse_endpoint(active_home_assistant_host(), text_utils::kHttpSchemes,
+                                    active_home_assistant_port(), g_configured_host,
+                                    sizeof(g_configured_host), &g_configured_port,
+                                    &g_request_uses_tls, &host_end))
     {
-        std::printf("HA config host/port is invalid: %s\n", host_start);
+        std::printf("HA config host/port is invalid: %s\n", active_home_assistant_host());
         return false;
     }
 

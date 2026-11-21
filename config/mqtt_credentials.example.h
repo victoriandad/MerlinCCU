@@ -12,7 +12,9 @@
 ///
 /// Quick start:
 /// 1. Copy this file to `config/mqtt_credentials.h`.
-/// 2. Set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP.
+/// 2. Set `HOME_ASSISTANT_MQTT_HOST` to your broker host or IP. A bare host
+///    uses `HOME_ASSISTANT_MQTT_PORT`; an `mqtt://` or `tcp://` URL means
+///    1883 unless it ends in `:port`.
 /// 3. Leave the port at `1883` unless your broker uses a different plain MQTT
 ///    listener.
 /// 4. Set `HOME_ASSISTANT_MQTT_USERNAME` and `HOME_ASSISTANT_MQTT_PASSWORD` to

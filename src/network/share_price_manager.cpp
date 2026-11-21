@@ -40,6 +40,10 @@ constexpr size_t kResponseBufferSize = 4096U;
 constexpr uint16_t kDefaultPort = 8123U; // Home Assistant's default port
 
 ShareMarketStatus g_status = {};
+/// Host and port as written in config, kept to spot config edits; the parsed
+/// pair below is what the client connects to.
+char g_config_host_text[64] = {};
+uint16_t g_config_port = kDefaultPort;
 char g_configured_host[64] = {};
 uint16_t g_configured_port = kDefaultPort;
 char g_configured_token[128] = {};
@@ -180,12 +184,39 @@ bool refresh_config()
         return false;
     }
 
-    std::snprintf(g_configured_host, sizeof(g_configured_host), "%s",
+    // This runs on every update, so problems are logged only when the text changes.
+    const bool endpoint_changed =
+        std::strcmp(g_config_host_text, config.home_assistant_host.data()) != 0 ||
+        g_config_port != config.home_assistant_port;
+    std::snprintf(g_config_host_text, sizeof(g_config_host_text), "%s",
                   config.home_assistant_host.data());
-    g_configured_port =
-        (config.home_assistant_port != 0U) ? config.home_assistant_port : kDefaultPort;
+    g_config_port = config.home_assistant_port;
     std::snprintf(g_configured_token, sizeof(g_configured_token), "%s",
                   config.shares_feed_token.data());
+
+    // Same reading as the Home Assistant client, so `http://ha.lan/` reaches
+    // port 80 here too instead of being looked up in DNS as a host name.
+    const uint16_t fallback_port = (g_config_port != 0U) ? g_config_port : kDefaultPort;
+    bool uses_tls = false;
+    if (!text_utils::parse_endpoint(g_config_host_text, text_utils::kHttpSchemes, fallback_port,
+                                    g_configured_host, sizeof(g_configured_host),
+                                    &g_configured_port, &uses_tls))
+    {
+        if (endpoint_changed)
+        {
+            std::printf("Shares feed host/port is invalid: %s\n", g_config_host_text);
+        }
+        return false;
+    }
+    if (uses_tls)
+    {
+        // The feed client is plain TCP; it is meant to live beside HA on the LAN.
+        if (endpoint_changed)
+        {
+            std::printf("Shares feed does not support https; use an http:// host\n");
+        }
+        return false;
+    }
     return true;
 }
 
@@ -212,8 +243,8 @@ bool runtime_config_changed()
         return false;
     }
 
-    return std::strcmp(g_configured_host, config.home_assistant_host.data()) != 0 ||
-           g_configured_port != config.home_assistant_port ||
+    return std::strcmp(g_config_host_text, config.home_assistant_host.data()) != 0 ||
+           g_config_port != config.home_assistant_port ||
            std::strcmp(g_configured_token, config.shares_feed_token.data()) != 0;
 }
 

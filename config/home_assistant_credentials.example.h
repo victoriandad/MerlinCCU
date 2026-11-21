@@ -9,8 +9,8 @@
 ///
 /// Quick start:
 /// 1. Copy this file to `config/home_assistant_credentials.h`.
-/// 2. Set `HOME_ASSISTANT_HOST` to your HA box, usually a LAN IP or
-///    `homeassistant.local`.
+/// 2. Set `HOME_ASSISTANT_HOST` to your HA box: a LAN DNS name such as
+///    `ha.lan`, `homeassistant.local`, or a fixed LAN IP.
 /// 3. Set `HOME_ASSISTANT_TOKEN` to a Home Assistant long-lived access token.
 /// 4. Optionally set `HOME_ASSISTANT_ENTITY_ID` if you want MerlinCCU to read
 ///    one existing HA entity, such as a Tapo switch.
@@ -18,11 +18,17 @@
 ///    publish a simple MerlinCCU status entity over REST.
 ///
 /// `HOME_ASSISTANT_HOST` may be either:
-/// - a bare host name or IPv4 address such as `homeassistant.local` or `192.168.1.20`
-/// - an `http://` URL such as `http://homeassistant.local:8123`
+/// - a bare host name or IPv4 address such as `ha.lan` or `192.168.1.20`;
+///   this uses `HOME_ASSISTANT_PORT`
+/// - a URL such as `http://ha.lan/` or `http://homeassistant.local:8123`;
+///   a URL brings its own port (`http://` is 80, `https://` is 443) unless it
+///   ends in `:port`, and `HOME_ASSISTANT_PORT` is then ignored
 ///
-/// HTTPS is not supported by the current firmware, so do not use `https://`.
-/// If mDNS is unreliable on your network, prefer a fixed LAN IP address.
+/// HA's own default port is 8123. An HA served behind a proxy on port 80,
+/// such as `http://ha.lan/`, needs either the URL form or port 80 here.
+/// HTTPS certificates are not validated yet (#17), so prefer plain HTTP on the
+/// LAN. If mDNS is unreliable on your network, prefer a router DNS name or a
+/// fixed LAN IP address.
 
 inline constexpr char HOME_ASSISTANT_HOST[] = "homeassistant.local";
 inline constexpr uint16_t HOME_ASSISTANT_PORT = 8123;
