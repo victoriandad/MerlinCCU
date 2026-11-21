@@ -4,10 +4,12 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <utility>
 
 #include "config_manager.h"
 #include "config_persistence.h"
+#include "geo_coordinates.h"
 #include "console_controller.h"
 #include "console_controller_internal.h"
 #include "softkey_builders.h"
@@ -796,6 +798,20 @@ bool confirm_timeout_edit(ConsoleState& console_state)
     return stop_timeout_editing(console_state);
 }
 
+const char* location_selection_text()
+{
+    // Degrees and decimal minutes, as on the web page (#87); the panel fonts
+    // are ASCII only, so a space stands in for the degree sign.
+    static std::array<char, 32> text = {};
+    text[0] = '\0';
+    if (const std::optional<geo_coordinates::GeoPoint> point =
+            geo_coordinates::parse(config_manager::settings().weather_coordinates.data()))
+    {
+        (void)geo_coordinates::format_degrees_minutes(*point, " ", text.data(), text.size());
+    }
+    return text.data();
+}
+
 void enter_settings(ConsoleState& console_state)
 {
     console_state.settings_page_index = 0U;
@@ -1010,9 +1026,9 @@ void build_weather_sources_softkeys(ConsoleState& console_state, SoftKeyMap& sof
     }
     const bool home_assistant = console_state.weather_source == WeatherSource::HomeAssistant;
     softkey::set(softkeys, SoftKeyId::Right1,
-                 softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "COORDS",
+                 softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "LOCATION",
                                  home_assistant ? config.weather_entity_id.data()
-                                                : config.weather_coordinates.data()));
+                                                : location_selection_text()));
     softkey::set(softkeys, SoftKeyId::Right2,
                  softkey::status(SoftKeyId::Right2, "SUN", config.sun_entity_id.data()));
 }

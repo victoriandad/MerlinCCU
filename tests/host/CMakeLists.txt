@@ -46,6 +46,7 @@ add_executable(host_tests
     test_settings_controller.cpp
     test_status_controller.cpp
     test_console_navigation.cpp
+    test_geo_coordinates.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -54,6 +55,7 @@ add_executable(host_tests
     stubs/pinter_store_stub.cpp
     ${MERLIN_ROOT}/src/core/alert_ordering.cpp
     ${MERLIN_ROOT}/src/config/config_persistence.cpp
+    ${MERLIN_ROOT}/src/config/geo_coordinates.cpp
     ${MERLIN_ROOT}/src/network/date_time_math.cpp
     ${MERLIN_ROOT}/src/core/pinter_scheduling.cpp
     ${MERLIN_ROOT}/src/core/pinter_persistence.cpp
