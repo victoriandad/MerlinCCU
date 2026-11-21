@@ -88,6 +88,8 @@ HOST_TEST(status_resources_page_renders_consistently)
         .frame_rate_hz = 25U,
         .last_rebuild_us = 3400U,
         .present_skipped_count = 2U,
+        .nominal_frame_rate_hz = 297U,
+        .sample_sequence = 1U,
     };
 
     const auto fb = render_page(state);

@@ -79,7 +79,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `KeypadLineFault` | Warning | `MULTI` pressed-key or `active_count > 3`, debounced | `KEYPAD` | Static text | 5-sample debounce |
 | `EnvironmentSensorFault` | Warning | sensor enabled and `Fault`/`BoardMissing`/`Partial` health, or a BME/SGP40 read error | `ENV SENSOR` | Static text | Fires immediately, no debounce |
 | `LocalPressureStormWarning` | Warning | absolute low pressure or a rapid fall across recent 5-minute averages | `STORM WARN` | Dynamic detail (current pressure / fall amount) | See `kStormLowPressurePa`/`kStormRapidPressureFallPa` |
-| `DisplayPipelineLag` | Message | placeholder, hardcoded `false` | `DISPLAY LAG` | Static text | Never fires yet -- see Missing Telemetry |
+| `DisplayPipelineLag` | Warning | `display_timing_status.frame_rate_hz` below 75% of `nominal_frame_rate_hz`, debounced per one-second timing sample | `DISPLAY LAG` | Dynamic detail (measured and expected Hz) | 5-sample debounce counted on `sample_sequence`, not `sync()` calls; see `kDisplayFrameRateFloorPercent`. Bench: 297 Hz measured and nominal on a Pico 2 W at 150 MHz, clkdiv 2.51 |
 | `ShareDataUnavailable` | Message | share data configured, invalid, and a real error/HTTP failure | `SHARES` | Static text | -- |
 | `PinterScheduleConflict` | Message | placeholder, hardcoded `false` | `PINTER` | Empty detail | Never fires yet -- see Missing Telemetry |
 | `AirTrafficUnavailable` | Message | ADS-B enabled and configured, data invalid with an error or HTTP >= 400, while Wi-Fi is connected; debounced | `ADS-B` | Static text | 5-sample debounce; clears when data is valid again |
@@ -88,7 +88,6 @@ samples) before annunciating, to avoid flapping on transient failures.
 
 | Feature | Missing Signal | Placeholder Location | Issue |
 | --- | --- | --- | --- |
-| `DisplayPipelineLag` | Frame-timing/render-lag counter | `alert_controller.cpp`, `sync()` -- `const bool display_pipeline_lag = false;` | None yet. Note: `DisplayTimingStatus.present_skipped_count` was added to `ConsoleState` under issue #71, so the underlying telemetry this placeholder was waiting for now exists; wiring it up is a candidate follow-up, not yet filed. |
 | `PinterScheduleConflict` | Future fridge/dock reservation windows and Friday target forecasts | `alert_controller.cpp`, `sync()` -- `set_alert_condition(..., AlertCode::PinterScheduleConflict, false, ...)` | None yet. The Pinter workflow records typed queue entries and planned durations, but not future reservation windows to detect conflicts against. |
 
 ## Validation

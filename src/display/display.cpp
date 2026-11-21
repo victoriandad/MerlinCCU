@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 
+#include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "pico/time.h"
 
@@ -24,6 +26,11 @@ constexpr uint8_t kBitVid = 1U << 0;
 constexpr uint8_t kBitVclk = 1U << 1;
 constexpr uint8_t kBitHs = 1U << 2;
 constexpr uint8_t kBitVs = 1U << 3;
+/// @brief PIO cycles spent on each packed raster step.
+/// @details `el320_raster.pio` is a single `out pins, 4` instruction, so the
+/// state machine emits one step per cycle. A bench reading of 297 Hz on a
+/// Pico 2 W (150 MHz, clkdiv 2.51) matches the frame rate this predicts.
+constexpr uint32_t kPioCyclesPerRasterStep = 1U;
 using RasterBuffer = std::array<uint32_t, kRasterWords>;
 
 // The raster buffers stay in static storage because DMA needs a stable source
@@ -351,6 +358,18 @@ uint32_t last_rebuild_us()
 uint32_t present_skipped_count()
 {
     return g_present_skipped_count;
+}
+
+/// @brief Returns the frame rate the current clocks and raster size should give.
+uint16_t nominal_frame_rate_hz()
+{
+    const float pio_hz = static_cast<float>(clock_get_hz(clk_sys)) / g_configured_clkdiv;
+    const float cycles_per_frame = static_cast<float>(kRasterWords) *
+                                   static_cast<float>(kStepsPerWord) *
+                                   static_cast<float>(kPioCyclesPerRasterStep);
+    const float frame_rate_hz = pio_hz / cycles_per_frame;
+    return static_cast<uint16_t>(
+        std::lround(std::clamp(frame_rate_hz, 0.0F, static_cast<float>(UINT16_MAX))));
 }
 
 } // namespace display

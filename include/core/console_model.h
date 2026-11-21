@@ -956,7 +956,8 @@ struct StackStatus
 /// @details Exists to measure actual hardware timing before committing to any
 /// temporal-dithering or per-frame raster-regeneration design — see
 /// docs/greyscale-investigation.md and docs/multicore-raster-regen-design.md.
-/// This is diagnostic-only; nothing currently acts on these values.
+/// The `DisplayPipelineLag` alert compares `frame_rate_hz` with
+/// `nominal_frame_rate_hz` once per sample (issue #144).
 struct DisplayTimingStatus
 {
     bool valid;
@@ -967,6 +968,12 @@ struct DisplayTimingStatus
     /// status_screens.cpp's Resources page, so that file stays free of
     /// `display.h`'s `hardware/pio.h` dependency and is host-testable.
     uint32_t present_skipped_count;
+    /// @brief `display::nominal_frame_rate_hz()` at the same sample point.
+    uint16_t nominal_frame_rate_hz;
+    /// @brief Rises by one per sampling window, so the alert debounce counts
+    /// samples rather than `alert_controller::sync()` calls, which happen on
+    /// every state change.
+    uint32_t sample_sequence;
 };
 
 /// @brief Linked-image flash/RAM footprint, shown on the Resources status

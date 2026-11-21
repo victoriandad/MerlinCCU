@@ -349,7 +349,10 @@ bool set_display_timing_status(ConsoleState& console_state, const DisplayTimingS
         console_state.display_timing_status.frame_rate_hz == status.frame_rate_hz &&
         console_state.display_timing_status.last_rebuild_us == status.last_rebuild_us &&
         console_state.display_timing_status.present_skipped_count ==
-            status.present_skipped_count)
+            status.present_skipped_count &&
+        console_state.display_timing_status.nominal_frame_rate_hz ==
+            status.nominal_frame_rate_hz &&
+        console_state.display_timing_status.sample_sequence == status.sample_sequence)
     {
         return false;
     }
