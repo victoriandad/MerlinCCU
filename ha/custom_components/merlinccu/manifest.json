@@ -1,0 +1,10 @@
+{
+  "domain": "merlinccu",
+  "name": "MerlinCCU",
+  "codeowners": [],
+  "dependencies": ["http"],
+  "documentation": "https://github.com/victoriandad/MerlinCCU/blob/main/docs/home-assistant-setup.md",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "1.0.0"
+}
