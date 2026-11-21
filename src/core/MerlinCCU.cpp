@@ -260,25 +260,18 @@ int main()
                 static_cast<unsigned long>(stack_guard::capacity_bytes()));
     if (psram_info.present)
     {
-        // Nothing lives in PSRAM yet (#162), so the destructive check is safe.
-        const psram::SelfTest psram_test = psram::self_test(psram_info);
-        std::printf("PSRAM: KGD=0x%02X EID=0x%02X id size=%lu KiB, verified %lu KiB, "
-                    "pattern %s, write %lu KiB/s, read %lu KiB/s\n",
+        const psram::SelfTest& psram_test = psram_info.self_test;
+        std::printf("PSRAM: KGD=0x%02X EID=0x%02X %lu KiB verified, write %lu KiB/s, "
+                    "read %lu KiB/s, %lu bytes placed\n",
                     psram_info.kgd, psram_info.eid,
-                    static_cast<unsigned long>(psram_info.size_bytes / 1024U),
                     static_cast<unsigned long>(psram_test.verified_bytes / 1024U),
-                    psram_test.passed ? "ok" : "FAILED",
                     static_cast<unsigned long>(psram_test.write_kib_per_s),
-                    static_cast<unsigned long>(psram_test.read_kib_per_s));
-        if (!psram_test.passed)
-        {
-            std::printf("PSRAM: first bad address 0x%08lX\n",
-                        static_cast<unsigned long>(psram_test.first_bad_address));
-        }
+                    static_cast<unsigned long>(psram_test.read_kib_per_s),
+                    static_cast<unsigned long>(psram::placed_bytes()));
     }
     else
     {
-        std::printf("PSRAM: none (KGD=0x%02X)\n", psram_info.kgd);
+        std::printf("PSRAM: none on this board\n");
     }
     // Prints the real configured system clock so panel VCLK/frame-rate
     // assumptions in docs/greyscale-investigation.md can be checked against

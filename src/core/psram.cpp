@@ -1,5 +1,7 @@
 #include "psram.h"
 
+#include <cstring>
+
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/structs/qmi.h"
@@ -7,6 +9,12 @@
 #include "hardware/sync.h"
 #include "hardware/timer.h"
 #include "pico/stdlib.h"
+
+#if defined(PIMORONI_PICO_PLUS2_W_PSRAM_CS_PIN)
+// From firmware/psram.ld.
+extern "C" uint8_t __psram_bss_start__;
+extern "C" uint8_t __psram_bss_end__;
+#endif
 
 namespace psram
 {
@@ -212,35 +220,9 @@ uint32_t kib_per_second(uint32_t bytes, uint64_t elapsed_us)
                                        (elapsed_us * kBytesPerKib));
 }
 
-} // namespace
-
-Info init()
-{
-    if (kChipSelectPin < 0)
-    {
-        return {};
-    }
-
-    gpio_set_function(static_cast<uint>(kChipSelectPin), GPIO_FUNC_XIP_CS1);
-    const uint32_t sys_hz = clock_get_hz(clk_sys);
-    const uint32_t interrupts = save_and_disable_interrupts();
-    Info info = setup_in_ram(sys_hz);
-    restore_interrupts(interrupts);
-
-    if (info.present)
-    {
-        info.size_bytes = size_from_eid(info.eid);
-    }
-    return info;
-}
-
-SelfTest self_test(const Info& info)
+SelfTest run_self_test()
 {
     SelfTest result = {};
-    if (!info.present)
-    {
-        return result;
-    }
 
     // Size: a write at a power-of-two offset past the end of the chip lands
     // on offset 0, because the high address bits are not decoded.
@@ -294,6 +276,51 @@ SelfTest self_test(const Info& info)
     (void)checksum;
 
     return result;
+}
+
+} // namespace
+
+uint32_t placed_bytes()
+{
+#if defined(PIMORONI_PICO_PLUS2_W_PSRAM_CS_PIN)
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&__psram_bss_end__) -
+                                 reinterpret_cast<uintptr_t>(&__psram_bss_start__));
+#else
+    return 0U;
+#endif
+}
+
+Info init()
+{
+    if (kChipSelectPin < 0)
+    {
+        return {};
+    }
+
+    gpio_set_function(static_cast<uint>(kChipSelectPin), GPIO_FUNC_XIP_CS1);
+    const uint32_t sys_hz = clock_get_hz(clk_sys);
+    const uint32_t interrupts = save_and_disable_interrupts();
+    Info info = setup_in_ram(sys_hz);
+    restore_interrupts(interrupts);
+
+    if (!info.present)
+    {
+        panic("PSRAM not found (KGD 0x%02X)", info.kgd);
+    }
+    info.size_bytes = size_from_eid(info.eid);
+    info.self_test = run_self_test();
+    if (!info.self_test.passed || info.self_test.verified_bytes < placed_bytes())
+    {
+        panic("PSRAM self-test failed at 0x%08lX",
+              static_cast<unsigned long>(info.self_test.first_bad_address));
+    }
+
+#if defined(PIMORONI_PICO_PLUS2_W_PSRAM_CS_PIN)
+    // Through the cache, as the tagged objects will be used. The self-test
+    // has just overwritten this area.
+    std::memset(&__psram_bss_start__, 0, placed_bytes());
+#endif
+    return info;
 }
 
 } // namespace psram
