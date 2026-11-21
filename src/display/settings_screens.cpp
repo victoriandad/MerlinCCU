@@ -60,27 +60,6 @@ void draw_screen_saver_scratchpad(uint8_t* fb, const ConsoleState& console_state
 
 } // namespace
 
-/// @brief Draws the top-level settings routing page.
-/// @details The root page intentionally leaves the centre clear. Section state
-/// belongs in the bracketed softkey labels; detailed values are shown only
-/// after the operator opens a focused settings subpage.
-void draw_settings_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    screens::draw_page_navigation_arrows(fb, console_state.settings_page_index > 0U,
-                                         (console_state.settings_page_index + 1U) <
-                                             kSettingsPageCount);
-}
-
-/// @brief Draws only the paging arrows of the Time Zone option list.
-/// @details The zones themselves are option keys around the bezel; the
-/// cursor keys page through them (NAV-7, NAV-8).
-void draw_time_zone_page(uint8_t* fb, const ConsoleState& console_state)
-{
-    screens::draw_page_navigation_arrows(
-        fb, console_state.time_zone_page_index > 0U,
-        (console_state.time_zone_page_index + 1U) < kTimeZonePageCount);
-}
-
 /// @brief Draws only active screen-saver editing UI.
 /// @details When not editing, the selected saver and timeout live on softkeys.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)

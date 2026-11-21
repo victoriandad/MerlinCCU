@@ -11,9 +11,9 @@
 /// @details Every function here takes the console's ConsoleState explicitly
 /// (where it needs one) rather than reaching for a hidden global, matching
 /// the pattern already used by the display split (issue #45). A few small
-/// state toggles that aren't strictly "Settings" (share-slot selection,
-/// air-traffic view mode/paging) are bundled in here too: none of them
-/// warranted a module of their own, and they share this module's shape --
+/// state toggles that aren't strictly "Settings" (share-slot selection) are
+/// bundled in here too: none of them warranted a module of their own, and
+/// they share this module's shape --
 /// a small state mutation plus an optional softkey caption.
 namespace settings_controller
 {
@@ -54,8 +54,6 @@ const char* device_identity_selection_text();
 /// @brief Formats a numeric port for bracketed softkey labels.
 const char* port_selection_text(SoftKeyId key, uint16_t port);
 
-/// @brief Moves the top-level settings menu between paged section groups.
-bool change_page(ConsoleState& console_state, int direction);
 
 /// @brief Decodes the currently observed matrix closure set into one key legend.
 const char* decoded_pressed_key(const KeypadMonitorStatus& keypad_status);
@@ -77,9 +75,6 @@ const TimeZoneDefinition* time_zone_for_slot(const ConsoleState& console_state, 
 
 /// @brief Returns the Time Zone list page that contains the current zone.
 uint8_t time_zone_page_of_current(const ConsoleState& console_state);
-
-/// @brief Moves the Time Zone list one page left or right; false at either end.
-bool change_time_zone_page(ConsoleState& console_state, int direction);
 
 /// @brief Returns the configured or connected Wi-Fi name for the settings menu.
 const char* wifi_selection_text(const ConsoleState& console_state);

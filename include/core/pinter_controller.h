@@ -89,9 +89,6 @@ void update_block_reason(ConsoleState& console_state);
 /// @brief Selects one physical Pinter vessel for subsequent event actions.
 bool select_slot(ConsoleState& console_state, uint8_t index);
 
-/// @brief Changes the current page of the Pinter recipe catalogue.
-bool change_list_page(ConsoleState& console_state, int direction);
-
 /// @brief Loads default recommended timing values for starting the selected Pinter.
 bool prepare_start(ConsoleState& console_state, uint8_t brew_index);
 

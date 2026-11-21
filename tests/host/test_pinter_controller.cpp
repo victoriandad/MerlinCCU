@@ -134,23 +134,6 @@ HOST_TEST(reset_selected_is_a_no_op_for_an_already_idle_vessel_with_no_history)
     EXPECT_FALSE(pinter_controller::reset_selected(state));
 }
 
-HOST_TEST(change_list_page_is_gated_to_the_pinter_select_brew_page)
-{
-    ConsoleState state = make_state();
-    state.active_page = MenuPage::Pinter; // wrong page
-    state.pinter_catalogue_page_index = 0U;
-    EXPECT_FALSE(pinter_controller::change_list_page(state, 1));
-
-    state.active_page = MenuPage::PinterSelectBrew;
-    EXPECT_TRUE(pinter_controller::change_list_page(state, 1));
-    EXPECT_EQ(state.pinter_catalogue_page_index, 1U);
-
-    // Can't go past the last page.
-    state.pinter_catalogue_page_index =
-        static_cast<uint8_t>(pinter_controller::list_page_count(pinter_controller::brew_catalogue_count()) - 1U);
-    EXPECT_FALSE(pinter_controller::change_list_page(state, 1));
-}
-
 HOST_TEST(select_list_item_prepares_a_pending_start_from_the_catalogue)
 {
     ConsoleState state = make_state();

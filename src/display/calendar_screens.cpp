@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "console_model.h"
+#include "cursor_navigation.h"
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "screens_shared.h"
@@ -207,9 +208,16 @@ void draw_calendar_navigation_footer(uint8_t* fb, const ConsoleState& console_st
     const int label_width = screens::text_width(day_text, TextStyle::Footer);
     const int label_x = (kUiWidth - label_width) / 2;
     screens::draw_text(fb, label_x, kFooterY, day_text, TextStyle::Footer);
-    draw_calendar_footer_arrow(fb, label_x - kArrowGap, kFooterY + kArrowCentreYOffset, -1);
-    draw_calendar_footer_arrow(fb, label_x + label_width + kArrowGap,
-                               kFooterY + kArrowCentreYOffset, 1);
+    // Each arrow only while its cursor key would move the day (NAV-8).
+    if (cursor_navigation::can_move(console_state, -1))
+    {
+        draw_calendar_footer_arrow(fb, label_x - kArrowGap, kFooterY + kArrowCentreYOffset, -1);
+    }
+    if (cursor_navigation::can_move(console_state, 1))
+    {
+        draw_calendar_footer_arrow(fb, label_x + label_width + kArrowGap,
+                                   kFooterY + kArrowCentreYOffset, 1);
+    }
 }
 
 } // namespace

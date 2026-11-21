@@ -429,24 +429,6 @@ bool select_slot(ConsoleState& console_state, uint8_t index)
     return true;
 }
 
-bool change_list_page(ConsoleState& console_state, int direction)
-{
-    if (console_state.active_page != MenuPage::PinterSelectBrew)
-    {
-        return false;
-    }
-
-    const uint8_t page_count = kPinterBrewListPageCount;
-    const int next_page = static_cast<int>(console_state.pinter_catalogue_page_index) + direction;
-    if (next_page < 0 || next_page >= static_cast<int>(page_count))
-    {
-        return false;
-    }
-
-    console_state.pinter_catalogue_page_index = static_cast<uint8_t>(next_page);
-    return true;
-}
-
 /// @details Picking is on the fly: whatever recipe you have a pack for in hand
 /// right now, chosen from the full catalogue, with no pre-planned reservation
 /// step in between.

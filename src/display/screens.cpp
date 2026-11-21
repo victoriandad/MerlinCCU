@@ -12,6 +12,7 @@
 #include "calendar_screens.h"
 #include "config_manager.h"
 #include "console_model.h"
+#include "cursor_navigation.h"
 #include "framebuffer.h"
 #include "local_conditions_screens.h"
 #include "panel_config.h"
@@ -263,43 +264,15 @@ const char* menu_page_title(const ConsoleState& console_state, char* buffer, siz
         return "";
     }
 
-    if (console_state.active_page == MenuPage::Settings)
+    // A paged list shows its position whenever it has more than one page
+    // (NAV-9); the position comes from the same definition the cursor keys
+    // and footer arrows use.
+    unsigned page = 0U;
+    unsigned count = 0U;
+    if (cursor_navigation::list_page_position(console_state, page, count))
     {
-        std::snprintf(buffer, buffer_size, "SETTINGS %u/%u",
-                      static_cast<unsigned>(console_state.settings_page_index + 1U),
-                      static_cast<unsigned>(kSettingsPageCount));
-        return buffer;
-    }
-    if (console_state.active_page == MenuPage::Status)
-    {
-        std::snprintf(buffer, buffer_size, "STATUS");
-        return buffer;
-    }
-    if (console_state.active_page == MenuPage::StatusResources)
-    {
-        std::snprintf(buffer, buffer_size, "RESOURCES");
-        return buffer;
-    }
-    if (console_state.active_page == MenuPage::AlertList)
-    {
-        const uint8_t page_count = alert_list_page_count(console_state.alert_count);
-        std::snprintf(buffer, buffer_size, "ALERTS %u/%u",
-                      static_cast<unsigned>(console_state.alert_list_page_index + 1U),
-                      static_cast<unsigned>(page_count));
-        return buffer;
-    }
-    if (console_state.active_page == MenuPage::TimeZoneSettings && kTimeZonePageCount > 1U)
-    {
-        std::snprintf(buffer, buffer_size, "TIME ZONE %u/%u",
-                      static_cast<unsigned>(console_state.time_zone_page_index + 1U),
-                      static_cast<unsigned>(kTimeZonePageCount));
-        return buffer;
-    }
-    if (console_state.active_page == MenuPage::PinterSelectBrew && kPinterBrewListPageCount > 1U)
-    {
-        std::snprintf(buffer, buffer_size, "SELECT BREW %u/%u",
-                      static_cast<unsigned>(console_state.pinter_catalogue_page_index + 1U),
-                      static_cast<unsigned>(kPinterBrewListPageCount));
+        std::snprintf(buffer, buffer_size, "%s %u/%u", menu_page_title(console_state.active_page),
+                      page, count);
         return buffer;
     }
 
@@ -835,12 +808,12 @@ void draw_info_page_rows(uint8_t* fb, const DetailRow* rows, size_t count)
     }
 }
 
-/// @brief Draws shared left/right page-navigation arrows used by paged menus.
-/// @details One shared helper keeps all paged screens visually consistent and
-/// allows global position tweaks from a single location. Declared in
-/// screens_shared.h -- used by split-out page families too (Air Traffic).
-void draw_page_navigation_arrows(uint8_t* fb, bool show_left, bool show_right)
+/// @details One shared helper keeps every paged screen's arrows in one
+/// position and shape; whether each shows comes from cursor_navigation.
+void draw_cursor_arrows(uint8_t* fb, const ConsoleState& console_state)
 {
+    const bool show_left = cursor_navigation::can_move(console_state, -1);
+    const bool show_right = cursor_navigation::can_move(console_state, 1);
     constexpr int kArrowY = ui_layout::kFooterLineY;
     constexpr int kArrowHalfWidth = 5;
     constexpr int kArrowHalfHeight = 6;
@@ -1268,13 +1241,12 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::LocalConditionGraph:
         local_conditions_screens::draw_local_condition_history_graph(fb, console_state, now_ms);
         break;
-    case MenuPage::Settings:
-        settings_screens::draw_settings_page(fb, console_state);
-        break;
     case MenuPage::ScreenSaverSettings:
         settings_screens::draw_screen_saver_page(fb, console_state);
         break;
     case MenuPage::Status:
+    case MenuPage::Settings:
+    case MenuPage::TimeZoneSettings:
     case MenuPage::DeviceSettings:
     case MenuPage::WifiSettings:
     case MenuPage::HomeAssistantSettings:
@@ -1283,9 +1255,6 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::ScreenSaverOptions:
         // Key pages with no body: every value they show is on a softkey label
         // (PAGE-2), so the body is deliberately left empty.
-        break;
-    case MenuPage::TimeZoneSettings:
-        settings_screens::draw_time_zone_page(fb, console_state);
         break;
     case MenuPage::KeypadDebug:
         settings_screens::draw_keypad_debug_page(fb, console_state);
@@ -1299,6 +1268,16 @@ void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t n
     case MenuPage::AlertDetail:
         alert_screens::draw_alert_detail_page(fb, console_state);
         break;
+    }
+
+    // Footer arrows for every page, from the same definition the cursor
+    // keys use, so an arrow shows exactly when its key would act (NAV-8).
+    // Calendar draws its own, either side of the day it steps (stepper
+    // form). Drawn here rather than inside a page so a page's own
+    // buffers (alert detail wrapping) are off the stack by then.
+    if (console_state.active_page != MenuPage::Calendar)
+    {
+        draw_cursor_arrows(fb, console_state);
     }
 }
 

@@ -74,29 +74,6 @@ HOST_TEST(reset_filters_restores_combined_today_and_reports_whether_it_changed_a
     EXPECT_EQ(state.calendar_day_offset, 0);
 }
 
-HOST_TEST(change_day_is_gated_to_the_calendar_page)
-{
-    ConsoleState state = make_state();
-    state.active_page = MenuPage::Home;
-    EXPECT_FALSE(calendar_controller::change_day(state, 1));
-
-    state.active_page = MenuPage::Calendar;
-    EXPECT_TRUE(calendar_controller::change_day(state, 1));
-    EXPECT_EQ(state.calendar_day_offset, 1);
-}
-
-HOST_TEST(change_day_stays_within_the_supported_window)
-{
-    ConsoleState state = make_state();
-    state.calendar_day_offset = static_cast<int8_t>(kCalendarMaxDayOffset);
-    EXPECT_FALSE(calendar_controller::change_day(state, 1));
-    EXPECT_EQ(state.calendar_day_offset, kCalendarMaxDayOffset);
-
-    state.calendar_day_offset = static_cast<int8_t>(kCalendarMinDayOffset);
-    EXPECT_FALSE(calendar_controller::change_day(state, -1));
-    EXPECT_EQ(state.calendar_day_offset, kCalendarMinDayOffset);
-}
-
 HOST_TEST(event_matches_filter_combined_owner_matches_any_owner_on_the_right_day)
 {
     ConsoleState state = make_state();

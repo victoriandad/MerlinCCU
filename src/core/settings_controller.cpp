@@ -352,24 +352,6 @@ const char* port_selection_text(SoftKeyId key, uint16_t port)
     return buffer.data();
 }
 
-bool change_page(ConsoleState& console_state, int direction)
-{
-    if (console_state.active_page != MenuPage::Settings || direction == 0)
-    {
-        return false;
-    }
-
-    const int current_page = static_cast<int>(console_state.settings_page_index);
-    const int target_page = current_page + direction;
-    if (target_page < 0 || target_page >= static_cast<int>(kSettingsPageCount))
-    {
-        return false;
-    }
-
-    console_state.settings_page_index = static_cast<uint8_t>(target_page);
-    return true;
-}
-
 /// @details Symmetric probe hits for the same physical key are collapsed, while
 /// multiple simultaneous keys deliberately show `MULTI`.
 const char* decoded_pressed_key(const KeypadMonitorStatus& keypad_status)
@@ -462,18 +444,6 @@ uint8_t time_zone_page_of_current(const ConsoleState& console_state)
 {
     return static_cast<uint8_t>(time_zone_index(console_state.time_zone) /
                                 kTimeZoneOptionsPerPage);
-}
-
-bool change_time_zone_page(ConsoleState& console_state, int direction)
-{
-    const int target = static_cast<int>(console_state.time_zone_page_index) + direction;
-    if (direction == 0 || target < 0 || target >= static_cast<int>(kTimeZonePageCount))
-    {
-        return false;
-    }
-
-    console_state.time_zone_page_index = static_cast<uint8_t>(target);
-    return true;
 }
 
 const char* wifi_selection_text(const ConsoleState& console_state)

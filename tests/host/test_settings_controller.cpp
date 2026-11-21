@@ -30,26 +30,6 @@ ConsoleState make_state()
 
 } // namespace
 
-HOST_TEST(change_page_is_gated_to_the_settings_page_and_stays_in_bounds)
-{
-    ConsoleState state = make_state();
-    state.active_page = MenuPage::Home;
-    EXPECT_FALSE(settings_controller::change_page(state, 1));
-
-    state.active_page = MenuPage::Settings;
-    state.settings_page_index = 0U;
-    EXPECT_TRUE(settings_controller::change_page(state, 1));
-    EXPECT_EQ(state.settings_page_index, 1U);
-
-    EXPECT_FALSE(settings_controller::change_page(state, static_cast<int>(kSettingsPageCount)));
-}
-
-HOST_TEST(change_page_zero_direction_is_a_no_op)
-{
-    ConsoleState state = make_state();
-    EXPECT_FALSE(settings_controller::change_page(state, 0));
-}
-
 HOST_TEST(cycle_weather_period_advances_through_all_three_and_wraps)
 {
     ConsoleState state = make_state();
@@ -180,19 +160,6 @@ HOST_TEST(time_zone_slots_list_every_zone_once_in_a_fixed_order)
     }
     EXPECT_EQ(listed, static_cast<int>(kTimeZoneSelectionCount));
     EXPECT_TRUE(settings_controller::time_zone_for_slot(state, kTimeZoneOptionsPerPage) == nullptr);
-}
-
-HOST_TEST(change_time_zone_page_stops_at_both_ends)
-{
-    ConsoleState state = make_state();
-    state.time_zone_page_index = 0U;
-    EXPECT_FALSE(settings_controller::change_time_zone_page(state, -1));
-    for (uint8_t i = 1U; i < kTimeZonePageCount; ++i)
-    {
-        EXPECT_TRUE(settings_controller::change_time_zone_page(state, 1));
-    }
-    EXPECT_FALSE(settings_controller::change_time_zone_page(state, 1));
-    EXPECT_EQ(state.time_zone_page_index, static_cast<uint8_t>(kTimeZonePageCount - 1U));
 }
 
 HOST_TEST(time_zone_page_of_current_finds_the_page_holding_the_zone)

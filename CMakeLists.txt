@@ -54,6 +54,7 @@ add_executable(MerlinCCU
     src/core/calendar_controller.cpp
     src/core/calendar_navigation.cpp
     src/core/console_controller.cpp
+    src/core/cursor_navigation.cpp
     src/core/console_model.cpp
     src/core/input.cpp
     src/core/pinter_controller.cpp
