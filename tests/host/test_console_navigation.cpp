@@ -99,7 +99,7 @@ HOST_TEST(select_brew_offers_every_catalogue_entry_exactly_once)
         EXPECT_EQ(console_controller::state().pinter_catalogue_page_index, list_page);
         for (const SoftKeyAction& key : console_controller::state().softkeys)
         {
-            EXPECT_FALSE(key.route == SoftKeyRoute::GoPinter);
+            EXPECT_FALSE(opens_page(key, MenuPage::Pinter));
         }
 
         for (const ButtonId slot : kListSlotButtons)
@@ -152,8 +152,7 @@ HOST_TEST(shares_list_fills_left_then_right_and_each_key_opens_its_own_share)
     {
         EXPECT_TRUE(keys[static_cast<size_t>(unused)].label[0] == '\0');
     }
-    EXPECT_EQ(static_cast<int>(keys[static_cast<size_t>(SoftKeyId::Right5)].route),
-              static_cast<int>(SoftKeyRoute::GoHome));
+    EXPECT_TRUE(opens_page(keys[static_cast<size_t>(SoftKeyId::Right5)], MenuPage::Home));
 
     press(ButtonId::CursorLeft);
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::Shares));
@@ -202,9 +201,9 @@ HOST_TEST(time_zone_page_is_a_fixed_option_list_with_the_current_zone_selected)
             selected += key.inverted ? 1 : 0;
         }
         EXPECT_EQ(selected, 1);
-        EXPECT_TRUE(console_controller::state()
-                        .softkeys[static_cast<size_t>(SoftKeyId::Right5)]
-                        .route == SoftKeyRoute::GoHome);
+        EXPECT_TRUE(opens_page(
+            console_controller::state().softkeys[static_cast<size_t>(SoftKeyId::Right5)],
+            MenuPage::Home));
     }
 
     // Re-entering opens on the page that holds the current zone.
@@ -286,7 +285,7 @@ HOST_TEST(every_page_is_reachable_and_back_step_returns_to_a_page_that_leads_the
         reached.insert(entry.first.first);
     }
 
-    for (int value = 0; value <= static_cast<int>(MenuPage::ShareDetail); ++value)
+    for (int value = 0; value < static_cast<int>(kMenuPageCount); ++value)
     {
         if (not_softkey_reachable.count(value) != 0U)
         {
@@ -435,7 +434,7 @@ HOST_TEST(brew_timing_plans_a_cold_crash_and_starts_from_r5)
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::PinterStartTiming));
 
     // Row 5 is the decision: CANCEL declines, START confirms, nothing else does.
-    EXPECT_TRUE(key(SoftKeyId::Left5).route == SoftKeyRoute::GoPinterSelectBrew);
+    EXPECT_TRUE(opens_page(key(SoftKeyId::Left5), MenuPage::PinterSelectBrew));
     EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::ConfirmPinterStart);
     int confirm_keys = 0;
     for (const SoftKeyAction& action : console_controller::state().softkeys)
@@ -496,8 +495,8 @@ HOST_TEST(screen_saver_timeout_entry_offers_only_cancel_and_enter)
 {
     open_screen_saver_settings();
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverSettings));
-    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::GoHome);
-    EXPECT_TRUE(key(SoftKeyId::Left2).route == SoftKeyRoute::GoScreenSaverOptions);
+    EXPECT_TRUE(opens_page(key(SoftKeyId::Right5), MenuPage::Home));
+    EXPECT_TRUE(opens_page(key(SoftKeyId::Left2), MenuPage::ScreenSaverOptions));
     const uint16_t saved = config_manager::settings().screen_saver_timeout_minutes;
 
     press(ButtonId::LeftTop); // L1: TIMEOUT
@@ -541,7 +540,7 @@ HOST_TEST(screen_saver_options_page_selects_exactly_one_saver_in_place)
     press(ButtonId::LeftUpper); // L2: SAVER
     EXPECT_EQ(static_cast<int>(page()), static_cast<int>(MenuPage::ScreenSaverOptions));
     EXPECT_TRUE(key(SoftKeyId::Left5).label[0] == '\0');
-    EXPECT_TRUE(key(SoftKeyId::Right5).route == SoftKeyRoute::GoHome);
+    EXPECT_TRUE(opens_page(key(SoftKeyId::Right5), MenuPage::Home));
 
     for (const ButtonId slot : kListSlotButtons)
     {

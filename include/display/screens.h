@@ -21,6 +21,9 @@ void draw_demo_screen(uint8_t* fb);
 /// host-testable (issue #71).
 void draw_menu_screen(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms);
 
+/// @brief Draws the Home page body: only the footer's network address line.
+void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms);
+
 /// @brief Draws a static calibration pattern for timing and visible extents.
 /// @details This pattern is intended for photographing the panel so the true
 /// usable area, centering, clipping and line stability can be assessed.

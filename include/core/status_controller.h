@@ -52,4 +52,7 @@ bool set_stack_status(ConsoleState& console_state, const StackStatus& status);
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(ConsoleState& console_state, const DisplayTimingStatus& status);
 
+/// @brief The Status menu's softkey map (page_table.h).
+void build_status_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+
 } // namespace status_controller

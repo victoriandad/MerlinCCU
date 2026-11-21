@@ -158,7 +158,11 @@ enum class MenuPage : uint8_t
     PinterStartTiming,
     Shares,
     ShareDetail,
+    Count,
 };
+
+/// @brief Number of menu pages; page_table.h holds one entry for each.
+inline constexpr size_t kMenuPageCount = static_cast<size_t>(MenuPage::Count);
 
 /// @brief High-level Wi-Fi connectivity state for the Pico W radio.
 enum class WifiConnectionState : uint8_t
@@ -554,90 +558,44 @@ inline constexpr uint8_t kPinterBrewListPageCount =
     list_page_count(kPinterBrewCatalogueCount, kPinterBrewListVisibleCount);
 
 /// @brief Semantic action currently assigned to a contextual softkey.
+/// @details Routes that act on one of several things (a page, a list entry,
+/// an option) take which one from SoftKeyAction::slot, so a new page or list
+/// entry needs no new route.
 enum class SoftKeyRoute : uint8_t
 {
     None = 0,
-    GoHome,
-    GoCalendar,
-    GoWeather,
-    GoStatus,
-    GoLocalConditions,
-    ShowLocalTemperatureGraph,
-    ShowLocalHumidityGraph,
-    ShowLocalPressureGraph,
-    ShowLocalAirQualityGraph,
-    GoSettings,
-    GoDeviceSettings,
-    GoWifiSettings,
-    GoHomeAssistantSettings,
-    GoMqttSettings,
-    GoScreenSaverSettings,
-    GoScreenSaverOptions,
+    /// Opens the page `slot` (a MenuPage), running its table entry's
+    /// on_enter hook (page_table.h).
+    GoPage,
+    /// Opens the Local Conditions graph for metric `slot` (LocalConditionMetric).
+    ShowLocalGraph,
     EditScreenSaverTimeout,
     ConfirmScreenSaverTimeout,
     CancelScreenSaverTimeout,
-    GoWeatherSources,
-    GoTimeZoneSettings,
-    GoKeypadDebug,
-    GoGreyscaleTest,
     ToggleRemoteConfig,
     ToggleHomeAssistantEnabled,
     ToggleMqttEnabled,
-    SelectScreenSaverLife,
-    SelectScreenSaverClock,
-    SelectScreenSaverStarfield,
-    SelectScreenSaverMatrix,
-    SelectScreenSaverRadar,
-    SelectScreenSaverRain,
-    SelectScreenSaverWorms,
-    SelectScreenSaverRandom,
-    SelectWeatherHomeAssistant,
-    SelectWeatherOpenMeteo,
+    /// Chooses screen saver `slot` (ScreenSaverSelection).
+    SelectScreenSaver,
+    /// Chooses weather source `slot` (WeatherSource).
+    SelectWeatherSource,
     CycleWeatherPeriod,
-    GoStatusOverview,
-    GoStatusConnectivity,
-    GoStatusResources,
-    GoStatusSensors,
-    GoStatusIntegrations,
-    SelectTimeZoneSlot1,
-    SelectTimeZoneSlot2,
-    SelectTimeZoneSlot3,
-    SelectTimeZoneSlot4,
-    SelectTimeZoneSlot5,
-    SelectTimeZoneSlot6,
-    SelectTimeZoneSlot7,
-    SelectTimeZoneSlot8,
-    SelectAlertSlot1,
-    SelectAlertSlot2,
-    SelectAlertSlot3,
-    SelectAlertSlot4,
-    SelectAlertSlot5,
-    SelectAlertSlot6,
-    SelectAlertSlot7,
-    SelectAlertSlot8,
-    SelectAlertSlot9,
+    /// Chooses the time zone in key `slot` of the current list page.
+    SelectTimeZoneSlot,
+    /// Opens the alert in key `slot` of the current list page.
+    SelectAlertSlot,
     AlertAccept,
     AlertIgnore,
-    GoPinter,
-    SelectPinterSlot1,
-    SelectPinterSlot2,
-    SelectPinterSlot3,
-    SelectPinterSlot4,
+    /// Selects Pinter vessel `slot`.
+    SelectPinterSlot,
     ApplyPinterPrimaryAction,
     RequestPinterReset,
     ConfirmPinterReset,
     CancelPinterReset,
     DecreaseSelectedPinterDay,
     IncreaseSelectedPinterDay,
-    GoPinterSelectBrew,
-    SelectPinterListItem1,
-    SelectPinterListItem2,
-    SelectPinterListItem3,
-    SelectPinterListItem4,
-    SelectPinterListItem5,
-    SelectPinterListItem6,
-    SelectPinterListItem7,
-    SelectPinterListItem8,
+    /// Picks the recipe in key `slot` of the current catalogue page.
+    SelectPinterListItem,
     SelectPinterMinimumTiming,
     SelectPinterRecommendedTiming,
     DecreasePinterBrewDays,
@@ -647,24 +605,13 @@ enum class SoftKeyRoute : uint8_t
     DecreasePinterColdCrashDays,
     IncreasePinterColdCrashDays,
     ConfirmPinterStart,
-    GoShares,
-    SelectShareSlot1,
-    SelectShareSlot2,
-    SelectShareSlot3,
-    SelectShareSlot4,
-    SelectShareSlot5,
-    SelectShareSlot6,
+    /// Opens watched share `slot`.
+    SelectShareSlot,
     CycleSharePeriod,
     CycleCalendarOwner,
     ResetCalendarFilters,
-    SelectCalendarSlot1,
-    SelectCalendarSlot2,
-    SelectCalendarSlot3,
-    SelectCalendarSlot4,
-    SelectCalendarSlot5,
-    SelectCalendarSlot6,
-    SelectCalendarSlot7,
-    SelectCalendarSlot8,
+    /// Opens the calendar event in visible key `slot`.
+    SelectCalendarSlot,
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
@@ -790,10 +737,18 @@ struct SoftKeyAction
     /// edited, and nothing else (LBL-5).
     bool inverted = false;
     SoftKeyRole role = SoftKeyRole::Blank;
+    /// Which page, entry or option the route acts on; see SoftKeyRoute.
+    uint8_t slot = 0U;
 };
 
 /// @brief The ten softkey assignments around the screen.
 using SoftKeyMap = std::array<SoftKeyAction, static_cast<size_t>(SoftKeyId::Count)>;
+
+/// @brief True when pressing `action` opens `page`.
+constexpr bool opens_page(const SoftKeyAction& action, MenuPage page)
+{
+    return action.route == SoftKeyRoute::GoPage && action.slot == static_cast<uint8_t>(page);
+}
 
 /// @brief One key meaning in the current letter mode.
 struct KeyLegend

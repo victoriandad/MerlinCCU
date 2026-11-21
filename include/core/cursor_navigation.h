@@ -30,6 +30,23 @@ struct CursorRange
     int last;
 };
 
+/// @brief One page's cursor behaviour, named from its page_table entry: where
+/// the cursor is and its bounds, and how a new position is stored.
+struct PageCursor
+{
+    CursorRange (*range)(const ConsoleState& console_state);
+    /// Only called with a position `range` allows.
+    void (*set_position)(ConsoleState& console_state, int position);
+};
+
+/// @brief The cursor behaviours pages use.
+extern const PageCursor kSettingsPages;
+extern const PageCursor kTimeZonePages;
+extern const PageCursor kBrewCataloguePages;
+extern const PageCursor kAlertListPages;
+extern const PageCursor kCalendarDay;
+extern const PageCursor kAlertDetailScroll;
+
 /// @brief What the cursor keys move through on the current page, and where.
 CursorRange cursor_range(const ConsoleState& console_state);
 

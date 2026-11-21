@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "alert_screens.h"
+#include "page_table.h"
 
 namespace cursor_navigation
 {
@@ -16,71 +17,58 @@ CursorRange list_pages(uint8_t page_index, uint8_t page_count)
     return {CursorUse::ListPage, page_index, 0, static_cast<int>(page_count) - 1};
 }
 
-/// @brief Writes a new position into the field the current page's range
-/// reads. Only called with a position cursor_range() allows.
-void set_position(ConsoleState& console_state, int position)
+CursorRange alert_detail_range(const ConsoleState& console_state)
 {
-    switch (console_state.active_page)
+    if (console_state.alert_detail_index >= console_state.alert_count)
     {
-    case MenuPage::Settings:
-        console_state.settings_page_index = static_cast<uint8_t>(position);
-        break;
-    case MenuPage::TimeZoneSettings:
-        console_state.time_zone_page_index = static_cast<uint8_t>(position);
-        break;
-    case MenuPage::PinterSelectBrew:
-        console_state.pinter_catalogue_page_index = static_cast<uint8_t>(position);
-        break;
-    case MenuPage::AlertList:
-        console_state.alert_list_page_index = static_cast<uint8_t>(position);
-        break;
-    case MenuPage::Calendar:
-        console_state.calendar_day_offset = static_cast<int8_t>(position);
-        break;
-    case MenuPage::AlertDetail:
-        console_state.alert_detail_scroll_line = static_cast<uint8_t>(position);
-        break;
-    default:
-        break;
+        return {CursorUse::None, 0, 0, 0};
     }
+    // The scroll range comes from the renderer's own line wrapping, so the
+    // two cannot disagree. The renderer shows a line past the end as the last
+    // page, so the position is clamped the same way.
+    const ActiveAlert& alert = console_state.active_alerts[console_state.alert_detail_index];
+    const int max_scroll = alert_screens::detail_max_scroll(alert);
+    return {CursorUse::Scroll, std::min<int>(console_state.alert_detail_scroll_line, max_scroll), 0,
+            max_scroll};
 }
 
 } // namespace
 
+const PageCursor kSettingsPages = {
+    [](const ConsoleState& s) { return list_pages(s.settings_page_index, kSettingsPageCount); },
+    [](ConsoleState& s, int position) { s.settings_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kTimeZonePages = {
+    [](const ConsoleState& s) { return list_pages(s.time_zone_page_index, kTimeZonePageCount); },
+    [](ConsoleState& s, int position) { s.time_zone_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kBrewCataloguePages = {
+    [](const ConsoleState& s)
+    { return list_pages(s.pinter_catalogue_page_index, kPinterBrewListPageCount); },
+    [](ConsoleState& s, int position)
+    { s.pinter_catalogue_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kAlertListPages = {
+    [](const ConsoleState& s)
+    { return list_pages(s.alert_list_page_index, alert_list_page_count(s.alert_count)); },
+    [](ConsoleState& s, int position) { s.alert_list_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kCalendarDay = {
+    [](const ConsoleState& s) {
+        return CursorRange{CursorUse::Step, s.calendar_day_offset, kCalendarMinDayOffset,
+                           kCalendarMaxDayOffset};
+    },
+    [](ConsoleState& s, int position) { s.calendar_day_offset = static_cast<int8_t>(position); }};
+
+const PageCursor kAlertDetailScroll = {
+    alert_detail_range,
+    [](ConsoleState& s, int position)
+    { s.alert_detail_scroll_line = static_cast<uint8_t>(position); }};
+
 CursorRange cursor_range(const ConsoleState& console_state)
 {
-    switch (console_state.active_page)
-    {
-    case MenuPage::Settings:
-        return list_pages(console_state.settings_page_index, kSettingsPageCount);
-    case MenuPage::TimeZoneSettings:
-        return list_pages(console_state.time_zone_page_index, kTimeZonePageCount);
-    case MenuPage::PinterSelectBrew:
-        return list_pages(console_state.pinter_catalogue_page_index, kPinterBrewListPageCount);
-    case MenuPage::AlertList:
-        return list_pages(console_state.alert_list_page_index,
-                          alert_list_page_count(console_state.alert_count));
-    case MenuPage::Calendar:
-        return {CursorUse::Step, console_state.calendar_day_offset, kCalendarMinDayOffset,
-                kCalendarMaxDayOffset};
-    case MenuPage::AlertDetail:
-        if (console_state.alert_detail_index < console_state.alert_count)
-        {
-            // The scroll range comes from the renderer's own line wrapping,
-            // so the two cannot disagree. The renderer shows a line past the
-            // end as the last page, so the position is clamped the same way.
-            const ActiveAlert& alert =
-                console_state.active_alerts[console_state.alert_detail_index];
-            const int max_scroll = alert_screens::detail_max_scroll(alert);
-            return {CursorUse::Scroll,
-                    std::min<int>(console_state.alert_detail_scroll_line, max_scroll), 0,
-                    max_scroll};
-        }
-        break;
-    default:
-        break;
-    }
-    return {CursorUse::None, 0, 0, 0};
+    const PageCursor* cursor = page_table::describe(console_state.active_page).cursor;
+    return cursor != nullptr ? cursor->range(console_state) : CursorRange{CursorUse::None, 0, 0, 0};
 }
 
 bool can_move(const ConsoleState& console_state, int direction)
@@ -97,7 +85,8 @@ bool move(ConsoleState& console_state, int direction)
     {
         return false;
     }
-    set_position(console_state, cursor_range(console_state).position + direction);
+    page_table::describe(console_state.active_page)
+        .cursor->set_position(console_state, cursor_range(console_state).position + direction);
     return true;
 }
 

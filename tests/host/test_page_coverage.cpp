@@ -24,6 +24,7 @@
 #include "framebuffer.h"
 #include "golden_test_support.h"
 #include "input.h"
+#include "page_table.h"
 #include "panel_config.h"
 #include "screens.h"
 #include "screens_shared.h"
@@ -39,7 +40,7 @@ using text_styles::TextStyle;
 /// @brief Fixed boot-uptime for every render, so freshness text is stable.
 constexpr uint32_t kCoverageNowMs = 900000U;
 
-constexpr int kMenuPageCount = static_cast<int>(MenuPage::ShareDetail) + 1;
+constexpr int kPageCount = static_cast<int>(kMenuPageCount);
 
 constexpr std::array<ButtonId, static_cast<size_t>(SoftKeyId::Count)> kSoftkeyButtons = {
     ButtonId::LeftTop,    ButtonId::LeftUpper,  ButtonId::LeftMiddle, ButtonId::LeftLower,
@@ -47,7 +48,7 @@ constexpr std::array<ButtonId, static_cast<size_t>(SoftKeyId::Count)> kSoftkeyBu
     ButtonId::RightLower, ButtonId::RightBottom};
 
 /// @brief Golden-image name for each page, in MenuPage order.
-constexpr std::array<const char*, kMenuPageCount> kPageNames = {
+constexpr std::array<const char*, kPageCount> kPageNames = {
     "home",
     "calendar",
     "calendar_detail",
@@ -355,7 +356,52 @@ std::vector<std::string> role_problems(const SoftKeyMap& softkeys)
     return out;
 }
 
+/// @brief Names the softkeys a body or diagnostic page uses off row 5
+/// (PAGE-1, PAGE-4): those page types keep their keys to L5 and R5.
+std::vector<std::string> page_type_problems(const ConsoleState& state)
+{
+    std::vector<std::string> out;
+    if (page_table::describe(state.active_page).type == page_table::PageType::Key)
+    {
+        return out;
+    }
+    for (size_t key = 0U; key < state.softkeys.size(); ++key)
+    {
+        const size_t row = key % static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+        if (row != 4U && state.softkeys[key].role != SoftKeyRole::Blank)
+        {
+            const bool left = key < static_cast<size_t>(ui_layout::kSoftkeyRowCount);
+            out.push_back(std::string("type ") + (left ? "L" : "R") + std::to_string(row + 1U) +
+                          " used on a body page");
+        }
+    }
+    return out;
+}
+
 } // namespace
+
+HOST_TEST(every_page_table_entry_has_a_title_and_a_parent_chain_ending_at_home)
+{
+    for (size_t value = 0U; value < kMenuPageCount; ++value)
+    {
+        const MenuPage page = static_cast<MenuPage>(value);
+        const page_table::PageDescriptor& entry = page_table::describe(page);
+        EXPECT_TRUE(entry.page == page);
+        EXPECT_TRUE(entry.title != nullptr && entry.title[0] != '\0');
+        EXPECT_TRUE(entry.label_max_lines >= 1U);
+
+        ConsoleState state = {};
+        state.active_page = page;
+        state.alert_parent_page = MenuPage::Weather;
+        size_t steps = 0U;
+        while (state.active_page != MenuPage::Home && steps <= kMenuPageCount)
+        {
+            state.active_page = page_table::parent_page(state);
+            ++steps;
+        }
+        EXPECT_TRUE(state.active_page == MenuPage::Home);
+    }
+}
 
 HOST_TEST(the_role_check_catches_an_inverse_toggle_and_an_inert_labelled_key)
 {
@@ -437,7 +483,7 @@ std::vector<std::string> navigation_problems(const std::vector<ButtonId>& path)
     const bool calendar_reset =
         state.active_page == MenuPage::Calendar && !calendar_controller::filters_are_default(state);
     if (state.active_page != MenuPage::Home && !page_is_asking_for_decision(state) &&
-        !calendar_reset && r5.route != SoftKeyRoute::GoHome)
+        !calendar_reset && !opens_page(r5, MenuPage::Home))
     {
         out.push_back("nav R5 is not HOME");
     }
@@ -468,7 +514,7 @@ std::vector<std::string> navigation_problems(const std::vector<ButtonId>& path)
     for (size_t key = 0U; key < state.softkeys.size(); ++key)
     {
         const SoftKeyAction& action = state.softkeys[key];
-        if (!action.enabled || action.route == SoftKeyRoute::GoHome)
+        if (!action.enabled || opens_page(action, MenuPage::Home))
         {
             continue;
         }
@@ -553,6 +599,10 @@ HOST_TEST(
         {
             problems.insert(name + " role " + role);
         }
+        for (const std::string& type : page_type_problems(state))
+        {
+            problems.insert(name + " " + type);
+        }
         for (const std::string& navigation : navigation_problems(path))
         {
             problems.insert(name + " " + navigation);
@@ -576,7 +626,7 @@ HOST_TEST(
     }
 
     // Completeness: every page must be reachable, and so covered.
-    for (int value = 0; value < kMenuPageCount; ++value)
+    for (int value = 0; value < kPageCount; ++value)
     {
         if (kPageNames[static_cast<size_t>(value)] == nullptr)
         {

@@ -471,10 +471,23 @@ cannot disagree. Which pages keep R5 for a decision is
 `view`, `step`, `status`, `option`, `item`, `blank`), and the role is kept on
 `SoftKeyAction::role`. The builder owns the label form and the enabled and
 inverse flags, so a page cannot, for example, draw a toggle inverse or
-label a key that does nothing as if it acts. `update_softkeys_from_state()`
-in `console_controller.cpp` builds every page's map from these builders;
-the feature controllers (Pinter, Calendar, Alerts) format only the label
-text of their list items.
+label a key that does nothing as if it acts.
+
+**Page table (#120).** Each `MenuPage` has one entry in
+`src/core/page_table.cpp`: title, parent, page type, softkey label style
+and line limit, softkey builder, body renderer, `on_enter` hook, cursor
+behaviour, redraw policy and share fetch. The header title, BACK STEP,
+label font, body dispatch, cursor keys, footer arrows, data-age redraw and
+share polling all read the entry, and a `static_assert` fails the build if
+a page has no entry or the entries are out of order. Each family's softkey
+builder lives in its controller (`settings_controller`, `pinter_controller`,
+`alert_controller`, `calendar_controller`, `status_controller`, and
+`home_controller` for Home and Local Conditions);
+`update_softkeys_from_state()` only calls the builder and adds R5 HOME.
+Routes that act on one of several things take it from `SoftKeyAction::slot`:
+`GoPage` opens the page in `slot`, and list and option routes select entry
+`slot`, so a new page or list entry needs no new route. Adding a page is one
+table entry, one softkey builder and one renderer.
 
 Existing fit or overlap problems are listed in the test, each with the issue
 that fixes it. The test fails on a problem that is not listed, and also on a
@@ -653,4 +666,5 @@ hardware headers to compile.
 | 2026-08-14 | Fixed a gap in #106's #104 RAM instrumentation: `home_assistant_manager::g_response`'s peak-usage tracking was only ever surfaced through the pre-existing `direct_weather_log()` helper, which is gated behind its own `kEnableDirectWeatherSerialDiagnostics` flag *and* explicitly skips logging whenever `g_active_weather_source == WeatherSource::HomeAssistant` -- so a user actually running HA as their weather/entity source (the most fully-integrated path) would get zero peak-size data for this buffer no matter what, since every `RequestKind` (`ProbeApi`/`FetchTrackedEntity`/`FetchWeatherEntity`/`FetchWeatherForecast`/`FetchWeatherDailyForecast`/`FetchSunEntity`/`PublishSelfEntity`) cycles through this one shared buffer via `advance_request_kind()`. Added an unconditional `PERIODIC_LOG` at the top of `handle_http_status()` (the single dispatch point every request kind's response passes through) reporting `g_response_peak_len` regardless of weather source or request kind. | User picked up issue #104 to actually run the real-hardware session PR #106 was left waiting on; before sending them off to collect data, re-read the instrumentation and found this buffer's logging would silently produce nothing useful for their setup, which uses Home Assistant. Better to catch an instrumentation gap before a hardware session than have them come back with a suspiciously-missing number. | Not yet verified on hardware -- same caveat as the rest of this issue's work. `air_traffic_manager`'s and `share_price_manager`'s peak logging were re-checked and don't have the same gap (their `PERIODIC_LOG` calls are unconditional already). |
 | 2026-11-20 | Removed the ADS-B air-traffic feature (manager, parser, page, settings, alert, config fields; config version 6). | Static RAM was ~97.6% used (#104) and the feature was not needed; it held ~22 KB of SRAM (16 KB response buffer, aircraft status and its console copy). | None; #166. |
 | 2026-11-21 | Core-0 stack: moved the big stack locals to static storage or removed them, extended the stack into the unused SCRATCH_X bank (8 KB in all) and armed the M33 stack limit with a fault-and-reboot handler and a `StackLow` alert (`stack_guard`). | `STACK FREE` read 0 B on every boot. `-fstack-usage` showed single frames of 6 KB (`config_manager::init`), 4 KB (`get_form_value` copying the POST body) and about 2 KB each (`HomeAssistantStatus`, `EnvironmentSensorStatus` and `RuntimeConfig` copies), and the lwIP callbacks run on the same stack. A web save alone needed about 7 KB. | The statics cost about 7 KB of .bss (479,772 to 486,768 B); main SRAM headroom is still about 25 KB, and #162 (PSRAM) is the longer-term fix. Using SCRATCH_X rules out starting core 1 without revisiting this (#56); `stack_guard::init()` panics if anything is linked there. #164. |
+| 2026-11-21 | Page table (#120): one `page_table.cpp` entry per page drives title, parent, label font, softkey builder, renderer, cursor, redraw and share fetch; slot routes replace the per-slot and per-page routes (109 routes down to 37). | Adding a page meant editing about eight switches across three files, with only compiler warnings to catch a miss. | Function-pointer table with a `static_assert` on entry order; the Alert list's dynamic parent stays a special case in `parent_page()`. |
 | YYYY-MM-DD |  |  |  |

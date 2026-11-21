@@ -140,4 +140,24 @@ bool handle_timeout_edit_event(ConsoleState& console_state, const ButtonEvent& e
 /// @brief Persists the scratchpad timeout value when the user presses Enter.
 bool confirm_timeout_edit(ConsoleState& console_state);
 
+/// @name Page hooks and softkey maps (page_table.h)
+/// @{
+/// @brief Settings always opens on its first section page.
+void enter_settings(ConsoleState& console_state);
+/// @brief Time Zone opens on the list page holding the current zone.
+void enter_time_zone_settings(ConsoleState& console_state);
+void build_weather_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_shares_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_share_detail_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_settings_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_device_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_wifi_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_home_assistant_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_mqtt_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_screen_saver_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_screen_saver_options_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_weather_sources_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_time_zone_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+/// @}
+
 } // namespace settings_controller

@@ -35,4 +35,7 @@ bool reset_filters(ConsoleState& console_state);
 /// @brief Opens the detail page for one visible calendar event slot.
 bool open_detail_from_slot(ConsoleState& console_state, uint8_t visible_slot);
 
+/// @brief The Calendar page's softkey map (page_table.h).
+void build_calendar_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+
 } // namespace calendar_controller

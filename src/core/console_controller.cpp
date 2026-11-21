@@ -1,22 +1,17 @@
 #include "console_controller.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 
 #include "alert_controller.h"
 #include "alert_ordering.h"
-#include "alert_screens.h"
 #include "calendar_controller.h"
 #include "console_controller_internal.h"
 #include "cursor_navigation.h"
 #include "debug_logging.h"
-#include "local_conditions.h"
+#include "page_table.h"
 #include "pinter_controller.h"
-#include "pinter_scheduling.h"
 #include "settings_controller.h"
 #include "softkey_builders.h"
 #include "status_controller.h"
@@ -44,25 +39,6 @@ std::array<bool, static_cast<size_t>(SoftKeyId::Count)> g_softkey_label_override
 void update_softkeys_from_state();
 void update_lamps_from_state();
 bool button_digit_value(ButtonId id, uint8_t* out_digit);
-
-// Brew Timing duration limits, in days, for a brew started from the panel.
-constexpr uint8_t kPinterMinBrewDays = 1U;
-constexpr uint8_t kPinterMaxBrewDays = 30U;
-constexpr uint8_t kPinterMinConditioningDays = 1U;
-constexpr uint8_t kPinterMaxConditioningDays = 45U;
-constexpr uint8_t kPinterMinColdCrashDays = 0U;
-constexpr uint8_t kPinterMaxColdCrashDays = 3U;
-
-/// @brief List slots in fill order, L1-L4 then R1-R4 (NAV-6).
-constexpr std::array<SoftKeyId, 8> kListSlotSoftkeys = {
-    SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,  SoftKeyId::Left4,
-    SoftKeyId::Right1, SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
-
-constexpr std::array<SoftKeyRoute, kPinterBrewListVisibleCount> kPinterBrewListRoutes = {
-    SoftKeyRoute::SelectPinterListItem1, SoftKeyRoute::SelectPinterListItem2,
-    SoftKeyRoute::SelectPinterListItem3, SoftKeyRoute::SelectPinterListItem4,
-    SoftKeyRoute::SelectPinterListItem5, SoftKeyRoute::SelectPinterListItem6,
-    SoftKeyRoute::SelectPinterListItem7, SoftKeyRoute::SelectPinterListItem8};
 
 /// @brief Converts a lamp enum into a stable array index.
 /// @details The controller stores lamp state in dense arrays so the UI update path can avoid
@@ -134,67 +110,10 @@ bool keypad_digit_value(ButtonId id, uint8_t* out_digit)
 namespace
 {
 
-// The rest of this file's dispatch code (update_softkeys_from_state(),
-// apply_softkey_route(), and their helpers) builds labels via these
-// unqualified for brevity, exactly as before console_controller_internal was
-// split out into its own namespace.
-using console_controller_internal::build_selection_softkey_label;
-
-/// @brief Returns the parent page for one menu route in the current hierarchy.
-MenuPage parent_page(MenuPage page)
-{
-    switch (page)
-    {
-    case MenuPage::Home:
-    case MenuPage::Weather:
-    case MenuPage::Calendar:
-    case MenuPage::Status:
-    case MenuPage::LocalConditions:
-    case MenuPage::Settings:
-    case MenuPage::Pinter:
-    case MenuPage::Shares:
-        return MenuPage::Home;
-    case MenuPage::PinterSelectBrew:
-        return MenuPage::Pinter;
-    case MenuPage::PinterStartTiming:
-        return MenuPage::PinterSelectBrew;
-    case MenuPage::StatusOverview:
-    case MenuPage::StatusConnectivity:
-    case MenuPage::StatusResources:
-    case MenuPage::StatusSensors:
-    case MenuPage::StatusIntegrations:
-    case MenuPage::KeypadDebug:
-    case MenuPage::GreyscaleTest:
-        return MenuPage::Status;
-    case MenuPage::DeviceSettings:
-    case MenuPage::WifiSettings:
-    case MenuPage::HomeAssistantSettings:
-    case MenuPage::MqttSettings:
-    case MenuPage::ScreenSaverSettings:
-    case MenuPage::WeatherSources:
-    case MenuPage::TimeZoneSettings:
-        return MenuPage::Settings;
-    case MenuPage::ScreenSaverOptions:
-        return MenuPage::ScreenSaverSettings;
-    case MenuPage::AlertList:
-        return g_console_state.alert_parent_page;
-    case MenuPage::AlertDetail:
-        return MenuPage::AlertList;
-    case MenuPage::CalendarDetail:
-        return MenuPage::Calendar;
-    case MenuPage::ShareDetail:
-        return MenuPage::Shares;
-    case MenuPage::LocalConditionGraph:
-        return MenuPage::LocalConditions;
-    }
-
-    return MenuPage::Home;
-}
-
 /// @brief Moves the active page one level up the menu hierarchy.
 bool navigate_up_one_level()
 {
-    const MenuPage kParentPage = parent_page(g_console_state.active_page);
+    const MenuPage kParentPage = page_table::parent_page(g_console_state);
     if (kParentPage == g_console_state.active_page)
     {
         return false;
@@ -403,562 +322,23 @@ void update_softkeys_from_state()
 
     SoftKeyMap softkeys = {};
     softkeys.fill(softkey::blank());
-    const auto set_key = [&softkeys](SoftKeyId key, const SoftKeyAction& action)
-    { softkeys[softkey_index(key)] = action; };
-    const RuntimeConfig& config = config_manager::settings();
-
-    // Each page declares only the actions that make sense in that context,
-    // and every key is built by its role's builder (SK-1, SK-2). The top-level
-    // menus are intentionally sparse, while deeper pages reserve `R5` as a
-    // consistent one-press jump home.
-    switch (g_console_state.active_page)
+    // Each page's own keys come from its table entry's builder, in its
+    // family's controller; every key is built by its role's builder (SK-1,
+    // SK-2).
+    const page_table::PageDescriptor& page = page_table::describe(g_console_state.active_page);
+    if (page.build_softkeys != nullptr)
     {
-    case MenuPage::Home:
-        set_key(SoftKeyId::Left1, softkey::navigate("STATUS", SoftKeyRoute::GoStatus));
-        set_key(SoftKeyId::Left2, softkey::navigate("SHARES", SoftKeyRoute::GoShares));
-        set_key(SoftKeyId::Left3, softkey::navigate("CALENDAR", SoftKeyRoute::GoCalendar));
-        set_key(SoftKeyId::Left4, softkey::navigate(pinter_controller::build_home_softkey_label(
-                                                        SoftKeyId::Left4, g_console_state),
-                                                    SoftKeyRoute::GoPinter));
-        set_key(SoftKeyId::Right1, softkey::navigate("SETTINGS", SoftKeyRoute::GoSettings));
-        set_key(
-            SoftKeyId::Right2,
-            softkey::navigate(SoftKeyId::Right2, "WEATHER",
-                              settings_controller::weather_source_selection_text(g_console_state),
-                              SoftKeyRoute::GoWeather));
-        set_key(SoftKeyId::Right3,
-                softkey::navigate("LOCAL\nCONDITIONS", SoftKeyRoute::GoLocalConditions));
-        break;
-    case MenuPage::Calendar:
-    {
-        constexpr std::array<SoftKeyRoute, kListSlotSoftkeys.size()> routes = {
-            SoftKeyRoute::SelectCalendarSlot1, SoftKeyRoute::SelectCalendarSlot2,
-            SoftKeyRoute::SelectCalendarSlot3, SoftKeyRoute::SelectCalendarSlot4,
-            SoftKeyRoute::SelectCalendarSlot5, SoftKeyRoute::SelectCalendarSlot6,
-            SoftKeyRoute::SelectCalendarSlot7, SoftKeyRoute::SelectCalendarSlot8};
-        uint8_t visible_index = 0U;
-        const uint8_t event_count =
-            std::min(g_console_state.calendar_event_count,
-                     static_cast<uint8_t>(g_console_state.calendar_events.size()));
-        for (uint8_t i = 0U; i < event_count && visible_index < kListSlotSoftkeys.size(); ++i)
-        {
-            const CalendarEvent& event = g_console_state.calendar_events[i];
-            if (!calendar_controller::event_matches_filter(g_console_state, event))
-            {
-                continue;
-            }
-
-            const SoftKeyId slot = kListSlotSoftkeys[visible_index];
-            set_key(slot, softkey::item(calendar_controller::build_event_softkey_label(slot, event),
-                                        routes[visible_index]));
-            ++visible_index;
-        }
-        set_key(SoftKeyId::Left5,
-                softkey::view(SoftKeyId::Left5, "PERSON",
-                              calendar_controller::owner_selection_text(g_console_state),
-                              SoftKeyRoute::CycleCalendarOwner));
-        set_key(SoftKeyId::Right5,
-                calendar_controller::filters_are_default(g_console_state)
-                    ? softkey::navigate("HOME", SoftKeyRoute::GoHome)
-                    : softkey::action("RESET", SoftKeyRoute::ResetCalendarFilters));
-        break;
-    }
-    case MenuPage::CalendarDetail:
-        break;
-    case MenuPage::Weather:
-        set_key(SoftKeyId::Left5,
-                softkey::view(SoftKeyId::Left5, "PERIOD",
-                              settings_controller::weather_period_selection_text(g_console_state),
-                              SoftKeyRoute::CycleWeatherPeriod));
-        break;
-    case MenuPage::Pinter:
-    {
-        if (g_console_state.pinter_reset_confirming)
-        {
-            // Decision state: only decline (L5) and confirm (R5) (NAV-3).
-            pinter_controller::update_block_reason(g_console_state);
-            set_key(SoftKeyId::Left5, softkey::action("CANCEL", SoftKeyRoute::CancelPinterReset));
-            set_key(SoftKeyId::Right5, softkey::action("RESET", SoftKeyRoute::ConfirmPinterReset));
-            break;
-        }
-
-        constexpr std::array<SoftKeyRoute, kPinterCount> routes = {
-            SoftKeyRoute::SelectPinterSlot1,
-            SoftKeyRoute::SelectPinterSlot2,
-            SoftKeyRoute::SelectPinterSlot3,
-            SoftKeyRoute::SelectPinterSlot4,
-        };
-        for (size_t i = 0U; i < g_console_state.pinters.size(); ++i)
-        {
-            const SoftKeyId slot = kListSlotSoftkeys[i];
-            set_key(slot, softkey::item(pinter_controller::build_slot_softkey_label(
-                                            g_console_state, slot, g_console_state.pinters[i]),
-                                        routes[i], i == g_console_state.selected_pinter_index));
-        }
-
-        // R1 starts a brew on an idle vessel (opening Select Brew) or applies
-        // the selected vessel's next event. When it cannot act, it becomes a
-        // status key showing why (SK-5), and the footer repeats the reason.
-        const bool selected_pinter_idle =
-            pinter_controller::selected_const(g_console_state).state == PinterState::Idle;
-        const bool primary_can_act =
-            selected_pinter_idle
-                ? pinter_controller::brew_dock_count(g_console_state) < kPinterBrewDockCapacity
-                : pinter_controller::primary_action_enabled(g_console_state);
-        const char* primary_label =
-            pinter_controller::build_primary_action_label(SoftKeyId::Right1, g_console_state);
-        if (!primary_can_act)
-        {
-            set_key(SoftKeyId::Right1, softkey::status(primary_label));
-        }
-        else if (selected_pinter_idle)
-        {
-            set_key(SoftKeyId::Right1,
-                    softkey::navigate(primary_label, SoftKeyRoute::GoPinterSelectBrew));
-        }
-        else
-        {
-            set_key(SoftKeyId::Right1,
-                    softkey::action(primary_label, SoftKeyRoute::ApplyPinterPrimaryAction));
-        }
-        pinter_controller::update_block_reason(g_console_state);
-
-        // Keys that cannot act are left blank rather than shown as bare
-        // labels that do nothing (SK-5).
-        if (!selected_pinter_idle)
-        {
-            set_key(SoftKeyId::Right3, softkey::action("RESET", SoftKeyRoute::RequestPinterReset));
-        }
-        const uint8_t selected_stage_days = pinter_scheduling::current_stage_planned_days(
-            pinter_controller::selected_const(g_console_state));
-        if (selected_stage_days > 1U)
-        {
-            set_key(SoftKeyId::Right2,
-                    softkey::step("-1 DAY", SoftKeyRoute::DecreaseSelectedPinterDay));
-        }
-        if (selected_stage_days > 0U && selected_stage_days < std::numeric_limits<uint8_t>::max())
-        {
-            set_key(SoftKeyId::Right4,
-                    softkey::step("+1 DAY", SoftKeyRoute::IncreaseSelectedPinterDay));
-        }
-        break;
-    }
-    case MenuPage::PinterSelectBrew:
-    {
-        // On-the-fly recipe pick: whichever pack you have in hand right now,
-        // straight from the full catalogue -- no pre-planned reservation step.
-        const size_t base_index = static_cast<size_t>(g_console_state.pinter_catalogue_page_index) *
-                                  kPinterBrewListVisibleCount;
-        for (uint8_t i = 0U; i < kPinterBrewListVisibleCount; ++i)
-        {
-            const size_t brew_index = base_index + i;
-            if (brew_index >= pinter_controller::brew_catalogue_count())
-            {
-                break;
-            }
-            const SoftKeyId key = kListSlotSoftkeys[i];
-            set_key(key, softkey::item(pinter_controller::build_catalogue_item_label(
-                                           key, static_cast<uint8_t>(brew_index)),
-                                       kPinterBrewListRoutes[i]));
-        }
-        // R4 carries the eighth list item; BACK STEP returns to Pinter (NAV-5).
-        break;
-    }
-    case MenuPage::PinterStartTiming:
-    {
-        // Decision state for a brew start: presets on row 1, one duration per
-        // row with -/+ on opposite sides, CANCEL at L5 and START at R5 (NAV-3).
-        // A step key is blank when its value is at the limit, so every
-        // labelled key acts (SK-5).
-        set_key(SoftKeyId::Left1,
-                softkey::action("MINIMUM", SoftKeyRoute::SelectPinterMinimumTiming));
-        set_key(SoftKeyId::Right1,
-                softkey::action("RECOMMENDED", SoftKeyRoute::SelectPinterRecommendedTiming));
-
-        struct DurationRow
-        {
-            SoftKeyId minus_key;
-            SoftKeyId plus_key;
-            const char* minus_caption;
-            const char* plus_caption;
-            uint8_t days;
-            uint8_t min_days;
-            uint8_t max_days;
-            SoftKeyRoute minus_route;
-            SoftKeyRoute plus_route;
-        };
-        const std::array<DurationRow, 3> rows = {{
-            {SoftKeyId::Left2, SoftKeyId::Right2, "CRASH -", "CRASH +",
-             g_console_state.pinter_pending_cold_crash_days, kPinterMinColdCrashDays,
-             kPinterMaxColdCrashDays, SoftKeyRoute::DecreasePinterColdCrashDays,
-             SoftKeyRoute::IncreasePinterColdCrashDays},
-            {SoftKeyId::Left3, SoftKeyId::Right3, "BREW -", "BREW +",
-             g_console_state.pinter_pending_brewing_days, kPinterMinBrewDays, kPinterMaxBrewDays,
-             SoftKeyRoute::DecreasePinterBrewDays, SoftKeyRoute::IncreasePinterBrewDays},
-            {SoftKeyId::Left4, SoftKeyId::Right4, "COND -", "COND +",
-             g_console_state.pinter_pending_conditioning_days, kPinterMinConditioningDays,
-             kPinterMaxConditioningDays, SoftKeyRoute::DecreasePinterConditioningDays,
-             SoftKeyRoute::IncreasePinterConditioningDays},
-        }};
-        for (const DurationRow& row : rows)
-        {
-            if (row.days > row.min_days)
-            {
-                set_key(row.minus_key,
-                        softkey::step(pinter_controller::build_days_label(
-                                          row.minus_key, row.minus_caption, row.days),
-                                      row.minus_route));
-            }
-            if (row.days < row.max_days)
-            {
-                set_key(row.plus_key, softkey::step(pinter_controller::build_days_label(
-                                                        row.plus_key, row.plus_caption, row.days),
-                                                    row.plus_route));
-            }
-        }
-
-        set_key(SoftKeyId::Left5, softkey::action("CANCEL", SoftKeyRoute::GoPinterSelectBrew));
-        if (pinter_controller::can_start(g_console_state))
-        {
-            set_key(SoftKeyId::Right5,
-                    softkey::action(SoftKeyId::Right5, "START",
-                                    pinter_controller::selected_const(g_console_state).label.data(),
-                                    SoftKeyRoute::ConfirmPinterStart));
-        }
-        break;
-    }
-    case MenuPage::Shares:
-    {
-        // Lists fill L1-L4 then R1-R4, leaving row 5 free (NAV-6).
-        constexpr std::array<SoftKeyRoute, kMaxWatchedShares> routes = {
-            SoftKeyRoute::SelectShareSlot1, SoftKeyRoute::SelectShareSlot2,
-            SoftKeyRoute::SelectShareSlot3, SoftKeyRoute::SelectShareSlot4,
-            SoftKeyRoute::SelectShareSlot5, SoftKeyRoute::SelectShareSlot6};
-        const size_t share_count = std::min<size_t>(g_console_state.share_count, routes.size());
-        for (size_t i = 0U; i < share_count; ++i)
-        {
-            const SoftKeyId slot = kListSlotSoftkeys[i];
-            const ShareWatchEntry& share = g_console_state.watched_shares[i];
-            set_key(slot,
-                    softkey::item(build_selection_softkey_label(slot, share.display_name.data(),
-                                                                share.price_text.data()),
-                                  routes[i]));
-        }
-        break;
-    }
-    case MenuPage::ShareDetail:
-        set_key(SoftKeyId::Left5,
-                softkey::view(SoftKeyId::Left5, "PERIOD",
-                              settings_controller::share_period_selection_text(g_console_state),
-                              SoftKeyRoute::CycleSharePeriod));
-        break;
-    case MenuPage::Status:
-        set_key(SoftKeyId::Left1, softkey::navigate("OVERVIEW", SoftKeyRoute::GoStatusOverview));
-        set_key(SoftKeyId::Left2, softkey::navigate("CONNECT", SoftKeyRoute::GoStatusConnectivity));
-        set_key(SoftKeyId::Left3, softkey::navigate("RESOURCES", SoftKeyRoute::GoStatusResources));
-        set_key(SoftKeyId::Left4, softkey::navigate("SENSORS", SoftKeyRoute::GoStatusSensors));
-        set_key(SoftKeyId::Right1,
-                softkey::navigate("INTEGRATIONS", SoftKeyRoute::GoStatusIntegrations));
-        set_key(SoftKeyId::Right3, softkey::navigate("GREYSCALE", SoftKeyRoute::GoGreyscaleTest));
-        set_key(SoftKeyId::Right4, softkey::navigate("KEYPAD", SoftKeyRoute::GoKeypadDebug));
-        break;
-    case MenuPage::StatusOverview:
-    case MenuPage::StatusConnectivity:
-    case MenuPage::StatusResources:
-    case MenuPage::StatusSensors:
-    case MenuPage::StatusIntegrations:
-        // Body pages: only R5 HOME, added below (PAGE-4). BACK STEP returns to Status.
-        break;
-    case MenuPage::LocalConditions:
-    {
-        // One reading key per quantity, opening its graph; the value is the
-        // current reading (navigate with summary). A quantity with no reading
-        // and no history has nothing to open, so its key is blank (SK-5); with
-        // no board at all every key is blank and the body says why. Values
-        // come from the one formatter per quantity (BODY-5).
-        struct ReadingKey
-        {
-            SoftKeyId key;
-            const char* caption;
-            LocalConditionMetric metric;
-            SoftKeyRoute route;
-        };
-        constexpr std::array<ReadingKey, 4> kReadingKeys = {{
-            {SoftKeyId::Left1, "TEMP", LocalConditionMetric::Temperature,
-             SoftKeyRoute::ShowLocalTemperatureGraph},
-            {SoftKeyId::Left2, "HUMIDITY", LocalConditionMetric::Humidity,
-             SoftKeyRoute::ShowLocalHumidityGraph},
-            {SoftKeyId::Left3, "AIR PRESSURE", LocalConditionMetric::AirPressure,
-             SoftKeyRoute::ShowLocalPressureGraph},
-            {SoftKeyId::Left4, "VOC CHANGE", LocalConditionMetric::AirQuality,
-             SoftKeyRoute::ShowLocalAirQualityGraph},
-        }};
-        const auto& sensor = g_console_state.environment_sensor_status;
-        for (const ReadingKey& reading : kReadingKeys)
-        {
-            if (!local_conditions::metric_has_data(reading.metric, sensor))
-            {
-                continue;
-            }
-            char value[20] = {};
-            local_conditions::format_metric(reading.metric, sensor, value, sizeof(value));
-            set_key(reading.key,
-                    softkey::navigate(reading.key, reading.caption, value, reading.route));
-        }
-        break;
-    }
-    case MenuPage::LocalConditionGraph:
-        // Body page: BACK STEP returns to Local Conditions (NAV-5); R5 HOME below.
-        break;
-    case MenuPage::Settings:
-        // Section keys open their sub-page and summarise it; WEATHER SOURCE and
-        // TIME ZONE open option pages; REMOTE CONFIG switches in place.
-        if (g_console_state.settings_page_index == 0U)
-        {
-            set_key(SoftKeyId::Left1,
-                    softkey::navigate(SoftKeyId::Left1, "DEVICE IDENTITY",
-                                      settings_controller::device_identity_selection_text(),
-                                      SoftKeyRoute::GoDeviceSettings));
-            set_key(SoftKeyId::Left2,
-                    softkey::toggle(SoftKeyId::Left2, "REMOTE CONFIG", config.remote_config_enabled,
-                                    SoftKeyRoute::ToggleRemoteConfig));
-            set_key(SoftKeyId::Left3,
-                    softkey::navigate(SoftKeyId::Left3, "NETWORK",
-                                      settings_controller::wifi_selection_text(g_console_state),
-                                      SoftKeyRoute::GoWifiSettings));
-            set_key(SoftKeyId::Left4, softkey::navigate(SoftKeyId::Left4, "HOME ASSISTANT",
-                                                        settings_controller::enabled_selection_text(
-                                                            config.home_assistant_enabled),
-                                                        SoftKeyRoute::GoHomeAssistantSettings));
-        }
-        else
-        {
-            set_key(SoftKeyId::Left1, softkey::navigate(SoftKeyId::Left1, "MQTT DISCOVERY",
-                                                        settings_controller::enabled_selection_text(
-                                                            config.mqtt_enabled),
-                                                        SoftKeyRoute::GoMqttSettings));
-            set_key(
-                SoftKeyId::Left2,
-                softkey::select(SoftKeyId::Left2, "WEATHER SOURCE",
-                                settings_controller::weather_source_selection_text(g_console_state),
-                                SoftKeyRoute::GoWeatherSources));
-            set_key(SoftKeyId::Left3,
-                    softkey::select(SoftKeyId::Left3, "TIME ZONE",
-                                    settings_controller::time_zone_selection_text(g_console_state),
-                                    SoftKeyRoute::GoTimeZoneSettings));
-            set_key(
-                SoftKeyId::Left4,
-                softkey::navigate(SoftKeyId::Left4, "SCREEN SAVER",
-                                  settings_controller::screen_saver_selection_text(g_console_state),
-                                  SoftKeyRoute::GoScreenSaverSettings));
-        }
-        break;
-    case MenuPage::DeviceSettings:
-        // Set in the web config; shown here for reference.
-        set_key(SoftKeyId::Left1,
-                softkey::status(SoftKeyId::Left1, "NAME", config.device_name.data()));
-        set_key(SoftKeyId::Left2,
-                softkey::status(SoftKeyId::Left2, "LABEL", config.device_label.data()));
-        set_key(SoftKeyId::Left3,
-                softkey::status(SoftKeyId::Left3, "LOCATION", config.location.data()));
-        set_key(SoftKeyId::Left4, softkey::status(SoftKeyId::Left4, "ROOM", config.room.data()));
-        break;
-    case MenuPage::WifiSettings:
-        set_key(SoftKeyId::Left1,
-                softkey::status(SoftKeyId::Left1, "SSID", config.wifi_ssid.data()));
-        set_key(SoftKeyId::Left2, softkey::status(SoftKeyId::Left2, "PASSWORD",
-                                                  settings_controller::secret_selection_text(
-                                                      config.wifi_password[0] != '\0')));
-        break;
-    case MenuPage::HomeAssistantSettings:
-        set_key(SoftKeyId::Left1,
-                softkey::toggle(SoftKeyId::Left1, "REST API", config.home_assistant_enabled,
-                                SoftKeyRoute::ToggleHomeAssistantEnabled));
-        set_key(SoftKeyId::Left2,
-                softkey::status(SoftKeyId::Left2, "HOST", config.home_assistant_host.data()));
-        set_key(SoftKeyId::Left3,
-                softkey::status(SoftKeyId::Left3, "PORT",
-                                settings_controller::port_selection_text(
-                                    SoftKeyId::Left3, config.home_assistant_port)));
-        set_key(SoftKeyId::Left4, softkey::status(SoftKeyId::Left4, "TOKEN",
-                                                  settings_controller::secret_selection_text(
-                                                      config.home_assistant_token[0] != '\0')));
-        set_key(SoftKeyId::Left5, softkey::status(SoftKeyId::Left5, "TRACKED",
-                                                  config.home_assistant_entity_id.data()));
-        set_key(SoftKeyId::Right1, softkey::status(SoftKeyId::Right1, "SELF",
-                                                   config.home_assistant_self_entity_id.data()));
-        break;
-    case MenuPage::MqttSettings:
-        set_key(SoftKeyId::Left1, softkey::toggle(SoftKeyId::Left1, "MQTT", config.mqtt_enabled,
-                                                  SoftKeyRoute::ToggleMqttEnabled));
-        set_key(SoftKeyId::Left2,
-                softkey::status(SoftKeyId::Left2, "BROKER", config.mqtt_host.data()));
-        set_key(SoftKeyId::Left3, softkey::status(SoftKeyId::Left3, "PORT",
-                                                  settings_controller::port_selection_text(
-                                                      SoftKeyId::Left3, config.mqtt_port)));
-        set_key(SoftKeyId::Left4,
-                softkey::status(SoftKeyId::Left4, "USERNAME", config.mqtt_username.data()));
-        set_key(SoftKeyId::Left5, softkey::status(SoftKeyId::Left5, "PASSWORD",
-                                                  settings_controller::secret_selection_text(
-                                                      config.mqtt_password[0] != '\0')));
-        set_key(SoftKeyId::Right1,
-                softkey::status(SoftKeyId::Right1, "PREFIX", config.mqtt_discovery_prefix.data()));
-        set_key(SoftKeyId::Right2,
-                softkey::status(SoftKeyId::Right2, "TOPIC", config.mqtt_base_topic.data()));
-        break;
-    case MenuPage::ScreenSaverSettings:
-        // Two select keys (SK-7). TIMEOUT opens a numeric entry state on this
-        // page: the field being edited stays inverse, CANCEL at L5 declines
-        // and ENTER at R5 confirms (NAV-3); every other key is blank (SK-5).
-        if (g_console_state.screen_saver_timeout_editing)
-        {
-            set_key(SoftKeyId::Left1,
-                    softkey::select_editing(
-                        SoftKeyId::Left1, "TIMEOUT",
-                        settings_controller::screen_saver_timeout_selection_text(g_console_state)));
-            set_key(SoftKeyId::Left5,
-                    softkey::action("CANCEL", SoftKeyRoute::CancelScreenSaverTimeout));
-            set_key(SoftKeyId::Right5,
-                    softkey::action("ENTER", SoftKeyRoute::ConfirmScreenSaverTimeout));
-            break;
-        }
-        set_key(SoftKeyId::Left1,
-                softkey::select(
-                    SoftKeyId::Left1, "TIMEOUT",
-                    settings_controller::screen_saver_timeout_selection_text(g_console_state),
-                    SoftKeyRoute::EditScreenSaverTimeout));
-        set_key(SoftKeyId::Left2,
-                softkey::select(SoftKeyId::Left2, "SAVER",
-                                settings_controller::screen_saver_selection_text(g_console_state),
-                                SoftKeyRoute::GoScreenSaverOptions));
-        break;
-    case MenuPage::ScreenSaverOptions:
-    {
-        // A fixed list of option keys in L1-L4, R1-R4 with the current saver
-        // inverse (SK-7, NAV-6); choosing one takes effect at once.
-        struct SaverOption
-        {
-            ScreenSaverSelection selection;
-            SoftKeyRoute route;
-        };
-        constexpr std::array<SaverOption, kListSlotSoftkeys.size()> options = {{
-            {ScreenSaverSelection::Life, SoftKeyRoute::SelectScreenSaverLife},
-            {ScreenSaverSelection::Clock, SoftKeyRoute::SelectScreenSaverClock},
-            {ScreenSaverSelection::Starfield, SoftKeyRoute::SelectScreenSaverStarfield},
-            {ScreenSaverSelection::Random, SoftKeyRoute::SelectScreenSaverRandom},
-            {ScreenSaverSelection::Matrix, SoftKeyRoute::SelectScreenSaverMatrix},
-            {ScreenSaverSelection::Radar, SoftKeyRoute::SelectScreenSaverRadar},
-            {ScreenSaverSelection::Rain, SoftKeyRoute::SelectScreenSaverRain},
-            {ScreenSaverSelection::Worms, SoftKeyRoute::SelectScreenSaverWorms},
-        }};
-        for (size_t i = 0U; i < options.size(); ++i)
-        {
-            set_key(
-                kListSlotSoftkeys[i],
-                softkey::option(
-                    settings_controller::screen_saver_definition(options[i].selection).option_label,
-                    options[i].route,
-                    g_console_state.screen_saver_selection == options[i].selection));
-        }
-        break;
-    }
-    case MenuPage::WeatherSources:
-    {
-        // Option keys for the source, then the selected source's settings
-        // from the web config for reference.
-        const bool home_assistant = g_console_state.weather_source == WeatherSource::HomeAssistant;
-        set_key(SoftKeyId::Left1,
-                softkey::option(
-                    settings_controller::weather_source_definition(WeatherSource::HomeAssistant)
-                        .option_label,
-                    SoftKeyRoute::SelectWeatherHomeAssistant, home_assistant));
-        set_key(
-            SoftKeyId::Left2,
-            softkey::option(settings_controller::weather_source_definition(WeatherSource::OpenMeteo)
-                                .option_label,
-                            SoftKeyRoute::SelectWeatherOpenMeteo,
-                            g_console_state.weather_source == WeatherSource::OpenMeteo));
-        set_key(SoftKeyId::Right1,
-                softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "COORDS",
-                                home_assistant ? config.weather_entity_id.data()
-                                               : config.weather_coordinates.data()));
-        set_key(SoftKeyId::Right2,
-                softkey::status(SoftKeyId::Right2, "SUN", config.sun_entity_id.data()));
-        break;
-    }
-    case MenuPage::TimeZoneSettings:
-    {
-        // A fixed, ordered list of option keys: a zone keeps its key whichever
-        // zone is selected, and the selected one is shown inverse (SK-7).
-        constexpr std::array<SoftKeyRoute, kTimeZoneOptionsPerPage> routes = {
-            SoftKeyRoute::SelectTimeZoneSlot1, SoftKeyRoute::SelectTimeZoneSlot2,
-            SoftKeyRoute::SelectTimeZoneSlot3, SoftKeyRoute::SelectTimeZoneSlot4,
-            SoftKeyRoute::SelectTimeZoneSlot5, SoftKeyRoute::SelectTimeZoneSlot6,
-            SoftKeyRoute::SelectTimeZoneSlot7, SoftKeyRoute::SelectTimeZoneSlot8};
-        for (uint8_t slot = 0U; slot < kTimeZoneOptionsPerPage; ++slot)
-        {
-            const settings_controller::TimeZoneDefinition* zone =
-                settings_controller::time_zone_for_slot(g_console_state, slot);
-            if (zone == nullptr)
-            {
-                break;
-            }
-            set_key(kListSlotSoftkeys[slot],
-                    softkey::option(zone->option_label, routes[slot],
-                                    zone->zone == g_console_state.time_zone));
-        }
-        break;
-    }
-    case MenuPage::KeypadDebug:
-    case MenuPage::GreyscaleTest:
-        break;
-    case MenuPage::AlertList:
-    {
-        std::array<uint8_t, kActiveAlertCapacity> alert_indices = {};
-        uint8_t sorted_count = 0U;
-        alert_controller::build_display_indices(g_console_state, alert_indices, &sorted_count);
-        const uint8_t page_start =
-            static_cast<uint8_t>(g_console_state.alert_list_page_index * kAlertsPerPage);
-        // The Alert list also uses L5 (NAV-6).
-        constexpr std::array<SoftKeyId, kAlertsPerPage> slots = {
-            SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
-            SoftKeyId::Left4,  SoftKeyId::Left5,  SoftKeyId::Right1,
-            SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
-        constexpr std::array<SoftKeyRoute, kAlertsPerPage> routes = {
-            SoftKeyRoute::SelectAlertSlot1, SoftKeyRoute::SelectAlertSlot2,
-            SoftKeyRoute::SelectAlertSlot3, SoftKeyRoute::SelectAlertSlot4,
-            SoftKeyRoute::SelectAlertSlot5, SoftKeyRoute::SelectAlertSlot6,
-            SoftKeyRoute::SelectAlertSlot7, SoftKeyRoute::SelectAlertSlot8,
-            SoftKeyRoute::SelectAlertSlot9};
-
-        for (size_t i = 0U; i < slots.size(); ++i)
-        {
-            const uint8_t index = static_cast<uint8_t>(page_start + i);
-            if (index >= sorted_count)
-            {
-                continue;
-            }
-            const ActiveAlert& alert = g_console_state.active_alerts[alert_indices[index]];
-            set_key(slots[i], softkey::item(alert_controller::build_softkey_label(slots[i], alert),
-                                            routes[i]));
-        }
-        break;
-    }
-    case MenuPage::AlertDetail:
-        set_key(SoftKeyId::Left5, softkey::action("IGNORE", SoftKeyRoute::AlertIgnore));
-        set_key(SoftKeyId::Right5, softkey::action("ACCEPT", SoftKeyRoute::AlertAccept));
-        break;
+        page.build_softkeys(g_console_state, softkeys);
     }
 
-    // R5 is HOME on every page except Home itself and a page asking for a
-    // decision or entry, where R5 confirms (NAV-2, NAV-3). Calendar is the
-    // one exception: R5 is its filter RESET while a filter is set, until
-    // live calendar data decides how that page should work (#8).
+    // R5 is HOME on every page except Home itself, a page asking for a
+    // decision or entry, where R5 confirms (NAV-2, NAV-3), and a page whose
+    // builder gives R5 a page-specific meaning (Calendar's filter RESET).
+    SoftKeyAction& r5 = softkeys[softkey_index(SoftKeyId::Right5)];
     if (g_console_state.active_page != MenuPage::Home &&
-        g_console_state.active_page != MenuPage::Calendar &&
-        !page_is_asking_for_decision(g_console_state))
+        !page_is_asking_for_decision(g_console_state) && r5.role == SoftKeyRole::Blank)
     {
-        set_key(SoftKeyId::Right5, softkey::navigate("HOME", SoftKeyRoute::GoHome));
+        r5 = softkey::navigate("HOME", MenuPage::Home);
     }
 
     // Any temporary label overrides are layered on after the page defaults so
@@ -1065,7 +445,9 @@ BrightnessLevel dimmer(BrightnessLevel level)
 }
 
 /// @brief Applies one softkey action to the console state.
-bool apply_softkey_route(SoftKeyRoute route)
+/// @details `slot` says which page, entry or option a slot route acts on;
+/// values outside the route's range are refused rather than cast.
+bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
 {
     // Route handling mutates only the console model. Rendering and hardware
     // reactions happen later from the updated shared state.
@@ -1073,36 +455,17 @@ bool apply_softkey_route(SoftKeyRoute route)
     {
     case SoftKeyRoute::None:
         return false;
-    case SoftKeyRoute::GoHome:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Home;
-        return true;
-    case SoftKeyRoute::GoCalendar:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Calendar;
-        return true;
-    case SoftKeyRoute::GoWeather:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Weather;
-        return true;
-    case SoftKeyRoute::GoPinter:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Pinter;
-        return true;
-    case SoftKeyRoute::GoPinterSelectBrew:
-        settings_controller::stop_timeout_editing(g_console_state);
-        pinter_controller::clamp_list_page(g_console_state.pinter_catalogue_page_index,
-                                           pinter_controller::brew_catalogue_count());
-        g_console_state.active_page = MenuPage::PinterSelectBrew;
-        return true;
-    case SoftKeyRoute::SelectPinterSlot1:
-        return pinter_controller::select_slot(g_console_state, 0U);
-    case SoftKeyRoute::SelectPinterSlot2:
-        return pinter_controller::select_slot(g_console_state, 1U);
-    case SoftKeyRoute::SelectPinterSlot3:
-        return pinter_controller::select_slot(g_console_state, 2U);
-    case SoftKeyRoute::SelectPinterSlot4:
-        return pinter_controller::select_slot(g_console_state, 3U);
+    case SoftKeyRoute::GoPage:
+        return page_table::open(g_console_state, static_cast<MenuPage>(slot));
+    case SoftKeyRoute::ShowLocalGraph:
+        if (slot > static_cast<uint8_t>(LocalConditionMetric::AirQuality))
+        {
+            return false;
+        }
+        g_console_state.local_condition_metric = static_cast<LocalConditionMetric>(slot);
+        return page_table::open(g_console_state, MenuPage::LocalConditionGraph);
+    case SoftKeyRoute::SelectPinterSlot:
+        return pinter_controller::select_slot(g_console_state, slot);
     case SoftKeyRoute::ApplyPinterPrimaryAction:
         return pinter_controller::apply_primary_action(g_console_state);
     case SoftKeyRoute::RequestPinterReset:
@@ -1123,131 +486,38 @@ bool apply_softkey_route(SoftKeyRoute route)
         return pinter_controller::nudge_selected_day(g_console_state, -1);
     case SoftKeyRoute::IncreaseSelectedPinterDay:
         return pinter_controller::nudge_selected_day(g_console_state, 1);
-    case SoftKeyRoute::SelectPinterListItem1:
-        return pinter_controller::select_list_item(g_console_state, 0U);
-    case SoftKeyRoute::SelectPinterListItem2:
-        return pinter_controller::select_list_item(g_console_state, 1U);
-    case SoftKeyRoute::SelectPinterListItem3:
-        return pinter_controller::select_list_item(g_console_state, 2U);
-    case SoftKeyRoute::SelectPinterListItem4:
-        return pinter_controller::select_list_item(g_console_state, 3U);
-    case SoftKeyRoute::SelectPinterListItem5:
-        return pinter_controller::select_list_item(g_console_state, 4U);
-    case SoftKeyRoute::SelectPinterListItem6:
-        return pinter_controller::select_list_item(g_console_state, 5U);
-    case SoftKeyRoute::SelectPinterListItem7:
-        return pinter_controller::select_list_item(g_console_state, 6U);
-    case SoftKeyRoute::SelectPinterListItem8:
-        return pinter_controller::select_list_item(g_console_state, 7U);
+    case SoftKeyRoute::SelectPinterListItem:
+        return pinter_controller::select_list_item(g_console_state, slot);
     case SoftKeyRoute::SelectPinterMinimumTiming:
         return pinter_controller::set_pending_timing(g_console_state, true);
     case SoftKeyRoute::SelectPinterRecommendedTiming:
         return pinter_controller::set_pending_timing(g_console_state, false);
     case SoftKeyRoute::DecreasePinterBrewDays:
         return pinter_controller::adjust_pending_days(g_console_state.pinter_pending_brewing_days,
-                                                       -1, kPinterMinBrewDays, kPinterMaxBrewDays);
+                                                       -1, pinter_controller::kMinBrewDays,
+                                                       pinter_controller::kMaxBrewDays);
     case SoftKeyRoute::IncreasePinterBrewDays:
         return pinter_controller::adjust_pending_days(g_console_state.pinter_pending_brewing_days,
-                                                       1, kPinterMinBrewDays, kPinterMaxBrewDays);
+                                                       1, pinter_controller::kMinBrewDays,
+                                                       pinter_controller::kMaxBrewDays);
     case SoftKeyRoute::DecreasePinterConditioningDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_conditioning_days, -1, kPinterMinConditioningDays,
-            kPinterMaxConditioningDays);
+            g_console_state.pinter_pending_conditioning_days, -1,
+            pinter_controller::kMinConditioningDays, pinter_controller::kMaxConditioningDays);
     case SoftKeyRoute::IncreasePinterConditioningDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_conditioning_days, 1, kPinterMinConditioningDays,
-            kPinterMaxConditioningDays);
+            g_console_state.pinter_pending_conditioning_days, 1,
+            pinter_controller::kMinConditioningDays, pinter_controller::kMaxConditioningDays);
     case SoftKeyRoute::DecreasePinterColdCrashDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_cold_crash_days, -1, kPinterMinColdCrashDays,
-            kPinterMaxColdCrashDays);
+            g_console_state.pinter_pending_cold_crash_days, -1,
+            pinter_controller::kMinColdCrashDays, pinter_controller::kMaxColdCrashDays);
     case SoftKeyRoute::IncreasePinterColdCrashDays:
         return pinter_controller::adjust_pending_days(
-            g_console_state.pinter_pending_cold_crash_days, 1, kPinterMinColdCrashDays,
-            kPinterMaxColdCrashDays);
+            g_console_state.pinter_pending_cold_crash_days, 1,
+            pinter_controller::kMinColdCrashDays, pinter_controller::kMaxColdCrashDays);
     case SoftKeyRoute::ConfirmPinterStart:
         return pinter_controller::confirm_start(g_console_state);
-    case SoftKeyRoute::GoShares:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Shares;
-        return true;
-    case SoftKeyRoute::GoStatus:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Status;
-        return true;
-    case SoftKeyRoute::GoStatusOverview:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::StatusOverview;
-        return true;
-    case SoftKeyRoute::GoStatusConnectivity:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::StatusConnectivity;
-        return true;
-    case SoftKeyRoute::GoStatusResources:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::StatusResources;
-        return true;
-    case SoftKeyRoute::GoStatusSensors:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::StatusSensors;
-        return true;
-    case SoftKeyRoute::GoStatusIntegrations:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::StatusIntegrations;
-        return true;
-    case SoftKeyRoute::GoLocalConditions:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::LocalConditions;
-        return true;
-    case SoftKeyRoute::ShowLocalTemperatureGraph:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.local_condition_metric = LocalConditionMetric::Temperature;
-        g_console_state.active_page = MenuPage::LocalConditionGraph;
-        return true;
-    case SoftKeyRoute::ShowLocalHumidityGraph:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.local_condition_metric = LocalConditionMetric::Humidity;
-        g_console_state.active_page = MenuPage::LocalConditionGraph;
-        return true;
-    case SoftKeyRoute::ShowLocalPressureGraph:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.local_condition_metric = LocalConditionMetric::AirPressure;
-        g_console_state.active_page = MenuPage::LocalConditionGraph;
-        return true;
-    case SoftKeyRoute::ShowLocalAirQualityGraph:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.local_condition_metric = LocalConditionMetric::AirQuality;
-        g_console_state.active_page = MenuPage::LocalConditionGraph;
-        return true;
-    case SoftKeyRoute::GoSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::Settings;
-        g_console_state.settings_page_index = 0;
-        return true;
-    case SoftKeyRoute::GoDeviceSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::DeviceSettings;
-        return true;
-    case SoftKeyRoute::GoWifiSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::WifiSettings;
-        return true;
-    case SoftKeyRoute::GoHomeAssistantSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::HomeAssistantSettings;
-        return true;
-    case SoftKeyRoute::GoMqttSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::MqttSettings;
-        return true;
-    case SoftKeyRoute::GoScreenSaverSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::ScreenSaverSettings;
-        return true;
-    case SoftKeyRoute::GoScreenSaverOptions:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::ScreenSaverOptions;
-        return true;
     case SoftKeyRoute::EditScreenSaverTimeout:
         return settings_controller::start_timeout_editing(g_console_state);
     case SoftKeyRoute::ConfirmScreenSaverTimeout:
@@ -1255,120 +525,42 @@ bool apply_softkey_route(SoftKeyRoute route)
     case SoftKeyRoute::CancelScreenSaverTimeout:
         // Restores the saved value, as BACK STEP does.
         return settings_controller::stop_timeout_editing(g_console_state);
-    case SoftKeyRoute::GoWeatherSources:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::WeatherSources;
-        return true;
-    case SoftKeyRoute::GoTimeZoneSettings:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::TimeZoneSettings;
-        g_console_state.time_zone_page_index =
-            settings_controller::time_zone_page_of_current(g_console_state);
-        return true;
-    case SoftKeyRoute::GoKeypadDebug:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::KeypadDebug;
-        return true;
-    case SoftKeyRoute::GoGreyscaleTest:
-        settings_controller::stop_timeout_editing(g_console_state);
-        g_console_state.active_page = MenuPage::GreyscaleTest;
-        return true;
     case SoftKeyRoute::ToggleRemoteConfig:
         return settings_controller::toggle_remote_config_enabled();
     case SoftKeyRoute::ToggleHomeAssistantEnabled:
         return settings_controller::toggle_home_assistant_enabled();
     case SoftKeyRoute::ToggleMqttEnabled:
         return settings_controller::toggle_mqtt_enabled();
-    case SoftKeyRoute::SelectScreenSaverLife:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Life);
-    case SoftKeyRoute::SelectScreenSaverClock:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Clock);
-    case SoftKeyRoute::SelectScreenSaverStarfield:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Starfield);
-    case SoftKeyRoute::SelectScreenSaverMatrix:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Matrix);
-    case SoftKeyRoute::SelectScreenSaverRadar:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Radar);
-    case SoftKeyRoute::SelectScreenSaverRain:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Rain);
-    case SoftKeyRoute::SelectScreenSaverWorms:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Worms);
-    case SoftKeyRoute::SelectScreenSaverRandom:
-        return settings_controller::select_screen_saver(ScreenSaverSelection::Random);
-    case SoftKeyRoute::SelectWeatherHomeAssistant:
-        return settings_controller::select_weather_source(WeatherSource::HomeAssistant);
-    case SoftKeyRoute::SelectWeatherOpenMeteo:
-        return settings_controller::select_weather_source(WeatherSource::OpenMeteo);
+    case SoftKeyRoute::SelectScreenSaver:
+        if (slot > static_cast<uint8_t>(ScreenSaverSelection::Random))
+        {
+            return false;
+        }
+        return settings_controller::select_screen_saver(static_cast<ScreenSaverSelection>(slot));
+    case SoftKeyRoute::SelectWeatherSource:
+        // MetNorway is a legacy stored value, not a choice the panel offers.
+        if (slot != static_cast<uint8_t>(WeatherSource::HomeAssistant) &&
+            slot != static_cast<uint8_t>(WeatherSource::OpenMeteo))
+        {
+            return false;
+        }
+        return settings_controller::select_weather_source(static_cast<WeatherSource>(slot));
     case SoftKeyRoute::CycleWeatherPeriod:
         return settings_controller::cycle_weather_period(g_console_state);
-    case SoftKeyRoute::SelectShareSlot1:
-        return settings_controller::select_share_slot(g_console_state, 0U);
-    case SoftKeyRoute::SelectShareSlot2:
-        return settings_controller::select_share_slot(g_console_state, 1U);
-    case SoftKeyRoute::SelectShareSlot3:
-        return settings_controller::select_share_slot(g_console_state, 2U);
-    case SoftKeyRoute::SelectShareSlot4:
-        return settings_controller::select_share_slot(g_console_state, 3U);
-    case SoftKeyRoute::SelectShareSlot5:
-        return settings_controller::select_share_slot(g_console_state, 4U);
-    case SoftKeyRoute::SelectShareSlot6:
-        return settings_controller::select_share_slot(g_console_state, 5U);
+    case SoftKeyRoute::SelectShareSlot:
+        return settings_controller::select_share_slot(g_console_state, slot);
     case SoftKeyRoute::CycleSharePeriod:
         return settings_controller::cycle_share_period(g_console_state);
     case SoftKeyRoute::CycleCalendarOwner:
         return calendar_controller::cycle_owner(g_console_state);
     case SoftKeyRoute::ResetCalendarFilters:
         return calendar_controller::reset_filters(g_console_state);
-    case SoftKeyRoute::SelectCalendarSlot1:
-        return calendar_controller::open_detail_from_slot(g_console_state, 0U);
-    case SoftKeyRoute::SelectCalendarSlot2:
-        return calendar_controller::open_detail_from_slot(g_console_state, 1U);
-    case SoftKeyRoute::SelectCalendarSlot3:
-        return calendar_controller::open_detail_from_slot(g_console_state, 2U);
-    case SoftKeyRoute::SelectCalendarSlot4:
-        return calendar_controller::open_detail_from_slot(g_console_state, 3U);
-    case SoftKeyRoute::SelectCalendarSlot5:
-        return calendar_controller::open_detail_from_slot(g_console_state, 4U);
-    case SoftKeyRoute::SelectCalendarSlot6:
-        return calendar_controller::open_detail_from_slot(g_console_state, 5U);
-    case SoftKeyRoute::SelectCalendarSlot7:
-        return calendar_controller::open_detail_from_slot(g_console_state, 6U);
-    case SoftKeyRoute::SelectCalendarSlot8:
-        return calendar_controller::open_detail_from_slot(g_console_state, 7U);
-    case SoftKeyRoute::SelectTimeZoneSlot1:
-        return settings_controller::select_time_zone_slot(g_console_state, 0U);
-    case SoftKeyRoute::SelectTimeZoneSlot2:
-        return settings_controller::select_time_zone_slot(g_console_state, 1U);
-    case SoftKeyRoute::SelectTimeZoneSlot3:
-        return settings_controller::select_time_zone_slot(g_console_state, 2U);
-    case SoftKeyRoute::SelectTimeZoneSlot4:
-        return settings_controller::select_time_zone_slot(g_console_state, 3U);
-    case SoftKeyRoute::SelectTimeZoneSlot5:
-        return settings_controller::select_time_zone_slot(g_console_state, 4U);
-    case SoftKeyRoute::SelectTimeZoneSlot6:
-        return settings_controller::select_time_zone_slot(g_console_state, 5U);
-    case SoftKeyRoute::SelectTimeZoneSlot7:
-        return settings_controller::select_time_zone_slot(g_console_state, 6U);
-    case SoftKeyRoute::SelectTimeZoneSlot8:
-        return settings_controller::select_time_zone_slot(g_console_state, 7U);
-    case SoftKeyRoute::SelectAlertSlot1:
-        return alert_controller::open_detail_from_slot(g_console_state, 0U);
-    case SoftKeyRoute::SelectAlertSlot2:
-        return alert_controller::open_detail_from_slot(g_console_state, 1U);
-    case SoftKeyRoute::SelectAlertSlot3:
-        return alert_controller::open_detail_from_slot(g_console_state, 2U);
-    case SoftKeyRoute::SelectAlertSlot4:
-        return alert_controller::open_detail_from_slot(g_console_state, 3U);
-    case SoftKeyRoute::SelectAlertSlot5:
-        return alert_controller::open_detail_from_slot(g_console_state, 4U);
-    case SoftKeyRoute::SelectAlertSlot6:
-        return alert_controller::open_detail_from_slot(g_console_state, 5U);
-    case SoftKeyRoute::SelectAlertSlot7:
-        return alert_controller::open_detail_from_slot(g_console_state, 6U);
-    case SoftKeyRoute::SelectAlertSlot8:
-        return alert_controller::open_detail_from_slot(g_console_state, 7U);
-    case SoftKeyRoute::SelectAlertSlot9:
-        return alert_controller::open_detail_from_slot(g_console_state, 8U);
+    case SoftKeyRoute::SelectCalendarSlot:
+        return calendar_controller::open_detail_from_slot(g_console_state, slot);
+    case SoftKeyRoute::SelectTimeZoneSlot:
+        return settings_controller::select_time_zone_slot(g_console_state, slot);
+    case SoftKeyRoute::SelectAlertSlot:
+        return alert_controller::open_detail_from_slot(g_console_state, slot);
     case SoftKeyRoute::AlertAccept:
         if (g_console_state.active_page != MenuPage::AlertDetail ||
             g_console_state.alert_detail_index >= g_console_state.alert_count)
@@ -1822,7 +1014,7 @@ bool handle_button_event(const ButtonEvent& event)
     {
         // BACK STEP declines a pending reset rather than leaving the page.
         const bool kRouteChanged = g_console_state.pinter_reset_confirming
-                                       ? apply_softkey_route(SoftKeyRoute::CancelPinterReset)
+                                       ? apply_softkey_route(SoftKeyRoute::CancelPinterReset, 0U)
                                        : navigate_up_one_level();
         if (!kRouteChanged)
         {
@@ -1890,7 +1082,7 @@ bool handle_button_event(const ButtonEvent& event)
 
     // The route mutates the logical console state first, then softkeys and lamp
     // outputs are recomputed from that new state as a separate step.
-    const bool kRouteChanged = apply_softkey_route(action.route);
+    const bool kRouteChanged = apply_softkey_route(action.route, action.slot);
 
     if (!kRouteChanged)
     {

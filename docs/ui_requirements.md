@@ -297,7 +297,8 @@ A body is built from a small set of shared blocks.
 
 ## New Page Checklist
 
-1. Choose the page type (section 2).
+1. Choose the page type (section 2) and add the page's entry to
+   `src/core/page_table.cpp`.
 2. Assign a role to each softkey it uses (section 3); leave the rest blank.
 3. Confirm row 5 follows NAV-2 to NAV-4.
 4. Write each label and confirm it fits (section 4).

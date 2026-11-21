@@ -18,6 +18,14 @@ namespace pinter_controller
 
 using console_controller::PinterBrewTiming;
 
+/// @brief Brew Timing duration limits, in days, for a brew started from the panel.
+inline constexpr uint8_t kMinBrewDays = 1U;
+inline constexpr uint8_t kMaxBrewDays = 30U;
+inline constexpr uint8_t kMinConditioningDays = 1U;
+inline constexpr uint8_t kMaxConditioningDays = 45U;
+inline constexpr uint8_t kMinColdCrashDays = 0U;
+inline constexpr uint8_t kMaxColdCrashDays = 3U;
+
 /// @brief Returns the static scheduling metadata for one Pinter brew pack.
 const PinterBrewTiming& brew_timing(uint8_t brew_index);
 
@@ -119,5 +127,14 @@ bool nudge_selected_day(ConsoleState& console_state, int delta);
 /// interrupts for its duration. See console_controller.h's
 /// flush_pending_pinter_save() for the full rationale.
 bool flush_pending_save(ConsoleState& console_state);
+
+/// @name Page hooks and softkey maps (page_table.h)
+/// @{
+/// @brief Select Brew opens on a catalogue page that still exists.
+void enter_select_brew(ConsoleState& console_state);
+void build_pinter_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_select_brew_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+void build_start_timing_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+/// @}
 
 } // namespace pinter_controller
