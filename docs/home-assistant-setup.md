@@ -128,6 +128,9 @@ How the feed behaves:
 - **Caching.** Each share is cached per period: Today for 5 minutes, Week for
   30 minutes, Month and Year for 6 hours, All-time for a day. Only the period
   on screen is ever fetched.
+- **Out of hours.** Until a share trades today (weekends, holidays, before
+  the open), Today shows the last price with no change and a flat graph.
+  Longer periods are unaffected.
 - **Failures.** If Yahoo fails, the last good data is sent marked `stale`, or
   `error` if there is none. The CCU keeps showing what it had.
 - **Token.** The feed checks its own token, not an HA token: HA's tokens are

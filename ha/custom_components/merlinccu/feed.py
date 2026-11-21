@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -86,14 +87,32 @@ def _closes(result: dict[str, Any]) -> list[float]:
     return [float(c) for c in closes if isinstance(c, (int, float)) and math.isfinite(c)]
 
 
+def _traded_today(meta: dict[str, Any], now: float) -> bool:
+    """Return whether the last trade fell on today's date at the exchange.
+
+    Yahoo's one-day chart on a weekend or holiday still holds the last
+    trading day. Dates are compared in the exchange's own time via its
+    `gmtoffset`, so a London share isn't judged by UTC or the HA host's zone.
+    """
+    last_trade = meta.get("regularMarketTime")
+    if not isinstance(last_trade, (int, float)):
+        return True
+    offset = meta.get("gmtoffset") or 0
+    seconds_per_day = 86400
+    return (last_trade + offset) // seconds_per_day == (now + offset) // seconds_per_day
+
+
 def share_from_chart(
-    share: WatchedShare, period_key: str, chart: dict[str, Any]
+    share: WatchedShare, period_key: str, chart: dict[str, Any], now: Optional[float] = None
 ) -> Optional[dict[str, Any]]:
     """Build one CCU share entry from a Yahoo chart response.
 
     Returns None when the response holds no usable price, so the caller can
-    fall back to a cached entry or report an error state.
+    fall back to a cached entry or report an error state. `now` is the
+    current Unix time, passed in by tests.
     """
+    if now is None:
+        now = time.time()
     results = (chart.get("chart") or {}).get("result") or []
     if not results:
         return None
@@ -130,6 +149,12 @@ def share_from_chart(
     # The CCU graphs whole units (share_feed_parser.cpp rounds each point),
     # so fractions would only cost buffer space.
     entry["history"] = [round(v) for v in downsample(closes)]
+
+    # With no trading yet today (weekend, holiday, before the open), Today
+    # shows no movement rather than the last trading day's.
+    if period_key == "today" and not _traded_today(meta, now):
+        entry["change"] = format_change(0.0)
+        entry["history"] = [round(float(price))]
     return entry
 
 

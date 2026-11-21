@@ -35,7 +35,7 @@ class ShareFromChartTests(unittest.TestCase):
     def test_today_compares_with_the_previous_close(self):
         chart = fixture("yahoo_ba_l_1d_5m.json")
         meta = chart["chart"]["result"][0]["meta"]
-        entry = feed.share_from_chart(BAE, "today", chart)
+        entry = feed.share_from_chart(BAE, "today", chart, now=meta["regularMarketTime"])
 
         self.assertEqual(entry["symbol"], "BA.L")
         self.assertEqual(entry["name"], "BAE SYSTEMS")
@@ -47,6 +47,24 @@ class ShareFromChartTests(unittest.TestCase):
         self.assertEqual(entry["data_state"], "live")
         self.assertEqual(len(entry["history"]), feed.HISTORY_POINTS)
         self.assertTrue(all(isinstance(v, int) for v in entry["history"]))
+
+    def test_today_is_flat_when_nothing_has_traded_today(self):
+        # The fixture's last trade was a Friday; ask on the Saturday.
+        chart = fixture("yahoo_ba_l_1d_5m.json")
+        meta = chart["chart"]["result"][0]["meta"]
+        saturday = meta["regularMarketTime"] + 86400
+        entry = feed.share_from_chart(BAE, "today", chart, now=saturday)
+
+        self.assertEqual(entry["price"], meta["regularMarketPrice"])
+        self.assertEqual(entry["change"], "+0.00%")
+        self.assertEqual(entry["history"], [round(meta["regularMarketPrice"])])
+
+    def test_only_today_goes_flat_out_of_hours(self):
+        chart = fixture("yahoo_ba_l_1y_1wk.json")
+        meta = chart["chart"]["result"][0]["meta"]
+        entry = feed.share_from_chart(BAE, "year", chart, now=meta["regularMarketTime"] + 86400)
+        self.assertNotEqual(entry["change"], "+0.00%")
+        self.assertEqual(len(entry["history"]), feed.HISTORY_POINTS)
 
     def test_longer_periods_compare_with_the_start_of_the_period(self):
         chart = fixture("yahoo_ba_l_1y_1wk.json")
