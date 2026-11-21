@@ -65,8 +65,8 @@ returns `{"message":"API running."}`.
 The CCU publishes its status, Wi-Fi, IP address and HA connection state as HA
 sensors, set up by MQTT discovery.
 
-1. Install the **Mosquitto broker** add-on (*Settings > Add-ons > Add-on
-   store*), start it, and turn on **Start on boot**.
+1. Install the **Mosquitto broker** add-on (*Settings > Apps*, called *Add-ons* in older HA;
+   install it from the store there), start it, and turn on **Start on boot**.
 2. Give each CCU its own MQTT login. Either create an HA user for it
    (*Settings > People > Users*, e.g. `merlinccu-desk`; Mosquitto accepts HA
    users), or add it under `logins` in the add-on's configuration:
