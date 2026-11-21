@@ -18,6 +18,7 @@
 #include "lwip/pbuf.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "psram.h"
 #include "share_feed_parser.h"
 #include "text_utils.h"
 
@@ -62,7 +63,8 @@ size_t g_response_len = 0U;
 size_t g_response_peak_len = 0U;
 bool g_response_ever_truncated = false;
 char g_request[kRequestBufferSize] = {};
-char g_response[kResponseBufferSize] = {};
+// PSRAM on boards that have it (#162): filled from pbufs and parsed by the CPU.
+MERLIN_PSRAM_BSS char g_response[kResponseBufferSize];
 absolute_time_t g_deadline = nil_time;
 absolute_time_t g_next_attempt = nil_time;
 bool g_request_attempted = false;

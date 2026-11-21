@@ -56,6 +56,7 @@ add_executable(MerlinCCU
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp
     src/core/pinter_store.cpp
+    src/core/psram.cpp
     src/core/settings_controller.cpp
     src/core/softkey_builders.cpp
     src/core/stack_guard.cpp
@@ -119,6 +120,15 @@ pico_enable_stdio_usb(MerlinCCU 1)
 target_link_libraries(MerlinCCU
     pico_stdlib
 )
+
+# Boards with PSRAM get a .psram_bss section mapped onto it (#162). The extra
+# script is merged into the SDK's memmap with INSERT rather than replacing it.
+# psram.h tags objects for it only when the board header names a PSRAM chip
+# select, so this list must match boards that do.
+if(PICO_BOARD STREQUAL "pimoroni_pico_plus2_w_rp2350")
+    target_link_options(MerlinCCU PRIVATE "LINKER:-T,${CMAKE_CURRENT_LIST_DIR}/firmware/psram.ld")
+    set_property(TARGET MerlinCCU APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_LIST_DIR}/firmware/psram.ld)
+endif()
 
 # -Wall -Wextra (issue #69) plus a hard failure specifically for an
 # incomplete MenuPage switch (issue #63): the title/font/dispatch lookups in

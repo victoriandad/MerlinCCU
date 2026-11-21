@@ -10,6 +10,7 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
+#include "psram.h"
 
 namespace screensaver_life
 {
@@ -28,8 +29,9 @@ constexpr uint32_t kLifeStableReseedFrames = 200;
 constexpr size_t kLifeHashHistorySize = 8;
 constexpr uint32_t kLifeRepeatReseedFrames = 100;
 
-uint8_t g_life_a[kLifeCellCount];
-uint8_t g_life_b[kLifeCellCount];
+// PSRAM on boards that have it (#162): only the CPU touches the grids.
+MERLIN_PSRAM_BSS uint8_t g_life_a[kLifeCellCount];
+MERLIN_PSRAM_BSS uint8_t g_life_b[kLifeCellCount];
 uint8_t* g_life_front = g_life_a;
 uint8_t* g_life_back = g_life_b;
 uint32_t g_life_hash_ring[kLifeHashHistorySize];

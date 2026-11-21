@@ -18,6 +18,7 @@
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
+#include "psram.h"
 #include "text_utils.h"
 
 namespace web_config_server
@@ -80,7 +81,9 @@ struct WebSession
 
 tcp_pcb* g_listener = nullptr;
 WebSession g_session = {};
-char g_response[kResponseCapacity] = {};
+// PSRAM on boards that have it (#162): tcp_write() copies out of it
+// (TCP_WRITE_FLAG_COPY), so lwIP and the Wi-Fi DMA never read it directly.
+MERLIN_PSRAM_BSS char g_response[kResponseCapacity];
 // Issue #104: high-water mark across every response shape this buffer
 // serves (HTML pages, PBM/raw framebuffer dumps) -- see send_response_with_length().
 size_t g_response_peak_len = 0;

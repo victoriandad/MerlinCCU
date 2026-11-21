@@ -24,6 +24,7 @@
 #include "open_meteo_parser.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "psram.h"
 #include "text_utils.h"
 #include "time_manager.h"
 #include "weather_forecast_parser.h"
@@ -249,7 +250,8 @@ size_t g_response_len = 0;
 size_t g_response_peak_len = 0;
 char g_request[1024] = {};
 char g_request_body[256] = {};
-char g_response[16384] = {};
+// PSRAM on boards that have it (#162): filled from pbufs and parsed by the CPU.
+MERLIN_PSRAM_BSS char g_response[16384];
 char g_configured_host[48] = {};
 char g_configured_location[128] = {};
 uint16_t g_configured_port = kHomeAssistantPort;
