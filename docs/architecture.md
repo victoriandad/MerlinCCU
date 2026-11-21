@@ -122,6 +122,17 @@ truth for size/RAM budget, not this document:
   this mainly reflects lwIP/mbedtls allocations from Wi-Fi, MQTT, and the
   (currently disabled) TLS share fetch. Now shown on the Resources page
   (`HEAP LIVE` row) instead of only over serial.
+- **PSRAM** — `psram` (`src/core/psram.cpp`, #162). Boards whose SDK header
+  names a PSRAM chip select (the Pimoroni Pico Plus 2 W: 8 MB APS6404L on
+  GPIO 47, build with `-DPICO_BOARD=pimoroni_pico_plus2_w_rp2350`) get it set
+  up at boot on QMI chip select 1, mapped cached at `0x11000000`. The SDK has
+  no PSRAM driver, so `psram::init()` probes it in QMI direct mode from RAM
+  with interrupts off, then sets quad-mode read/write and timing from
+  `clk_sys`. A destructive self-test then checks size and a pattern and logs
+  speed over serial. Bench (2026-11-21, 150 MHz): 8 MB verified, about
+  8.7 MB/s write and 23 MB/s read through the cache. Nothing is placed in
+  PSRAM yet. It is not usable for DMA, PIO or ISR-critical buffers. On the
+  Pico 2 W `init()` reports no PSRAM and touches nothing.
 - **Stack headroom** — `stack_guard` (`src/core/stack_guard.cpp`, #164).
   The SDK reserves SCRATCH_Y (4 KB) for the core-0 stack. Core 1 is never
   started, so SCRATCH_X below it is empty, and `stack_guard::init()` (first

@@ -56,6 +56,7 @@ add_executable(MerlinCCU
     src/core/pinter_persistence.cpp
     src/core/pinter_scheduling.cpp
     src/core/pinter_store.cpp
+    src/core/psram.cpp
     src/core/settings_controller.cpp
     src/core/softkey_builders.cpp
     src/core/stack_guard.cpp

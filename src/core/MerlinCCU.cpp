@@ -32,6 +32,7 @@
 #include "screensaver_rain.h"
 #include "screensaver_starfield.h"
 #include "screensaver_worms.h"
+#include "psram.h"
 #include "share_price_manager.h"
 #include "stack_guard.h"
 #include "time_manager.h"
@@ -232,6 +233,9 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 int main()
 {
     stack_guard::init();
+    // Before USB and Wi-Fi start: init() briefly takes the QMI off flash with
+    // interrupts disabled.
+    const psram::Info psram_info = psram::init();
 
     constexpr uint32_t kBootConsoleDelayMs = 10000U;
 
@@ -254,6 +258,28 @@ int main()
     }
     std::printf("Core-0 stack: %lu bytes\n",
                 static_cast<unsigned long>(stack_guard::capacity_bytes()));
+    if (psram_info.present)
+    {
+        // Nothing lives in PSRAM yet (#162), so the destructive check is safe.
+        const psram::SelfTest psram_test = psram::self_test(psram_info);
+        std::printf("PSRAM: KGD=0x%02X EID=0x%02X id size=%lu KiB, verified %lu KiB, "
+                    "pattern %s, write %lu KiB/s, read %lu KiB/s\n",
+                    psram_info.kgd, psram_info.eid,
+                    static_cast<unsigned long>(psram_info.size_bytes / 1024U),
+                    static_cast<unsigned long>(psram_test.verified_bytes / 1024U),
+                    psram_test.passed ? "ok" : "FAILED",
+                    static_cast<unsigned long>(psram_test.write_kib_per_s),
+                    static_cast<unsigned long>(psram_test.read_kib_per_s));
+        if (!psram_test.passed)
+        {
+            std::printf("PSRAM: first bad address 0x%08lX\n",
+                        static_cast<unsigned long>(psram_test.first_bad_address));
+        }
+    }
+    else
+    {
+        std::printf("PSRAM: none (KGD=0x%02X)\n", psram_info.kgd);
+    }
     // Prints the real configured system clock so panel VCLK/frame-rate
     // assumptions in docs/greyscale-investigation.md can be checked against
     // hardware instead of the SDK-documented default.
