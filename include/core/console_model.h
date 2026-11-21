@@ -840,14 +840,15 @@ struct HeapStatus
 };
 
 /// @brief Worst-case core-0 stack headroom shown on the Resources status page.
-/// @details Sourced from the boot-time canary fill / high-water-mark scan in
-/// MerlinCCU.cpp (see stack_high_water_free_bytes()) -- a measured near-miss,
-/// not a guess. Only ever decreases across a boot, so this is a worst-case
-/// figure, not a live instantaneous one.
+/// @details Sourced from the boot-time canary fill and high-water scan in
+/// stack_guard -- a measured figure, not a guess. Only ever decreases across
+/// a boot, so it is a worst case, not a live value. Drives the StackLow alert.
 struct StackStatus
 {
     bool valid;
     uint32_t free_bytes;
+    /// The previous reset was the stack limit fault (an overflow caught).
+    bool overflow_reset;
 };
 
 /// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`

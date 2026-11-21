@@ -139,6 +139,9 @@ HOST_TEST(set_stack_status_change_detection_covers_free_bytes)
 
     status.free_bytes = 400U;
     EXPECT_TRUE(status_controller::set_stack_status(state, status));
+
+    status.overflow_reset = true;
+    EXPECT_TRUE(status_controller::set_stack_status(state, status));
 }
 
 HOST_TEST(set_display_timing_status_change_detection_covers_present_skipped_count)

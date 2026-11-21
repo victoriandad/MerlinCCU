@@ -409,7 +409,7 @@ void draw_status_resources_page(uint8_t* fb, const ConsoleState& console_state)
     }
     if (console_state.stack_status.valid)
     {
-        // Core-0's stack is only 4KB (PICO_STACK_SIZE) -- shown as exact
+        // Core-0's stack is only 8 KB (stack_guard.h) -- shown as exact
         // bytes, not KiB-rounded, since build_kib_text's ceiling rounding
         // would mask a near-overflow (e.g. 100 bytes free rounding up to a
         // reassuring-looking "1K").

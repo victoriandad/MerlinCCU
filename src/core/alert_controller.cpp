@@ -39,6 +39,11 @@ constexpr uint8_t kAlertRetryThreshold = 5U;
 /// a quarter lost is a real stall rather than noise.
 constexpr uint32_t kDisplayFrameRateFloorPercent = 75U;
 constexpr uint32_t kPercentScale = 100U;
+/// The core-0 stack is flagged as low once its worst-case free space since
+/// boot drops under this. The deepest chain measured on the bench leaves
+/// several KB of the 8 KB stack (#164); 1 KB is room for one more large
+/// frame, such as a printf with floats or an lwIP callback, on top of it.
+constexpr uint32_t kStackLowFreeBytes = 1024U;
 constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
 constexpr float kHighTemperatureAlertCelsius = 30.0F;
 constexpr float kHighWindAlertMph = 40.0F;
@@ -602,6 +607,26 @@ void sync(ConsoleState& console_state)
     set_alert_condition(console_state, AlertCode::DisplayPipelineLag, display_pipeline_lag,
                         AlertSeverity::Warning, "DISPLAY LAG",
                         display_pipeline_lag ? alert_detail_scratch : "");
+
+    const StackStatus& stack = console_state.stack_status;
+    const bool stack_low =
+        stack.valid && (stack.overflow_reset || stack.free_bytes < kStackLowFreeBytes);
+    if (stack.overflow_reset)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "The CCU restarted after its stack overflowed.\nThe last action before the "
+                      "restart may need repeating.\nReport it with what was being done at the "
+                      "time.");
+    }
+    else if (stack_low)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "Only %lu bytes of stack have stayed free since boot.\nA deeper call could "
+                      "restart the CCU.\nReport it with what was being done at the time.",
+                      static_cast<unsigned long>(stack.free_bytes));
+    }
+    set_alert_condition(console_state, AlertCode::StackLow, stack_low, AlertSeverity::Warning,
+                        "STACK LOW", stack_low ? alert_detail_scratch : "");
 
     const bool share_data_unavailable = console_state.share_data_configured &&
                                         !console_state.share_data_valid &&

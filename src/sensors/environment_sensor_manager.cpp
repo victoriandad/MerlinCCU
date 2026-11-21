@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <tuple>
 
 #include "bme_environmental_sensor.h"
 #include "hardware/i2c.h"
@@ -70,6 +71,9 @@ uint64_t g_bme_pressure_bucket_sum_pa = 0U;
 uint64_t g_bme_humidity_bucket_sum_milli_percent = 0U;
 uint16_t g_air_quality_bucket_sample_count = 0U;
 uint32_t g_air_quality_score_bucket_sum = 0U;
+// Bumped on every history append, so change detection can see a new point
+// without keeping a copy of the history arrays to compare against.
+uint32_t g_history_revision = 0U;
 
 /// @brief Returns the Pico SDK I2C instance selected by local configuration.
 i2c_inst_t* selected_i2c_instance()
@@ -144,49 +148,36 @@ void reset_status()
     }
 }
 
-/// @brief Compares only fields that should matter to consumers of `update()`.
-bool visible_state_matches(const EnvironmentSensorStatus& lhs, const EnvironmentSensorStatus& rhs)
+/// @brief Returns a bitmask of which expected devices are detected.
+uint32_t detected_device_mask(const EnvironmentSensorStatus& status)
 {
-    if (lhs.enabled != rhs.enabled || lhs.board != rhs.board || lhs.health != rhs.health ||
-        lhs.detected_device_count != rhs.detected_device_count || lhs.last_error != rhs.last_error)
+    uint32_t mask = 0U;
+    for (std::size_t index = 0; index < status.devices.size(); ++index)
     {
-        return false;
-    }
-
-    if (lhs.bme_variant != rhs.bme_variant || lhs.bme_chip_id != rhs.bme_chip_id ||
-        lhs.bme_last_error != rhs.bme_last_error ||
-        lhs.bme_reading_valid != rhs.bme_reading_valid ||
-        lhs.bme_temperature_centi_celsius != rhs.bme_temperature_centi_celsius ||
-        lhs.bme_pressure_pa != rhs.bme_pressure_pa ||
-        lhs.bme_humidity_milli_percent != rhs.bme_humidity_milli_percent ||
-        lhs.bme_last_read_ms != rhs.bme_last_read_ms ||
-        lhs.bme_read_error != rhs.bme_read_error ||
-        lhs.bme_history_count != rhs.bme_history_count ||
-        lhs.bme_temperature_history_centi_celsius != rhs.bme_temperature_history_centi_celsius ||
-        lhs.bme_pressure_history_deci_hpa != rhs.bme_pressure_history_deci_hpa ||
-        lhs.bme_humidity_history_centi_percent != rhs.bme_humidity_history_centi_percent ||
-        lhs.air_quality_raw_valid != rhs.air_quality_raw_valid ||
-        lhs.air_quality_raw_signal != rhs.air_quality_raw_signal ||
-        lhs.air_quality_baseline_raw_signal != rhs.air_quality_baseline_raw_signal ||
-        lhs.air_quality_score_valid != rhs.air_quality_score_valid ||
-        lhs.air_quality_score != rhs.air_quality_score ||
-        lhs.air_quality_last_read_ms != rhs.air_quality_last_read_ms ||
-        lhs.air_quality_read_error != rhs.air_quality_read_error ||
-        lhs.air_quality_history_count != rhs.air_quality_history_count ||
-        lhs.air_quality_history_score != rhs.air_quality_history_score)
-    {
-        return false;
-    }
-
-    for (std::size_t index = 0; index < lhs.devices.size(); ++index)
-    {
-        if (lhs.devices[index].detected != rhs.devices[index].detected)
+        if (status.devices[index].detected)
         {
-            return false;
+            mask |= 1UL << index;
         }
     }
+    return mask;
+}
 
-    return true;
+/// @brief Returns the fields that matter to consumers of `update()`.
+/// @details Compared before and after each step instead of copying the whole
+/// status. The status carries the 24-hour histories (about 2 KB), and two
+/// copies in one call chain overflowed the 4 KB core-0 stack (#164). The
+/// history contents are stood in for by `g_history_revision`.
+auto visible_state(const EnvironmentSensorStatus& status)
+{
+    return std::make_tuple(
+        status.enabled, status.board, status.health, status.detected_device_count,
+        status.last_error, status.bme_variant, status.bme_chip_id, status.bme_last_error,
+        status.bme_reading_valid, status.bme_temperature_centi_celsius, status.bme_pressure_pa,
+        status.bme_humidity_milli_percent, status.bme_last_read_ms, status.bme_read_error,
+        status.bme_history_count, status.air_quality_raw_valid, status.air_quality_raw_signal,
+        status.air_quality_baseline_raw_signal, status.air_quality_score_valid,
+        status.air_quality_score, status.air_quality_last_read_ms, status.air_quality_read_error,
+        status.air_quality_history_count, g_history_revision, detected_device_mask(status));
 }
 
 /// @brief Converts the concrete BME probe result into the public manager status enum.
@@ -234,7 +225,7 @@ uint16_t humidity_milli_percent_to_centi_percent(uint32_t humidity_milli_percent
 void append_bme_history(EnvironmentSensorStatus& status, int16_t temperature_centi_celsius,
                         uint16_t pressure_deci_hpa, uint16_t humidity_centi_percent)
 {
-
+    ++g_history_revision;
     if (status.bme_history_count < kLocalConditionHistoryPointCount)
     {
         const std::size_t index = status.bme_history_count;
@@ -300,6 +291,7 @@ void accumulate_bme_history_sample(const sensors::BmeEnvironmentalReading& readi
 /// @brief Appends one five-minute average SGP40 VOC-change score to graph history.
 void append_air_quality_history(EnvironmentSensorStatus& status, uint8_t score)
 {
+    ++g_history_revision;
     if (status.air_quality_history_count < kLocalConditionHistoryPointCount)
     {
         status.air_quality_history_score[status.air_quality_history_count] = score;
@@ -333,7 +325,7 @@ bool append_due_history_buckets(EnvironmentSensorStatus& status)
         return false;
     }
 
-    const EnvironmentSensorStatus previous = status;
+    const auto previous = visible_state(status);
     if (g_bme_bucket_sample_count > 0U)
     {
         const int32_t average_temperature = static_cast<int32_t>(
@@ -360,7 +352,7 @@ bool append_due_history_buckets(EnvironmentSensorStatus& status)
     reset_history_buckets();
     g_next_local_condition_history_bucket_time =
         make_timeout_time_ms(kLocalConditionHistoryBucketIntervalMs);
-    return !visible_state_matches(previous, status);
+    return visible_state(status) != previous;
 }
 
 /// @brief Samples only the BME280 once discovery has confirmed it is present.
@@ -427,17 +419,20 @@ void sample_sgp40(EnvironmentSensorStatus& status, uint32_t sample_time_ms)
 /// @brief Samples all local-condition sensors that are ready for periodic data.
 bool sample_local_conditions(EnvironmentSensorStatus& status, uint32_t sample_time_ms)
 {
-    const EnvironmentSensorStatus previous = status;
+    const auto previous = visible_state(status);
     sample_bme280(status, sample_time_ms);
     sample_sgp40(status, sample_time_ms);
     (void)append_due_history_buckets(status);
-    return !visible_state_matches(previous, status);
+    return visible_state(status) != previous;
 }
 
 /// @brief Probes the expected Waveshare board addresses and updates status.
 bool scan_expected_devices()
 {
-    EnvironmentSensorStatus next = g_status;
+    // Updated in place: a working copy of the status (about 2 KB with its
+    // histories) does not fit on the core-0 stack (#164).
+    const auto previous = visible_state(g_status);
+    EnvironmentSensorStatus& next = g_status;
     next.detected_device_count = 0;
     next.last_error = PICO_ERROR_NONE;
     next.last_scan_ms = to_ms_since_boot(get_absolute_time());
@@ -508,8 +503,7 @@ bool scan_expected_devices()
         ++next.failed_scan_count;
     }
 
-    const bool changed = !visible_state_matches(g_status, next);
-    g_status = next;
+    const bool changed = visible_state(g_status) != previous;
     g_next_scan_time = make_timeout_time_ms(kDiscoveryScanIntervalMs);
     g_next_local_condition_sample_time = make_timeout_time_ms(kLocalConditionSampleIntervalMs);
     if (absolute_time_diff_us(get_absolute_time(), g_next_local_condition_history_bucket_time) <= 0)

@@ -324,7 +324,8 @@ bool set_heap_status(ConsoleState& console_state, const HeapStatus& status)
 bool set_stack_status(ConsoleState& console_state, const StackStatus& status)
 {
     if (console_state.stack_status.valid == status.valid &&
-        console_state.stack_status.free_bytes == status.free_bytes)
+        console_state.stack_status.free_bytes == status.free_bytes &&
+        console_state.stack_status.overflow_reset == status.overflow_reset)
     {
         return false;
     }

@@ -122,12 +122,25 @@ truth for size/RAM budget, not this document:
   this mainly reflects lwIP/mbedtls allocations from Wi-Fi, MQTT, and the
   (currently disabled) TLS share fetch. Now shown on the Resources page
   (`HEAP LIVE` row) instead of only over serial.
-- **Stack headroom** — a canary-filled high-water-mark check
-  (`stack_high_water_free_bytes()` in `MerlinCCU.cpp`; see the stack-pressure
-  work from issue #58), sampled alongside heap/loop-load and now also shown
-  on the Resources page (`STACK FREE` row, exact bytes rather than
-  KiB-rounded since core-0's stack is only 4KB) as well as printed once a
-  second over serial.
+- **Stack headroom** — `stack_guard` (`src/core/stack_guard.cpp`, #164).
+  The SDK reserves SCRATCH_Y (4 KB) for the core-0 stack. Core 1 is never
+  started, so SCRATCH_X below it is empty, and `stack_guard::init()` (first
+  call in `main()`) lets the stack grow into it: 8 KB in all, at no cost to
+  main SRAM. It panics at boot if anything is ever linked into SCRATCH_X.
+  - Guard: the Cortex-M33 stack limit register (MSPLIM) is set to the bottom
+    of the 8 KB, so an overflow faults instead of overwriting memory. The
+    HardFault handler resets SP, saves the fault status in a watchdog scratch
+    register and reboots. The next boot logs it and raises `StackLow`.
+  - Measurement: the unused stack is filled with a canary at boot, and the
+    worst-case free space since boot is shown on the Resources page
+    (`STACK FREE`, exact bytes) and sampled once a second. `StackLow` fires
+    below 1 KB free.
+  - Bench (Pico 2 W, 2026-11-21): about 2.8 KB used after boot, web config
+    page, preview and page navigation, so about 5.4 KB free.
+  - The main loop and the lwIP callbacks share this one stack (callbacks run
+    on top of whatever the loop is doing), so large locals go in static
+    storage. `-Wstack-usage=1600` in `CMakeLists.txt` warns on any frame
+    bigger than that.
 
 #### Major static buffers
 
@@ -615,4 +628,5 @@ hardware headers to compile.
 | 2026-08-14 | Audited issue #18 (Complete Pinter Scheduling Assistant) against its own acceptance criteria: full-flow state machine (`pinter_scheduling.cpp`), dock/fridge capacity gating with an on-screen block-reason message (not just a squeezed softkey hint), bounds-checked day-adjustment validation, wear-leveled/CRC-validated flash persistence (`pinter_store.cpp`/`pinter_persistence.cpp`), a read-only web `/pinter` activity timeline, and existing host test coverage (issue #78) -- no missing steps, validation gaps, or placeholder behaviour found in the Pinter-specific code. Fixed one narrowing-conversion compiler warning found during the review (`pinter_controller.cpp`'s `confirm_start()`, `size_t`->`uint8_t` via an explicit `static_cast`, since `brew_catalogue_index()`'s return is already bounds-checked against the `uint8_t`-sized catalogue). Closed #18 as already complete. | User picked #18 expecting real completion/hardening work; a full read against the issue's own acceptance criteria found nothing to harden, so reported that back rather than inventing unnecessary changes, and the user confirmed closing it. | One adjacent, genuine placeholder was found but intentionally left alone since it's outside #18's Pinter-only scope: the `Shares` page's "REMOVE" softkey is permanently wired to `SoftKeyRoute::None, false` (dead, unimplemented). Worth its own issue if useful. |
 | 2026-08-14 | Fixed a gap in #106's #104 RAM instrumentation: `home_assistant_manager::g_response`'s peak-usage tracking was only ever surfaced through the pre-existing `direct_weather_log()` helper, which is gated behind its own `kEnableDirectWeatherSerialDiagnostics` flag *and* explicitly skips logging whenever `g_active_weather_source == WeatherSource::HomeAssistant` -- so a user actually running HA as their weather/entity source (the most fully-integrated path) would get zero peak-size data for this buffer no matter what, since every `RequestKind` (`ProbeApi`/`FetchTrackedEntity`/`FetchWeatherEntity`/`FetchWeatherForecast`/`FetchWeatherDailyForecast`/`FetchSunEntity`/`PublishSelfEntity`) cycles through this one shared buffer via `advance_request_kind()`. Added an unconditional `PERIODIC_LOG` at the top of `handle_http_status()` (the single dispatch point every request kind's response passes through) reporting `g_response_peak_len` regardless of weather source or request kind. | User picked up issue #104 to actually run the real-hardware session PR #106 was left waiting on; before sending them off to collect data, re-read the instrumentation and found this buffer's logging would silently produce nothing useful for their setup, which uses Home Assistant. Better to catch an instrumentation gap before a hardware session than have them come back with a suspiciously-missing number. | Not yet verified on hardware -- same caveat as the rest of this issue's work. `air_traffic_manager`'s and `share_price_manager`'s peak logging were re-checked and don't have the same gap (their `PERIODIC_LOG` calls are unconditional already). |
 | 2026-11-20 | Removed the ADS-B air-traffic feature (manager, parser, page, settings, alert, config fields; config version 6). | Static RAM was ~97.6% used (#104) and the feature was not needed; it held ~22 KB of SRAM (16 KB response buffer, aircraft status and its console copy). | None; #166. |
+| 2026-11-21 | Core-0 stack: moved the big stack locals to static storage or removed them, extended the stack into the unused SCRATCH_X bank (8 KB in all) and armed the M33 stack limit with a fault-and-reboot handler and a `StackLow` alert (`stack_guard`). | `STACK FREE` read 0 B on every boot. `-fstack-usage` showed single frames of 6 KB (`config_manager::init`), 4 KB (`get_form_value` copying the POST body) and about 2 KB each (`HomeAssistantStatus`, `EnvironmentSensorStatus` and `RuntimeConfig` copies), and the lwIP callbacks run on the same stack. A web save alone needed about 7 KB. | The statics cost about 7 KB of .bss (479,772 to 486,768 B); main SRAM headroom is still about 25 KB, and #162 (PSRAM) is the longer-term fix. Using SCRATCH_X rules out starting core 1 without revisiting this (#56); `stack_guard::init()` panics if anything is linked there. #164. |
 | YYYY-MM-DD |  |  |  |

@@ -334,12 +334,14 @@ struct LegacyConfigSlotV5
     LegacyRuntimeConfigV5 settings;
 };
 
-/// @brief One configuration candidate read from a flash slot, valid or not.
+/// @brief One flash slot's header verdict: whether it is valid and its sequence.
+/// @details Holds no settings, so both slots can be compared without two
+/// RuntimeConfig copies on the 4 KB core-0 stack (#164). Only the chosen slot
+/// is then decoded.
 struct ConfigCandidate
 {
     bool valid;
     uint32_t sequence;
-    RuntimeConfig settings;
 };
 
 /// @brief Calculates a standard CRC-32 (IEEE 802.3 / zlib polynomial) over a byte buffer.
@@ -395,6 +397,9 @@ bool should_auto_enable_home_assistant(const RuntimeConfig& settings);
 
 /// @brief Applies the same defaulting/clamping/migration rules every save goes through.
 RuntimeConfig sanitize_settings(const RuntimeConfig& settings);
+
+/// @brief Applies sanitize_settings() rules in place, without a copy.
+void sanitize_settings_in_place(RuntimeConfig& settings);
 
 /// @brief Chooses the newer of two read candidates, or nullptr if neither is valid.
 /// @details The returned pointer aliases whichever input candidate won; the

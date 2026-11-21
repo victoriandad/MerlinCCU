@@ -383,6 +383,12 @@ bool should_auto_enable_home_assistant(const RuntimeConfig& settings)
 RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
 {
     RuntimeConfig sanitized = settings;
+    sanitize_settings_in_place(sanitized);
+    return sanitized;
+}
+
+void sanitize_settings_in_place(RuntimeConfig& sanitized)
+{
     if (sanitized.device_name[0] == '\0')
     {
         copy_text(sanitized.device_name, kDefaultDeviceName);
@@ -406,7 +412,6 @@ RuntimeConfig sanitize_settings(const RuntimeConfig& settings)
         sanitized.home_assistant_enabled = true;
     }
     compact_watched_shares(sanitized);
-    return sanitized;
 }
 
 const ConfigCandidate* choose_newest_candidate(const ConfigCandidate& a, const ConfigCandidate& b)
