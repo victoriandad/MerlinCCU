@@ -2312,7 +2312,12 @@ const char* handle_config_post(const char* body)
     }
 
     RuntimeConfig cfg = config_manager::settings();
-    char value[160] = {};
+    // Sized one past the widest field (the HA token) so an over-long value is
+    // still long enough after snprintf truncation to fail validate_text_field
+    // rather than being silently cut. Static because the core-0 stack has no
+    // headroom (#164) and the web server handles one request at a time.
+    static char value[kHomeAssistantTokenCapacity + 1U] = {};
+    value[0] = '\0';
     static char validation_error[160] = {};
     validation_error[0] = '\0';
 

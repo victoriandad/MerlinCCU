@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "console_model.h"
@@ -27,6 +28,13 @@ inline bool operator!=(const WatchedShareConfig& lhs, const WatchedShareConfig& 
     return !(lhs == rhs);
 }
 
+/// @brief Storage for a Home Assistant long-lived access token, including the
+/// terminator.
+/// @details HA tokens are JWTs of about 183 characters. The old 128-byte field
+/// rejected every real token, so the web form could never enable HA. 256
+/// leaves headroom for longer issuer/claim strings.
+inline constexpr size_t kHomeAssistantTokenCapacity = 256U;
+
 /// @brief Persistent runtime configuration for one Merlin CCU.
 /// @details The structure is deliberately fixed-size so it can be stored
 /// directly in flash with simple versioning and CRC checks. Empty strings mean
@@ -45,7 +53,7 @@ struct RuntimeConfig
     bool home_assistant_enabled;
     std::array<char, 64> home_assistant_host;
     uint16_t home_assistant_port;
-    std::array<char, 128> home_assistant_token;
+    std::array<char, kHomeAssistantTokenCapacity> home_assistant_token;
     std::array<char, 64> home_assistant_entity_id;
     std::array<char, 64> home_assistant_self_entity_id;
     std::array<char, 64> weather_entity_id;
