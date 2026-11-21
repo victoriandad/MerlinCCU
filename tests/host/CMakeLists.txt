@@ -36,7 +36,6 @@ add_executable(host_tests
     test_open_meteo_parser.cpp
     test_bounded_json.cpp
     test_share_feed_parser.cpp
-    test_air_traffic_response_parser.cpp
     test_text_utils.cpp
     test_golden_screens.cpp
     test_page_coverage.cpp
@@ -66,7 +65,6 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/network/open_meteo_parser.cpp
     ${MERLIN_ROOT}/src/network/bounded_json.cpp
     ${MERLIN_ROOT}/src/network/share_feed_parser.cpp
-    ${MERLIN_ROOT}/src/network/air_traffic_response_parser.cpp
     ${MERLIN_ROOT}/src/sensors/local_conditions.cpp
     ${MERLIN_ROOT}/src/display/framebuffer.cpp
     ${MERLIN_ROOT}/src/display/screen_banners.cpp
@@ -80,7 +78,6 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/settings_screens.cpp
     ${MERLIN_ROOT}/src/display/status_screens.cpp
     ${MERLIN_ROOT}/src/display/weather_screens.cpp
-    ${MERLIN_ROOT}/src/display/air_traffic_screens.cpp
     ${MERLIN_ROOT}/src/core/console_controller.cpp
     ${MERLIN_ROOT}/src/core/pinter_controller.cpp
     ${MERLIN_ROOT}/src/core/alert_controller.cpp

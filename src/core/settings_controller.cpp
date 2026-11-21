@@ -352,13 +352,6 @@ const char* port_selection_text(SoftKeyId key, uint16_t port)
     return buffer.data();
 }
 
-const char* radius_nm_selection_text(SoftKeyId key, uint16_t radius_nm)
-{
-    auto& buffer = g_dynamic_softkey_values[static_cast<size_t>(key)];
-    std::snprintf(buffer.data(), buffer.size(), "%unm", static_cast<unsigned>(radius_nm));
-    return buffer.data();
-}
-
 bool change_page(ConsoleState& console_state, int direction)
 {
     if (console_state.active_page != MenuPage::Settings || direction == 0)
@@ -519,11 +512,6 @@ const char* share_period_selection_text(const ConsoleState& console_state)
     return share_period_name(console_state.share_period);
 }
 
-const char* air_traffic_view_mode_selection_text(const ConsoleState& console_state)
-{
-    return console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular ? "Tabular" : "Plot";
-}
-
 const char* screen_saver_selection_text(const ConsoleState& console_state)
 {
     return screen_saver_definition(console_state.screen_saver_selection).selection_label;
@@ -623,21 +611,6 @@ bool cycle_share_period(ConsoleState& console_state)
     return true;
 }
 
-bool toggle_air_traffic_view_mode(ConsoleState& console_state)
-{
-    console_state.air_traffic_view_mode =
-        (console_state.air_traffic_view_mode == AirTrafficViewMode::Tabular)
-            ? AirTrafficViewMode::Plot
-            : AirTrafficViewMode::Tabular;
-    console_state.air_traffic_page_index = 0U;
-    return true;
-}
-
-uint8_t air_traffic_page_count(const ConsoleState& console_state)
-{
-    return air_traffic_list_page_count(console_state.air_traffic_status.aircraft_count);
-}
-
 bool select_share_slot(ConsoleState& console_state, uint8_t slot)
 {
     if (slot >= console_state.share_count || slot >= console_state.watched_shares.size())
@@ -716,15 +689,6 @@ bool toggle_mqtt_enabled()
         });
 }
 
-bool toggle_air_traffic_enabled()
-{
-    return persist_runtime_config_change(
-        [](RuntimeConfig& settings)
-        {
-            settings.air_traffic_enabled = !settings.air_traffic_enabled;
-            return true;
-        });
-}
 
 /// @details Leaves the timeout scratchpad and restores normal page navigation.
 bool stop_timeout_editing(ConsoleState& console_state)

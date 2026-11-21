@@ -36,7 +36,7 @@ README history, chat context, or incidental source-code discovery.
   text, label wrapping, graph plotting) and the `draw_menu_screen()` dispatch.
   All page families have been split into their own files (issue #45,
   complete): `status_screens.cpp`, `weather_screens.cpp`,
-  `air_traffic_screens.cpp`, `calendar_screens.cpp`, `shares_screens.cpp`,
+  `calendar_screens.cpp`, `shares_screens.cpp`,
   `pinter_screens.cpp`, `settings_screens.cpp`, `alert_screens.cpp`,
   `local_conditions_screens.cpp` (Local Conditions page and history graph),
   and `screen_banners.cpp` (top status banner).
@@ -59,10 +59,6 @@ README history, chat context, or incidental source-code discovery.
   resources/sensors/integrations pages.
 - `src/display/weather_screens.cpp`: the live Weather page, its Hourly/Next
   24 Hours/Next 7 Days forecast periods, and forecast-timeline reconstruction.
-- `src/display/air_traffic_screens.cpp`: the Local Traffic (ADS-B) page --
-  not-configured/waiting states, a paginated Tabular table, and a Plot (PPI
-  radar-style) view with per-aircraft snail trails, toggled from the page's
-  own softkey (issue #74, `docs/adsb-air-traffic-feature-design.md`).
 - `include/display/screens_shared.h`: primitives split-out page-family files
   need from `screens.cpp` (`DetailRow`, `draw_compact_detail_rows`,
   `draw_centered_text`, `text_width`, `WrappedSoftkeyLabel`/`wrap_label_lines`,
@@ -73,7 +69,8 @@ README history, chat context, or incidental source-code discovery.
 - `src/core/input.cpp`: physical/provisional keypad polling and logical button
   events.
 - `src/network/*`: Wi-Fi, HTTP preview/config, Home Assistant, MQTT, time,
-  share-price, and local air-traffic (ADS-B) state machines.
+  and share-price state machines. (The ADS-B air-traffic feature was removed
+  in #166 to free about 22 KB of SRAM.)
 - `src/sensors/*`: optional environment sensor board discovery and sensor
   drivers.
 
@@ -145,15 +142,13 @@ it from a fresh `.map` if it matters for a specific decision:
 | `console_controller::g_console_state` | 27.0 KiB | The `ConsoleState` instance itself -- see the review rule below. |
 | `framebuffer::g_fb_a` + `g_fb_b` | 20.0 KiB (2 x 10.0 KiB) | Double UI framebuffer, 252x320 1bpp. |
 | `home_assistant_manager::g_response` | 16.0 KiB | Always reserved even when HA is disabled -- gated by `RuntimeConfig::home_assistant_enabled` (a runtime flag), not a `constexpr`, so the compiler can't prove the buffer unreachable and drop it. |
-| `air_traffic_manager::g_response` | 16.0 KiB | Same story as HA's buffer, gated by `air_traffic_enabled`. |
-| `air_traffic_manager::g_status` (`AirTrafficStatus`) | 2.0 KiB | Tracked-aircraft snapshot, `kAirTrafficEntryCapacity` entries. |
 | `environment_sensor_manager::g_status` | 2.1 KiB | BME280/SGP40 sensor history buffers. |
 
 Notably absent: `share_price_manager`'s `g_response`/`g_request` buffers
 (16KB + 768B in source) don't appear in `.bss` at all. `kEnableLiveShareFetch`
 is a `constexpr bool` set to `false`, so the compiler can prove the only code
 that touches those buffers is unreachable and drops both the code and the
-backing storage entirely -- unlike HA/ADS-B's runtime-gated equivalents
+backing storage entirely -- unlike HA's runtime-gated equivalent
 above, a `constexpr`-gated feature costs nothing while disabled.
 
 Numbers are load-bearing, not aspirational: check this page (or run
@@ -200,12 +195,11 @@ check actually reflects reality.
 
 ## Stale-Data Display Policy
 
-Every data-backed page (Weather, Shares, Air Traffic, the Status Integrations
-and Sensors pages) shows freshness the same way, through one shared helper --
-issue #16. Before this, each page had invented its own vocabulary: shares said
-"Live"/"Demo", the Integrations page said "Valid"/"-", Air Traffic said
-"WAITING FOR DATA"/"NO AIRCRAFT NEARBY", and Weather showed no staleness
-indicator at all -- a silently-stuck feed looked identical to a live one.
+Every data-backed page (Weather, Shares, the Status Integrations and Sensors
+pages) shows freshness the same way, through one shared helper -- issue #16.
+Before this, each page had invented its own vocabulary: shares said
+"Live"/"Demo", the Integrations page said "Valid"/"-", and Weather showed no
+staleness indicator at all -- a silently-stuck feed looked identical to a live one.
 
 - **`screens::build_data_freshness_text(currently_valid, last_success_ms,
   now_ms, stale_after_ms, out, out_size)`** (`screens.cpp`, declared in
@@ -217,16 +211,14 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   four missed refreshes, published by the subsystem that fetches the data
   (`home_assistant_manager::kWeatherStaleAfterMs`,
   `share_price_manager::kShareStaleAfterMs`,
-  `air_traffic_manager::kAirTrafficStaleAfterMs`,
   `environment_sensor_manager::kLocalConditionStaleAfterMs`) so no renderer
   holds its own copy (STATE-4).
   A companion `screens::build_elapsed_time_text(elapsed_ms, out, out_size)`
   formats the compact "Xs"/"Xm"/"Xh" age text on its own, reused by the
   Sensors page's `ENV SCAN` row (previously showed a raw uptime timestamp,
   not an actual age -- fixed as part of the same pass).
-- Each of `HomeAssistantStatus` (`weather_last_success_ms`),
-  `ShareMarketStatus` (`last_success_ms`), and `AirTrafficStatus`
-  (`last_success_ms`) gained a boot-uptime timestamp, stamped at the genuine
+- Each of `HomeAssistantStatus` (`weather_last_success_ms`) and
+  `ShareMarketStatus` (`last_success_ms`) gained a boot-uptime timestamp, stamped at the genuine
   success point in each manager (e.g. only once weather condition JSON
   actually parses, not on every HTTP 200). MQTT was deliberately left out --
   it is a publish target with a connection-state concept, not a
@@ -244,7 +236,7 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   advancing alone doesn't force a redraw on every single main-loop tick.
   That means the setters that mirror manager status into `ConsoleState`
   (`console_controller.cpp`'s `set_home_assistant_status()`,
-  `set_air_traffic_status()`, `set_share_market_status()`) must copy the
+  `set_share_market_status()`) must copy the
   timestamp field through unconditionally, *before* the change-detection
   early return -- otherwise it would never reach `ConsoleState` on ticks
   where nothing else changed. Follow that same shape for any future status
@@ -253,17 +245,17 @@ indicator at all -- a silently-stuck feed looked identical to a live one.
   need a redraw even when nothing else moved. `MerlinCCU.cpp` has a 30-second
   `next_freshness_redraw` tick (matching the existing 30s heartbeat's
   granularity) that requests a redraw while the active page is one of
-  Weather/Shares/ShareDetail/AirTraffic/StatusIntegrations/StatusSensors --
+  Weather/Shares/ShareDetail/StatusIntegrations/StatusSensors --
   coarse enough to add no meaningful redraw churn, fine enough that the age
   label doesn't look frozen.
 
 ## Network Helper Ownership Boundary
 
 Issue #46 extracted `include/network/http_response.h` /
-`src/network/http_response.cpp` from what used to be three independently-
-converged copies of the same HTTP response parsing in
-`home_assistant_manager.cpp`, `air_traffic_manager.cpp`, and
-`share_price_manager.cpp`. The boundary is deliberately narrow:
+`src/network/http_response.cpp` from what used to be independently-converged
+copies of the same HTTP response parsing in `home_assistant_manager.cpp`,
+`share_price_manager.cpp` and the since-removed ADS-B manager (#166). The
+boundary is deliberately narrow:
 
 - **In `http_response`:** status-line parsing (`partial_status`), header
   block detection (`headers_end`/`body`), named-header lookup
@@ -278,19 +270,14 @@ converged copies of the same HTTP response parsing in
 - **Explicitly NOT here, and why:**
   - **TLS trust policy** -- covered by issue #17, not this one.
   - **Provider-specific JSON body parsing** (`extract_json_string`-style
-    functions, and the bounded array-scanning helpers
-    `find_object_end`/`extract_bounded_string`/`extract_bounded_number`
-    duplicated between `air_traffic_manager.cpp` and
-    `share_price_manager.cpp`) -- deliberately left alone. Consolidating
-    those too would have coupled this change to a second, independent
-    refactor with its own risk; a future pass can revisit it if it's still
-    worth doing once more managers exist to compare against.
+    functions, and the bounded array-scanning helpers, which later moved to
+    `bounded_json` under #72) -- deliberately left alone here.
   - **The socket/DNS/retry state machine and completion-handling shape** --
     each manager keeps its own. `home_assistant_manager.cpp` processes a
     completed response **inline** from within its `on_tcp_recv` callback
     (calling `handle_http_status()` directly, including the PCB
-    teardown/reset that implies); `air_traffic_manager.cpp` and
-    `share_price_manager.cpp` instead **defer** completion
+    teardown/reset that implies); `share_price_manager.cpp` instead
+    **defers** completion
     (`defer_completion()`/`g_completion_pending`) to the next `update()`
     tick, with an explicit comment (predating this issue) that lwIP
     callbacks must not close or replace the active PCB while lwIP is still
@@ -301,11 +288,9 @@ converged copies of the same HTTP response parsing in
     window, or whether it's a latent version of the same bug that just
     hasn't been hit yet -- not something to resolve as a side effect of a
     parsing-helper extraction. Each manager now gets more correct, shared
-    *parsing* (in particular, `air_traffic_manager.cpp` and
-    `share_price_manager.cpp` gained early buffered-completion detection via
-    `is_complete()`, and `air_traffic_manager.cpp` gained chunked-body
-    dechunking it previously didn't have at all) without touching *when* or
-    *how* each one decides a fetch is done.
+    *parsing* (in particular, `share_price_manager.cpp` gained early
+    buffered-completion detection via `is_complete()`) without touching
+    *when* or *how* each one decides a fetch is done.
 
 ## Weather Parsing Ownership Boundary
 
@@ -377,23 +362,18 @@ that moved into the new modules -- see the 2026-08-13 (#47) Decision Log
 entry for why that's a larger diff than issue #46's all-wrappers-kept
 precedent.
 
-## Share/Air-Traffic Parser Ownership Boundary
+## Share Parser Ownership Boundary
 
-Issue #72 extracted the two remaining un-host-tested response parsers --
-`share_price_manager.cpp`'s local shares-feed parsing (issue #42's
-`{"shares":[...]}` contract) and `air_traffic_manager.cpp`'s adsb.lol/
-dump1090-family `{"ac":[...]}` parsing -- following the same pattern as #46
-(HTTP framing) and #47 (weather/HA parsing):
+Issue #72 extracted `share_price_manager.cpp`'s local shares-feed parsing
+(issue #42's `{"shares":[...]}` contract) into host-testable modules,
+following the same pattern as #46 (HTTP framing) and #47 (weather/HA
+parsing). (It also extracted an ADS-B parser, removed with that feature in
+#166.)
 
 - **`bounded_json.h`/`.cpp`** -- the bounded-range JSON scanning primitives
   (`find_bounded`, `extract_bounded_string`, `extract_bounded_number`,
-  `bounded_value_is_string`, `find_object_end`) both managers had
-  independently converged on, now shared. They had quietly diverged on one
-  point: `share_price_manager.cpp`'s `extract_bounded_number` explicitly
-  rejected a quoted value, while `air_traffic_manager.cpp`'s version had no
-  such guard and relied on `strtod` failing on the opening `"` instead --
-  same practical result, different code path. Consolidated on the explicit
-  guard (the more defensive of the two).
+  `find_object_end`). `extract_bounded_number` explicitly rejects a quoted
+  value rather than relying on `strtod` failing on the opening `"`.
 - **`share_feed_parser.h`/`.cpp`** -- `share_feed::parse_shares_feed_response()`,
   operating on an explicit `std::array<ShareWatchEntry, kMaxWatchedShares>&`
   and share count instead of `share_price_manager.cpp`'s file-static
@@ -401,32 +381,23 @@ dump1090-family `{"ac":[...]}` parsing -- following the same pattern as #46
   (`g_history_parse_values`) moved from a static global into a local
   variable in the process, since nothing needed it to persist between calls
   -- a small incidental static-RAM win (~512 bytes).
-- **`air_traffic_response_parser.h`/`.cpp`** -- `air_traffic_response::
-  parse_aircraft_candidates()`, returning the closest-N `Candidate` array by
-  distance. Deliberately stops at candidate selection: per-aircraft
-  snail-trail history merging (`merge_trail_history()`) and display-text
-  formatting stay in `air_traffic_manager.cpp`, since they're not response
-  parsing -- `merge_trail_history()` in particular reads and mutates
-  `g_tracked`, a manager-persistent state store with no equivalent on the
-  parsing side.
 
-Neither manager's HTTP-completion/transport code moved -- same reasoning as
-#46/#47's ownership boundary. New pure functions are host-tested in
-`tests/host/test_bounded_json.cpp`, `test_share_feed_parser.cpp`, and
-`test_air_traffic_response_parser.cpp`, each including a realistic
-full-response fixture (matching `docs/share-feed-design.md` and
-`docs/adsb-air-traffic-feature-design.md`'s documented contracts) plus
-malformed/edge-case fixtures (missing required field, quoted-vs-numeric
+The manager's HTTP-completion/transport code did not move -- same reasoning
+as #46/#47's ownership boundary. The pure functions are host-tested in
+`tests/host/test_bounded_json.cpp` and `test_share_feed_parser.cpp`,
+including a realistic full-response fixture (matching
+`docs/share-feed-design.md`'s documented contract) plus malformed/edge-case
+fixtures (missing required field, quoted-vs-numeric
 mismatches, a truncated final object, an empty array), per issue #72's
 acceptance criteria. The weather/HA and HTTP-framing parsers already had
 this kind of coverage from #46/#47 and weren't revisited.
 
 ## Golden-Image Rendering Tests
 
-Issue #71 made `screens.cpp` and its eight page-family files
+Issue #71 made `screens.cpp` and its page-family files
 (`status_screens.cpp`, `weather_screens.cpp`, `calendar_screens.cpp`,
 `shares_screens.cpp`, `pinter_screens.cpp`, `settings_screens.cpp`,
-`alert_screens.cpp`, `air_traffic_screens.cpp`) host-testable, and added
+`alert_screens.cpp`) host-testable, and added
 pixel-snapshot regression tests so a layout bug (a softkey label overlapping
 content, a margin collision) fails a test run instead of needing a human to
 spot it on a screenshot -- the project's actual bug history per the issue.
@@ -434,7 +405,7 @@ spot it on a screenshot -- the project's actual bug history per the issue.
 **Whole-UI coverage (#112).** `tests/host/test_page_coverage.cpp` drives the
 real `console_controller` from Home with the presses an operator would use:
 softkeys, the cursor keys and ALERT. It starts from a fixture with data:
-Wi-Fi, shares, a live sensor board, nearby aircraft and one active alert. It
+Wi-Fi, shares, a live sensor board and one active alert. It
 visits every reachable page state and checks each one in three ways:
 
 - It compares a golden image rendered with the real softkey map
@@ -478,9 +449,9 @@ events to the controller until #8.
   the existing `DisplayTimingStatus` (which already periodically samples
   `frame_count()`/`last_rebuild_us()` in `MerlinCCU.cpp`), so
   `status_screens.cpp` no longer includes `display.h` at all.
-- **`to_ms_since_boot(get_absolute_time())`** (5 call sites across
-  `status_screens.cpp`, `weather_screens.cpp`, `shares_screens.cpp`,
-  `air_traffic_screens.cpp`, each computing "now" for data-freshness text) --
+- **`to_ms_since_boot(get_absolute_time())`** (call sites across
+  `status_screens.cpp`, `weather_screens.cpp` and `shares_screens.cpp`,
+  each computing "now" for data-freshness text) --
   threaded as an explicit `now_ms` parameter from `screens::draw_menu_screen()`
   down through each page family's public entry point, matching
   `build_data_freshness_text()`'s own existing `now_ms` parameter. The one
@@ -631,4 +602,5 @@ hardware headers to compile.
 | 2026-08-14 | Documentation audit pass for issue #3 (recurring repository hygiene review). Fixed staleness accumulated from this session's #44/#45 controller/screen splits and #9/#42 share-feed work: this file's own "Current Runtime Shape" section still described `console_controller.cpp` as owning alert state and `screens.cpp` as having Calendar/Shares/Pinter/Settings/Alerts "pending" a split that finished weeks ago; `README.md` still described an admin-password web-config gate that had been removed, a "pending" share feed that issue #42 implemented, non-configurable watched shares that issue #9 made configurable, and a "Host Tests" section describing only keypad/alert coverage against a suite that has since grown to include golden-image rendering and the five split controller modules; `docs/alerts.md` still referenced the now-nonexistent `console_controller::sync_system_alerts()` and had its Alert Catalogue and Missing Telemetry tables empty since the doc was created -- filled both from `alert_controller.cpp`'s current 17-code `AlertCode` enum and `sync()` body. AGENTS.md was read in full and found to need no changes -- healthy, within the issue's own target size, no stale references found. | User picked issue #3 explicitly, with an explicit "do not close it" instruction reinforcing the issue's own documented history (it was previously closed by mistake and had to be reopened over a missed 2026-07-04 "keep open" note). This pass targeted concrete, verifiable staleness only, per the issue's stated preference to avoid recommending change for its own sake. | Issue #3 remains open by design as a recurring item; this is one pass, not a closing one. Not yet done from the issue's own five-pass list: a README "deflation" pass (trimming rather than just correcting), a hardware-docs reconciliation pass, and a documentation-map pass. `alert_controller.cpp`'s `DisplayPipelineLag` alert has a stale-in-a-different-sense placeholder: its comment says frame-timing telemetry isn't available, but `DisplayTimingStatus.present_skipped_count` was added under issue #71 and the alert still hardcodes `false` -- flagged in the new Missing Telemetry table rather than fixed here, since wiring it up is a behavioural change, not a documentation one. |
 | 2026-08-14 | Audited issue #18 (Complete Pinter Scheduling Assistant) against its own acceptance criteria: full-flow state machine (`pinter_scheduling.cpp`), dock/fridge capacity gating with an on-screen block-reason message (not just a squeezed softkey hint), bounds-checked day-adjustment validation, wear-leveled/CRC-validated flash persistence (`pinter_store.cpp`/`pinter_persistence.cpp`), a read-only web `/pinter` activity timeline, and existing host test coverage (issue #78) -- no missing steps, validation gaps, or placeholder behaviour found in the Pinter-specific code. Fixed one narrowing-conversion compiler warning found during the review (`pinter_controller.cpp`'s `confirm_start()`, `size_t`->`uint8_t` via an explicit `static_cast`, since `brew_catalogue_index()`'s return is already bounds-checked against the `uint8_t`-sized catalogue). Closed #18 as already complete. | User picked #18 expecting real completion/hardening work; a full read against the issue's own acceptance criteria found nothing to harden, so reported that back rather than inventing unnecessary changes, and the user confirmed closing it. | One adjacent, genuine placeholder was found but intentionally left alone since it's outside #18's Pinter-only scope: the `Shares` page's "REMOVE" softkey is permanently wired to `SoftKeyRoute::None, false` (dead, unimplemented). Worth its own issue if useful. |
 | 2026-08-14 | Fixed a gap in #106's #104 RAM instrumentation: `home_assistant_manager::g_response`'s peak-usage tracking was only ever surfaced through the pre-existing `direct_weather_log()` helper, which is gated behind its own `kEnableDirectWeatherSerialDiagnostics` flag *and* explicitly skips logging whenever `g_active_weather_source == WeatherSource::HomeAssistant` -- so a user actually running HA as their weather/entity source (the most fully-integrated path) would get zero peak-size data for this buffer no matter what, since every `RequestKind` (`ProbeApi`/`FetchTrackedEntity`/`FetchWeatherEntity`/`FetchWeatherForecast`/`FetchWeatherDailyForecast`/`FetchSunEntity`/`PublishSelfEntity`) cycles through this one shared buffer via `advance_request_kind()`. Added an unconditional `PERIODIC_LOG` at the top of `handle_http_status()` (the single dispatch point every request kind's response passes through) reporting `g_response_peak_len` regardless of weather source or request kind. | User picked up issue #104 to actually run the real-hardware session PR #106 was left waiting on; before sending them off to collect data, re-read the instrumentation and found this buffer's logging would silently produce nothing useful for their setup, which uses Home Assistant. Better to catch an instrumentation gap before a hardware session than have them come back with a suspiciously-missing number. | Not yet verified on hardware -- same caveat as the rest of this issue's work. `air_traffic_manager`'s and `share_price_manager`'s peak logging were re-checked and don't have the same gap (their `PERIODIC_LOG` calls are unconditional already). |
+| 2026-11-20 | Removed the ADS-B air-traffic feature (manager, parser, page, settings, alert, config fields; config version 6). | Static RAM was ~97.6% used (#104) and the feature was not needed; it held ~22 KB of SRAM (16 KB response buffer, aircraft status and its console copy). | None; #166. |
 | YYYY-MM-DD |  |  |  |
