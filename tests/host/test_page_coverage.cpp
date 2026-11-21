@@ -434,6 +434,10 @@ HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
     EXPECT_TRUE(softkey_label_fits("PINTER\n[4 conditioning]",
                                    screens::softkey_label_style(MenuPage::Home),
                                    screens::softkey_label_max_lines(MenuPage::Home)));
+    // The widest location the Weather Source page can show (#87).
+    EXPECT_TRUE(softkey_label_fits("LOCATION\n[S33 51.60' W151 12.60']",
+                                   screens::softkey_label_style(MenuPage::WeatherSources),
+                                   screens::softkey_label_max_lines(MenuPage::WeatherSources)));
     EXPECT_FALSE(softkey_label_fits("A VERY LONG CAPTION THAT WRAPS\n[and a long value too]",
                                     TextStyle::Softkey, 2));
 

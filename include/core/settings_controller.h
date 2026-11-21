@@ -98,6 +98,10 @@ const char* screen_saver_selection_text(const ConsoleState& console_state);
 /// @brief Returns the currently selected time-zone label for menu softkeys.
 const char* time_zone_selection_text(const ConsoleState& console_state);
 
+/// @brief Returns the saved location as `N50 13.80' W002 23.40'`, or empty
+/// when none is set.
+const char* location_selection_text();
+
 /// @brief Returns the currently configured screen-saver timeout label.
 const char* screen_saver_timeout_selection_text(const ConsoleState& console_state);
 

@@ -7,12 +7,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 #include "config_manager.h"
 #include "console_controller.h"
 #include "date_time_math.h"
 #include "debug_logging.h"
 #include "framebuffer.h"
+#include "geo_coordinates.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 #include "panel_config.h"
@@ -553,7 +555,15 @@ void build_config_page(const char* message)
     html_escape(cfg.home_assistant_self_entity_id.data(), ha_self, sizeof(ha_self));
     html_escape(cfg.weather_entity_id.data(), weather_entity, sizeof(weather_entity));
     html_escape(cfg.sun_entity_id.data(), sun_entity, sizeof(sun_entity));
-    html_escape(cfg.weather_coordinates.data(), weather_coordinates, sizeof(weather_coordinates));
+    // Shown as degrees and minutes; the degree sign is an HTML entity, and
+    // the rest of the text is digits, letters, spaces, dots and primes.
+    weather_coordinates[0] = '\0';
+    if (const std::optional<geo_coordinates::GeoPoint> point =
+            geo_coordinates::parse(cfg.weather_coordinates.data()))
+    {
+        (void)geo_coordinates::format_degrees_minutes(*point, "&#176;", weather_coordinates,
+                                                      sizeof(weather_coordinates));
+    }
     html_escape(cfg.mqtt_host.data(), mqtt_host, sizeof(mqtt_host));
     html_escape(cfg.mqtt_username.data(), mqtt_user, sizeof(mqtt_user));
     html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix, sizeof(mqtt_prefix));
@@ -744,12 +754,24 @@ void build_config_page(const char* message)
         "Home Assistant weather entity</label><input name=\"weather_entity\" maxlength=\"63\" "
         "value=\"%s\"></div><div><label>Home Assistant sun entity</label><input "
         "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div></fieldset>"
-        "<fieldset id=\"weather_direct_fields\" class=\"%s\"><label>Direct "
-        "weather coordinates</label><input name=\"weather_coordinates\" maxlength=\"63\" "
-        "value=\"%s\"><p class=\"hint\">Direct weather sources use this "
-        "latitude,longitude value independently of Home Assistant.</p></fieldset></section>",
-        weather_is_home_assistant ? "" : "disabled", weather_entity, sun_entity,
-        weather_is_home_assistant ? "disabled" : "", weather_coordinates);
+        "<p class=\"hint\">Open-Meteo forecasts for the Location below.</p></section>",
+        weather_is_home_assistant ? "" : "disabled", weather_entity, sun_entity);
+
+    // Location (#87): a place search run by the browser, which has internet
+    // access the form needs anyway, fills the coordinates; they can also be
+    // typed in any common form. Shown as degrees and decimal minutes.
+    (void)append(
+        cursor, remaining,
+        "<section class=\"card\"><h2>Location</h2><label>Find a place</label><div "
+        "class=\"row\"><input id=\"geo_q\" placeholder=\"Town, city or UK postcode\">"
+        "<button type=\"button\" id=\"geo_find\">Find</button></div><div id=\"geo_results\" "
+        "class=\"tools\" style=\"margin-top:10px\"></div><label>Coordinates</label><input "
+        "name=\"weather_coordinates\" id=\"geo_coords\" maxlength=\"63\" value=\"%s\" "
+        "placeholder=\"N50&#176;13.80' W002&#176;23.40'\"><p class=\"hint\">Pick a place above, "
+        "or type the position: N50 13.80 W002 23.40, N50.23 W2.39 and 50.23, -2.39 all work. "
+        "Town-level accuracy is enough for the weather. Place search runs in this browser, "
+        "using Open-Meteo for names and postcodes.io for UK postcodes.</p></section>",
+        weather_coordinates);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Display & Time</h2><label>Time zone</label><select "
@@ -794,11 +816,41 @@ void build_config_page(const char* message)
         "var toggles=document.querySelectorAll('input[data-controls]');"
         "for(var i=0;i<toggles.length;i++){(function(box){box.onchange=function(){syncCheck(box)};"
         "syncCheck(box)})(toggles[i])}"
-        "var weather=byId('weather_source_select'),weatherHaFields=byId('weather_ha_fields'),"
-        "weatherDirectFields=byId('weather_direct_fields');"
-        "function syncWeather(){var isHa=weather.value==='home_assistant';"
-        "setDisabled(weatherHaFields,!isHa);setDisabled(weatherDirectFields,isHa)}"
+        "var weather=byId('weather_source_select'),weatherHaFields=byId('weather_ha_fields');"
+        "function syncWeather(){setDisabled(weatherHaFields,weather.value!=='home_assistant')}"
         "if(weather){weather.onchange=syncWeather;syncWeather()}"
+        "function dm(v,pos,neg,w){var t=Math.round(Math.abs(v)*6000);"
+        "return (v<0?neg:pos)+String(Math.floor(t/6000)).padStart(w,'0')+'\\u00b0'+"
+        "((t%%6000)/100).toFixed(2).padStart(5,'0')+\"'\"}"
+        "var geoQ=byId('geo_q'),geoResults=byId('geo_results'),geoCoords=byId('geo_coords');"
+        "function getJson(u){return fetch(u).then(function(r){return r.json()})}"
+        "function place(label,lat,lon){return {label:label,lat:lat,lon:lon}}"
+        "function showPlaces(list){list=list.filter(function(p){return p.lat!=null&&p.lon!=null});"
+        "geoResults.textContent=list.length?'':'No matches.';"
+        "list.forEach(function(p){var b=document.createElement('button');b.type='button';"
+        "b.className='ghost';b.textContent=p.label;b.onclick=function(){"
+        "geoCoords.value=dm(p.lat,'N','S',2)+' '+dm(p.lon,'E','W',3);"
+        "geoResults.textContent='Using '+p.label+'. Save to keep it.'};"
+        "geoResults.appendChild(b)})}"
+        // Open-Meteo only knows place names, so a UK postcode or postcode
+        // district goes to postcodes.io instead.
+        "function findPostcode(pc,full){return getJson('https://api.postcodes.io/'+"
+        "(full?'postcodes/':'outcodes/')+pc).then(function(j){var p=j.result;if(!p){return []}"
+        "var area=[].concat(p.admin_district||[])[0];"
+        "return [place([full?p.postcode:p.outcode,area,'UK'].filter(Boolean).join(', '),"
+        "p.latitude,p.longitude)]})}"
+        "function findName(q){return getJson('https://geocoding-api.open-meteo.com/v1/search?"
+        "count=8&language=en&format=json&name='+encodeURIComponent(q)).then(function(j){"
+        "return (j.results||[]).map(function(p){return place([p.name,p.admin1,p.country]"
+        ".filter(Boolean).join(', '),p.latitude,p.longitude)})})}"
+        "function findPlace(){var q=geoQ.value.trim();if(!q){return;}"
+        "geoResults.textContent='Searching...';var pc=q.toUpperCase().replace(/\\s+/g,'');"
+        "var full=/^[A-Z]{1,2}\\d[A-Z\\d]?\\d[A-Z]{2}$/.test(pc),"
+        "district=/^[A-Z]{1,2}\\d[A-Z\\d]?$/.test(pc);"
+        "(full||district?findPostcode(pc,full):findName(q)).then(showPlaces).catch(function(){"
+        "geoResults.textContent='Place search failed: this browser needs internet access.'})}"
+        "if(geoQ){byId('geo_find').onclick=findPlace;geoQ.onkeydown=function(e){"
+        "if(e.key==='Enter'){e.preventDefault();findPlace()}}}"
         "var preview=document.querySelector('nav.tools a[href=\"/preview\"]');"
         "if(preview){preview.addEventListener('click',function(event){"
         "if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){return;}"
@@ -2462,14 +2514,27 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "weather_coordinates", value, sizeof(value)))
     {
-        if (!validate_text_field(
-                "Direct weather coordinates", value, cfg.weather_coordinates.size() - 1, false,
-                is_printable_config_text, validation_error, sizeof(validation_error)))
+        // Any common form is accepted, but stored one way so every reader
+        // agrees (#87). Blank clears the location.
+        const std::optional<geo_coordinates::GeoPoint> point = geo_coordinates::parse(value);
+        if (value[0] != '\0' && !point)
         {
+            std::snprintf(validation_error, sizeof(validation_error),
+                          "Configuration not saved: Location coordinates were not understood. "
+                          "Use a form such as N50 13.80 W002 23.40 or 50.23, -2.39.");
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
         }
-        copy_text(cfg.weather_coordinates, value);
+        if (!point)
+        {
+            copy_text(cfg.weather_coordinates, "");
+        }
+        else
+        {
+            char stored[sizeof(cfg.weather_coordinates)] = {};
+            (void)geo_coordinates::format_decimal(*point, stored, sizeof(stored));
+            copy_text(cfg.weather_coordinates, stored);
+        }
     }
     if (get_form_value(body, "weather_source", value, sizeof(value)))
     {

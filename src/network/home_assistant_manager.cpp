@@ -8,9 +8,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <optional>
 
 #include "config_manager.h"
 #include "debug_logging.h"
+#include "geo_coordinates.h"
 #include "home_assistant_weather_parser.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
@@ -163,66 +165,18 @@ void active_weather_coordinate_signature(char* output, size_t output_size)
     std::snprintf(output, output_size, "%s", config.weather_coordinates.data());
 }
 
-bool parse_next_double(const char** cursor, double* out_value)
-{
-    if (cursor == nullptr || *cursor == nullptr || out_value == nullptr)
-    {
-        return false;
-    }
-
-    const char* scan = *cursor;
-    while (*scan != '\0')
-    {
-        const bool could_start_number =
-            (*scan >= '0' && *scan <= '9') || *scan == '-' || *scan == '+' || *scan == '.';
-        if (could_start_number)
-        {
-            char* end = nullptr;
-            const double value = std::strtod(scan, &end);
-            if (end != scan)
-            {
-                *cursor = end;
-                *out_value = value;
-                return true;
-            }
-        }
-        ++scan;
-    }
-
-    return false;
-}
-
-bool parse_coordinates_text(const char* location_text, double* out_latitude, double* out_longitude)
-{
-    if (location_text == nullptr || location_text[0] == '\0' || out_latitude == nullptr ||
-        out_longitude == nullptr)
-    {
-        return false;
-    }
-
-    const char* cursor = location_text;
-    double latitude = 0.0;
-    double longitude = 0.0;
-    if (!parse_next_double(&cursor, &latitude) || !parse_next_double(&cursor, &longitude))
-    {
-        return false;
-    }
-
-    if (std::isnan(latitude) || std::isnan(longitude) || latitude < -90.0 || latitude > 90.0 ||
-        longitude < -180.0 || longitude > 180.0)
-    {
-        return false;
-    }
-
-    *out_latitude = latitude;
-    *out_longitude = longitude;
-    return true;
-}
-
 bool parse_location_coordinates(double* out_latitude, double* out_longitude)
 {
-    return parse_coordinates_text(config_manager::settings().weather_coordinates.data(),
-                                  out_latitude, out_longitude);
+    // One reading of a typed location for the web form, the panel and here (#87).
+    const std::optional<geo_coordinates::GeoPoint> point =
+        geo_coordinates::parse(config_manager::settings().weather_coordinates.data());
+    if (!point)
+    {
+        return false;
+    }
+    *out_latitude = point->latitude;
+    *out_longitude = point->longitude;
+    return true;
 }
 
 enum class RequestKind : uint8_t

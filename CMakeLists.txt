@@ -65,6 +65,7 @@ add_executable(MerlinCCU
     src/core/status_controller.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
+    src/config/geo_coordinates.cpp
     src/display/display.cpp
     src/display/framebuffer.cpp
     src/display/alert_screens.cpp
