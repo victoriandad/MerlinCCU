@@ -304,9 +304,17 @@ const char* keypad_key_legend(uint8_t panel_pin_a, uint8_t panel_pin_b)
 /// @brief Persists one runtime-config mutation and refreshes the menu UI.
 /// @details Front-panel settings must write back to the same flash-backed
 /// configuration used by the web UI so the two surfaces never diverge.
+/// @brief Working copy for persist_runtime_config_change().
+/// @details At namespace scope rather than on the 4 KB core-0 stack (#164),
+/// and not a function-local static, which would give every template
+/// instantiation its own copy. Settings keys are handled from the main loop
+/// only, so the copy is never shared.
+RuntimeConfig g_settings_edit = {};
+
 template <typename Mutator> bool persist_runtime_config_change(Mutator&& mutator)
 {
-    RuntimeConfig settings = config_manager::settings();
+    RuntimeConfig& settings = g_settings_edit;
+    settings = config_manager::settings();
     if (!mutator(settings))
     {
         return false;

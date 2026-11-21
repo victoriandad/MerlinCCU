@@ -24,6 +24,7 @@ enum class AlertCode : uint8_t
     EnvironmentSensorFault,
     LocalPressureStormWarning,
     DisplayPipelineLag,
+    StackLow,
     ShareDataUnavailable,
     PinterScheduleConflict,
     Count,

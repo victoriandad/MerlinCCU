@@ -33,6 +33,7 @@
 #include "screensaver_starfield.h"
 #include "screensaver_worms.h"
 #include "share_price_manager.h"
+#include "stack_guard.h"
 #include "time_manager.h"
 #include "web_config_server.h"
 #include "wifi_manager.h"
@@ -228,59 +229,9 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 /// - prepare any configured keypad GPIOs
 /// - start PIO and DMA scanout
 /// - keep updating the active mode in the main loop
-namespace
-{
-
-// core0's entire stack is a fixed 2048-byte region (RP2350 default linker
-// script, .stack_dummy section) -- separate from the .bss/.data RAM region,
-// with no configured override. These bound it.
-extern "C" uint32_t __StackBottom;
-extern "C" uint32_t __StackTop;
-
-constexpr uint32_t kStackFillPattern = 0xEEEEEEEEU;
-// Bytes below the stack pointer at fill time are skipped as a safety
-// margin, so early crt0/main-prologue usage is never touched.
-constexpr uint32_t kStackFillSafetyMarginBytes = 64U;
-
-/// @brief Fills currently-unused stack with a known pattern for a later
-/// high-water-mark scan. Must run as early as possible in main(), before
-/// meaningful call depth accumulates, and never touches memory at or above
-/// the stack pointer at the time it runs.
-void fill_stack_canary()
-{
-    uint32_t sp = 0;
-    asm volatile("mov %0, sp" : "=r"(sp));
-    auto* begin = &__StackBottom;
-    auto* end = reinterpret_cast<uint32_t*>(sp - kStackFillSafetyMarginBytes);
-    for (uint32_t* p = begin; p < end; ++p)
-    {
-        *p = kStackFillPattern;
-    }
-}
-
-/// @brief Returns the fewest bytes of stack ever left untouched since boot.
-/// @details Scans from the bottom of the stack region upward for the first
-/// word that no longer holds the fill pattern -- the deepest point any call
-/// chain has reached. A small result means a real, measured near-miss, not a
-/// guess; see docs/development.md-style diagnostics elsewhere in this file.
-uint32_t stack_high_water_free_bytes()
-{
-    const auto* begin = &__StackBottom;
-    const auto* end = &__StackTop;
-    const uint32_t* p = begin;
-    while (p < end && *p == kStackFillPattern)
-    {
-        ++p;
-    }
-    return static_cast<uint32_t>(reinterpret_cast<const uint8_t*>(p) -
-                                 reinterpret_cast<const uint8_t*>(begin));
-}
-
-} // namespace
-
 int main()
 {
-    fill_stack_canary();
+    stack_guard::init();
 
     constexpr uint32_t kBootConsoleDelayMs = 10000U;
 
@@ -291,10 +242,18 @@ int main()
 
     std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d hblank=(%d,%d)\n", kPanel.clkdiv,
                 kPanel.native_row_offset, kPanel.h_pre_blank, kPanel.h_post_blank);
-    if (watchdog_enable_caused_reboot())
+    if (stack_guard::last_fault_status() != 0U)
+    {
+        std::printf("Last reboot was caused by a CPU fault (CFSR=0x%08lX)%s\n",
+                    static_cast<unsigned long>(stack_guard::last_fault_status()),
+                    stack_guard::last_reset_was_stack_overflow() ? ": stack overflow" : "");
+    }
+    else if (watchdog_enable_caused_reboot())
     {
         std::printf("Last reboot was caused by a watchdog timeout (main loop hang)\n");
     }
+    std::printf("Core-0 stack: %lu bytes\n",
+                static_cast<unsigned long>(stack_guard::capacity_bytes()));
     // Prints the real configured system clock so panel VCLK/frame-rate
     // assumptions in docs/greyscale-investigation.md can be checked against
     // hardware instead of the SDK-documented default.
@@ -643,7 +602,7 @@ int main()
             if (absolute_time_diff_us(get_absolute_time(), next_heartbeat) <= 0)
             {
                 std::printf("HEARTBEAT: alive, stack free (worst case since boot) = %lu bytes\n",
-                            static_cast<unsigned long>(stack_high_water_free_bytes()));
+                            static_cast<unsigned long>(stack_guard::free_bytes()));
                 next_heartbeat = make_timeout_time_ms(kHeartbeatIntervalMs);
             }
 
@@ -697,7 +656,8 @@ int main()
                          static_cast<unsigned>(lwip_stats.memp[MEMP_PBUF_POOL]->avail));
             const StackStatus stack_status = {
                 .valid = true,
-                .free_bytes = stack_high_water_free_bytes(),
+                .free_bytes = stack_guard::free_bytes(),
+                .overflow_reset = stack_guard::last_reset_was_stack_overflow(),
             };
             const bool stack_status_changed = console_controller::set_stack_status(stack_status);
             if ((loop_load_changed || heap_status_changed || stack_status_changed) &&

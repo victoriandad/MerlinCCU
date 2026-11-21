@@ -30,17 +30,12 @@ include(pico_sdk_import.cmake)
 
 project(MerlinCCU C CXX ASM)
 
-# The SDK default core-0 stack is a razor-thin 2KB (PICO_STACK_SIZE). A stack
-# overflow bug (returning a ~27KB ConsoleState by value into an assignment,
-# rather than an elided direct-init) was found consuming the *entire* default
-# stack on every boot before being fixed at the call site -- the stack-depth
-# canary read exactly 0 bytes free even after that fix, meaning there is
-# still no real safety margin left for any deeper call chain. The core-0
-# stack lives in a dedicated 4KB hardware scratch bank (SCRATCH_Y) on the
-# RP2350, not the general SRAM pool, so 0x1000 is the most this can be
-# widened to without custom linker-script surgery -- still a full doubling
-# of the previous margin. Must be set before pico_sdk_init() so it reaches
-# pico_crt0's own stack-reservation section, not just this target's sources.
+# The core-0 stack's linker reservation: all of SCRATCH_Y (4 KB), the most
+# the SDK linker script allows. At run time stack_guard extends it down into
+# the unused SCRATCH_X bank for 8 KB in all, and sets the hardware stack limit
+# at the bottom so an overflow faults instead of corrupting memory (#164).
+# Must be set before pico_sdk_init() so it reaches pico_crt0's own
+# stack-reservation section, not just this target's sources.
 add_compile_definitions(PICO_STACK_SIZE=0x1000)
 
 # Initialise the Raspberry Pi Pico SDK
@@ -63,6 +58,7 @@ add_executable(MerlinCCU
     src/core/pinter_store.cpp
     src/core/settings_controller.cpp
     src/core/softkey_builders.cpp
+    src/core/stack_guard.cpp
     src/core/status_controller.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
@@ -136,7 +132,14 @@ target_link_libraries(MerlinCCU
 # grow into on a 320-pixel-wide panel), not a bug to fix. GCC's static bound
 # (based on the source type's range, e.g. any uint8_t up to 255) can't see
 # that the real runtime values are always small.
-target_compile_options(MerlinCCU PRIVATE -Wall -Wextra -Werror=switch -Wno-format-truncation)
+#
+# -Wstack-usage flags any one function frame over MERLIN_STACK_FRAME_WARN_BYTES. The
+# core-0 stack is 8 KB in all (stack_guard.h), shared by the main loop and
+# the lwIP callbacks that run on top of it, so a large local belongs in
+# static storage instead (#164).
+set(MERLIN_STACK_FRAME_WARN_BYTES 1600)
+target_compile_options(MerlinCCU PRIVATE -Wall -Wextra -Werror=switch -Wno-format-truncation
+    -Wstack-usage=${MERLIN_STACK_FRAME_WARN_BYTES})
 
 # Add the standard include files to the build
 target_include_directories(MerlinCCU PRIVATE

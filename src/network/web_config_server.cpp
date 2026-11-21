@@ -304,31 +304,42 @@ int hex_value(char c)
     return -1;
 }
 
-/// @brief URL-decodes a form fragment in place.
-void url_decode_in_place(char* text)
+/// @brief Decodes the URL-encoded character at `in` and advances past it.
+/// @details `+` is a space and `%XX` is one byte. A `%` without two hex
+/// digits before `end` is kept as a literal `%`.
+char next_form_char(const char*& in, const char* end)
 {
-    char* out = text;
-    for (char* in = text; *in != '\0'; ++in)
+    const char c = *in++;
+    if (c == '+')
     {
-        if (*in == '+')
-        {
-            *out++ = ' ';
-            continue;
-        }
-        if (*in == '%' && in[1] != '\0' && in[2] != '\0')
-        {
-            const int hi = hex_value(in[1]);
-            const int lo = hex_value(in[2]);
-            if (hi >= 0 && lo >= 0)
-            {
-                *out++ = static_cast<char>((hi << 4) | lo);
-                in += 2;
-                continue;
-            }
-        }
-        *out++ = *in;
+        return ' ';
     }
-    *out = '\0';
+    if (c == '%' && (end - in) >= 2)
+    {
+        const int hi = hex_value(in[0]);
+        const int lo = hex_value(in[1]);
+        if (hi >= 0 && lo >= 0)
+        {
+            in += 2;
+            return static_cast<char>((hi << 4) | lo);
+        }
+    }
+    return c;
+}
+
+/// @brief Returns whether the encoded name in [begin, end) decodes to `key`.
+bool form_name_matches(const char* begin, const char* end, const char* key)
+{
+    const char* in = begin;
+    while (in < end)
+    {
+        if (*key == '\0' || next_form_char(in, end) != *key)
+        {
+            return false;
+        }
+        ++key;
+    }
+    return *key == '\0';
 }
 
 /// @brief Appends formatted text to the response buffer.
@@ -509,22 +520,25 @@ void build_config_page(const char* message)
     const RuntimeConfig& cfg = config_manager::settings();
     char* cursor = g_response;
     size_t remaining = sizeof(g_response);
-    char device_name[64] = {};
-    char device_label[64] = {};
-    char location[64] = {};
-    char room[64] = {};
-    char wifi_ssid[80] = {};
-    char ha_host[96] = {};
-    char ha_entity[96] = {};
-    char ha_self[96] = {};
-    char weather_entity[96] = {};
-    char sun_entity[96] = {};
-    char weather_coordinates[96] = {};
-    char mqtt_host[96] = {};
-    char mqtt_user[96] = {};
-    char mqtt_prefix[64] = {};
-    char mqtt_topic[96] = {};
-    char escaped_message[160] = {};
+    // Static: together these are about 1.4 KB, too much for the 4 KB core-0
+    // stack under an lwIP callback (#164). html_escape() rewrites each one in
+    // full, and the server builds one page at a time.
+    static char device_name[64] = {};
+    static char device_label[64] = {};
+    static char location[64] = {};
+    static char room[64] = {};
+    static char wifi_ssid[80] = {};
+    static char ha_host[96] = {};
+    static char ha_entity[96] = {};
+    static char ha_self[96] = {};
+    static char weather_entity[96] = {};
+    static char sun_entity[96] = {};
+    static char weather_coordinates[96] = {};
+    static char mqtt_host[96] = {};
+    static char mqtt_user[96] = {};
+    static char mqtt_prefix[64] = {};
+    static char mqtt_topic[96] = {};
+    static char escaped_message[160] = {};
 
     html_escape(cfg.device_name.data(), device_name, sizeof(device_name));
     html_escape(cfg.device_label.data(), device_label, sizeof(device_label));
@@ -2008,50 +2022,51 @@ const char* lamp_mode_text_token(LampMode mode)
     return "off";
 }
 
-/// @brief Finds one form field value in a mutable URL-encoded body.
-bool form_value(char* body, const char* key, char* output, size_t output_size)
+/// @brief Finds one field in a URL-encoded form body and decodes its value.
+/// @details Decodes straight from the body rather than from a copy: this runs
+/// in the lwIP callback on top of the main loop's stack, and a copy of the
+/// whole body (kRequestCapacity) was larger than the 4 KB core-0 stack (#164).
+/// A value longer than `output_size - 1` is cut there; callers size `output`
+/// one past the field so an over-long value still fails validation.
+bool get_form_value(const char* body, const char* key, char* output, size_t output_size)
 {
-    if (body == nullptr || key == nullptr || output == nullptr || output_size == 0)
+    if (body == nullptr || key == nullptr || output == nullptr || output_size == 0U)
     {
         return false;
     }
 
     output[0] = '\0';
-    const size_t key_len = std::strlen(key);
-    char* token = body;
-    while (token != nullptr && *token != '\0')
+    const char* field = body;
+    while (*field != '\0')
     {
-        char* next = std::strchr(token, '&');
-        if (next != nullptr)
+        const char* field_end = std::strchr(field, '&');
+        if (field_end == nullptr)
         {
-            *next++ = '\0';
+            field_end = field + std::strlen(field);
         }
 
-        char* equals = std::strchr(token, '=');
-        if (equals != nullptr)
+        const auto* equals = static_cast<const char*>(
+            std::memchr(field, '=', static_cast<size_t>(field_end - field)));
+        if (equals != nullptr && form_name_matches(field, equals, key))
         {
-            *equals++ = '\0';
-            url_decode_in_place(token);
-            url_decode_in_place(equals);
-            if (std::strlen(token) == key_len && std::strcmp(token, key) == 0)
+            size_t length = 0U;
+            const char* in = equals + 1;
+            while (in < field_end && length + 1U < output_size)
             {
-                std::snprintf(output, output_size, "%s", equals);
-                return true;
+                output[length++] = next_form_char(in, field_end);
             }
+            output[length] = '\0';
+            return true;
         }
 
-        token = next;
+        if (*field_end == '\0')
+        {
+            break;
+        }
+        field = field_end + 1;
     }
 
     return false;
-}
-
-/// @brief Reads a form value without mutating the original POST body.
-bool get_form_value(const char* body, const char* key, char* output, size_t output_size)
-{
-    char copy[kRequestCapacity] = {};
-    std::snprintf(copy, sizeof(copy), "%s", body != nullptr ? body : "");
-    return form_value(copy, key, output, output_size);
 }
 
 bool form_has_key(const char* body, const char* key)
@@ -2285,11 +2300,13 @@ const char* handle_config_post(const char* body)
         return "Configuration not saved: configuration page was incomplete. Reload and try again.";
     }
 
-    RuntimeConfig cfg = config_manager::settings();
+    // These are static because the core-0 stack has no room for them (#164)
+    // and the web server handles one request at a time.
+    static RuntimeConfig cfg = {};
+    cfg = config_manager::settings();
     // Sized one past the widest field (the HA token) so an over-long value is
-    // still long enough after snprintf truncation to fail validate_text_field
-    // rather than being silently cut. Static because the core-0 stack has no
-    // headroom (#164) and the web server handles one request at a time.
+    // still long enough after truncation to fail validate_text_field rather
+    // than being silently cut.
     static char value[kHomeAssistantTokenCapacity + 1U] = {};
     value[0] = '\0';
     static char validation_error[160] = {};

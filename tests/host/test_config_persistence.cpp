@@ -90,9 +90,8 @@ HOST_TEST(validate_slot_rejects_wrong_payload_size)
 
 HOST_TEST(choose_newest_candidate_prefers_higher_sequence_when_both_valid)
 {
-    const RuntimeConfig settings = config_persistence::make_default_settings();
-    const ConfigCandidate older = {true, 3U, settings};
-    const ConfigCandidate newer = {true, 4U, settings};
+    const ConfigCandidate older = {true, 3U};
+    const ConfigCandidate newer = {true, 4U};
 
     const ConfigCandidate* chosen = config_persistence::choose_newest_candidate(older, newer);
     EXPECT_TRUE(chosen == &newer);
@@ -103,9 +102,8 @@ HOST_TEST(choose_newest_candidate_prefers_higher_sequence_when_both_valid)
 
 HOST_TEST(choose_newest_candidate_falls_back_to_whichever_slot_is_valid)
 {
-    const RuntimeConfig settings = config_persistence::make_default_settings();
-    const ConfigCandidate valid = {true, 1U, settings};
-    const ConfigCandidate invalid = {false, 0U, {}};
+    const ConfigCandidate valid = {true, 1U};
+    const ConfigCandidate invalid = {false, 0U};
 
     EXPECT_TRUE(config_persistence::choose_newest_candidate(valid, invalid) == &valid);
     EXPECT_TRUE(config_persistence::choose_newest_candidate(invalid, valid) == &valid);
@@ -113,8 +111,8 @@ HOST_TEST(choose_newest_candidate_falls_back_to_whichever_slot_is_valid)
 
 HOST_TEST(choose_newest_candidate_returns_null_when_neither_slot_is_valid)
 {
-    const ConfigCandidate a = {false, 0U, {}};
-    const ConfigCandidate b = {false, 0U, {}};
+    const ConfigCandidate a = {false, 0U};
+    const ConfigCandidate b = {false, 0U};
     EXPECT_TRUE(config_persistence::choose_newest_candidate(a, b) == nullptr);
 }
 

@@ -457,6 +457,37 @@ HOST_TEST(display_lag_needs_a_valid_sample_with_a_known_nominal_rate)
     EXPECT_FALSE(has_alert(state, AlertCode::DisplayPipelineLag));
 }
 
+HOST_TEST(stack_low_raises_below_the_free_byte_threshold)
+{
+    ConsoleState state = make_healthy_state();
+    state.stack_status = {.valid = true, .free_bytes = 1024U, .overflow_reset = false};
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::StackLow));
+
+    state.stack_status.free_bytes = 1020U;
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::StackLow));
+    const ActiveAlert& alert = state.active_alerts[0];
+    EXPECT_TRUE(std::strstr(alert.detail.data(), "Only 1020 bytes") != nullptr);
+}
+
+HOST_TEST(stack_low_raises_after_an_overflow_reset_even_with_free_stack)
+{
+    ConsoleState state = make_healthy_state();
+    state.stack_status = {.valid = true, .free_bytes = 6000U, .overflow_reset = true};
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::StackLow));
+    EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "stack overflowed") != nullptr);
+}
+
+HOST_TEST(stack_low_ignores_a_status_not_yet_sampled)
+{
+    ConsoleState state = make_healthy_state();
+    state.stack_status = {.valid = false, .free_bytes = 0U, .overflow_reset = false};
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::StackLow));
+}
+
 HOST_TEST(list_page_count_rounds_up_and_never_returns_zero)
 {
     EXPECT_EQ(list_page_count(0U, 8U), 1U);

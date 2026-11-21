@@ -104,9 +104,9 @@ const RuntimeConfig& settings();
 /// @brief Updates the active configuration immediately and queues it to be
 /// written to flash.
 /// @details The new settings are visible via settings() right away; the
-/// actual flash write is deferred to flush_pending_save(). Both save() and
-/// reset_to_defaults() are reachable synchronously from web request handling
-/// (a settings-page button press or the web config form's Save action), and
+/// actual flash write is deferred to flush_pending_save(). save() is
+/// reachable synchronously from web request handling (a settings-page button
+/// press or the web config form's Save action), and
 /// a flash erase/program disables all interrupts for its duration -- doing
 /// that while still nested inside a network request has caused visible
 /// multi-second UI stalls in practice (see the same issue with Pinter
@@ -114,9 +114,6 @@ const RuntimeConfig& settings();
 /// longer synchronous, so a real write failure can only be caught (and
 /// logged) later, inside flush_pending_save().
 bool save(const RuntimeConfig& settings);
-
-/// @brief Restores factory defaults and queues them to be written to flash.
-bool reset_to_defaults();
 
 /// @brief Writes any pending settings save to flash, if one is due.
 /// @details Must be called from a point in the main loop that is not nested

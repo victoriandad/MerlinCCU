@@ -45,62 +45,81 @@ const ConfigSlot* flash_slot(uint32_t offset)
     return reinterpret_cast<const ConfigSlot*>(XIP_BASE + offset);
 }
 
-ConfigCandidate read_candidate(uint32_t offset)
+/// @brief Validates the slot at `offset`, in any stored layout version.
+/// @details When `out_settings` is not null, a valid slot is also decoded
+/// (and migrated if it is a legacy layout) straight into it. Validating
+/// without decoding lets both slots be compared with no RuntimeConfig copy
+/// on the core-0 stack (#164).
+ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
 {
     const ConfigSlot* slot = flash_slot(offset);
     if (config_persistence::validate_slot(*slot))
     {
-        return {true, slot->sequence, slot->settings};
+        if (out_settings != nullptr)
+        {
+            *out_settings = slot->settings;
+        }
+        return {true, slot->sequence};
     }
 
     const auto* legacy_slot_v5 = reinterpret_cast<const LegacyConfigSlotV5*>(slot);
     if (config_persistence::validate_legacy_slot_v5(*legacy_slot_v5))
     {
-        return {true, legacy_slot_v5->sequence,
-                config_persistence::migrate_legacy_settings_v5(legacy_slot_v5->settings)};
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings_v5(legacy_slot_v5->settings);
+        }
+        return {true, legacy_slot_v5->sequence};
     }
 
     const auto* legacy_slot_v4 = reinterpret_cast<const LegacyConfigSlotV4*>(slot);
     if (config_persistence::validate_legacy_slot_v4(*legacy_slot_v4))
     {
-        return {true, legacy_slot_v4->sequence,
-                config_persistence::migrate_legacy_settings_v4(legacy_slot_v4->settings)};
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings_v4(legacy_slot_v4->settings);
+        }
+        return {true, legacy_slot_v4->sequence};
     }
 
     const auto* legacy_slot_v3 = reinterpret_cast<const LegacyConfigSlotV3*>(slot);
     if (config_persistence::validate_legacy_slot_v3(*legacy_slot_v3))
     {
-        return {true, legacy_slot_v3->sequence,
-                config_persistence::migrate_legacy_settings_v3(legacy_slot_v3->settings)};
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings_v3(legacy_slot_v3->settings);
+        }
+        return {true, legacy_slot_v3->sequence};
     }
 
     const auto* legacy_slot_v2 = reinterpret_cast<const LegacyConfigSlotV2*>(slot);
     if (config_persistence::validate_legacy_slot_v2(*legacy_slot_v2))
     {
-        return {true, legacy_slot_v2->sequence,
-                config_persistence::migrate_legacy_settings_v2(legacy_slot_v2->settings)};
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings_v2(legacy_slot_v2->settings);
+        }
+        return {true, legacy_slot_v2->sequence};
     }
 
     const auto* legacy_slot = reinterpret_cast<const LegacyConfigSlotV1*>(slot);
     if (config_persistence::validate_legacy_slot_v1(*legacy_slot))
     {
-        return {true, legacy_slot->sequence,
-                config_persistence::migrate_legacy_settings(legacy_slot->settings)};
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings(legacy_slot->settings);
+        }
+        return {true, legacy_slot->sequence};
     }
 
-    return {false, 0, {}};
+    return {false, 0U};
 }
 
-/// @brief Chooses the newest valid config slot from flash.
-bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
+/// @brief Loads the newest valid config slot from flash into g_settings.
+bool load_from_flash()
 {
-    if (out_settings == nullptr || out_sequence == nullptr)
-    {
-        return false;
-    }
-
-    const ConfigCandidate slot0 = read_candidate(kSlot0Offset);
-    const ConfigCandidate slot1 = read_candidate(kSlot1Offset);
+    const ConfigCandidate slot0 = read_candidate(kSlot0Offset, nullptr);
+    const ConfigCandidate slot1 = read_candidate(kSlot1Offset, nullptr);
     std::printf("Config flash scan: slot0=%s slot1=%s\n", slot0.valid ? "valid" : "invalid",
                 slot1.valid ? "valid" : "invalid");
 
@@ -110,8 +129,8 @@ bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
         return false;
     }
 
-    *out_settings = chosen->settings;
-    *out_sequence = chosen->sequence;
+    (void)read_candidate(chosen == &slot0 ? kSlot0Offset : kSlot1Offset, &g_settings);
+    g_sequence = chosen->sequence;
     std::printf("Config loaded from flash sequence %lu\n",
                 static_cast<unsigned long>(chosen->sequence));
     return true;
@@ -120,25 +139,32 @@ bool load_from_flash(RuntimeConfig* out_settings, uint32_t* out_sequence)
 /// @brief Writes one complete slot to flash.
 bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequence)
 {
-    alignas(4) static uint8_t flash_buffer[FLASH_SECTOR_SIZE] = {};
-    std::memset(flash_buffer, 0xFF, sizeof(flash_buffer));
+    // The slot is built in the static sector buffer rather than as a stack
+    // local: a ConfigSlot is about 1.5 KB (#164).
+    union FlashSector
+    {
+        ConfigSlot slot;
+        uint8_t bytes[FLASH_SECTOR_SIZE];
+    };
+    alignas(4) static FlashSector sector = {};
+    std::memset(sector.bytes, 0xFF, sizeof(sector.bytes));
 
-    ConfigSlot slot = {};
+    ConfigSlot& slot = sector.slot;
     slot.magic = config_persistence::kConfigMagic;
     slot.version = config_persistence::kConfigVersion;
+    slot.reserved = 0U;
     slot.sequence = sequence;
     slot.payload_size = sizeof(RuntimeConfig);
     slot.settings = settings;
     slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
                                            sizeof(RuntimeConfig));
-    std::memcpy(flash_buffer, &slot, sizeof(slot));
 
     std::printf("Config save: writing sequence %lu to flash offset 0x%08lX\n",
                 static_cast<unsigned long>(sequence), static_cast<unsigned long>(offset));
 
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_range_erase(offset, FLASH_SECTOR_SIZE);
-    flash_range_program(offset, flash_buffer, sizeof(flash_buffer));
+    flash_range_program(offset, sector.bytes, sizeof(sector.bytes));
     restore_interrupts(interrupts);
 
     const ConfigSlot* stored = flash_slot(offset);
@@ -146,6 +172,20 @@ bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequenc
     std::printf("Config save: verify %s for sequence %lu\n", valid ? "ok" : "failed",
                 static_cast<unsigned long>(sequence));
     return valid;
+}
+
+/// @brief Replaces the settings with factory defaults and writes them to flash.
+/// @details Kept out of line so its RuntimeConfig temporary and the one in
+/// read_candidate() are never on the stack together (#164). Safe to write
+/// synchronously: init() runs before wifi_manager::init(), so there is no
+/// network stack yet for a flash write to disrupt.
+[[gnu::noinline]] void install_defaults()
+{
+    std::printf("Config flash empty or invalid; writing defaults\n");
+    g_settings = config_persistence::make_default_settings();
+    g_sequence = 0;
+    (void)save(g_settings);
+    (void)flush_pending_save();
 }
 
 /// @brief Returns the next flash slot offset for a save operation.
@@ -158,32 +198,21 @@ uint32_t next_save_slot_offset()
 
 void init()
 {
-    RuntimeConfig loaded = {};
-    uint32_t sequence = 0;
-
-    if (load_from_flash(&loaded, &sequence))
+    if (load_from_flash())
     {
-        if (loaded.weather_source == WeatherSource::MetNorway)
+        if (g_settings.weather_source == WeatherSource::MetNorway)
         {
-            loaded.weather_source = WeatherSource::OpenMeteo;
+            g_settings.weather_source = WeatherSource::OpenMeteo;
         }
-        if (config_persistence::should_auto_enable_home_assistant(loaded))
+        if (config_persistence::should_auto_enable_home_assistant(g_settings))
         {
-            loaded.home_assistant_enabled = true;
+            g_settings.home_assistant_enabled = true;
             std::printf("Config load: repaired HA enable flag from saved credentials\n");
         }
-        g_settings = loaded;
-        g_sequence = sequence;
         return;
     }
 
-    std::printf("Config flash empty or invalid; writing defaults\n");
-    g_settings = config_persistence::make_default_settings();
-    g_sequence = 0;
-    // Safe to write synchronously here: this runs before wifi_manager::init(),
-    // so there is no network stack yet for a flash write to disrupt.
-    (void)save(g_settings);
-    (void)flush_pending_save();
+    install_defaults();
 }
 
 const RuntimeConfig& settings()
@@ -193,7 +222,13 @@ const RuntimeConfig& settings()
 
 bool save(const RuntimeConfig& settings)
 {
-    g_settings = config_persistence::sanitize_settings(settings);
+    // Sanitised in place: sanitize_settings() would add a ~1.5 KB copy to
+    // the core-0 stack (#164).
+    if (&settings != &g_settings)
+    {
+        g_settings = settings;
+    }
+    config_persistence::sanitize_settings_in_place(g_settings);
     g_save_pending = true;
     return true;
 }
@@ -218,11 +253,6 @@ bool flush_pending_save()
                 static_cast<unsigned long>(g_sequence), g_settings.device_name.data(),
                 g_settings.device_label.data());
     return true;
-}
-
-bool reset_to_defaults()
-{
-    return save(config_persistence::make_default_settings());
 }
 
 const char* device_name()

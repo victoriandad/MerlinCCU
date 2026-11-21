@@ -1846,7 +1846,11 @@ bool runtime_weather_config_changed()
 /// @brief Advances the Home Assistant resolve/connect/request state machine.
 bool update(const WifiStatus& wifi_status)
 {
-    const HomeAssistantStatus previous = g_status;
+    // Static: the status carries the weather forecast tables, and a stack copy
+    // took about 2 KB of the 4 KB core-0 stack on every loop pass (#164).
+    // update() only runs from the main loop, so one copy is never shared.
+    static HomeAssistantStatus previous = {};
+    previous = g_status;
     if (runtime_weather_config_changed())
     {
         init();
