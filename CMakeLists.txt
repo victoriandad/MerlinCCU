@@ -88,6 +88,7 @@ add_executable(MerlinCCU
     src/display/screensavers/screensaver_worms.cpp
     src/network/date_time_math.cpp
     src/network/bounded_json.cpp
+    src/network/ha_request_plan.cpp
     src/network/home_assistant_manager.cpp
     src/network/home_assistant_weather_parser.cpp
     src/network/http_response.cpp

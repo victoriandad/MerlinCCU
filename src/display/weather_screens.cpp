@@ -414,7 +414,7 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
     // for Open-Meteo as well as Home Assistant.
     char freshness_text[16] = {};
     screens::build_data_freshness_text(
-        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.state),
+        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.weather_state),
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
         home_assistant_manager::kWeatherStaleAfterMs, freshness_text, sizeof(freshness_text));
 
@@ -641,8 +641,8 @@ bool weather_period_has_data(const ConsoleState& console_state,
 const char* weather_setup_hint(const ConsoleState& console_state)
 {
     const HomeAssistantStatus& status = console_state.home_assistant_status;
-    const bool kSourceOff = status.state == HomeAssistantConnectionState::Unconfigured ||
-                            status.state == HomeAssistantConnectionState::Disabled;
+    const bool kSourceOff = status.weather_state == HomeAssistantConnectionState::Unconfigured ||
+                            status.weather_state == HomeAssistantConnectionState::Disabled;
     if (console_state.weather_source == WeatherSource::HomeAssistant)
     {
         if (kSourceOff)
@@ -691,7 +691,7 @@ WeatherPageMessage weather_page_message(const ConsoleState& console_state)
 
     // Transport detail (HTTP status, error codes) stays on Status
     // Integrations; this page uses operator wording.
-    switch (status.state)
+    switch (status.weather_state)
     {
     case HomeAssistantConnectionState::Unauthorized:
         set_message(WeatherPageState::Failed, kFailedHeadline, "Check the HA token in web config");

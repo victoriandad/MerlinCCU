@@ -742,7 +742,7 @@ HOST_TEST(detail_rows_wrap_or_cut_long_values_inside_the_body)
 
     ConsoleState integrations = {};
     integrations.active_page = MenuPage::StatusIntegrations;
-    fill_wide(integrations.home_assistant_status.host, false);
+    fill_wide(integrations.home_assistant_status.weather_host, false);
     const auto integrations_fb = render_page(integrations);
     (void)config_manager::save(saved_config);
     EXPECT_TRUE(detail_rows_stay_in_bounds(integrations_fb.data()));
@@ -819,6 +819,7 @@ ConsoleState open_weather_page(int period_presses)
     status = {};
     status.configured = true;
     status.state = HomeAssistantConnectionState::Connected;
+    status.weather_state = HomeAssistantConnectionState::Connected;
     set_text(status.weather_entity_id, "weather.home");
     set_text(status.weather_source_hint, "Met Office");
     return state;
@@ -909,7 +910,7 @@ HOST_TEST(weather_page_shows_stale_data_in_the_footer)
     fill_weather_data(state);
     // Older than the fetcher's stale threshold, and the latest fetch failed.
     state.home_assistant_status.weather_last_success_ms = 1000U;
-    state.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
     check_weather_state(state, weather_screens::WeatherPageState::Forecast, "weather_stale");
 }
 
@@ -923,11 +924,11 @@ HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)
                         "weather_not_configured_home_assistant");
 
     ConsoleState ha_off = open_weather_page(0);
-    ha_off.home_assistant_status.state = HomeAssistantConnectionState::Unconfigured;
+    ha_off.home_assistant_status.weather_state = HomeAssistantConnectionState::Unconfigured;
 
     ConsoleState meteo_no_coords = open_weather_page(0);
     meteo_no_coords.weather_source = WeatherSource::OpenMeteo;
-    meteo_no_coords.home_assistant_status.state = HomeAssistantConnectionState::Unconfigured;
+    meteo_no_coords.home_assistant_status.weather_state = HomeAssistantConnectionState::Unconfigured;
     meteo_no_coords.home_assistant_status.weather_entity_id.fill('\0');
     check_weather_state(meteo_no_coords, WeatherPageState::NotConfigured,
                         "weather_not_configured_open_meteo");
@@ -952,19 +953,19 @@ HOST_TEST(weather_page_waiting_failed_and_no_data_use_the_empty_state_block)
     using weather_screens::WeatherPageState;
 
     ConsoleState waiting = open_weather_page(0);
-    waiting.home_assistant_status.state = HomeAssistantConnectionState::Connecting;
+    waiting.home_assistant_status.weather_state = HomeAssistantConnectionState::Connecting;
     check_weather_state(waiting, WeatherPageState::Waiting, "weather_waiting");
 
     ConsoleState no_wifi = open_weather_page(0);
-    no_wifi.home_assistant_status.state = HomeAssistantConnectionState::WaitingForWifi;
+    no_wifi.home_assistant_status.weather_state = HomeAssistantConnectionState::WaitingForWifi;
     EXPECT_EQ(static_cast<int>(weather_screens::weather_page_message(no_wifi).state),
               static_cast<int>(WeatherPageState::Waiting));
 
     // Open-Meteo and Home Assistant failures read the same on this page.
     ConsoleState failed = open_weather_page(0);
     failed.weather_source = WeatherSource::OpenMeteo;
-    failed.home_assistant_status.state = HomeAssistantConnectionState::Error;
-    failed.home_assistant_status.last_http_status = 404;
+    failed.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
+    failed.home_assistant_status.weather_http_status = 404;
     set_text(failed.home_assistant_status.weather_entity_id, "51.5,-0.1");
     check_weather_state(failed, WeatherPageState::Failed, "weather_failed");
     ConsoleState ha_failed = failed;
