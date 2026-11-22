@@ -80,53 +80,20 @@ Field notes (matching `share_price_manager.cpp`'s parser exactly):
 
 ## Setting it up in Home Assistant
 
-The simplest option is a
-[REST command](https://www.home-assistant.io/integrations/rest_command/) that
-proxies to whichever market-data provider you choose, reshaped into the
-contract above. Sketch (adjust provider/auth to taste):
+The MerlinCCU Home Assistant integration in
+[`ha/custom_components/merlinccu`](../ha/custom_components/merlinccu) serves
+this endpoint on HA's own port. It gets prices from Yahoo Finance's chart
+API, which needs no API key, and caches each period. Setup steps are in
+[home-assistant-setup.md](home-assistant-setup.md), step 5.
 
-```yaml
-# configuration.yaml
-rest_command:
-  merlinccu_shares:
-    url: "https://api.twelvedata.com/quote?symbol={{ symbol }}&apikey={{ states('input_text.twelvedata_key') }}"
-    method: GET
-```
+Anything else that answers the same request on the configured host and port
+works too. For example, a small proxy in front of a different provider such
+as Alpha Vantage or Twelve Data: the CCU only ever sees the contract above.
 
-A `/api/merlinccu/shares` route needs something that can actually serve
-MerlinCCU's `GET` request in the exact shape above -- a REST command alone
-only lets HA *call out*, not *serve an inbound request*. The two practical
-options:
-
-1. **A HA template/webhook automation** exposing an endpoint via
-   [`api` / webhook triggers](https://www.home-assistant.io/docs/automation/trigger/#webhook-trigger),
-   assembling the `{"shares": [...]}` payload from `rest_command` results (or
-   from sensors you already maintain) using a Jinja template.
-2. **A tiny standalone local proxy** (a few lines of Python/Node on the same
-   host or a Pi on the LAN) that calls your chosen provider and reshapes the
-   response -- simplest to reason about, and keeps HA itself out of it if
-   preferred. Point `home_assistant_host`/`home_assistant_port` at wherever
-   this proxy actually listens; MerlinCCU doesn't require it to literally be
-   Home Assistant, just something on that configured host/port.
-
-Either way, the bearer token (`RuntimeConfig::shares_feed_token`, sent as
+The bearer token (`RuntimeConfig::shares_feed_token`, sent as
 `Authorization: Bearer <token>`) is deliberately **separate** from the Home
-Assistant long-lived access token -- it authorizes a different, custom
-endpoint with its own auth story, not HA's own REST API.
-
-## Recommended upstream providers
-
-Candidates for whatever your HA automation/proxy calls out to, per the
-issue's own suggestion -- none of these are called directly by the Pico:
-
-- **Twelve Data** -- generous free tier, simple REST quote endpoint.
-- **Marketstack** -- free tier available, EOD and some intraday data.
-- **Alpha Vantage** -- long-standing free tier, rate-limited.
-
-Any of these (or another reliable market-data API) work identically from
-MerlinCCU's side, since the contract above is the only thing the firmware
-ever sees -- exactly the point of putting this indirection in Home Assistant
-rather than on the Pico.
+Assistant long-lived access token. HA's tokens are longer than the CCU's
+127-character field, and the endpoint has its own auth story.
 
 ## Known limitations
 

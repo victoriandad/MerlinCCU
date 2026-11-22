@@ -732,12 +732,12 @@ void build_config_page(const char* message)
         "name=\"shares_feed_enabled_present\" value=\"1\"><label class=\"check\"><input "
         "type=\"checkbox\" name=\"shares_feed_enabled\" %s>Enable local share feed</label>"
         "<p class=\"hint\">Reuses the Home Assistant host/port configured above -- expects a "
-        "small local endpoint at <code>GET /api/merlinccu/shares?period=...</code>, typically a "
-        "Home Assistant REST command or template. See docs/share-feed-design.md for the full "
-        "contract and setup options.</p><label>Feed token (optional)</label><input "
+        "small local endpoint at <code>GET /api/merlinccu/shares?period=...</code>, served by "
+        "the MerlinCCU Home Assistant integration in the repository's ha/ folder. See "
+        "docs/home-assistant-setup.md.</p><label>Feed token (optional)</label><input "
         "name=\"shares_feed_token\" type=\"password\" placeholder=\"Leave blank to keep "
-        "current\"><p class=\"hint\">Sent as an Authorization: Bearer header if set -- separate "
-        "from the Home Assistant token above since it authorizes a different endpoint.</p>"
+        "current\"><p class=\"hint\">Sent as an Authorization: Bearer header if set. Use the "
+        "integration's feed_token, not the Home Assistant token above.</p>"
         "</section>",
         cfg.shares_feed_enabled ? "checked" : "");
 

@@ -1,0 +1,12 @@
+# MerlinCCU share feed (docs/home-assistant-setup.md, step 5).
+# Add this block to Home Assistant's configuration.yaml, then restart HA.
+merlinccu:
+  # The CCU's "Feed token" setting. Put the value in secrets.yaml as
+  # merlinccu_feed_token. Remove this line to serve the feed without a token.
+  feed_token: !secret merlinccu_feed_token
+  # Up to six shares, matching the CCU's watched-share symbols exactly.
+  # Symbols are Yahoo Finance symbols: LSE shares end in .L.
+  shares:
+    - symbol: BA.L
+      # Optional. Left out, the CCU keeps the display name set on the CCU.
+      name: BAE SYSTEMS

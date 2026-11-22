@@ -42,6 +42,30 @@ HOST_TEST(parse_shares_feed_response_parses_a_realistic_full_response)
                1372U);
 }
 
+HOST_TEST(parse_shares_feed_response_reads_the_home_assistant_integration_payload)
+{
+    // Verbatim output of ha/custom_components/merlinccu/feed.py (#160) for
+    // a live share and one Yahoo had no data for.
+    const char* json =
+        "{\"shares\":[{\"symbol\":\"BA.L\",\"name\":\"BAE SYSTEMS\",\"exchange\":\"LSE\","
+        "\"currency\":\"GBX\",\"price\":1814.0,\"change\":\"-2.13%\",\"data_state\":\"live\","
+        "\"history\":[1828,1826,1833,1830,1832,1826,1834,1838,1828,1826,1826,1822,1820,1818,"
+        "1814,1812,1812,1820,1822,1826,1812,1812,1813,1814]},"
+        "{\"symbol\":\"VOD.L\",\"data_state\":\"error\"}]}";
+    const char* end = json + std::strlen(json);
+    auto watched_shares = make_watchlist("BA.L");
+    std::snprintf(watched_shares[1].symbol.data(), watched_shares[1].symbol.size(), "VOD.L");
+
+    EXPECT_TRUE(share_feed::parse_shares_feed_response(json, end, watched_shares, 2));
+    EXPECT_TRUE(std::strcmp(watched_shares[0].price_text.data(), "1,814.0") == 0);
+    EXPECT_TRUE(std::strcmp(watched_shares[0].change_text.data(), "-2.13%") == 0);
+    EXPECT_TRUE(watched_shares[0].history_points[0] == 1828U);
+    EXPECT_TRUE(watched_shares[0].history_points[watched_shares[0].history_points.size() - 1] ==
+                1814U);
+    // The error entry leaves VOD.L as it was.
+    EXPECT_TRUE(watched_shares[1].price_text[0] == '\0');
+}
+
 HOST_TEST(parse_shares_feed_response_accepts_a_raw_numeric_price)
 {
     const char* json = "{\"shares\":[{\"symbol\":\"BA.L\",\"price\":42.5}]}";
