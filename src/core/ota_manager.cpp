@@ -18,6 +18,9 @@
 #include "pico/bootrom.h"
 #include "pico/time.h"
 
+#include "firmware_version.h"
+#include "text_utils.h"
+
 #if __has_include("ota_credentials.h")
 #include "ota_credentials.h"
 #else
@@ -209,6 +212,7 @@ void boot_check()
     g_boot_time = get_absolute_time();
     g_status = {};
     g_status.valid = true;
+    text_utils::copy_text(g_status.version, kFirmwareVersion);
 
     boot_info_t boot_info = {};
     const bool have_boot_info = rom_get_boot_info(&boot_info);
@@ -275,6 +279,19 @@ void log_boot_state()
 FirmwareStatus status()
 {
     return g_status;
+}
+
+const char* state_name()
+{
+    if (!g_status.partitioned)
+    {
+        return "not_partitioned";
+    }
+    if (g_status.trial)
+    {
+        return "on_trial";
+    }
+    return g_status.rolled_back ? "rolled_back" : "confirmed";
 }
 
 bool update(bool network_ready)

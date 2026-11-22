@@ -36,6 +36,10 @@ void log_boot_state();
 /// @brief Running slot, trial state and last update outcome.
 FirmwareStatus status();
 
+/// @brief One-word update state for scripts and Home Assistant:
+/// `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`.
+const char* state_name();
+
 /// @brief Confirms or abandons a trial, and restarts after an upload.
 /// @param network_ready Wi-Fi is connected with an address.
 /// @return true when status() changed.

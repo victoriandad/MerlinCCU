@@ -6,10 +6,12 @@
 
 #include "config_manager.h"
 #include "debug_logging.h"
+#include "firmware_version.h"
 #include "lwip/apps/mqtt.h"
 #include "lwip/dns.h"
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
+#include "ota_manager.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "text_utils.h"
@@ -51,7 +53,6 @@ constexpr char kOnlineState[] = "online";
 constexpr char kOfflineState[] = "offline";
 constexpr char kUnknownState[] = "unknown";
 constexpr char kNotConfiguredState[] = "not_configured";
-constexpr char kFirmwareVersion[] = "0.1";
 constexpr char kDeviceModel[] = "Raspberry Pi Pico 2 W";
 constexpr char kManufacturer[] = "MerlinCCU";
 
@@ -63,6 +64,8 @@ enum class SensorId : uint8_t
     HomeAssistantState,
     HomeAssistantHttp,
     TrackedEntity,
+    FirmwareVersion,
+    FirmwareUpdate,
     Count,
 };
 
@@ -103,6 +106,11 @@ constexpr SensorDescriptor kSensorDescriptors[] = {
      "\"connected\",\"unauthorized\",\"error\"]"},
     {"Home Assistant HTTP", "home_assistant_http", "mdi:web", true, nullptr},
     {"Tracked entity", "tracked_entity", "mdi:toggle-switch-outline", false, nullptr},
+    // Firmware commit and update outcome (#154), so HA shows which build each
+    // unit runs and flags one whose last update rolled back.
+    {"Firmware", "firmware_version", "mdi:chip", true, nullptr},
+    {"Firmware update", "firmware_update", "mdi:update", false,
+     "[\"confirmed\",\"on_trial\",\"rolled_back\",\"not_partitioned\"]"},
 };
 
 static_assert((sizeof(kSensorDescriptors) / sizeof(kSensorDescriptors[0])) ==
@@ -629,6 +637,14 @@ void update_sensor_values(const WifiStatus& wifi_status,
     copy_cstr(g_current_sensor_values[sensor_index(SensorId::TrackedEntity)].data(),
               g_current_sensor_values[sensor_index(SensorId::TrackedEntity)].size(),
               tracked_entity_state);
+
+    const FirmwareStatus firmware = ota_manager::status();
+    copy_cstr(g_current_sensor_values[sensor_index(SensorId::FirmwareVersion)].data(),
+              g_current_sensor_values[sensor_index(SensorId::FirmwareVersion)].size(),
+              firmware.version.data());
+    copy_cstr(g_current_sensor_values[sensor_index(SensorId::FirmwareUpdate)].data(),
+              g_current_sensor_values[sensor_index(SensorId::FirmwareUpdate)].size(),
+              ota_manager::state_name());
 
     // Time is not published yet, but keeping the parameter in the updater makes
     // the future sensor expansion path obvious.

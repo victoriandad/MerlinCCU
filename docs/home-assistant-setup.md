@@ -89,8 +89,10 @@ sensors, set up by MQTT discovery.
 
 Check: a device named after the CCU's display label appears under the MQTT
 integration with sensors
-for Status, Wi-Fi state, IP address, Home Assistant, Home Assistant HTTP and
-Tracked entity.
+for Status, Wi-Fi state, IP address, Home Assistant, Home Assistant HTTP,
+Tracked entity, Firmware (the build's git commit) and Firmware update
+(`confirmed`, `on_trial`, `rolled_back` or `not_partitioned`; see
+docs/ota.md).
 
 ## Several CCUs
 

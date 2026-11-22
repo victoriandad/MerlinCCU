@@ -835,6 +835,9 @@ struct FirmwareStatus
     bool trial;
     /// The previous boot tried an uploaded image and fell back to this one.
     bool rolled_back;
+    /// Git commit the running image was built from, e.g. "2bf47da" ("+"
+    /// marks uncommitted changes).
+    std::array<char, 16> version;
 };
 
 /// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`

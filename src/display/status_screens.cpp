@@ -286,8 +286,27 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
     const char* unit_text =
         config.device_label[0] != '\0' ? config.device_label.data() : config.device_name.data();
 
+    // Firmware commit and slot (#154), e.g. "2bf47da (A)", so a unit's build
+    // can be read off the panel after an update.
+    const FirmwareStatus& firmware = console_state.firmware_status;
+    char firmware_text[32] = {};
+    if (firmware.version[0] == '\0')
+    {
+        std::snprintf(firmware_text, sizeof(firmware_text), "-");
+    }
+    else if (firmware.slot == 0 || firmware.slot == 1)
+    {
+        std::snprintf(firmware_text, sizeof(firmware_text), "%s (%c)", firmware.version.data(),
+                      firmware.slot == 0 ? 'A' : 'B');
+    }
+    else
+    {
+        std::snprintf(firmware_text, sizeof(firmware_text), "%s", firmware.version.data());
+    }
+
     const screens::DetailRow rows[] = {
         {"UNIT", unit_text},
+        {"FIRMWARE", firmware_text},
         {"TIME",
          console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
         {"WIFI", wifi_state_text(console_state.wifi_status.state)},

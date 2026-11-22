@@ -10,8 +10,8 @@ How the CCU updates its firmware over Wi-Fi without anyone opening the case
 | 1 | Flash layout and partition table (`tools/ota_partition_table.json`) | Done |
 | 2 | Upload into the spare slot over Wi-Fi, restart into it | Done |
 | 3 | Try-before-you-buy confirm, rollback, `UPDATE FAILED` alert | Done |
-| 4 | Firmware version on the Status page; MQTT `update` entity for HA | To do |
-| 5 | Laptop script that updates every unit | To do (`curl` works today) |
+| 4 | Firmware version on the Status page, Firmware page and in HA (MQTT) | Done |
+| 5 | `tools/ota_update.py` updates every unit in turn | Done |
 
 ## Why A/B Slots
 
@@ -106,13 +106,43 @@ upload the previous build.
 
 ### Uploading from the laptop
 
+`tools/ota_update.py` updates units one at a time and stops at the first
+failure, so a bad build never reaches them all:
+
+```sh
+python tools/ota_update.py merlinccu merlin-ground merlin-loft
+python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
+```
+
+For each unit it reads `/api/firmware`, uploads, then polls until the unit
+reports `confirmed` from the other slot with the version the build
+stamped (`merlin_generated/firmware_version.h` next to the `.bin`). It
+reports a rollback or a timeout and stops. The token comes from `--token`,
+`MERLIN_OTA_TOKEN` or `config/ota_credentials.h`.
+
+A single unit can also be updated with `curl`:
+
 ```sh
 curl -H "X-OTA-Token: <token>" --data-binary @build-plus2/MerlinCCU.bin \
   http://merlinccu/api/ota
 ```
 
-The reply says whether it was written. Check the Firmware page a minute
-later: `State: Confirmed` and the other slot letter.
+### Which build is running
+
+Every build is stamped with its git commit (`tools/firmware_version.cmake`
+runs on each build); a `+` means it was built with uncommitted changes.
+The version and slot show on:
+
+- the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
+- the Firmware web page;
+- `GET /api/firmware`: `version=`, `slot=` and `state=` lines, where
+  state is `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`;
+- Home Assistant, over MQTT: a `Firmware` diagnostic sensor (the version,
+  also the device's software version) and a `Firmware update` sensor (the
+  state above). An automation on `rolled_back` can notify you.
+
+HA's own update card is not used: it needs a "latest version" source, and
+there is no release feed to read one from.
 
 ## Changing a Unit to the A/B Layout
 

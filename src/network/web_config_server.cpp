@@ -633,10 +633,11 @@ bool build_firmware_page()
         kHttpOkHeader);
     ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Firmware);
     ok = ok && append(cursor, remaining,
-                      "<section class=\"card\"><h2>Running</h2><dl><dt>Slot</dt><dd>%s</dd>"
+                      "<section class=\"card\"><h2>Running</h2><dl><dt>Version</dt><dd>%s</dd>"
+                      "<dt>Slot</dt><dd>%s</dd>"
                       "<dt>State</dt><dd>%s</dd><dt>Upload</dt><dd>%s</dd><dt>Spare slot</dt>"
                       "<dd>%lu KB</dd></dl></section>",
-                      slot_name(firmware.slot), state_text, upload_text,
+                      firmware.version.data(), slot_name(firmware.slot), state_text, upload_text,
                       static_cast<unsigned long>(spare_bytes / 1024U));
     ok = ok &&
          append(cursor, remaining,
@@ -3067,6 +3068,16 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     else if (matches_get_path(request, "/pinter"))
     {
         (void)build_pinter_activity_page();
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/api/firmware"))
+    {
+        // Plain key=value lines for tools/ota_update.py and other scripts.
+        const FirmwareStatus firmware = ota_manager::status();
+        std::snprintf(g_response, sizeof(g_response), "%sversion=%s\nslot=%s\nstate=%s\n",
+                      kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
+                      ota_manager::state_name());
         send_response(session, pcb, g_response);
         return;
     }
