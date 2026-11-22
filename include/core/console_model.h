@@ -340,12 +340,24 @@ inline bool operator!=(const WeatherAlertStatus& lhs, const WeatherAlertStatus& 
 /// @brief Snapshot of Home Assistant state suitable for UI and controller use.
 struct HomeAssistantStatus
 {
+    /// @name Home Assistant REST link (#165: independent of the weather source)
+    /// @{
     HomeAssistantConnectionState state;
     bool configured;
     bool self_entity_published;
     int last_error;
     int last_http_status;
     std::array<char, 48> host;
+    /// @}
+    /// @name Weather fetch, from HA or Open-Meteo
+    /// @{
+    /// With HA as the source this follows `state`; with Open-Meteo it tracks
+    /// that fetch alone, so neither failure marks the other down.
+    HomeAssistantConnectionState weather_state;
+    /// HTTP status of the latest weather request, 0 before the first.
+    int weather_http_status;
+    std::array<char, 48> weather_host;
+    /// @}
     std::array<char, 48> tracked_entity_id;
     std::array<char, 24> tracked_entity_state;
     std::array<char, 48> weather_entity_id;
@@ -384,7 +396,9 @@ inline bool operator==(const HomeAssistantStatus& lhs, const HomeAssistantStatus
     return lhs.state == rhs.state && lhs.configured == rhs.configured &&
            lhs.self_entity_published == rhs.self_entity_published &&
            lhs.last_error == rhs.last_error && lhs.last_http_status == rhs.last_http_status &&
-           lhs.host == rhs.host && lhs.tracked_entity_id == rhs.tracked_entity_id &&
+           lhs.host == rhs.host && lhs.weather_state == rhs.weather_state &&
+           lhs.weather_http_status == rhs.weather_http_status &&
+           lhs.weather_host == rhs.weather_host && lhs.tracked_entity_id == rhs.tracked_entity_id &&
            lhs.tracked_entity_state == rhs.tracked_entity_state &&
            lhs.weather_entity_id == rhs.weather_entity_id &&
            lhs.weather_source_hint == rhs.weather_source_hint &&

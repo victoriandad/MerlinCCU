@@ -246,7 +246,7 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     ConsoleState state = make_healthy_state();
     state.weather_source = WeatherSource::OpenMeteo;
     state.wifi_status.internet_reachable = true;
-    state.home_assistant_status.state = HomeAssistantConnectionState::Error;
+    state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
     state.home_assistant_status.last_error = -5;
 
     // One failed sample is not enough to raise it.
@@ -263,8 +263,7 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     // A good fetch clears it.
     std::strncpy(state.home_assistant_status.weather_condition.data(), "cloudy",
                  state.home_assistant_status.weather_condition.size());
-    state.home_assistant_status.state = HomeAssistantConnectionState::Connected;
-    state.home_assistant_status.last_error = 0;
+    state.home_assistant_status.weather_state = HomeAssistantConnectionState::Connected;
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 0U);
 }

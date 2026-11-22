@@ -1,6 +1,7 @@
 #include "home_assistant_manager.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdarg>
@@ -13,6 +14,7 @@
 #include "config_manager.h"
 #include "debug_logging.h"
 #include "geo_coordinates.h"
+#include "ha_request_plan.h"
 #include "home_assistant_weather_parser.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
@@ -76,7 +78,6 @@ constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr size_t kHttpTargetBufferSize = 640;
-constexpr bool kHomeAssistantRuntimeEnabled = true;
 constexpr char kOpenMeteoHost[] = "api.open-meteo.com";
 constexpr uint16_t kOpenMeteoPort = 80U;
 constexpr bool kEnableDirectWeatherSerialDiagnostics = false;
@@ -179,18 +180,31 @@ bool parse_location_coordinates(double* out_latitude, double* out_longitude)
     return true;
 }
 
-enum class RequestKind : uint8_t
+using ha_request_plan::Chain;
+using ha_request_plan::RequestKind;
+
+/// @brief Where one chain's requests go.
+struct Endpoint
 {
-    ProbeApi = 0,
-    FetchTrackedEntity,
-    FetchWeatherEntity,
-    FetchWeatherForecast,
-    FetchWeatherDailyForecast,
-    FetchSunEntity,
-    PublishSelfEntity,
+    char host[48] = {};
+    uint16_t port = 0U;
+    bool tls = false;
+};
+
+/// @brief When one request chain runs next, and with which request (#165).
+struct ChainSchedule
+{
+    RequestKind next_kind = RequestKind::ProbeApi;
+    absolute_time_t next_attempt = nil_time;
+    /// False until the chain's first request starts; it then runs at once.
+    bool attempted = false;
 };
 
 HomeAssistantStatus g_status = {};
+ha_request_plan::Plan g_plan = {};
+Endpoint g_ha_endpoint = {};
+Endpoint g_open_meteo_endpoint = {};
+std::array<ChainSchedule, ha_request_plan::kChainCount> g_chains = {};
 ip_addr_t g_resolved_ip = {};
 bool g_dns_pending = false;
 bool g_dns_resolved = false;
@@ -206,15 +220,15 @@ char g_request[1024] = {};
 char g_request_body[256] = {};
 // PSRAM on boards that have it (#162): filled from pbufs and parsed by the CPU.
 MERLIN_PSRAM_BSS char g_response[16384];
+// The endpoint of the request in flight, copied from its chain's Endpoint.
 char g_configured_host[48] = {};
 char g_configured_location[128] = {};
 uint16_t g_configured_port = kHomeAssistantPort;
-bool g_config_valid = false;
 bool g_request_uses_tls = false;
+// Set once the socket connects, so the poll callback only resumes a send
+// that has somewhere to go.
+bool g_tcp_connected = false;
 absolute_time_t g_deadline = nil_time;
-absolute_time_t g_next_attempt = nil_time;
-bool g_probe_attempted = false;
-bool g_sequence_complete = false;
 RequestKind g_request_kind = RequestKind::ProbeApi;
 char g_weather_temperature_unit = '\0';
 char g_weather_wind_source_unit[8] = {};
@@ -222,31 +236,47 @@ WeatherSource g_active_weather_source = WeatherSource::HomeAssistant;
 double g_provider_latitude = 0.0;
 double g_provider_longitude = 0.0;
 
-/// @brief Returns a short provider label for temporary serial diagnostics.
-const char* active_weather_source_log_name()
+/// @brief Returns the chain of the request in flight (or last started).
+Chain current_chain()
 {
-    switch (g_active_weather_source)
-    {
-    case WeatherSource::HomeAssistant:
-        return "HA";
-    case WeatherSource::OpenMeteo:
-    case WeatherSource::MetNorway:
-        return "Open-Meteo";
-    }
+    return ha_request_plan::chain_of(g_request_kind);
+}
 
-    return "?";
+/// @brief Returns the schedule of one chain.
+ChainSchedule& schedule_of(Chain chain)
+{
+    return g_chains[static_cast<size_t>(chain)];
+}
+
+/// @brief Returns whether a request fetches weather, from HA or Open-Meteo.
+bool is_weather_request(RequestKind kind)
+{
+    switch (kind)
+    {
+    case RequestKind::FetchWeatherEntity:
+    case RequestKind::FetchWeatherForecast:
+    case RequestKind::FetchWeatherDailyForecast:
+    case RequestKind::FetchOpenMeteo:
+        return true;
+    case RequestKind::ProbeApi:
+    case RequestKind::FetchTrackedEntity:
+    case RequestKind::FetchSunEntity:
+    case RequestKind::PublishSelfEntity:
+        return false;
+    }
+    return false;
 }
 
 /// @brief Emits focused serial diagnostics for direct weather bring-up.
 void direct_weather_log(const char* format, ...)
 {
-    if (!kEnableDirectWeatherSerialDiagnostics ||
-        g_active_weather_source == WeatherSource::HomeAssistant || format == nullptr)
+    if (!kEnableDirectWeatherSerialDiagnostics || current_chain() != Chain::OpenMeteo ||
+        format == nullptr)
     {
         return;
     }
 
-    std::printf("WX %s: ", active_weather_source_log_name());
+    std::printf("WX Open-Meteo: ");
     va_list args;
     va_start(args, format);
     std::vprintf(format, args);
@@ -254,14 +284,11 @@ void direct_weather_log(const char* format, ...)
 }
 
 /// @brief Returns whether the current request kind should drive connection-state updates.
+/// @details The HA chain's probe stands for the HA link; its later requests
+/// fail soft. Open-Meteo's single request is its whole chain.
 bool request_updates_connection_state()
 {
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
-    {
-        return g_request_kind == RequestKind::ProbeApi;
-    }
-
-    return g_request_kind == RequestKind::FetchWeatherEntity;
+    return current_chain() == Chain::OpenMeteo || g_request_kind == RequestKind::ProbeApi;
 }
 
 /// @brief Returns the active request's I/O timeout budget.
@@ -278,11 +305,12 @@ uint32_t active_io_timeout_ms()
     return g_request_uses_tls ? kTlsIoTimeoutMs : kIoTimeoutMs;
 }
 
-/// @brief Returns retry delay for the active source after a failed request.
+/// @brief Returns the retry delay for the current chain after a failed request.
+/// @details HA is on the LAN, so it is retried soon; a public provider is
+/// left alone for longer.
 uint32_t active_failure_retry_ms()
 {
-    return g_active_weather_source == WeatherSource::HomeAssistant ? kRetryDelayMs
-                                                                   : kDirectWeatherRetryDelayMs;
+    return current_chain() == Chain::HomeAssistant ? kRetryDelayMs : kDirectWeatherRetryDelayMs;
 }
 
 using text_utils::copy_text;
@@ -306,6 +334,8 @@ const char* request_kind_name(RequestKind kind)
         return "sun";
     case RequestKind::PublishSelfEntity:
         return "publish";
+    case RequestKind::FetchOpenMeteo:
+        return "open-meteo";
     }
 
     return "unknown";
@@ -336,12 +366,6 @@ const char* response_headers_end()
 int partial_http_status()
 {
     return http_response::partial_status(g_response);
-}
-
-/// @brief Finds the value for a named HTTP response header.
-const char* find_response_header_value(const char* header_name)
-{
-    return http_response::find_header_value(g_response, response_headers_end(), header_name);
 }
 
 /// @brief Parses the `Content-Length` header from the current response.
@@ -528,11 +552,6 @@ void clear_runtime_data()
 /// @brief Returns whether the supplied HTTP status counts as success for a request kind.
 bool request_kind_success(RequestKind kind, int http_status)
 {
-    if (g_active_weather_source != WeatherSource::HomeAssistant)
-    {
-        return (kind == RequestKind::FetchWeatherEntity) && (http_status == 200);
-    }
-
     switch (kind)
     {
     case RequestKind::ProbeApi:
@@ -541,6 +560,7 @@ bool request_kind_success(RequestKind kind, int http_status)
     case RequestKind::FetchWeatherForecast:
     case RequestKind::FetchWeatherDailyForecast:
     case RequestKind::FetchSunEntity:
+    case RequestKind::FetchOpenMeteo:
         return http_status == 200;
     case RequestKind::PublishSelfEntity:
         return http_status == 200 || http_status == 201;
@@ -549,131 +569,38 @@ bool request_kind_success(RequestKind kind, int http_status)
     return false;
 }
 
-/// @brief Advances the serialized Home Assistant polling sequence to its next step.
+/// @brief Puts a chain back to its first request, due after `delay_ms`, or
+/// never when `delay_ms` is 0 (a rejected token is not retried).
+void schedule_chain_restart(Chain chain, uint32_t delay_ms)
+{
+    ChainSchedule& schedule = schedule_of(chain);
+    schedule.next_kind = ha_request_plan::first_request(chain, g_plan).value_or(g_request_kind);
+    schedule.next_attempt = (delay_ms > 0U) ? make_timeout_time_ms(delay_ms) : nil_time;
+}
+
+/// @brief Moves the current chain on after a request finished, successfully
+/// or with a soft failure.
+/// @details The next request in the chain runs straight away; after the last
+/// one the chain waits for the next refresh.
 void advance_request_kind()
 {
-    if (g_active_weather_source != WeatherSource::HomeAssistant)
+    const Chain chain = current_chain();
+    if (const std::optional<RequestKind> next = ha_request_plan::next_request(g_request_kind, g_plan))
     {
-        g_request_kind = RequestKind::FetchWeatherEntity;
-        g_sequence_complete = true;
-        g_next_attempt = make_timeout_time_ms(home_assistant_manager::kRefreshIntervalMs);
+        ChainSchedule& schedule = schedule_of(chain);
+        schedule.next_kind = *next;
+        schedule.next_attempt = get_absolute_time();
         return;
     }
-
-    // The Home Assistant session is intentionally serialized: prove the API is
-    // reachable first, then fetch optional entities in priority order, then
-    // wait for the next refresh interval.
-    switch (g_request_kind)
-    {
-    case RequestKind::ProbeApi:
-        if (g_status.tracked_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::FetchTrackedEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        if (g_status.weather_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::FetchWeatherEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        if (g_status.self_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::PublishSelfEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        break;
-    case RequestKind::FetchTrackedEntity:
-        if (g_status.weather_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::FetchWeatherEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        if (g_status.self_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::PublishSelfEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        break;
-    case RequestKind::FetchWeatherEntity:
-        g_request_kind = RequestKind::FetchWeatherForecast;
-        g_sequence_complete = false;
-        g_next_attempt = get_absolute_time();
-        return;
-    case RequestKind::FetchWeatherForecast:
-        g_request_kind = RequestKind::FetchWeatherDailyForecast;
-        g_sequence_complete = false;
-        g_next_attempt = get_absolute_time();
-        return;
-    case RequestKind::FetchWeatherDailyForecast:
-        if (active_sun_entity_id()[0] != '\0')
-        {
-            g_request_kind = RequestKind::FetchSunEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        if (g_status.self_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::PublishSelfEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        break;
-    case RequestKind::FetchSunEntity:
-        if (g_status.self_entity_id[0] != '\0')
-        {
-            g_request_kind = RequestKind::PublishSelfEntity;
-            g_sequence_complete = false;
-            g_next_attempt = get_absolute_time();
-            return;
-        }
-        break;
-    case RequestKind::PublishSelfEntity:
-        break;
-    }
-
-    g_request_kind = RequestKind::ProbeApi;
-    g_sequence_complete = true;
-    g_next_attempt = make_timeout_time_ms(home_assistant_manager::kRefreshIntervalMs);
+    schedule_chain_restart(chain, home_assistant_manager::kRefreshIntervalMs);
 }
 
 /// @brief Parses and normalizes the configured Home Assistant endpoint.
+/// @return Whether HA REST is enabled with a usable host.
 bool parse_home_assistant_endpoint()
 {
-    g_configured_host[0] = '\0';
-    active_weather_coordinate_signature(g_configured_location, sizeof(g_configured_location));
-    g_configured_port = active_home_assistant_port();
-    g_active_weather_source = active_weather_source();
-    g_request_uses_tls = false;
-
-    if (g_active_weather_source == WeatherSource::OpenMeteo)
-    {
-        if (!parse_location_coordinates(&g_provider_latitude, &g_provider_longitude))
-        {
-            std::printf(
-                "Weather config requires direct weather coordinates for Open-Meteo; got '%s'\n",
-                g_configured_location);
-            return false;
-        }
-
-        std::snprintf(g_configured_host, sizeof(g_configured_host), "%s", kOpenMeteoHost);
-        g_configured_port = kOpenMeteoPort;
-        direct_weather_log("config coords=%.4f,%.4f host=%s port=%u tls=%u\n", g_provider_latitude,
-                           g_provider_longitude, g_configured_host,
-                           static_cast<unsigned>(g_configured_port), g_request_uses_tls ? 1U : 0U);
-        return true;
-    }
+    g_ha_endpoint = {};
+    g_ha_endpoint.port = active_home_assistant_port();
 
     // Endpoint normalisation happens once at init because this client supports
     // host[:port] targets with optional http/https schemes, not arbitrary base
@@ -685,11 +612,12 @@ bool parse_home_assistant_endpoint()
 
     const char* host_end = nullptr;
     if (!text_utils::parse_endpoint(active_home_assistant_host(), text_utils::kHttpSchemes,
-                                    active_home_assistant_port(), g_configured_host,
-                                    sizeof(g_configured_host), &g_configured_port,
-                                    &g_request_uses_tls, &host_end))
+                                    active_home_assistant_port(), g_ha_endpoint.host,
+                                    sizeof(g_ha_endpoint.host), &g_ha_endpoint.port,
+                                    &g_ha_endpoint.tls, &host_end))
     {
         std::printf("HA config host/port is invalid: %s\n", active_home_assistant_host());
+        g_ha_endpoint.host[0] = '\0';
         return false;
     }
 
@@ -701,12 +629,81 @@ bool parse_home_assistant_endpoint()
     return true;
 }
 
-/// @brief Updates the public Home Assistant status snapshot.
+/// @brief Reads the saved location for Open-Meteo.
+/// @return Whether Open-Meteo is the weather source and the location is valid.
+bool parse_open_meteo_endpoint()
+{
+    g_open_meteo_endpoint = {};
+    if (g_active_weather_source != WeatherSource::OpenMeteo)
+    {
+        return false;
+    }
+
+    if (!parse_location_coordinates(&g_provider_latitude, &g_provider_longitude))
+    {
+        std::printf("Weather config requires direct weather coordinates for Open-Meteo; got '%s'\n",
+                    g_configured_location);
+        return false;
+    }
+
+    std::snprintf(g_open_meteo_endpoint.host, sizeof(g_open_meteo_endpoint.host), "%s",
+                  kOpenMeteoHost);
+    g_open_meteo_endpoint.port = kOpenMeteoPort;
+    return true;
+}
+
+/// @brief Reads the settings into the request plan and both endpoints.
+void load_plan()
+{
+    active_weather_coordinate_signature(g_configured_location, sizeof(g_configured_location));
+    g_active_weather_source = active_weather_source();
+
+    g_plan = {};
+    g_plan.home_assistant =
+        parse_home_assistant_endpoint() && active_home_assistant_token()[0] != '\0';
+    g_plan.tracked_entity = active_tracked_entity_id()[0] != '\0';
+    g_plan.home_assistant_weather = g_active_weather_source == WeatherSource::HomeAssistant &&
+                                    active_weather_entity_id()[0] != '\0';
+    g_plan.sun_entity = active_sun_entity_id()[0] != '\0';
+    g_plan.self_entity = active_self_entity_id()[0] != '\0';
+    g_plan.open_meteo = parse_open_meteo_endpoint();
+}
+
+/// @brief Updates the status of the current chain.
+/// @details The HA chain owns the HA link fields; with HA as the weather
+/// source its state is also the weather state. The Open-Meteo chain only
+/// touches the weather state, so its failures never mark HA down (#165).
 void set_status(HomeAssistantConnectionState state, int last_error, int last_http_status)
 {
+    if (current_chain() == Chain::OpenMeteo)
+    {
+        g_status.weather_state = state;
+        return;
+    }
+
     g_status.state = state;
     g_status.last_error = last_error;
     g_status.last_http_status = last_http_status;
+    if (g_active_weather_source == WeatherSource::HomeAssistant)
+    {
+        g_status.weather_state = state;
+    }
+}
+
+/// @brief Sets both chains to the same idle state, leaving an inactive
+/// chain as Unconfigured.
+void set_idle_states(HomeAssistantConnectionState state)
+{
+    g_status.state = g_plan.home_assistant ? state : HomeAssistantConnectionState::Unconfigured;
+    if (g_active_weather_source == WeatherSource::HomeAssistant)
+    {
+        g_status.weather_state = g_status.state;
+    }
+    else
+    {
+        g_status.weather_state =
+            g_plan.open_meteo ? state : HomeAssistantConnectionState::Unconfigured;
+    }
 }
 
 /// @brief Removes all lwIP callbacks from an application TCP control block.
@@ -761,6 +758,7 @@ void reset_attempt_state()
     close_pcb();
     g_dns_pending = false;
     g_dns_resolved = false;
+    g_tcp_connected = false;
     g_request_sent = 0;
     g_response_len = 0;
     g_request_body[0] = '\0';
@@ -768,12 +766,13 @@ void reset_attempt_state()
     g_deadline = nil_time;
 }
 
-/// @brief Finishes the current request and schedules the next retry or refresh.
+/// @brief Finishes a failed request: records the state and restarts the
+/// current chain after `retry_ms` (never when 0).
 void finish_request(HomeAssistantConnectionState state, int last_error, int last_http_status,
                     uint32_t retry_ms)
 {
     set_status(state, last_error, last_http_status);
-    g_next_attempt = (retry_ms > 0) ? make_timeout_time_ms(retry_ms) : nil_time;
+    schedule_chain_restart(current_chain(), retry_ms);
     reset_attempt_state();
 }
 
@@ -822,6 +821,8 @@ void finish_optional_request_soft_failure(err_t err)
         g_status.self_entity_published = false;
         break;
     case RequestKind::ProbeApi:
+    case RequestKind::FetchOpenMeteo:
+        // These drive their chain's state, so they never fail soft.
         break;
     }
 
@@ -841,13 +842,8 @@ bool build_request()
     const char* target = "/";
     char target_buffer[kHttpTargetBufferSize] = {};
 
-    if (g_active_weather_source == WeatherSource::OpenMeteo)
+    if (g_request_kind == RequestKind::FetchOpenMeteo)
     {
-        if (g_request_kind != RequestKind::FetchWeatherEntity)
-        {
-            g_request_kind = RequestKind::FetchWeatherEntity;
-        }
-
         const int target_len = std::snprintf(
             target_buffer, sizeof(target_buffer),
             "/v1/forecast?latitude=%.4f&longitude=%.4f&hourly=temperature_2m,wind_speed_10m,"
@@ -860,9 +856,7 @@ bool build_request()
             static_cast<unsigned>(kWeatherDailyForecastEntryCount));
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
 
@@ -870,36 +864,29 @@ bool build_request()
     }
     // Each request kind maps to one explicit REST call so the receive path can
     // infer how to parse the response from the current state machine position.
-    if (g_active_weather_source == WeatherSource::HomeAssistant &&
-        g_request_kind == RequestKind::FetchTrackedEntity)
+    if (g_request_kind == RequestKind::FetchTrackedEntity)
     {
         const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
                                              g_status.tracked_entity_id.data());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
         target = target_buffer;
     }
-    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
-             g_request_kind == RequestKind::FetchWeatherEntity)
+    else if (g_request_kind == RequestKind::FetchWeatherEntity)
     {
         const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
                                              g_status.weather_entity_id.data());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
         target = target_buffer;
     }
-    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
-             g_request_kind == RequestKind::FetchWeatherForecast)
+    else if (g_request_kind == RequestKind::FetchWeatherForecast)
     {
         method = "POST";
         target = "/api/services/weather/get_forecasts?return_response";
@@ -909,14 +896,11 @@ bool build_request()
                                            g_status.weather_entity_id.data());
         if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
     }
-    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
-             g_request_kind == RequestKind::FetchWeatherDailyForecast)
+    else if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
     {
         method = "POST";
         target = "/api/services/weather/get_forecasts?return_response";
@@ -926,37 +910,29 @@ bool build_request()
                                            g_status.weather_entity_id.data());
         if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
     }
-    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
-             g_request_kind == RequestKind::FetchSunEntity)
+    else if (g_request_kind == RequestKind::FetchSunEntity)
     {
         const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
                                              active_sun_entity_id());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
         target = target_buffer;
     }
-    else if (g_active_weather_source == WeatherSource::HomeAssistant &&
-             g_request_kind == RequestKind::PublishSelfEntity)
+    else if (g_request_kind == RequestKind::PublishSelfEntity)
     {
         method = "POST";
         const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
                                              g_status.self_entity_id.data());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
 
@@ -966,9 +942,7 @@ bool build_request()
                           "\"integration\":\"rest_api\",\"status\":\"connected\"}}");
         if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
         {
-            set_status(HomeAssistantConnectionState::Error, -1, 0);
-            g_sequence_complete = true;
-            g_next_attempt = nil_time;
+            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
             return false;
         }
         target = target_buffer;
@@ -977,7 +951,7 @@ bool build_request()
     // The request buffer is assembled as one contiguous HTTP message because
     // the send path may need to write it in multiple TCP chunks later.
     int len = 0;
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
+    if (current_chain() == Chain::HomeAssistant)
     {
         len = std::snprintf(g_request, sizeof(g_request),
                             "%s %s HTTP/1.1\r\n"
@@ -1009,9 +983,7 @@ bool build_request()
     }
     if (len <= 0 || static_cast<size_t>(len) >= sizeof(g_request))
     {
-        set_status(HomeAssistantConnectionState::Error, -1, 0);
-        g_sequence_complete = true;
-        g_next_attempt = nil_time;
+        finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
         return false;
     }
     direct_weather_log("request kind=%s len=%d target=%s\n", request_kind_name(g_request_kind), len,
@@ -1035,13 +1007,13 @@ err_t on_tcp_connected(void* arg, altcp_pcb* pcb, err_t err)
     if (err != ERR_OK)
     {
         direct_weather_log("connect callback err=%d\n", static_cast<int>(err));
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, err, 0, active_failure_retry_ms());
         std::printf("HA connect failed err=%d\n", static_cast<int>(err));
         return ERR_OK;
     }
 
     direct_weather_log("connect callback ok tls=%u\n", g_request_uses_tls ? 1U : 0U);
+    g_tcp_connected = true;
     if (request_updates_connection_state())
     {
         set_status(HomeAssistantConnectionState::Authorizing, 0, 0);
@@ -1067,15 +1039,10 @@ void on_tcp_error(void* arg, err_t err)
         altcp_tls_free_config(g_tls_config);
         g_tls_config = nullptr;
     }
-    set_status(HomeAssistantConnectionState::Error, err, g_status.last_http_status);
-    g_sequence_complete = true;
-    g_dns_pending = false;
-    g_dns_resolved = false;
-    g_request_sent = 0;
-    g_response_len = 0;
-    g_response[0] = '\0';
-    g_deadline = nil_time;
-    g_next_attempt = make_timeout_time_ms(active_failure_retry_ms());
+    // lwIP has already freed the pcb, so reset_attempt_state() (via
+    // finish_request) finds nothing left to close.
+    finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status,
+                   active_failure_retry_ms());
     std::printf("HA tcp error err=%d\n", static_cast<int>(err));
 }
 
@@ -1091,12 +1058,16 @@ void handle_http_status(int http_status)
                  request_kind_name(g_request_kind), static_cast<unsigned>(g_response_peak_len),
                  static_cast<unsigned>(sizeof(g_response)));
 
-    if (g_active_weather_source == WeatherSource::OpenMeteo)
+    if (is_weather_request(g_request_kind))
+    {
+        g_status.weather_http_status = http_status;
+    }
+
+    if (g_request_kind == RequestKind::FetchOpenMeteo)
     {
         if (http_status == 200 && parse_open_meteo_weather(response_body()))
         {
             copy_text(g_status.weather_source_hint, "Open-Meteo");
-            g_status.last_http_status = http_status;
             g_status.weather_last_success_ms = to_ms_since_boot(get_absolute_time());
             direct_weather_log("http=%d parse ok forecast=%u bytes=%u\n", http_status,
                                static_cast<unsigned>(g_status.weather_forecast_count),
@@ -1118,7 +1089,6 @@ void handle_http_status(int http_status)
         clear_weather_alert_status();
         g_weather_temperature_unit = '\0';
         g_weather_wind_source_unit[0] = '\0';
-        g_status.last_http_status = http_status;
         direct_weather_log("http=%d parse failed bytes=%u body=%u\n", http_status,
                            static_cast<unsigned>(g_response_len),
                            response_body() != nullptr ? 1U : 0U);
@@ -1217,7 +1187,6 @@ void handle_http_status(int http_status)
     if (http_status == 401)
     {
         g_status.last_http_status = http_status;
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Unauthorized, 0, http_status, 0);
         PERIODIC_LOG("HA %s request unauthorized host=%s port=%u\n",
                      request_kind_name(g_request_kind), g_configured_host,
@@ -1302,7 +1271,6 @@ void handle_http_status(int http_status)
     }
 
     g_status.last_http_status = http_status;
-    g_sequence_complete = true;
     finish_request(HomeAssistantConnectionState::Error, 0, http_status, active_failure_retry_ms());
     PERIODIC_LOG("HA %s request unexpected status=%d host=%s port=%u\n",
                  request_kind_name(g_request_kind), http_status, g_configured_host,
@@ -1333,7 +1301,6 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         direct_weather_log("recv callback err=%d http=%d sent=%u recv=%u\n", static_cast<int>(err),
                            g_status.last_http_status, static_cast<unsigned>(g_request_sent),
                            static_cast<unsigned>(g_response_len));
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, err, g_status.last_http_status,
                        active_failure_retry_ms());
         return ERR_OK;
@@ -1356,7 +1323,6 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
             // letting deeper parsing code guess what the response meant.
             if (request_updates_connection_state())
             {
-                g_sequence_complete = true;
                 finish_request(HomeAssistantConnectionState::Error, protocol_error,
                                partial_http_status(), active_failure_retry_ms());
             }
@@ -1400,7 +1366,6 @@ err_t on_tcp_recv(void* arg, altcp_pcb* pcb, pbuf* p, err_t err)
         {
             direct_weather_log("response buffer full total=%u partial_http=%d\n",
                                static_cast<unsigned>(g_response_len), partial_http_status());
-            g_sequence_complete = true;
             finish_request(HomeAssistantConnectionState::Error, ERR_BUF, partial_http_status(),
                            active_failure_retry_ms());
         }
@@ -1468,7 +1433,6 @@ err_t try_send_request()
             direct_weather_log("write failed err=%d sent=%u/%u sndbuf=%u\n",
                                static_cast<int>(write_rc), static_cast<unsigned>(g_request_sent),
                                static_cast<unsigned>(request_len), static_cast<unsigned>(sndbuf));
-            g_sequence_complete = true;
             finish_request(HomeAssistantConnectionState::Error, write_rc, 0,
                            active_failure_retry_ms());
             return write_rc;
@@ -1486,7 +1450,6 @@ err_t try_send_request()
         direct_weather_log("output failed err=%d sent=%u/%u\n", static_cast<int>(output_rc),
                            static_cast<unsigned>(g_request_sent),
                            static_cast<unsigned>(request_len));
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, output_rc, 0,
                        active_failure_retry_ms());
         return output_rc;
@@ -1526,8 +1489,7 @@ err_t on_tcp_poll(void* arg, altcp_pcb* pcb)
         return ERR_OK;
     }
 
-    if (g_status.state == HomeAssistantConnectionState::Authorizing &&
-        g_request_sent < std::strlen(g_request))
+    if (g_tcp_connected && g_request_sent < std::strlen(g_request))
     {
         return try_send_request();
     }
@@ -1550,7 +1512,6 @@ void dns_found(const char* name, const ip_addr_t* ipaddr, void* arg)
     if (ipaddr == nullptr)
     {
         direct_weather_log("dns callback timeout/null host=%s\n", g_configured_host);
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0,
                        active_failure_retry_ms());
         std::printf("HA DNS resolution failed for host=%s\n", g_configured_host);
@@ -1619,7 +1580,6 @@ bool start_socket_connect()
             g_tls_config = nullptr;
         }
         cyw43_arch_lwip_end();
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, ERR_MEM, 0, active_failure_retry_ms());
         return false;
     }
@@ -1648,22 +1608,34 @@ bool start_socket_connect()
         return true;
     }
 
-    g_sequence_complete = true;
     direct_weather_log("altcp_connect failed err=%d\n", static_cast<int>(rc));
     finish_request(HomeAssistantConnectionState::Error, rc, 0, active_failure_retry_ms());
     std::printf("HA connect start failed err=%d\n", static_cast<int>(rc));
     return false;
 }
 
-/// @brief Starts the next Home Assistant request in the polling sequence.
-bool start_probe()
+/// @brief Starts a chain's next request, pointing the client at that chain's endpoint.
+bool start_probe(Chain chain)
 {
-    g_probe_attempted = true;
+    ChainSchedule& schedule = schedule_of(chain);
+    schedule.attempted = true;
+    schedule.next_attempt = nil_time;
+    g_request_kind = schedule.next_kind;
+
+    const Endpoint& endpoint =
+        (chain == Chain::HomeAssistant) ? g_ha_endpoint : g_open_meteo_endpoint;
+    std::snprintf(g_configured_host, sizeof(g_configured_host), "%s", endpoint.host);
+    g_configured_port = endpoint.port;
+    g_request_uses_tls = endpoint.tls;
+
     reset_attempt_state();
-    g_status.last_error = 0;
-    if (request_updates_connection_state())
+    if (chain == Chain::HomeAssistant)
     {
-        g_status.last_http_status = 0;
+        g_status.last_error = 0;
+        if (request_updates_connection_state())
+        {
+            g_status.last_http_status = 0;
+        }
     }
     PERIODIC_LOG("HA starting %s request\n", request_kind_name(g_request_kind));
     direct_weather_log("start request kind=%s host=%s port=%u tls=%u\n",
@@ -1711,7 +1683,6 @@ bool start_probe()
         return true;
     }
 
-    g_sequence_complete = true;
     direct_weather_log("dns start failed err=%d host=%s\n", static_cast<int>(dns_rc),
                        g_configured_host);
     finish_request(HomeAssistantConnectionState::Error, dns_rc, 0, active_failure_retry_ms());
@@ -1730,50 +1701,35 @@ void init()
 {
     // Configuration is normalized once here so the periodic update loop only
     // has to decide whether to wait, connect, or parse responses.
-    g_config_valid = parse_home_assistant_endpoint();
+    load_plan();
     g_status = {};
-    g_status.configured = false;
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
-    {
-        g_status.configured = active_home_assistant_enabled() && g_config_valid &&
-                              active_home_assistant_token()[0] != '\0';
-    }
-    else
-    {
-        g_status.configured = g_config_valid;
-    }
-
-    copy_text(g_status.host, g_configured_host);
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
-    {
-        copy_text(g_status.tracked_entity_id, active_tracked_entity_id());
-        copy_text(g_status.weather_entity_id, active_weather_entity_id());
-        copy_text(g_status.self_entity_id, active_self_entity_id());
-    }
-    else
-    {
-        g_status.tracked_entity_id.fill('\0');
-        copy_text(g_status.weather_entity_id, g_configured_location);
-        g_status.self_entity_id.fill('\0');
-    }
+    g_status.configured = g_plan.home_assistant;
+    copy_text(g_status.host, g_ha_endpoint.host);
+    // HA presence and the tracked entity no longer depend on the weather
+    // source (#165), so these are set whenever HA is.
+    copy_text(g_status.tracked_entity_id, active_tracked_entity_id());
+    copy_text(g_status.self_entity_id, active_self_entity_id());
     clear_runtime_data();
-    if (g_active_weather_source != WeatherSource::HomeAssistant)
+    if (g_active_weather_source == WeatherSource::HomeAssistant)
     {
+        copy_text(g_status.weather_entity_id, active_weather_entity_id());
+        copy_text(g_status.weather_host, g_ha_endpoint.host);
+    }
+    else
+    {
+        // The Weather page's setup hint reads the saved location from here.
+        copy_text(g_status.weather_entity_id, g_configured_location);
+        copy_text(g_status.weather_host, kOpenMeteoHost);
         copy_text(g_status.weather_source_hint, "Open-Meteo");
     }
-    g_status.last_error = 0;
-    g_status.last_http_status = 0;
-    g_status.state = !g_status.configured ? HomeAssistantConnectionState::Unconfigured
-                                          : (kHomeAssistantRuntimeEnabled
-                                                 ? HomeAssistantConnectionState::WaitingForWifi
-                                                 : HomeAssistantConnectionState::Disabled);
+    set_idle_states(HomeAssistantConnectionState::WaitingForWifi);
     reset_attempt_state();
-    g_next_attempt = nil_time;
-    g_probe_attempted = false;
-    g_sequence_complete = false;
-    g_request_kind = (g_active_weather_source == WeatherSource::HomeAssistant)
-                         ? RequestKind::ProbeApi
-                         : RequestKind::FetchWeatherEntity;
+    for (const Chain chain : {Chain::HomeAssistant, Chain::OpenMeteo})
+    {
+        schedule_of(chain) = {};
+        schedule_chain_restart(chain, 0U);
+    }
+    g_request_kind = RequestKind::ProbeApi;
 }
 
 /// @brief Returns true when weather source settings changed after initialisation.
@@ -1799,6 +1755,22 @@ bool runtime_weather_config_changed()
     return false;
 }
 
+/// @brief Returns whether a chain is set up and its next request is due.
+bool chain_due(Chain chain)
+{
+    if (!ha_request_plan::chain_active(chain, g_plan))
+    {
+        return false;
+    }
+    const ChainSchedule& schedule = schedule_of(chain);
+    if (!schedule.attempted)
+    {
+        return true;
+    }
+    return !is_nil_time(schedule.next_attempt) &&
+           absolute_time_diff_us(get_absolute_time(), schedule.next_attempt) <= 0;
+}
+
 /// @brief Advances the Home Assistant resolve/connect/request state machine.
 bool update(const WifiStatus& wifi_status)
 {
@@ -1813,27 +1785,11 @@ bool update(const WifiStatus& wifi_status)
         return previous != g_status;
     }
 
-    // Handle disabled and unconfigured cases first so the remaining logic can
-    // assume Home Assistant is supposed to be active.
-    if (!g_status.configured)
+    // With neither chain set up there is nothing to fetch; init() has
+    // already marked both Unconfigured.
+    if (!ha_request_plan::chain_active(Chain::HomeAssistant, g_plan) &&
+        !ha_request_plan::chain_active(Chain::OpenMeteo, g_plan))
     {
-        g_status.state = HomeAssistantConnectionState::Unconfigured;
-        return previous.state != g_status.state || previous.configured != g_status.configured;
-    }
-
-    if (!kHomeAssistantRuntimeEnabled)
-    {
-        g_status.state = HomeAssistantConnectionState::Disabled;
-        g_status.last_error = 0;
-        g_status.last_http_status = 0;
-        clear_runtime_data();
-        reset_attempt_state();
-        g_next_attempt = nil_time;
-        g_probe_attempted = false;
-        g_sequence_complete = false;
-        g_request_kind = (g_active_weather_source == WeatherSource::HomeAssistant)
-                             ? RequestKind::ProbeApi
-                             : RequestKind::FetchWeatherEntity;
         return previous != g_status;
     }
 
@@ -1841,16 +1797,16 @@ bool update(const WifiStatus& wifi_status)
     if (!wifi_ready)
     {
         reset_attempt_state();
-        g_status.state = HomeAssistantConnectionState::WaitingForWifi;
+        set_idle_states(HomeAssistantConnectionState::WaitingForWifi);
         g_status.last_error = 0;
         g_status.last_http_status = 0;
+        g_status.weather_http_status = 0;
         clear_runtime_data();
-        g_next_attempt = nil_time;
-        g_probe_attempted = false;
-        g_sequence_complete = false;
-        g_request_kind = (g_active_weather_source == WeatherSource::HomeAssistant)
-                             ? RequestKind::ProbeApi
-                             : RequestKind::FetchWeatherEntity;
+        for (const Chain chain : {Chain::HomeAssistant, Chain::OpenMeteo})
+        {
+            schedule_of(chain) = {};
+            schedule_chain_restart(chain, 0U);
+        }
         return previous != g_status;
     }
 
@@ -1861,7 +1817,6 @@ bool update(const WifiStatus& wifi_status)
     {
         direct_weather_log("dns timeout host=%s\n", g_configured_host);
         g_dns_pending = false;
-        g_sequence_complete = true;
         finish_request(HomeAssistantConnectionState::Error, ERR_TIMEOUT, 0,
                        active_failure_retry_ms());
     }
@@ -1879,11 +1834,9 @@ bool update(const WifiStatus& wifi_status)
     if (g_pcb != nullptr && !is_nil_time(g_deadline) &&
         absolute_time_diff_us(get_absolute_time(), g_deadline) <= 0)
     {
-        g_sequence_complete = true;
         const int timeout_http_status =
             g_status.last_http_status > 0 ? g_status.last_http_status : partial_http_status();
-        direct_weather_log("io timeout state=%u sent=%u recv=%u partial_http=%d retry_ms=%u\n",
-                           static_cast<unsigned>(g_status.state),
+        direct_weather_log("io timeout sent=%u recv=%u partial_http=%d retry_ms=%u\n",
                            static_cast<unsigned>(g_request_sent),
                            static_cast<unsigned>(g_response_len), timeout_http_status,
                            static_cast<unsigned>(active_failure_retry_ms()));
@@ -1891,14 +1844,19 @@ bool update(const WifiStatus& wifi_status)
                        active_failure_retry_ms());
     }
 
-    // New requests are only launched when the current step is idle and either
-    // the initial probe has not happened yet or the retry/refresh timer expired.
-    if (!g_dns_pending && g_pcb == nullptr &&
-        (!g_probe_attempted || (!is_nil_time(g_next_attempt) &&
-                                absolute_time_diff_us(get_absolute_time(), g_next_attempt) <= 0)))
+    // One request at a time shares the client and its response buffer. When
+    // idle, the first chain that is due runs; HA goes first because its
+    // requests are quick LAN calls.
+    if (!g_dns_pending && g_pcb == nullptr)
     {
-        g_next_attempt = nil_time;
-        start_probe();
+        for (const Chain chain : {Chain::HomeAssistant, Chain::OpenMeteo})
+        {
+            if (chain_due(chain))
+            {
+                start_probe(chain);
+                break;
+            }
+        }
     }
 
     return previous != g_status;

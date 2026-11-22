@@ -442,7 +442,7 @@ void sync(ConsoleState& console_state)
         (console_state.weather_source == WeatherSource::HomeAssistant)
             ? (ha_state == HomeAssistantConnectionState::Connected)
             : console_state.wifi_status.internet_reachable;
-    const bool weather_http_failed = console_state.home_assistant_status.last_http_status >= 400;
+    const bool weather_http_failed = console_state.home_assistant_status.weather_http_status >= 400;
     const bool weather_failed_now = !weather_payload_present || weather_http_failed;
     if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
     {

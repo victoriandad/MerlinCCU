@@ -205,6 +205,9 @@ void make_default_console_state(ConsoleState& out)
     out.home_assistant_status.last_error = 0;
     out.home_assistant_status.last_http_status = 0;
     out.home_assistant_status.host.fill('\0');
+    out.home_assistant_status.weather_state = HomeAssistantConnectionState::Disabled;
+    out.home_assistant_status.weather_http_status = 0;
+    out.home_assistant_status.weather_host.fill('\0');
     out.home_assistant_status.tracked_entity_id.fill('\0');
     out.home_assistant_status.tracked_entity_state.fill('\0');
     out.home_assistant_status.weather_entity_id.fill('\0');

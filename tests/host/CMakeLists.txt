@@ -47,6 +47,7 @@ add_executable(host_tests
     test_status_controller.cpp
     test_console_navigation.cpp
     test_geo_coordinates.cpp
+    test_ha_request_plan.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -60,6 +61,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/pinter_scheduling.cpp
     ${MERLIN_ROOT}/src/core/pinter_persistence.cpp
     ${MERLIN_ROOT}/src/core/calendar_navigation.cpp
+    ${MERLIN_ROOT}/src/network/ha_request_plan.cpp
     ${MERLIN_ROOT}/src/network/http_response.cpp
     ${MERLIN_ROOT}/src/network/weather_json_scan.cpp
     ${MERLIN_ROOT}/src/network/weather_normalisation.cpp

@@ -18,9 +18,9 @@ The CCU settings named below are on the CCU's web config page
 | CCU sensors in HA over MQTT | Mosquitto broker and the MQTT integration | MQTT Discovery |
 | Share prices | The MerlinCCU integration in `ha/` | Watched Shares, Share Price Feed |
 
-The tracked entity, self entity and HA weather only run when the CCU's
-**Weather source** is **Home Assistant**. With Open-Meteo selected, the CCU
-uses HA only for MQTT and the share feed.
+The HA connection, tracked entity and self entity work with either weather
+source. Only HA weather needs the CCU's **Weather source** set to **Home
+Assistant**.
 
 ## 1. Find HA's address and port
 

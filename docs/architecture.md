@@ -387,8 +387,7 @@ always reports "not converted," which exercises `format_hour_text()`'s real
 documented UTC-fallback path rather than faking anything.
 
 `home_assistant_manager.cpp` itself kept: the connect/send/recv/retry state
-machine, HTTP status-line/header wrappers (from #46), request-kind
-sequencing, endpoint configuration, and `clear_runtime_data()` (an
+machine, HTTP status-line/header wrappers (from #46), endpoint configuration, and `clear_runtime_data()` (an
 orchestration function that clears connection-lifecycle state alongside
 calling into the parsing modules' own clear functions -- it stayed here
 since it's fundamentally about *when* to forget stale data on disconnect, not
@@ -669,4 +668,5 @@ hardware headers to compile.
 | 2026-11-21 | Page table (#120): one `page_table.cpp` entry per page drives title, parent, label font, softkey builder, renderer, cursor, redraw and share fetch; slot routes replace the per-slot and per-page routes (109 routes down to 37). | Adding a page meant editing about eight switches across three files, with only compiler warnings to catch a miss. | Function-pointer table with a `static_assert` on entry order; the Alert list's dynamic parent stays a special case in `parent_page()`. |
 | 2026-11-21 | Location (#87): `geo_coordinates` reads a position typed in any common form (signed decimal, hemisphere letters, degrees-minutes-seconds) and is the one parser for the web form and the Open-Meteo fetch. Stored as `lat,lon` decimal; shown as `N50°13.80' W002°23.40'` (the panel uses a space for °). The web page's Location card finds a place with Open-Meteo's geocoding API, called from the browser. | Typed coordinates were ambiguous and unchecked; the web UI is the main place to configure a CCU. | Lookup runs in the browser, so the CCU needs no TLS geocoding client or JSON parsing for it. |
 | 2026-11-21 | HA side kept in the repo (#160): `docs/home-assistant-setup.md` walks a fresh HA to every CCU feature; `ha/custom_components/merlinccu` serves `/api/merlinccu/shares` from Yahoo's chart API with a per-period cache, its own feed token and compact JSON. | Rebuilding HA lost the token, broker and share feed, and nothing in the repo said how to recreate them. | A custom integration rather than a webhook automation or separate proxy: HA can serve the exact path, and the reshaping is plain Python with tests. Yahoo needs no key; Twelve Data's free tier lacks LSE. |
+| 2026-11-22 | HA and weather run independently (#165): `ha_request_plan` splits the shared HTTP client's requests into an HA chain (probe, tracked entity, HA weather, self entity) and an Open-Meteo chain, each with its own schedule. `HomeAssistantStatus` gains `weather_state`, `weather_http_status` and `weather_host`; `state`/`last_http_status`/`host` are now HA only. | With Open-Meteo weather the CCU never contacted HA, so presence and the tracked entity silently stopped. | One client and the 16 KB response buffer stay shared, one request at a time, so RAM is unchanged; the sequencing is pure logic with host tests. |
 | YYYY-MM-DD |  |  |  |

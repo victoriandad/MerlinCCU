@@ -270,16 +270,8 @@ const char* home_assistant_rest_state_text(const ConsoleState& console_state,
     {
         return "Disabled";
     }
-    if (console_state.weather_source == WeatherSource::HomeAssistant)
-    {
-        return screens::home_assistant_state_text(console_state.home_assistant_status.state);
-    }
-    if (config.home_assistant_host[0] != '\0' && config.home_assistant_token[0] != '\0')
-    {
-        return "Enabled";
-    }
-
-    return "Unconfig";
+    // The REST link runs whatever the weather source is (#165).
+    return screens::home_assistant_state_text(console_state.home_assistant_status.state);
 }
 
 /// @brief Draws the high-level system overview status page.
@@ -565,7 +557,7 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     // summary page reads consistently with the pages it's summarizing.
     char weather_data_text[16] = {};
     screens::build_data_freshness_text(
-        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.state),
+        home_assistant_manager::weather_fetch_ok(console_state.home_assistant_status.weather_state),
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
         home_assistant_manager::kWeatherStaleAfterMs, weather_data_text, sizeof(weather_data_text));
 
@@ -584,9 +576,9 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
     const screens::DetailRow rows[] = {
         {"HA REST", home_assistant_rest_state_text(console_state, config)},
         {"HA HOST", config.home_assistant_host[0] != '\0' ? config.home_assistant_host.data() : "-"},
-        {"WX FETCH", screens::weather_fetch_state_text(console_state.home_assistant_status.state)},
-        {"WX HOST", console_state.home_assistant_status.host[0]
-                        ? console_state.home_assistant_status.host.data()
+        {"WX FETCH", screens::weather_fetch_state_text(console_state.home_assistant_status.weather_state)},
+        {"WX HOST", console_state.home_assistant_status.weather_host[0]
+                        ? console_state.home_assistant_status.weather_host.data()
                         : "-"},
         {"WX DATA", weather_data_text},
         {"HTTP", http_text},
