@@ -228,12 +228,15 @@ bool alternate_credentials_available()
 }
 
 /// @brief Builds a DNS/NetBIOS-safe hostname from the configured device name.
+/// @details Cut to wifi_manager::kMaxHostNameLength so a longer name saved by older
+/// firmware cannot trip lwIP's NetBIOS length assert at boot.
 const char* advertised_host_name()
 {
+    static_assert(wifi_manager::kMaxHostNameLength < sizeof(g_runtime_host_name));
     const char* source = config_manager::device_name();
     size_t out = 0;
 
-    for (size_t i = 0; source[i] != '\0' && out + 1 < sizeof(g_runtime_host_name); ++i)
+    for (size_t i = 0; source[i] != '\0' && out < wifi_manager::kMaxHostNameLength; ++i)
     {
         const char c = source[i];
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
