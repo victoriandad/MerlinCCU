@@ -35,6 +35,10 @@ inline bool operator!=(const WatchedShareConfig& lhs, const WatchedShareConfig& 
 /// leaves headroom for longer issuer/claim strings.
 inline constexpr size_t kHomeAssistantTokenCapacity = 256U;
 
+/// @brief Web PIN salt and SHA-256 hash sizes (#158).
+inline constexpr size_t kWebPinSaltBytes = 16U;
+inline constexpr size_t kWebPinHashBytes = 32U;
+
 /// @brief Persistent runtime configuration for one Merlin CCU.
 /// @details The structure is deliberately fixed-size so it can be stored
 /// directly in flash with simple versioning and CRC checks. Empty strings mean
@@ -82,10 +86,31 @@ struct RuntimeConfig
     /// switched off without touching HA. See docs/share-feed-design.md.
     bool shares_feed_enabled;
     std::array<char, 128> shares_feed_token;
+
+    /// @brief Optional web config PIN (#158), stored only as SHA-256 of the
+    /// salt followed by the PIN. No PIN means the web pages are open.
+    bool web_pin_set;
+    std::array<uint8_t, kWebPinSaltBytes> web_pin_salt;
+    std::array<uint8_t, kWebPinHashBytes> web_pin_hash;
 };
 
 namespace config_manager
 {
+
+/// @brief Where a settings change came from, for the change record (#158).
+enum class ChangeSource : uint8_t
+{
+    Panel,
+    Web,
+};
+
+/// @brief The last settings change: when, from where, e.g. "21:45 web
+/// 192.168.1.23". Kept in RAM, so a restart clears it.
+struct ChangeRecord
+{
+    bool valid;
+    std::array<char, 40> text;
+};
 
 /// @brief Total bytes reserved at the tail of flash for the settings store.
 /// @details Other flash-backed persistence (e.g. Pinter tracking state in
@@ -113,7 +138,13 @@ const RuntimeConfig& settings();
 /// persistence). Always returns true; the underlying flash write is no
 /// longer synchronous, so a real write failure can only be caught (and
 /// logged) later, inside flush_pending_save().
-bool save(const RuntimeConfig& settings);
+/// @param source where the change came from, for the change record.
+/// @param detail extra text for the record, such as the browser's address.
+bool save(const RuntimeConfig& settings, ChangeSource source = ChangeSource::Panel,
+          const char* detail = nullptr);
+
+/// @brief The last settings change since start-up (#158).
+ChangeRecord last_change();
 
 /// @brief Writes any pending settings save to flash, if one is due.
 /// @details Must be called from a point in the main loop that is not nested

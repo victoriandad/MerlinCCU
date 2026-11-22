@@ -27,6 +27,7 @@ namespace config_manager
 namespace
 {
 RuntimeConfig g_settings = {};
+ChangeRecord g_last_change = {};
 } // namespace
 
 const RuntimeConfig& settings()
@@ -34,10 +35,16 @@ const RuntimeConfig& settings()
     return g_settings;
 }
 
-bool save(const RuntimeConfig& new_settings)
+bool save(const RuntimeConfig& new_settings, ChangeSource source, const char* detail)
 {
     g_settings = config_persistence::sanitize_settings(new_settings);
+    config_persistence::record_change(g_last_change, TimeStatus{}, source, detail);
     return true;
+}
+
+ChangeRecord last_change()
+{
+    return g_last_change;
 }
 
 } // namespace config_manager

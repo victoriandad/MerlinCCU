@@ -17,6 +17,10 @@ namespace settings_screens
 /// @brief Draws only active screen-saver editing UI.
 void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state);
 
+/// @brief Draws Device Identity's body: empty, except while confirming that
+/// the web PIN should be cleared (#158).
+void draw_device_identity_page(uint8_t* fb, const ConsoleState& console_state);
+
 /// @brief Draws the keypad-debug diagnostics page.
 void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state);
 

@@ -73,6 +73,17 @@ void draw_screen_saver_page(uint8_t* fb, const ConsoleState& console_state)
 /// @brief Draws the keypad-debug diagnostics page.
 /// @details The goal here is still hardware bring-up, but the layout now uses
 /// the same clean row styling as the status page instead of a boxed panel.
+void draw_device_identity_page(uint8_t* fb, const ConsoleState& console_state)
+{
+    if (!console_state.web_pin_clear_confirming)
+    {
+        return;
+    }
+    screens::draw_empty_state(fb, "CLEAR WEB PIN?",
+                              "The web pages will open without a PIN until a new one is set "
+                              "on the config page.");
+}
+
 void draw_keypad_debug_page(uint8_t* fb, const ConsoleState& console_state)
 {
     char mask_text[16] = {};

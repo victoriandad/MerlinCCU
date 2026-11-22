@@ -15,15 +15,19 @@
 #include "debug_logging.h"
 #include "framebuffer.h"
 #include "geo_coordinates.h"
+#include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#include "mbedtls/sha256.h"
 #include "ota_manager.h"
 #include "ota_upload.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
+#include "pico/rand.h"
 #include "pico/time.h"
 #include "psram.h"
 #include "text_utils.h"
+#include "web_auth.h"
 #include "wifi_manager.h"
 
 namespace web_config_server
@@ -99,6 +103,13 @@ static_assert(kRequestCapacity == ota_upload::kSectorBytes,
 
 tcp_pcb* g_listener = nullptr;
 WebSession g_session = {};
+
+// Web PIN login (#158). One request is handled at a time, so these are only
+// touched from inside handle_request().
+web_auth::SessionTable g_sessions;
+web_auth::Lockout g_login_lockout;
+// The current request's browser address, for the settings change record.
+char g_peer_address[IPADDR_STRLEN_MAX] = {};
 
 /// @brief Clears the singleton session, releasing a firmware upload's held
 /// pbufs and abandoning the upload if it was still arriving.
@@ -798,8 +809,36 @@ void build_config_page(const char* message)
         "name=\"remote_config_present\" value=\"1\"><label class=\"check\"><input "
         "type=\"checkbox\" name=\"remote_config\" %s>Enable local web configuration "
         "server</label><p class=\"hint\">Disable this if you only want setup changes to "
-        "come from the front panel.</p></section>",
+        "come from the front panel.</p>",
         cfg.remote_config_enabled ? "checked" : "");
+
+    // Web PIN (#158). Never echoed: the boxes are always empty.
+    if (cfg.web_pin_set)
+    {
+        (void)append(cursor, remaining,
+                     "<label>Web PIN</label><p class=\"hint\">Set. To change or remove it, "
+                     "enter the current PIN.</p><label>Current PIN</label><input "
+                     "name=\"web_pin_current\" type=\"password\" autocomplete=\"current-password\" "
+                     "maxlength=\"%u\"><label>New PIN</label><input name=\"web_pin_new\" "
+                     "type=\"password\" autocomplete=\"new-password\" maxlength=\"%u\" "
+                     "placeholder=\"Leave blank to keep current\"><label class=\"check\"><input "
+                     "type=\"checkbox\" name=\"web_pin_remove\">Remove the PIN</label>"
+                     "<p class=\"hint\"><a href=\"/logout\" class=\"ghost\">Log out</a> Forgot "
+                     "it? Clear it on the unit: Settings &gt; Device Identity &gt; WEB PIN.</p>",
+                     static_cast<unsigned>(web_auth::kMaxPinLength),
+                     static_cast<unsigned>(web_auth::kMaxPinLength));
+    }
+    else
+    {
+        (void)append(cursor, remaining,
+                     "<label>Web PIN (optional)</label><input name=\"web_pin_new\" "
+                     "type=\"password\" autocomplete=\"new-password\" maxlength=\"%u\" "
+                     "placeholder=\"No PIN: anyone on the network can change settings\">"
+                     "<p class=\"hint\">4-32 characters. With a PIN, every page asks for it. "
+                     "It is sent unencrypted on your home network.</p>",
+                     static_cast<unsigned>(web_auth::kMaxPinLength));
+    }
+    (void)append(cursor, remaining, "</section>");
 
     (void)append(
         cursor, remaining,
@@ -2489,6 +2528,105 @@ ScreenSaverSelection parse_screen_saver(const char* text, ScreenSaverSelection f
 /// @brief Updates settings from a POST body and returns a user-facing message.
 // The form fields are intentionally processed in page order so validation
 // errors map directly back to the UI a user just submitted.
+/// @brief Milliseconds since boot, for sessions and the login lockout.
+uint64_t now_ms()
+{
+    return time_us_64() / 1000U;
+}
+
+/// @brief SHA-256 of the salt followed by the PIN.
+/// @details A salted hash keeps the PIN itself out of flash. It is no defence
+/// against guessing a short PIN offline from a flash dump; the login lockout
+/// covers guessing over the network, and the flash is only reachable by
+/// opening the unit.
+void hash_pin(const std::array<uint8_t, kWebPinSaltBytes>& salt, std::string_view pin,
+              std::array<uint8_t, kWebPinHashBytes>& out)
+{
+    std::array<uint8_t, kWebPinSaltBytes + web_auth::kMaxPinLength> input = {};
+    std::memcpy(input.data(), salt.data(), salt.size());
+    std::memcpy(input.data() + salt.size(), pin.data(), pin.size());
+    (void)mbedtls_sha256(input.data(), salt.size() + pin.size(), out.data(), 0);
+    input.fill(0U);
+}
+
+/// @brief True when the PIN matches the stored hash.
+bool pin_matches(const RuntimeConfig& cfg, std::string_view pin)
+{
+    if (!cfg.web_pin_set || pin.size() > web_auth::kMaxPinLength)
+    {
+        return false;
+    }
+    std::array<uint8_t, kWebPinHashBytes> hash = {};
+    hash_pin(cfg.web_pin_salt, pin, hash);
+    return web_auth::constant_time_equal(hash.data(), cfg.web_pin_hash.data(), hash.size());
+}
+
+/// @brief Fills a buffer from the RP2350's random number generator.
+template <size_t N> void fill_random(std::array<uint8_t, N>& out)
+{
+    for (size_t i = 0U; i < N; i += sizeof(uint64_t))
+    {
+        const uint64_t word = get_rand_64();
+        std::memcpy(out.data() + i, &word, std::min(sizeof(word), N - i));
+    }
+}
+
+/// @brief Applies the config form's PIN fields to `cfg` (#158).
+/// @return an error message, or nullptr when there is nothing to do or the
+/// change is accepted.
+/// @details Setting, changing or removing a PIN that is already set needs the
+/// current PIN as well as the session, so a browser left logged in cannot
+/// lock its owner out. A changed PIN ends every session.
+const char* apply_pin_change(const char* body, RuntimeConfig& cfg)
+{
+    static char new_pin[web_auth::kMaxPinLength + 2U] = {};
+    static char current_pin[web_auth::kMaxPinLength + 2U] = {};
+    new_pin[0] = '\0';
+    current_pin[0] = '\0';
+    (void)get_form_value(body, "web_pin_new", new_pin, sizeof(new_pin));
+    (void)get_form_value(body, "web_pin_current", current_pin, sizeof(current_pin));
+    const bool remove = form_has_key(body, "web_pin_remove");
+    if (new_pin[0] == '\0' && !remove)
+    {
+        return nullptr;
+    }
+
+    if (cfg.web_pin_set)
+    {
+        if (g_login_lockout.locked(now_ms()))
+        {
+            return "Configuration not saved: too many wrong PINs; wait a minute.";
+        }
+        if (!pin_matches(cfg, current_pin))
+        {
+            g_login_lockout.record_failure(now_ms());
+            return "Configuration not saved: the current PIN is wrong.";
+        }
+        g_login_lockout.record_success();
+    }
+
+    if (remove)
+    {
+        cfg.web_pin_set = false;
+        cfg.web_pin_salt.fill(0U);
+        cfg.web_pin_hash.fill(0U);
+    }
+    else
+    {
+        if (!web_auth::pin_is_acceptable(new_pin))
+        {
+            return "Configuration not saved: the PIN must be 4-32 characters.";
+        }
+        fill_random(cfg.web_pin_salt);
+        hash_pin(cfg.web_pin_salt, new_pin, cfg.web_pin_hash);
+        cfg.web_pin_set = true;
+    }
+    g_sessions.clear();
+    std::memset(new_pin, 0, sizeof(new_pin));
+    std::memset(current_pin, 0, sizeof(current_pin));
+    return nullptr;
+}
+
 const char* handle_config_post(const char* body)
 {
     std::printf("Web config POST received: %u bytes\n", body != nullptr ? std::strlen(body) : 0U);
@@ -2821,7 +2959,14 @@ const char* handle_config_post(const char* body)
         cfg.screen_saver_timeout_minutes = timeout_minutes;
     }
 
-    if (!config_manager::save(cfg))
+    const char* pin_error = apply_pin_change(body, cfg);
+    if (pin_error != nullptr)
+    {
+        std::printf("Web config save rejected: %s\n", pin_error);
+        return pin_error;
+    }
+
+    if (!config_manager::save(cfg, config_manager::ChangeSource::Web, g_peer_address))
     {
         std::printf("Web config save failed: flash write failed\n");
         return "Configuration not saved: flash write failed.";
@@ -3012,9 +3157,160 @@ void send_response(WebSession* session, tcp_pcb* pcb, const char* response)
     send_response_with_length(session, pcb, response, std::strlen(response));
 }
 
+/// @brief The request line and headers, without the body.
+std::string_view request_headers(const char* request)
+{
+    const char* end = std::strstr(request, "\r\n\r\n");
+    return end != nullptr ? std::string_view(request, static_cast<size_t>(end - request))
+                          : std::string_view(request);
+}
+
+/// @brief Builds the PIN login page, with an optional message.
+void build_login_page(const char* message)
+{
+    static char escaped[160] = {};
+    html_escape(message, escaped, sizeof(escaped));
+    std::snprintf(
+        g_response, sizeof(g_response),
+        "%s<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
+        "initial-scale=1\"><title>Merlin CCU Login</title><style>:root{color-scheme:dark}"
+        "body{margin:0;background:#08110f;font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:"
+        "#eefbf3}.wrap{max-width:360px;margin:12vh auto;padding:0 16px}h1{font-size:24px;"
+        "letter-spacing:.04em}label{display:block;color:#8eb5a7;font-size:12px;text-transform:"
+        "uppercase;letter-spacing:.08em;margin:11px 0 5px}input{width:100%%;box-sizing:"
+        "border-box;border:1px solid #315348;background:#0a1411;color:#eefbf3;border-radius:"
+        "10px;padding:10px 11px;font:inherit}button{margin-top:14px;border:0;border-radius:999px;"
+        "background:#b7ff57;color:#09110d;font-weight:800;padding:12px 20px}.msg{color:#ff6b6b;"
+        "font-weight:700}</style></head><body><main class=\"wrap\"><h1>%s</h1>"
+        "<p class=\"msg\">%s</p><form method=\"post\" action=\"/login\"><label>Web PIN</label>"
+        "<input name=\"pin\" type=\"password\" autocomplete=\"current-password\" autofocus "
+        "maxlength=\"%u\"><button>Log in</button></form></main></body></html>",
+        kHttpOkHeader, config_manager::device_name(), escaped,
+        static_cast<unsigned>(web_auth::kMaxPinLength));
+}
+
+/// @brief Sends a 303 redirect, optionally setting the session cookie.
+void send_redirect(WebSession* session, tcp_pcb* pcb, const char* location,
+                   const char* cookie_header)
+{
+    std::snprintf(g_response, sizeof(g_response),
+                  "HTTP/1.1 303 See Other\r\nLocation: %s\r\n%sCache-Control: no-store\r\n"
+                  "Content-Length: 0\r\nConnection: close\r\n\r\n",
+                  location, cookie_header != nullptr ? cookie_header : "");
+    send_response(session, pcb, g_response);
+}
+
+/// @brief Applies the web PIN (#158): serves /login and /logout, and turns
+/// away requests without a live session while a PIN is set.
+/// @return true when this replied to the request.
+bool handle_login_routes(WebSession* session, tcp_pcb* pcb, const char* request)
+{
+    const RuntimeConfig& cfg = config_manager::settings();
+    const std::string_view headers = request_headers(request);
+    const std::string_view cookie = web_auth::find_cookie(headers, web_auth::kSessionCookie);
+    const bool is_login = matches_get_path(request, "/login") ||
+                          matches_post_path(request, "/login");
+    const bool is_logout = matches_get_path(request, "/logout") ||
+                           matches_post_path(request, "/logout");
+
+    if (!cfg.web_pin_set)
+    {
+        if (is_login || is_logout)
+        {
+            send_redirect(session, pcb, "/", nullptr);
+            return true;
+        }
+        return false;
+    }
+
+    if (is_logout)
+    {
+        g_sessions.remove(cookie);
+        send_redirect(session, pcb, "/login",
+                      "Set-Cookie: merlin_session=; Path=/; Max-Age=0; HttpOnly; "
+                      "SameSite=Strict\r\n");
+        return true;
+    }
+
+    if (matches_post_path(request, "/login"))
+    {
+        const uint64_t now = now_ms();
+        if (g_login_lockout.locked(now))
+        {
+            char text[80] = {};
+            std::snprintf(text, sizeof(text), "Too many wrong PINs. Try again in %lu s.",
+                          static_cast<unsigned long>(g_login_lockout.seconds_left(now)));
+            build_login_page(text);
+            send_response(session, pcb, g_response);
+            return true;
+        }
+        static char pin[web_auth::kMaxPinLength + 2U] = {};
+        pin[0] = '\0';
+        const char* body = std::strstr(request, "\r\n\r\n");
+        (void)get_form_value(body != nullptr ? body + 4 : "", "pin", pin, sizeof(pin));
+        const bool ok = pin_matches(cfg, pin);
+        std::memset(pin, 0, sizeof(pin));
+        if (!ok)
+        {
+            g_login_lockout.record_failure(now);
+            std::printf("Web login refused from %s\n", g_peer_address);
+            build_login_page("Wrong PIN.");
+            send_response(session, pcb, g_response);
+            return true;
+        }
+
+        g_login_lockout.record_success();
+        std::array<uint8_t, web_auth::kTokenBytes> bytes = {};
+        fill_random(bytes);
+        const web_auth::Token token = web_auth::token_from_bytes(bytes);
+        g_sessions.add(token, now);
+        char cookie_header[160] = {};
+        std::snprintf(cookie_header, sizeof(cookie_header),
+                      "Set-Cookie: %.*s=%.*s; Path=/; Max-Age=%lu; HttpOnly; SameSite=Strict\r\n",
+                      static_cast<int>(web_auth::kSessionCookie.size()),
+                      web_auth::kSessionCookie.data(), static_cast<int>(token.size()),
+                      token.data(),
+                      static_cast<unsigned long>(web_auth::kSessionLifetimeMs / 1000U));
+        std::printf("Web login from %s\n", g_peer_address);
+        send_redirect(session, pcb, "/", cookie_header);
+        return true;
+    }
+
+    if (is_login)
+    {
+        build_login_page("");
+        send_response(session, pcb, g_response);
+        return true;
+    }
+
+    if (web_auth::is_public_request(request) || g_sessions.valid(cookie, now_ms()))
+    {
+        return false;
+    }
+
+    // Pages send the browser to the login form; API calls get a plain 401 so
+    // scripts and the preview's fetches fail clearly.
+    if (std::strncmp(request, "GET /api/", 9) == 0 || std::strncmp(request, "POST ", 5) == 0)
+    {
+        std::snprintf(g_response, sizeof(g_response),
+                      "HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain; charset=utf-8\r\n"
+                      "Connection: close\r\n\r\nLog in at /login first.\n");
+        send_response(session, pcb, g_response);
+        return true;
+    }
+    send_redirect(session, pcb, "/login", nullptr);
+    return true;
+}
+
 /// @brief Handles a complete HTTP request from the local config page.
 void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
 {
+    std::snprintf(g_peer_address, sizeof(g_peer_address), "%s", ipaddr_ntoa(&pcb->remote_ip));
+    if (handle_login_routes(session, pcb, request))
+    {
+        return;
+    }
+
     const char* message = "";
     if (matches_post_path(request, "/api/button"))
     {

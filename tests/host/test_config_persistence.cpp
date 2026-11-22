@@ -325,6 +325,60 @@ HOST_TEST(validate_legacy_slot_v5_accepts_a_correctly_built_slot)
     EXPECT_TRUE(config_persistence::validate_legacy_slot_v5(slot));
 }
 
+HOST_TEST(migrate_legacy_settings_v6_keeps_everything_with_no_web_pin)
+{
+    config_persistence::LegacyRuntimeConfigV6 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName6");
+    legacy.remote_config_enabled = true;
+    text_utils::copy_text(legacy.wifi_password, "wifi-six");
+    text_utils::copy_text(legacy.home_assistant_token, "token-six");
+    text_utils::copy_text(legacy.mqtt_password, "mqtt-six");
+    legacy.watched_share_count = 2U;
+    text_utils::copy_text(legacy.watched_shares[1].symbol, "EEE");
+    text_utils::copy_text(legacy.shares_feed_token, "feed-six");
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v6(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName6") == 0);
+    EXPECT_TRUE(migrated.remote_config_enabled);
+    EXPECT_TRUE(std::strcmp(migrated.wifi_password.data(), "wifi-six") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.home_assistant_token.data(), "token-six") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.mqtt_password.data(), "mqtt-six") == 0);
+    EXPECT_EQ(migrated.watched_share_count, 2U);
+    EXPECT_TRUE(std::strcmp(migrated.watched_shares[1].symbol.data(), "EEE") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.shares_feed_token.data(), "feed-six") == 0);
+    EXPECT_FALSE(migrated.web_pin_set);
+}
+
+HOST_TEST(validate_legacy_slot_v6_accepts_a_correctly_built_slot)
+{
+    config_persistence::LegacyConfigSlotV6 slot = {};
+    text_utils::copy_text(slot.settings.device_name, "V6Device");
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV6;
+    slot.sequence = 7U;
+    slot.payload_size = sizeof(config_persistence::LegacyRuntimeConfigV6);
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(config_persistence::LegacyRuntimeConfigV6));
+
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v6(slot));
+}
+
+HOST_TEST(change_record_names_the_time_source_and_address)
+{
+    config_manager::ChangeRecord record = {};
+    TimeStatus time = {};
+    config_persistence::record_change(record, time, config_manager::ChangeSource::Panel, nullptr);
+    EXPECT_TRUE(record.valid);
+    EXPECT_TRUE(std::strcmp(record.text.data(), "--:-- panel") == 0);
+
+    time.synced = true;
+    text_utils::copy_text(time.time_text, "21:45");
+    config_persistence::record_change(record, time, config_manager::ChangeSource::Web,
+                                      "192.168.1.23");
+    EXPECT_TRUE(std::strcmp(record.text.data(), "21:45 web 192.168.1.23") == 0);
+}
+
 HOST_TEST(current_slot_round_trips_a_full_length_home_assistant_token)
 {
     // Real HA long-lived tokens are ~183 characters; the old 128-byte field

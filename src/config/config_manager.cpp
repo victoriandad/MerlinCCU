@@ -8,6 +8,7 @@
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
+#include "time_manager.h"
 
 namespace config_manager
 {
@@ -22,6 +23,7 @@ using config_persistence::LegacyConfigSlotV2;
 using config_persistence::LegacyConfigSlotV3;
 using config_persistence::LegacyConfigSlotV4;
 using config_persistence::LegacyConfigSlotV5;
+using config_persistence::LegacyConfigSlotV6;
 
 constexpr uint32_t kFlashSlotCount = 2;
 constexpr uint32_t kConfigStorageBytes = FLASH_SECTOR_SIZE * kFlashSlotCount;
@@ -36,6 +38,7 @@ static_assert(kConfigStorageBytes == config_manager::kReservedFlashBytes,
 RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;
 bool g_save_pending = false;
+ChangeRecord g_last_change = {};
 
 /// @brief Returns a const pointer to one flash slot.
 const ConfigSlot* flash_slot(uint32_t offset)
@@ -63,6 +66,16 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
             *out_settings = slot->settings;
         }
         return {true, slot->sequence};
+    }
+
+    const auto* legacy_slot_v6 = reinterpret_cast<const LegacyConfigSlotV6*>(slot);
+    if (config_persistence::validate_legacy_slot_v6(*legacy_slot_v6))
+    {
+        if (out_settings != nullptr)
+        {
+            *out_settings = config_persistence::migrate_legacy_settings_v6(legacy_slot_v6->settings);
+        }
+        return {true, legacy_slot_v6->sequence};
     }
 
     const auto* legacy_slot_v5 = reinterpret_cast<const LegacyConfigSlotV5*>(slot);
@@ -236,7 +249,7 @@ const RuntimeConfig& settings()
     return g_settings;
 }
 
-bool save(const RuntimeConfig& settings)
+bool save(const RuntimeConfig& settings, ChangeSource source, const char* detail)
 {
     // Sanitised in place: sanitize_settings() would add a ~1.5 KB copy to
     // the core-0 stack (#164).
@@ -246,7 +259,14 @@ bool save(const RuntimeConfig& settings)
     }
     config_persistence::sanitize_settings_in_place(g_settings);
     g_save_pending = true;
+    config_persistence::record_change(g_last_change, time_manager::status(), source, detail);
+    std::printf("Settings changed: %s\n", g_last_change.text.data());
     return true;
+}
+
+ChangeRecord last_change()
+{
+    return g_last_change;
 }
 
 bool flush_pending_save()

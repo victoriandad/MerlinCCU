@@ -606,6 +606,10 @@ enum class SoftKeyRoute : uint8_t
     RequestPinterReset,
     ConfirmPinterReset,
     CancelPinterReset,
+    /// Device Identity: clear a forgotten web PIN (#158), with a confirm step.
+    RequestClearWebPin,
+    ConfirmClearWebPin,
+    CancelClearWebPin,
     DecreaseSelectedPinterDay,
     IncreaseSelectedPinterDay,
     /// Picks the recipe in key `slot` of the current catalogue page.
@@ -938,6 +942,10 @@ struct ConsoleState
     /// a reset of the selected vessel (SK-6: destructive actions get their
     /// own state). Cleared on confirm, cancel, BACK STEP, or leaving the page.
     bool pinter_reset_confirming;
+    /// @brief True while Device Identity asks the operator to confirm
+    /// clearing the web PIN (#158, SK-6). Cleared on confirm, cancel or BACK
+    /// STEP.
+    bool web_pin_clear_confirming;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

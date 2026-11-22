@@ -135,6 +135,9 @@ bool toggle_remote_config_enabled();
 /// @brief Toggles the Home Assistant REST integration enable flag.
 bool toggle_home_assistant_enabled();
 
+/// @brief Removes the web config PIN (#158), from the front panel only.
+bool clear_web_pin();
+
 /// @brief Toggles the MQTT discovery integration enable flag.
 bool toggle_mqtt_enabled();
 
