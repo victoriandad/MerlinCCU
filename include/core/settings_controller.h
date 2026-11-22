@@ -102,6 +102,12 @@ const char* time_zone_selection_text(const ConsoleState& console_state);
 /// when none is set.
 const char* location_selection_text();
 
+/// @brief Returns a Home Assistant entity id without its domain, e.g.
+/// `forecast_home` for `weather.forecast_home`.
+/// @details The key's caption already says what kind of entity it is, and
+/// the domain would push most ids past one 8x12 line (#115, #181).
+const char* entity_selection_text(const char* entity_id);
+
 /// @brief Returns the currently configured screen-saver timeout label.
 const char* screen_saver_timeout_selection_text(const ConsoleState& console_state);
 

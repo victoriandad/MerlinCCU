@@ -39,10 +39,11 @@ bool format_decimal(const GeoPoint& point, char* out, size_t out_size);
 
 /// @brief Writes `point` as degrees and decimal minutes,
 /// `N50<deg>13.80' W002<deg>23.40'`, where `<deg>` is `degree_mark`.
-/// @details The web page passes the degree sign; the panel's fonts are ASCII
-/// only, so it passes a space.
+/// @details The web page passes the degree sign and 2 decimals. The panel's
+/// fonts are ASCII only, so it passes a space, and 1 decimal so the value fits
+/// a softkey at 8x12 (0.1' is under 200 m, plenty for weather).
 /// @return False when `out` is too small.
-bool format_degrees_minutes(const GeoPoint& point, const char* degree_mark, char* out,
-                            size_t out_size);
+bool format_degrees_minutes(const GeoPoint& point, const char* degree_mark, int minute_decimals,
+                            char* out, size_t out_size);
 
 } // namespace geo_coordinates

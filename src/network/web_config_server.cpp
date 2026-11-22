@@ -561,7 +561,7 @@ void build_config_page(const char* message)
     if (const std::optional<geo_coordinates::GeoPoint> point =
             geo_coordinates::parse(cfg.weather_coordinates.data()))
     {
-        (void)geo_coordinates::format_degrees_minutes(*point, "&#176;", weather_coordinates,
+        (void)geo_coordinates::format_degrees_minutes(*point, "&#176;", 2, weather_coordinates,
                                                       sizeof(weather_coordinates));
     }
     html_escape(cfg.mqtt_host.data(), mqtt_host, sizeof(mqtt_host));

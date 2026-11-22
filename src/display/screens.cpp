@@ -826,6 +826,38 @@ SoftkeyLabelLayout layout_softkey_label(const char* label, TextStyle style, int 
     return layout;
 }
 
+namespace
+{
+
+/// @brief Counts the characters a label draws as glyphs: not line breaks,
+/// spaces, or the brackets that are drawn as graphics.
+size_t drawn_glyph_count(const char* text)
+{
+    size_t count = 0U;
+    for (; *text != '\0'; ++text)
+    {
+        if (*text != '\n' && *text != '[' && *text != ']' && *text != ' ')
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+} // namespace
+
+/// Declared in screens_shared.h.
+bool softkey_label_fits(const char* label, TextStyle style, int max_lines)
+{
+    const SoftkeyLabelLayout layout = layout_softkey_label(label, style, max_lines);
+    size_t drawn = 0U;
+    for (int i = 0; i < layout.count; ++i)
+    {
+        drawn += drawn_glyph_count(layout.lines[static_cast<size_t>(i)].text);
+    }
+    return drawn == drawn_glyph_count(label);
+}
+
 /// @brief Draws text centred around a given x-coordinate.
 /// @details Centralizing the centering math keeps titles and status callouts
 /// aligned consistently across the different page renderers. Declared in
