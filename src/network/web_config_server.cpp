@@ -17,6 +17,8 @@
 #include "geo_coordinates.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#include "ota_manager.h"
+#include "ota_upload.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
@@ -79,11 +81,42 @@ struct WebSession
     // Updated on accept and on any recv/send progress; on_poll aborts the
     // session once this is older than kSessionIdleTimeoutMs.
     absolute_time_t last_activity;
-    char request[kRequestCapacity];
+    // Firmware upload (#154): once a `POST /api/ota` request's headers pass,
+    // the body bypasses `request` parsing. Received pbufs wait in ota_held,
+    // unacknowledged, so the TCP window throttles the sender to the flash
+    // write rate; update() copies them a sector at a time into `request`,
+    // which then serves as the sector buffer.
+    bool ota_upload;
+    pbuf* ota_held;
+    size_t ota_fill;
+    uint32_t ota_remaining;
+    // Holds whole sectors: the boot ROM wants 4 KB erase units, and a short
+    // final sector is padded in place.
+    alignas(4) char request[kRequestCapacity];
 };
+static_assert(kRequestCapacity == ota_upload::kSectorBytes,
+              "the request buffer doubles as the upload's flash sector buffer");
 
 tcp_pcb* g_listener = nullptr;
 WebSession g_session = {};
+
+/// @brief Clears the singleton session, releasing a firmware upload's held
+/// pbufs and abandoning the upload if it was still arriving.
+/// @details Every path that drops a session (close, error, idle abort,
+/// pre-emption, server stop) goes through here, so an upload cut off at any
+/// point leaves the running firmware untouched and leaks nothing.
+void reset_session()
+{
+    if (g_session.ota_held != nullptr)
+    {
+        pbuf_free(g_session.ota_held);
+    }
+    if (g_session.ota_upload)
+    {
+        ota_manager::abort();
+    }
+    g_session = {};
+}
 // PSRAM on boards that have it (#162): tcp_write() copies out of it
 // (TCP_WRITE_FLAG_COPY), so lwIP and the Wi-Fi DMA never read it directly.
 MERLIN_PSRAM_BSS char g_response[kResponseCapacity];
@@ -167,7 +200,7 @@ err_t close_session(WebSession* session, tcp_pcb* pcb)
         tcp_poll(pcb, nullptr, 0);
         if (g_session.pcb == pcb)
         {
-            g_session = {};
+            reset_session();
         }
     }
     else
@@ -225,7 +258,7 @@ err_t send_pending_response(WebSession* session, tcp_pcb* pcb)
             tcp_abort(pcb);
             if (g_session.pcb == pcb)
             {
-                g_session = {};
+                reset_session();
             }
             return ERR_ABRT;
         }
@@ -287,7 +320,7 @@ void abort_active_session()
     tcp_sent(g_session.pcb, nullptr);
     tcp_err(g_session.pcb, nullptr);
     tcp_abort(g_session.pcb);
-    g_session = {};
+    reset_session();
 }
 
 using text_utils::copy_text;
@@ -493,6 +526,7 @@ enum class ConfigWebPage : uint8_t
     Config,
     PinterActivity,
     Preview,
+    Firmware,
 };
 
 /// @brief Emits a consistent top navigation bar linking between the CCU's web pages.
@@ -517,7 +551,115 @@ bool append_page_nav(char*& cursor, size_t& remaining, ConfigWebPage current_pag
         ok = ok &&
              append(cursor, remaining, "<a class=\"ghost\" href=\"/preview\">Display Preview</a>");
     }
+    if (current_page != ConfigWebPage::Firmware)
+    {
+        ok = ok && append(cursor, remaining, "<a class=\"ghost\" href=\"/firmware\">Firmware</a>");
+    }
     return ok && append(cursor, remaining, "</nav>");
+}
+
+/// @brief Names a firmware slot for the Firmware page.
+const char* slot_name(int8_t slot)
+{
+    switch (slot)
+    {
+    case 0:
+        return "A";
+    case 1:
+        return "B";
+    default:
+        return "none";
+    }
+}
+
+/// @brief Builds the Firmware page: running slot, last update outcome and
+/// the upload form (#154).
+/// @details The upload is a raw `POST /api/ota` of the `.bin` file with the
+/// token in a header, the same request a script sends. The page then polls
+/// `/ping` until the CCU is back.
+bool build_firmware_page()
+{
+    const FirmwareStatus firmware = ota_manager::status();
+    const bool token_set = !ota_manager::upload_token().empty();
+    const uint32_t spare_bytes = ota_manager::spare_slot_bytes();
+    const char* state_text = "Confirmed";
+    if (!firmware.partitioned)
+    {
+        state_text = "No A/B partition table: flash over USB once (docs/ota.md)";
+    }
+    else if (firmware.trial)
+    {
+        state_text = "On trial: confirms once Wi-Fi is up";
+    }
+    else if (firmware.rolled_back)
+    {
+        state_text = "Last update failed; back on the previous firmware";
+    }
+    const char* upload_text = "Ready";
+    if (!token_set)
+    {
+        upload_text = "Off: no token built in (config/ota_credentials.h)";
+    }
+    else if (spare_bytes == 0U)
+    {
+        upload_text = "Unavailable until the state above is resolved";
+    }
+
+    char* cursor = g_response;
+    size_t remaining = sizeof(g_response);
+    bool ok = append(
+        cursor, remaining,
+        "%s<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
+        "initial-scale=1\"><title>Merlin CCU Firmware</title><style>"
+        ":root{color-scheme:dark;--panel:#111f1b;--line:#2b4a41;--text:#eefbf3;"
+        "--muted:#8eb5a7;--accent:#b7ff57}*{box-sizing:border-box}body{margin:0;background:"
+        "#08110f;font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
+        ".wrap{max-width:720px;margin:0 auto;padding:32px 16px 48px}h1{margin:0 0 16px;"
+        "font-size:28px;letter-spacing:.04em}.card{background:var(--panel);border:1px solid "
+        "var(--line);border-radius:18px;padding:18px;margin-bottom:16px}.card h2{margin:0 0 "
+        "12px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}"
+        "dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0}dt{color:"
+        "var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}dd{margin:0}"
+        "label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;"
+        "letter-spacing:.08em;margin:11px 0 5px}input{width:100%%;border:1px solid #315348;"
+        "background:#0a1411;color:var(--text);border-radius:10px;padding:10px 11px;font:inherit}"
+        "button{margin-top:14px;border:0;border-radius:999px;background:var(--accent);color:"
+        "#09110d;font-weight:800;padding:12px 20px}.tools{display:flex;gap:10px;flex-wrap:wrap;"
+        "margin-bottom:18px}.ghost{border:1px solid var(--line);border-radius:999px;padding:"
+        "11px 16px;color:var(--text);text-decoration:none;font-weight:700;font-size:12px;"
+        "text-transform:uppercase}.hint{font-size:12px;color:var(--muted)}#m{margin-top:12px;"
+        "font-weight:700;color:var(--accent);white-space:pre-wrap}</style></head><body><main "
+        "class=\"wrap\"><h1>Firmware</h1>",
+        kHttpOkHeader);
+    ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Firmware);
+    ok = ok && append(cursor, remaining,
+                      "<section class=\"card\"><h2>Running</h2><dl><dt>Slot</dt><dd>%s</dd>"
+                      "<dt>State</dt><dd>%s</dd><dt>Upload</dt><dd>%s</dd><dt>Spare slot</dt>"
+                      "<dd>%lu KB</dd></dl></section>",
+                      slot_name(firmware.slot), state_text, upload_text,
+                      static_cast<unsigned long>(spare_bytes / 1024U));
+    ok = ok &&
+         append(cursor, remaining,
+                "<section class=\"card\"><h2>Upload</h2><label>Firmware image (.bin)</label>"
+                "<input id=\"f\" type=\"file\" accept=\".bin\"><label>Upload token</label>"
+                "<input id=\"t\" type=\"password\" autocomplete=\"off\"><button id=\"u\">"
+                "Upload and restart</button><div id=\"m\"></div><p class=\"hint\">Use "
+                "MerlinCCU.bin from the build folder, not the .uf2 or .elf. The CCU writes it "
+                "to the spare slot, restarts into it, and keeps it once Wi-Fi is up. If it "
+                "does not come up, the CCU goes back to the current firmware.</p></section>"
+                "<script>const m=document.getElementById('m');"
+                "function wait(){let n=0;const tick=async()=>{n++;try{const r=await fetch("
+                "'/ping',{cache:'no-store'});if(r.ok&&n>2){m.textContent+='\\nBack online. "
+                "Reload this page in a minute to check it confirmed.';return}}catch(e){}"
+                "if(n<60){setTimeout(tick,2000)}};setTimeout(tick,5000)}"
+                "document.getElementById('u').onclick=async()=>{const f=document."
+                "getElementById('f').files[0];if(!f){m.textContent='Choose the .bin file "
+                "first.';return}m.textContent='Uploading '+Math.round(f.size/1024)+' KB...';"
+                "try{const r=await fetch('/api/ota',{method:'POST',headers:{'X-OTA-Token':"
+                "document.getElementById('t').value,'Content-Type':'application/octet-stream'}"
+                ",body:f});m.textContent=await r.text();if(r.ok){wait()}}catch(e){"
+                "m.textContent='Upload failed: '+e}};</script></main></body></html>");
+    return ok;
 }
 
 /// @brief Builds the professional single-page configuration UI.
@@ -2928,6 +3070,12 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         send_response(session, pcb, g_response);
         return;
     }
+    else if (matches_get_path(request, "/firmware"))
+    {
+        (void)build_firmware_page();
+        send_response(session, pcb, g_response);
+        return;
+    }
     else if (matches_get_path(request, "/api/framebuffer.pbm"))
     {
         const size_t response_len = build_framebuffer_pbm_response();
@@ -3016,6 +3164,125 @@ bool request_is_complete(const char* request, size_t request_len)
     return request_len >= header_bytes + content_length;
 }
 
+/// @brief True for a `POST /api/ota` request line.
+bool is_ota_request(const char* request)
+{
+    return matches_post_path(request, "/api/ota");
+}
+
+/// @brief Sends a plain-text reply on an upload session.
+void send_upload_reply(WebSession* session, tcp_pcb* pcb, bool ok, std::string_view text)
+{
+    std::snprintf(g_response, sizeof(g_response), "%s%.*s\n",
+                  ok ? kHttpTextHeader : kHttpBadRequestHeader, static_cast<int>(text.size()),
+                  text.data());
+    send_response(session, pcb, g_response);
+}
+
+/// @brief Checks an upload's headers and switches the session to streaming.
+/// @param truncated the request buffer overflowed before the headers were
+/// parsed, so some body bytes were lost.
+/// @details Body bytes that arrived with the headers move to the start of
+/// the request buffer, which from here on holds one flash sector at a time.
+void start_upload(WebSession* session, tcp_pcb* pcb, bool truncated)
+{
+    const char* body = std::strstr(session->request, "\r\n\r\n");
+    const auto header_bytes = static_cast<size_t>(body - session->request);
+    const ota_upload::UploadRequest request = ota_upload::parse_request(
+        std::string_view(session->request, header_bytes), ota_manager::upload_token(),
+        ota_manager::spare_slot_bytes() != 0U ? ota_manager::spare_slot_bytes() : UINT32_MAX);
+    if (request.error != ota_upload::RequestError::None)
+    {
+        std::printf("OTA: %.*s\n", static_cast<int>(ota_upload::error_text(request.error).size()),
+                    ota_upload::error_text(request.error).data());
+        send_upload_reply(session, pcb, false, ota_upload::error_text(request.error));
+        return;
+    }
+
+    const size_t leftover = session->request_len - (header_bytes + 4U);
+    std::string_view error;
+    if (truncated || leftover > request.content_length)
+    {
+        send_upload_reply(session, pcb, false, "Firmware upload refused: malformed request.");
+        return;
+    }
+    if (!ota_manager::begin(request.content_length, error))
+    {
+        send_upload_reply(session, pcb, false, error);
+        return;
+    }
+
+    std::memmove(session->request, body + 4, leftover);
+    session->ota_upload = true;
+    session->ota_fill = leftover;
+    session->ota_remaining = request.content_length - static_cast<uint32_t>(leftover);
+    session->request_len = 0U;
+}
+
+/// @brief Moves held upload bytes into the sector buffer and writes at most
+/// one sector to flash.
+/// @details Called from update() with the lwIP lock held. One sector per main
+/// loop pass keeps interrupts-off time to a single erase and program (tens of
+/// milliseconds), the same as a settings save. Bytes are acknowledged only
+/// as they are copied out, so the sender never runs more than a TCP window
+/// ahead of the flash.
+void pump_upload(WebSession* session, tcp_pcb* pcb)
+{
+    while (session->ota_held != nullptr && session->ota_remaining > 0U &&
+           session->ota_fill < sizeof(session->request))
+    {
+        const size_t room = sizeof(session->request) - session->ota_fill;
+        const size_t count = std::min({static_cast<size_t>(session->ota_held->tot_len), room,
+                                       static_cast<size_t>(session->ota_remaining)});
+        pbuf_copy_partial(session->ota_held, session->request + session->ota_fill,
+                          static_cast<u16_t>(count), 0U);
+        session->ota_held = pbuf_free_header(session->ota_held, static_cast<u16_t>(count));
+        tcp_recved(pcb, static_cast<u16_t>(count));
+        session->ota_fill += count;
+        session->ota_remaining -= static_cast<uint32_t>(count);
+        session->last_activity = get_absolute_time();
+    }
+
+    const bool sector_full = session->ota_fill == sizeof(session->request);
+    const bool last_sector = session->ota_remaining == 0U && session->ota_fill > 0U;
+    if (!sector_full && !last_sector)
+    {
+        return;
+    }
+
+    std::string_view error;
+    if (!ota_manager::write_sector(reinterpret_cast<uint8_t*>(session->request),
+                                   session->ota_fill, error))
+    {
+        session->ota_upload = false;
+        send_upload_reply(session, pcb, false, error);
+        return;
+    }
+    session->ota_fill = 0U;
+    session->last_activity = get_absolute_time();
+
+    if (session->ota_remaining == 0U)
+    {
+        // Anything past Content-Length is not part of the image.
+        if (session->ota_held != nullptr)
+        {
+            pbuf_free(session->ota_held);
+            session->ota_held = nullptr;
+        }
+        session->ota_upload = false;
+        if (ota_manager::finish(error))
+        {
+            send_upload_reply(session, pcb, true,
+                              "Firmware written. Restarting into it now; it confirms itself "
+                              "once Wi-Fi is up, or the CCU goes back to the old firmware.");
+        }
+        else
+        {
+            send_upload_reply(session, pcb, false, error);
+        }
+    }
+}
+
 err_t on_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
 {
     auto* session = static_cast<WebSession*>(arg);
@@ -3044,13 +3311,38 @@ err_t on_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
             // A browser refresh or dropped Wi-Fi packet can close the request
             // before headers are complete. Release the singleton session so
             // the next page load is not rejected as permanently busy.
-            g_session = {};
+            reset_session();
         }
         return aborted ? ERR_ABRT : ERR_OK;
     }
 
     session->last_activity = get_absolute_time();
 
+    if (session->ota_upload)
+    {
+        // Held, not acknowledged: update() writes it to flash and only then
+        // opens the TCP window again.
+        if (session->ota_held == nullptr)
+        {
+            session->ota_held = p;
+        }
+        else
+        {
+            pbuf_cat(session->ota_held, p);
+        }
+        return ERR_OK;
+    }
+
+    if (session->response_len > 0U)
+    {
+        // A reply is already on its way (for example an upload refused while
+        // its body was still arriving): the rest of the request is dropped.
+        tcp_recved(pcb, p->tot_len);
+        pbuf_free(p);
+        return ERR_OK;
+    }
+
+    const size_t p_len = p->tot_len;
     const size_t copy_len = (session->request_len + p->tot_len < sizeof(session->request) - 1)
                                 ? p->tot_len
                                 : (sizeof(session->request) - 1 - session->request_len);
@@ -3063,6 +3355,12 @@ err_t on_recv(void* arg, tcp_pcb* pcb, pbuf* p, err_t err)
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
 
+    if (is_ota_request(session->request) && std::strstr(session->request, "\r\n\r\n") != nullptr)
+    {
+        start_upload(session, pcb, copy_len < p_len);
+        return ERR_OK;
+    }
+
     if (request_is_complete(session->request, session->request_len))
     {
         handle_request(session, pcb, session->request);
@@ -3074,7 +3372,7 @@ void on_error(void* arg, err_t err)
 {
     (void)arg;
     (void)err;
-    g_session = {};
+    reset_session();
 }
 
 /// @brief Aborts a session that has made no recv/send progress for too long.
@@ -3107,7 +3405,7 @@ err_t on_poll(void* arg, tcp_pcb* pcb)
     tcp_abort(pcb);
     if (g_session.pcb == pcb)
     {
-        g_session = {};
+        reset_session();
     }
     return ERR_ABRT;
 }
@@ -3154,7 +3452,7 @@ err_t on_accept(void* arg, tcp_pcb* new_pcb, err_t err)
         abort_active_session();
     }
 
-    g_session = {};
+    reset_session();
     g_session.pcb = new_pcb;
     g_session.last_activity = get_absolute_time();
     tcp_arg(new_pcb, &g_session);
@@ -3217,7 +3515,7 @@ void stop_server()
         tcp_recv(g_session.pcb, nullptr);
         tcp_err(g_session.pcb, nullptr);
         (void)tcp_close(g_session.pcb);
-        g_session = {};
+        reset_session();
     }
     if (g_listener != nullptr)
     {
@@ -3234,7 +3532,7 @@ void stop_server()
 void init()
 {
     g_listener = nullptr;
-    g_session = {};
+    reset_session();
     g_response[0] = '\0';
 }
 
@@ -3250,6 +3548,10 @@ bool update(const WifiStatus& wifi_status)
     // race a background callback (e.g. close_session resetting g_session) on
     // this very check.
     cyw43_arch_lwip_begin();
+    if (g_session.pcb != nullptr && g_session.ota_upload)
+    {
+        pump_upload(&g_session, g_session.pcb);
+    }
     if (g_session.pcb != nullptr && g_session.response_len > 0 &&
         g_session.response_sent < g_session.response_len)
     {

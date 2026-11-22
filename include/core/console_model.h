@@ -820,6 +820,23 @@ struct StackStatus
     bool overflow_reset;
 };
 
+/// @brief Which firmware slot is running and how the last update went (#154).
+/// @details Set by ota_manager from the boot ROM's boot info at start-up and
+/// again when a trial image confirms itself. Drives the
+/// FirmwareUpdateRolledBack alert.
+struct FirmwareStatus
+{
+    bool valid;
+    /// The flash holds an A/B partition table; without one, OTA is off.
+    bool partitioned;
+    /// Running slot: 0 is A, 1 is B; -1 when not booted from a partition.
+    int8_t slot;
+    /// Running on trial after an update, not yet confirmed.
+    bool trial;
+    /// The previous boot tried an uploaded image and fell back to this one.
+    bool rolled_back;
+};
+
 /// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`
 /// and `display::last_rebuild_us()`.
 /// @details Exists to measure actual hardware timing before committing to any
@@ -936,6 +953,7 @@ struct ConsoleState
     MainLoopLoadStatus main_loop_load_status;
     HeapStatus heap_status;
     StackStatus stack_status;
+    FirmwareStatus firmware_status;
     ImageFootprintStatus image_footprint_status;
     DisplayTimingStatus display_timing_status;
     environment_sensor_manager::EnvironmentSensorStatus environment_sensor_status;

@@ -257,6 +257,7 @@ void make_default_console_state(ConsoleState& out)
     out.main_loop_load_status = {};
     out.heap_status = {};
     out.stack_status = {};
+    out.firmware_status = {};
     out.display_timing_status = {};
 
     // The keypad debug surface is always present, so its snapshot fields start

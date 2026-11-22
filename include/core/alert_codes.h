@@ -27,6 +27,7 @@ enum class AlertCode : uint8_t
     StackLow,
     ShareDataUnavailable,
     PinterScheduleConflict,
+    FirmwareUpdateRolledBack,
     Count,
 };
 

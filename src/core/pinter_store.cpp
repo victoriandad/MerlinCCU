@@ -40,9 +40,12 @@ const PinterFlashSlot* flash_slot(uint32_t offset)
 {
     // XIP flash is memory mapped on the RP2040/RP2350, so this hardware
     // address cast is intentional and cannot be expressed as an ordinary
-    // object pointer.
+    // object pointer. The untranslated alias reads the physical offset: when
+    // the firmware runs from an A/B slot (#154), the boot ROM maps only that
+    // slot at XIP_BASE.
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<const PinterFlashSlot*>(XIP_BASE + offset);
+    return reinterpret_cast<const PinterFlashSlot*>(XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE +
+                                                    offset);
 }
 
 PinterFlashCandidate read_candidate(uint32_t offset)

@@ -479,6 +479,21 @@ HOST_TEST(stack_low_raises_after_an_overflow_reset_even_with_free_stack)
     EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "stack overflowed") != nullptr);
 }
 
+HOST_TEST(firmware_rollback_raises_update_failed)
+{
+    ConsoleState state = make_healthy_state();
+    state.firmware_status = {
+        .valid = true, .partitioned = true, .slot = 0, .trial = false, .rolled_back = false};
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::FirmwareUpdateRolledBack));
+
+    state.firmware_status.rolled_back = true;
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::FirmwareUpdateRolledBack));
+    EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "previous firmware") !=
+                nullptr);
+}
+
 HOST_TEST(stack_low_ignores_a_status_not_yet_sampled)
 {
     ConsoleState state = make_healthy_state();

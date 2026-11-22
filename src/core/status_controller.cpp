@@ -335,6 +335,20 @@ bool set_stack_status(ConsoleState& console_state, const StackStatus& status)
     return true;
 }
 
+bool set_firmware_status(ConsoleState& console_state, const FirmwareStatus& status)
+{
+    const FirmwareStatus& current = console_state.firmware_status;
+    if (current.valid == status.valid && current.partitioned == status.partitioned &&
+        current.slot == status.slot && current.trial == status.trial &&
+        current.rolled_back == status.rolled_back)
+    {
+        return false;
+    }
+
+    console_state.firmware_status = status;
+    return true;
+}
+
 bool set_display_timing_status(ConsoleState& console_state, const DisplayTimingStatus& status)
 {
     if (console_state.display_timing_status.valid == status.valid &&
