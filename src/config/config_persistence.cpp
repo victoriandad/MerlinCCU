@@ -117,7 +117,13 @@ std::array<WatchedShareConfig, kMaxWatchedShares> default_watched_shares()
     return shares;
 }
 
-RuntimeConfig migrate_legacy_settings_v5(const LegacyRuntimeConfigV5& legacy)
+namespace
+{
+
+/// @brief Copies the fields layouts v5 and v6 share with the current one.
+/// @details v5 still holds the ADS-B fields and v6 lacks the web PIN; both
+/// are simply not copied, so the PIN starts unset.
+template <typename Legacy> RuntimeConfig migrate_shared_fields(const Legacy& legacy)
 {
     RuntimeConfig migrated = {};
     migrated.device_name = legacy.device_name;
@@ -152,6 +158,47 @@ RuntimeConfig migrate_legacy_settings_v5(const LegacyRuntimeConfigV5& legacy)
     migrated.shares_feed_enabled = legacy.shares_feed_enabled;
     migrated.shares_feed_token = legacy.shares_feed_token;
     return migrated;
+}
+
+} // namespace
+
+void record_change(config_manager::ChangeRecord& record, const TimeStatus& time,
+                   config_manager::ChangeSource source, const char* detail)
+{
+    const char* when = time.synced ? time.time_text.data() : "--:--";
+    const char* where = source == config_manager::ChangeSource::Web ? "web" : "panel";
+    if (detail != nullptr && detail[0] != '\0')
+    {
+        std::snprintf(record.text.data(), record.text.size(), "%s %s %s", when, where, detail);
+    }
+    else
+    {
+        std::snprintf(record.text.data(), record.text.size(), "%s %s", when, where);
+    }
+    record.valid = true;
+}
+
+bool validate_legacy_slot_v6(const LegacyConfigSlotV6& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV6 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV6))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV6));
+    return slot.crc32 == expected;
+}
+
+RuntimeConfig migrate_legacy_settings_v6(const LegacyRuntimeConfigV6& legacy)
+{
+    return migrate_shared_fields(legacy);
+}
+
+RuntimeConfig migrate_legacy_settings_v5(const LegacyRuntimeConfigV5& legacy)
+{
+    return migrate_shared_fields(legacy);
 }
 
 RuntimeConfig migrate_legacy_settings_v4(const LegacyRuntimeConfigV4& legacy)

@@ -25,7 +25,7 @@ Working now:
 - CPU-built scanout raster with frame-boundary buffer swaps.
 - Menu/state controller for Home, Calendar, Weather, Status, Settings, diagnostics, alerts, and shares.
 - Runtime configuration persisted in flash with CRC/version handling.
-- Local web configuration page, gated by a "Remote Access" on/off toggle rather than a login.
+- Local web configuration page, with an optional PIN login (docs/web-access.md); secrets are never echoed back.
 - Browser display preview at `/preview`, including framebuffer mirror, lamp preview, and virtual key input.
 - Wi-Fi station mode with DHCP/static-IP support, NetBIOS hostname, NTP/SNTP, and simple internet reachability probing.
 - Home Assistant REST client for status/entity/weather flows.

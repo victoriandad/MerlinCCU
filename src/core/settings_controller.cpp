@@ -652,6 +652,18 @@ bool toggle_remote_config_enabled()
         });
 }
 
+bool clear_web_pin()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.web_pin_set = false;
+            settings.web_pin_salt.fill(0U);
+            settings.web_pin_hash.fill(0U);
+            return true;
+        });
+}
+
 bool toggle_home_assistant_enabled()
 {
     return persist_runtime_config_change(
@@ -908,10 +920,20 @@ void build_settings_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
                                    MenuPage::ScreenSaverSettings));
 }
 
-void build_device_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
+void build_device_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
 {
-    // Set in the web config; shown here for reference.
     const RuntimeConfig& config = config_manager::settings();
+    if (console_state.web_pin_clear_confirming)
+    {
+        // Decision state: only decline (L5) and confirm (R5) (NAV-3).
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CANCEL", SoftKeyRoute::CancelClearWebPin));
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action("CLEAR PIN", SoftKeyRoute::ConfirmClearWebPin));
+        return;
+    }
+
+    // Set in the web config; shown here for reference.
     softkey::set(softkeys, SoftKeyId::Left1,
                  softkey::status(SoftKeyId::Left1, "NAME", config.device_name.data()));
     softkey::set(softkeys, SoftKeyId::Left2,
@@ -920,6 +942,19 @@ void build_device_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys
                  softkey::status(SoftKeyId::Left3, "LOCATION", config.location.data()));
     softkey::set(softkeys, SoftKeyId::Left4,
                  softkey::status(SoftKeyId::Left4, "ROOM", config.room.data()));
+    // The way back in when the web PIN is forgotten (#158): only someone at
+    // the unit can press it, and the web keypad needs the PIN itself.
+    if (config.web_pin_set)
+    {
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action(SoftKeyId::Left5, "WEB PIN", "Set",
+                                     SoftKeyRoute::RequestClearWebPin));
+    }
+    else
+    {
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::status(SoftKeyId::Left5, "WEB PIN", "Off"));
+    }
 }
 
 void build_wifi_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)

@@ -66,6 +66,7 @@ enum class SensorId : uint8_t
     TrackedEntity,
     FirmwareVersion,
     FirmwareUpdate,
+    SettingsChange,
     Count,
 };
 
@@ -111,6 +112,8 @@ constexpr SensorDescriptor kSensorDescriptors[] = {
     {"Firmware", "firmware_version", "mdi:chip", true, nullptr},
     {"Firmware update", "firmware_update", "mdi:update", false,
      "[\"confirmed\",\"on_trial\",\"rolled_back\",\"not_partitioned\"]"},
+    // Last settings save since start-up and where it came from (#158).
+    {"Last settings change", "settings_change", "mdi:cog-transfer", true, nullptr},
 };
 
 static_assert((sizeof(kSensorDescriptors) / sizeof(kSensorDescriptors[0])) ==
@@ -645,6 +648,11 @@ void update_sensor_values(const WifiStatus& wifi_status,
     copy_cstr(g_current_sensor_values[sensor_index(SensorId::FirmwareUpdate)].data(),
               g_current_sensor_values[sensor_index(SensorId::FirmwareUpdate)].size(),
               ota_manager::state_name());
+
+    const config_manager::ChangeRecord change = config_manager::last_change();
+    copy_cstr(g_current_sensor_values[sensor_index(SensorId::SettingsChange)].data(),
+              g_current_sensor_values[sensor_index(SensorId::SettingsChange)].size(),
+              change.valid ? change.text.data() : "none since start-up");
 
     // Time is not published yet, but keeping the parameter in the updater makes
     // the future sensor expansion path obvious.

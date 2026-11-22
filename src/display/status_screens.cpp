@@ -304,6 +304,8 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
         std::snprintf(firmware_text, sizeof(firmware_text), "%s", firmware.version.data());
     }
 
+    const config_manager::ChangeRecord last_change = config_manager::last_change();
+
     const screens::DetailRow rows[] = {
         {"UNIT", unit_text},
         {"FIRMWARE", firmware_text},
@@ -318,6 +320,8 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
          environment_sensor_health_text(console_state.environment_sensor_status.health)},
         {"ALERTS", alert_count_text},
         {"TEST", test_state_text(console_state.test_state)},
+        // Last settings save since start-up and where it came from (#158).
+        {"SETTINGS", last_change.valid ? last_change.text.data() : "-"},
     };
 
     screens::draw_compact_detail_rows(fb, rows, sizeof(rows) / sizeof(rows[0]), kStatusRowsTopY,

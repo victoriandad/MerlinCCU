@@ -344,6 +344,10 @@ void update_softkeys_from_state()
     {
         g_console_state.pinter_reset_confirming = false;
     }
+    if (g_console_state.active_page != MenuPage::DeviceSettings)
+    {
+        g_console_state.web_pin_clear_confirming = false;
+    }
 
     SoftKeyMap softkeys = {};
     softkeys.fill(softkey::blank());
@@ -506,6 +510,20 @@ bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
         return true;
     case SoftKeyRoute::CancelPinterReset:
         g_console_state.pinter_reset_confirming = false;
+        return true;
+    case SoftKeyRoute::RequestClearWebPin:
+        if (!config_manager::settings().web_pin_set)
+        {
+            return false;
+        }
+        g_console_state.web_pin_clear_confirming = true;
+        return true;
+    case SoftKeyRoute::ConfirmClearWebPin:
+        g_console_state.web_pin_clear_confirming = false;
+        (void)settings_controller::clear_web_pin();
+        return true;
+    case SoftKeyRoute::CancelClearWebPin:
+        g_console_state.web_pin_clear_confirming = false;
         return true;
     case SoftKeyRoute::DecreaseSelectedPinterDay:
         return pinter_controller::nudge_selected_day(g_console_state, -1);
@@ -1049,11 +1067,22 @@ bool handle_button_event(const ButtonEvent& event)
 
     if (event.id == ButtonId::BackStep)
     {
-        // BACK STEP declines a pending reset rather than leaving the page.
-        const bool kRouteChanged = g_console_state.pinter_reset_confirming
-                                       ? apply_softkey_route(SoftKeyRoute::CancelPinterReset, 0U)
-                                       : navigate_up_one_level();
-        if (!kRouteChanged)
+        // BACK STEP declines a pending reset or PIN clear rather than
+        // leaving the page.
+        bool route_changed = false;
+        if (g_console_state.pinter_reset_confirming)
+        {
+            route_changed = apply_softkey_route(SoftKeyRoute::CancelPinterReset, 0U);
+        }
+        else if (g_console_state.web_pin_clear_confirming)
+        {
+            route_changed = apply_softkey_route(SoftKeyRoute::CancelClearWebPin, 0U);
+        }
+        else
+        {
+            route_changed = navigate_up_one_level();
+        }
+        if (!route_changed)
         {
             return false;
         }
