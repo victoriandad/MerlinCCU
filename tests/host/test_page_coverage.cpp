@@ -105,6 +105,14 @@ void start_with_data()
     std::snprintf(wifi.ip_address.data(), wifi.ip_address.size(), "192.168.1.40");
     (void)console_controller::set_wifi_status(wifi);
 
+    // A partitioned unit running from slot A, as after an OTA update (#154).
+    FirmwareStatus firmware = {};
+    firmware.valid = true;
+    firmware.partitioned = true;
+    firmware.slot = 0;
+    std::snprintf(firmware.version.data(), firmware.version.size(), "2bf47da");
+    (void)console_controller::set_firmware_status(firmware);
+
     ShareMarketStatus shares = {};
     shares.configured = true;
     shares.data_valid = true;

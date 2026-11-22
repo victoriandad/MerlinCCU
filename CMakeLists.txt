@@ -115,6 +115,18 @@ add_executable(MerlinCCU
 pico_set_program_name(MerlinCCU "MerlinCCU")
 pico_set_program_version(MerlinCCU "0.1")
 
+# Stamp the image with its git commit on every build (#154): shown on the
+# Status page and the Firmware web page, and reported to Home Assistant.
+set(MERLIN_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/merlin_generated)
+add_custom_target(merlin_firmware_version ALL
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_LIST_DIR}
+            -DOUTPUT=${MERLIN_GENERATED_DIR}/firmware_version.h
+            -P ${CMAKE_CURRENT_LIST_DIR}/tools/firmware_version.cmake
+    BYPRODUCTS ${MERLIN_GENERATED_DIR}/firmware_version.h
+    COMMENT "Stamping firmware version")
+add_dependencies(MerlinCCU merlin_firmware_version)
+target_include_directories(MerlinCCU PRIVATE ${MERLIN_GENERATED_DIR})
+
 # Generate PIO header
 pico_generate_pio_header(MerlinCCU ${CMAKE_CURRENT_LIST_DIR}/firmware/el320_raster.pio)
 

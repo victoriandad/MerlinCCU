@@ -482,8 +482,12 @@ HOST_TEST(stack_low_raises_after_an_overflow_reset_even_with_free_stack)
 HOST_TEST(firmware_rollback_raises_update_failed)
 {
     ConsoleState state = make_healthy_state();
-    state.firmware_status = {
-        .valid = true, .partitioned = true, .slot = 0, .trial = false, .rolled_back = false};
+    state.firmware_status = {.valid = true,
+                             .partitioned = true,
+                             .slot = 0,
+                             .trial = false,
+                             .rolled_back = false,
+                             .version = {}};
     alert_controller::sync(state);
     EXPECT_FALSE(has_alert(state, AlertCode::FirmwareUpdateRolledBack));
 

@@ -340,7 +340,7 @@ bool set_firmware_status(ConsoleState& console_state, const FirmwareStatus& stat
     const FirmwareStatus& current = console_state.firmware_status;
     if (current.valid == status.valid && current.partitioned == status.partitioned &&
         current.slot == status.slot && current.trial == status.trial &&
-        current.rolled_back == status.rolled_back)
+        current.rolled_back == status.rolled_back && current.version == status.version)
     {
         return false;
     }
