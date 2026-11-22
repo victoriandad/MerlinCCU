@@ -345,6 +345,18 @@ RuntimeConfig make_default_settings()
     return settings;
 }
 
+void apply_unit_defaults(RuntimeConfig& settings, uint32_t unit_suffix)
+{
+    const unsigned long suffix = static_cast<unsigned long>(unit_suffix & kUnitSuffixMask);
+    std::snprintf(settings.device_name.data(), settings.device_name.size(), "merlin-%06lx",
+                  suffix);
+    std::snprintf(settings.device_label.data(), settings.device_label.size(),
+                  "Merlin CCU %06lX", suffix);
+    std::snprintf(settings.home_assistant_self_entity_id.data(),
+                  settings.home_assistant_self_entity_id.size(), "sensor.merlin_%06lx_status",
+                  suffix);
+}
+
 /// @brief Drops blank-symbol rows and clamps the count to what remains.
 /// @details The web config form can post a sparse list (a row cleared out of
 /// the middle); compacting here keeps share_price_manager's consumer-side

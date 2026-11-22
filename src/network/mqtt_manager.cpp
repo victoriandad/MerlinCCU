@@ -381,7 +381,22 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
 
     std::snprintf(g_device_id, sizeof(g_device_id), "merlinccu_%s", mac_hex);
     std::snprintf(g_client_id, sizeof(g_client_id), "merlinccu-%s", mac_hex);
-    if (config.device_name[0] != '\0')
+    // HA shows the display label (e.g. "Ground floor") so several units are
+    // told apart by name; identity stays on the MAC above, so renaming a unit
+    // never orphans its entities (#149).
+    if (config.device_label[0] != '\0')
+    {
+        std::snprintf(g_device_name, sizeof(g_device_name), "%s", config.device_label.data());
+        // The label is free text but goes into the discovery JSON unescaped.
+        for (char& c : g_device_name)
+        {
+            if (c == '"' || c == '\\')
+            {
+                c = '\'';
+            }
+        }
+    }
+    else if (config.device_name[0] != '\0')
     {
         std::snprintf(g_device_name, sizeof(g_device_name), "%s", config.device_name.data());
     }
