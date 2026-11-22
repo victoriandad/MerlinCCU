@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -18,6 +19,7 @@
 #include "calendar_controller.h"
 #include "config_manager.h"
 #include "console_controller.h"
+#include "console_controller_internal.h"
 #include "console_model.h"
 #include "cursor_navigation.h"
 #include "environment_sensor_manager.h"
@@ -236,35 +238,7 @@ Framebuffer render(const ConsoleState& state)
     return fb;
 }
 
-/// @brief Removes the characters a label's layout does not draw as text:
-/// line breaks, value brackets (drawn as graphics) and spaces (where lines
-/// wrap).
-std::string drawn_characters(const std::string& text)
-{
-    std::string out;
-    for (const char c : text)
-    {
-        if (c != '\n' && c != '[' && c != ']' && c != ' ')
-        {
-            out.push_back(c);
-        }
-    }
-    return out;
-}
-
-/// @brief True when `label` lays out in `style` within `max_lines` lines
-/// without dropping any of its text (LBL-1, LBL-6).
-bool softkey_label_fits(const char* label, TextStyle style, int max_lines)
-{
-    const screens::SoftkeyLabelLayout layout =
-        screens::layout_softkey_label(label, style, max_lines);
-    std::string drawn;
-    for (int i = 0; i < layout.count; ++i)
-    {
-        drawn += layout.lines[static_cast<size_t>(i)].text;
-    }
-    return drawn_characters(drawn) == drawn_characters(label);
-}
+using screens::softkey_label_fits;
 
 /// @brief Names the labelled softkeys whose cell contains body pixels (SCR-5).
 /// @details The cell of a labelled key is its half of the screen, from the
@@ -427,6 +401,21 @@ HOST_TEST(the_role_check_catches_an_inverse_toggle_and_an_inert_labelled_key)
     EXPECT_EQ(role_problems(softkeys).size(), 1U);
 }
 
+HOST_TEST(a_caption_and_value_label_shortens_a_long_value_to_fit)
+{
+    // LBL-6 (#115): the label builder, not the renderer, makes a long value fit.
+    const char* label = console_controller::console_controller_internal::
+        build_selection_softkey_label(SoftKeyId::Left1, "LABEL", "Merlin CCU (Pimoroni) bench unit");
+    EXPECT_TRUE(softkey_label_fits(label, TextStyle::Softkey, 2));
+    EXPECT_TRUE(std::strstr(label, "..]") != nullptr);
+    EXPECT_TRUE(std::strncmp(label, "LABEL\n[Merlin CCU", 17) == 0);
+
+    // A value that fits is left alone.
+    label = console_controller::console_controller_internal::build_selection_softkey_label(
+        SoftKeyId::Left1, "LABEL", "Ground floor");
+    EXPECT_TRUE(std::strcmp(label, "LABEL\n[Ground floor]") == 0);
+}
+
 HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
 {
     EXPECT_TRUE(softkey_label_fits("HOME\n[Ready]", TextStyle::Softkey, 2));
@@ -434,8 +423,8 @@ HOST_TEST(the_fit_and_overlap_checks_catch_a_long_label_and_an_overlapping_body)
     EXPECT_TRUE(softkey_label_fits("PINTER\n[4 conditioning]",
                                    screens::softkey_label_style(MenuPage::Home),
                                    screens::softkey_label_max_lines(MenuPage::Home)));
-    // The widest location the Weather Source page can show (#87).
-    EXPECT_TRUE(softkey_label_fits("LOCATION\n[S33 51.60' W151 12.60']",
+    // The widest location the Weather Source page can show (#87, #115).
+    EXPECT_TRUE(softkey_label_fits("LOCATION\n[S33 51.6' W151 12.6']",
                                    screens::softkey_label_style(MenuPage::WeatherSources),
                                    screens::softkey_label_max_lines(MenuPage::WeatherSources)));
     EXPECT_FALSE(softkey_label_fits("A VERY LONG CAPTION THAT WRAPS\n[and a long value too]",
@@ -536,6 +525,91 @@ std::vector<std::string> navigation_problems(const std::vector<ButtonId>& path)
 
 } // namespace
 
+/// @details TXT-3: a page's line allowance must suit its font. A label block
+/// of that many lines must end a line gap above the next row's block, so a
+/// larger font, or more lines, that would run two keys together fails here.
+HOST_TEST(every_page_label_block_fits_between_softkey_rows)
+{
+    for (int value = 0; value < static_cast<int>(kMenuPageCount); ++value)
+    {
+        const page_table::PageDescriptor& page = page_table::describe(static_cast<MenuPage>(value));
+        const int lines = page.label_max_lines;
+        const int block = (lines * text_styles::line_height(page.label_style)) +
+                          ((lines - 1) * ui_layout::kSoftkeyLineGap);
+        if (block > ui_layout::kSoftkeyRowPitch - ui_layout::kSoftkeyLineGap)
+        {
+            host_tests::record_failure(__FILE__, __LINE__,
+                                       std::string(page.title) + ": " + std::to_string(lines) +
+                                           " lines need " + std::to_string(block) + " px");
+        }
+    }
+}
+
+/// @details The exploration above runs on short test settings. This sets the
+/// values a real unit has (taken from the bench unit, plus the longest a
+/// field may hold where that is realistic) and checks every settings label
+/// still fits (#115).
+HOST_TEST(settings_labels_fit_with_real_world_values)
+{
+    const RuntimeConfig saved_config = config_manager::settings();
+    RuntimeConfig config = saved_config;
+    auto set = [](auto& field, const char* text)
+    { std::snprintf(field.data(), field.size(), "%s", text); };
+    set(config.device_name, "merlin-ground");
+    set(config.device_label, "Merlin CCU (Pimoroni)");
+    set(config.location, "Ground Floor");
+    set(config.room, "Dining Room");
+    set(config.wifi_ssid, "PLUSNET-6RF6MF");
+    config.home_assistant_enabled = true;
+    set(config.home_assistant_host, "homeassistant.local");
+    set(config.home_assistant_entity_id, "switch.sean_s_desk_top_room");
+    set(config.home_assistant_self_entity_id, "sensor.merlin_ground_status");
+    set(config.weather_entity_id, "weather.forecast_home");
+    set(config.sun_entity_id, "sun.sun");
+    config.mqtt_enabled = true;
+    set(config.mqtt_host, "homeassistant.local");
+    set(config.mqtt_username, "merlinccu-ground");
+    set(config.mqtt_discovery_prefix, "homeassistant");
+    set(config.mqtt_base_topic, "merlinccu");
+    set(config.weather_coordinates, "-33.86,151.21");
+    (void)config_manager::save(config);
+
+    const MenuPage kPages[] = {
+        MenuPage::Settings,     MenuPage::DeviceSettings,      MenuPage::WifiSettings,
+        MenuPage::HomeAssistantSettings, MenuPage::MqttSettings, MenuPage::WeatherSources,
+        MenuPage::ScreenSaverSettings,   MenuPage::TimeZoneSettings,
+    };
+    for (const WeatherSource source : {WeatherSource::HomeAssistant, WeatherSource::OpenMeteo})
+    {
+        for (const MenuPage page : kPages)
+        {
+            const page_table::PageDescriptor& descriptor = page_table::describe(page);
+            for (uint8_t settings_page = 0U; settings_page < kSettingsPageCount; ++settings_page)
+            {
+                ConsoleState state = console_controller::state();
+                state.active_page = page;
+                state.weather_source = source;
+                state.settings_page_index = settings_page;
+                SoftKeyMap softkeys = {};
+                descriptor.build_softkeys(state, softkeys);
+                for (size_t key = 0U; key < softkeys.size(); ++key)
+                {
+                    const char* label = softkeys[key].label;
+                    if (label != nullptr && label[0] != '\0' &&
+                        !softkey_label_fits(label, descriptor.label_style,
+                                            descriptor.label_max_lines))
+                    {
+                        host_tests::record_failure(__FILE__, __LINE__,
+                                                   std::string(descriptor.title) +
+                                                       " loses text: " + label);
+                    }
+                }
+            }
+        }
+    }
+    (void)config_manager::save(saved_config);
+}
+
 /// @details Fit and overlap problems that already exist are listed here with
 /// the issue that fixes them, rather than hidden by loosening the checks. The
 /// test fails on any problem not listed, and on a listed one that has gone,
@@ -543,17 +617,8 @@ std::vector<std::string> navigation_problems(const std::vector<ButtonId>& path)
 HOST_TEST(
     every_page_renders_with_its_real_softkeys_and_no_label_loses_text_meets_the_body_or_breaks_its_role)
 {
-    const std::set<std::string> kKnownProblems = {
-        // Recipe names too long for two 5x7 lines lose their last word, such
-        // as "Adnams Ghost Ship Remixed". Label audit: #115.
-        "page_pinter_select_brew fit L1",
-        "page_pinter_select_brew fit L4",
-        "page_pinter_select_brew fit R2",
-        "page_pinter_select_brew fit R3",
-        "page_pinter_select_brew fit R4",
-        // "Atlantic Standard Time" loses "Time" on the TIME ZONE key. #115.
-        "page_settings_2 fit L3",
-    };
+    // None at present: the #115 label audit cleared the last ones.
+    const std::set<std::string> kKnownProblems = {};
 
     // Pages no key reaches on the host yet, with the reason. Each still has
     // a golden image of its own elsewhere.

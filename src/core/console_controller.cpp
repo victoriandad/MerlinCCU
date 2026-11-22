@@ -12,6 +12,7 @@
 #include "debug_logging.h"
 #include "page_table.h"
 #include "pinter_controller.h"
+#include "screens_shared.h"
 #include "settings_controller.h"
 #include "softkey_builders.h"
 #include "status_controller.h"
@@ -86,10 +87,34 @@ const char* build_selection_softkey_label(SoftKeyId key, const char* title, cons
 {
     auto& buffer = g_dynamic_softkey_labels[softkey_index(key)];
     const char* value = (selection != nullptr && selection[0] != '\0') ? selection : "-";
-    constexpr size_t kSoftkeyTitleBufferSize = 24U;
+    // Long enough for a recipe name used as an item caption (#115).
+    constexpr size_t kSoftkeyTitleBufferSize = 48U;
     char title_upper[kSoftkeyTitleBufferSize] = {};
     text_case::copy_uppercase(title, title_upper, sizeof(title_upper));
     std::snprintf(buffer.data(), buffer.size(), "%s\n[%s]", title_upper, value);
+
+    // LBL-6: a value too long for its one line is cut short here and ends in
+    // "..", so the key shows that it was shortened rather than the renderer
+    // silently dropping the end. Measured at the default softkey font, the
+    // widest a caption-and-value key can use (#115). The caption keeps the
+    // lines it needs (an item key's may wrap); the value gets one more.
+    constexpr text_styles::TextStyle kFitStyle = text_styles::TextStyle::Softkey;
+    const int value_lines =
+        screens::layout_softkey_label(title_upper, kFitStyle, screens::kMaxSoftkeyLabelLines)
+            .count +
+        1;
+    constexpr const char* kShortenedMark = "..";
+    int keep = static_cast<int>(std::strlen(value));
+    while (keep > 1 && !screens::softkey_label_fits(buffer.data(), kFitStyle, value_lines))
+    {
+        --keep;
+        while (keep > 1 && value[keep - 1] == ' ')
+        {
+            --keep;
+        }
+        std::snprintf(buffer.data(), buffer.size(), "%s\n[%.*s%s]", title_upper, keep, value,
+                      kShortenedMark);
+    }
     return buffer.data();
 }
 

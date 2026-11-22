@@ -27,7 +27,7 @@ std::string degrees_minutes(double latitude, double longitude, const char* mark)
 {
     char out[48] = {};
     EXPECT_TRUE(
-        geo_coordinates::format_degrees_minutes({latitude, longitude}, mark, out, sizeof(out)));
+        geo_coordinates::format_degrees_minutes({latitude, longitude}, mark, 2, out, sizeof(out)));
     return out;
 }
 
@@ -97,6 +97,18 @@ HOST_TEST(geo_formats_round_trip_through_parse)
     EXPECT_TRUE(parses_to(text, kLat, kLon));
 
     EXPECT_TRUE(
-        geo_coordinates::format_degrees_minutes({kLat, kLon}, "\xC2\xB0", text, sizeof(text)));
+        geo_coordinates::format_degrees_minutes({kLat, kLon}, "\xC2\xB0", 2, text, sizeof(text)));
     EXPECT_TRUE(parses_to(text, kLat, kLon));
+}
+
+HOST_TEST(geo_degrees_minutes_shows_one_decimal_for_the_panel)
+{
+    // The panel uses one decimal of a minute so the value fits one 8x12
+    // softkey line (#115); rounding still carries into the next degree.
+    char out[48] = {};
+    EXPECT_TRUE(geo_coordinates::format_degrees_minutes({kLat, kLon}, " ", 1, out, sizeof(out)));
+    EXPECT_TRUE(std::string(out) == "N50 13.8' W002 23.4'");
+    EXPECT_TRUE(geo_coordinates::format_degrees_minutes({50.0 + (59.97 / 60.0), 0.5}, " ", 1, out,
+                                                        sizeof(out)));
+    EXPECT_TRUE(std::string(out) == "N51 00.0' E000 30.0'");
 }

@@ -229,6 +229,20 @@ Fonts are chosen by what the text is for, not page by page.
 - **TXT-3** Everything that depends on a font (line spacing, bracket size,
   wrapping width, lines per label, row pitch) must be derived from that
   font's measurements, so any category can take any available font.
+- **TXT-3a** Softkey labels use 8x12 on every page unless the page opts in
+  to the dense 5x7 face in its page table entry (`page_table.cpp`), with its
+  reason recorded here. The test
+  `every_page_label_block_fits_between_softkey_rows` fails if a page's line
+  allowance would run its labels into the next row at its font. Opted in:
+
+  | Page | Reason |
+  | --- | --- |
+  | Pinter | Vessel keys use five lines (LBL-1); five 8x12 lines are taller than the 57-pixel key pitch. |
+
+  A caption-and-value label whose value is too long for one line is shortened
+  by the label builder and ends in `..` (LBL-6), measured at 8x12. Entity ids
+  are shown without their domain (`forecast_home`), since the caption names
+  the kind of entity.
 - **TXT-4** Row labels, captions, headings, and empty-state messages must be
   uppercase. Live values must be mixed case.
 - **TXT-5** Table column headers may be mixed case.

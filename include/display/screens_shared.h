@@ -112,6 +112,10 @@ struct SoftkeyLabelLayout
 /// `style`; a `[value]` part wraps inside one bracket pair.
 SoftkeyLabelLayout layout_softkey_label(const char* label, TextStyle style, int max_lines);
 
+/// @brief True when `label` lays out in `style` within `max_lines` lines
+/// without dropping any of its text (LBL-1, LBL-6).
+bool softkey_label_fits(const char* label, TextStyle style, int max_lines);
+
 /// @brief Wraps one label into at most `max_lines` renderable lines.
 /// @details Softkeys are deliberately capped (two lines for most pages, three
 /// where a page opts in) so long labels degrade gracefully without taking

@@ -1,5 +1,6 @@
 #include "geo_coordinates.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -15,6 +16,8 @@ namespace
 constexpr double kMaxLatitude = 90.0;
 constexpr double kMaxLongitude = 180.0;
 constexpr double kMinutesPerDegree = 60.0;
+/// Finer than 0.001' is under 2 m: more digits add nothing.
+constexpr int kMaxMinuteDecimals = 3;
 constexpr double kSecondsPerDegree = 3600.0;
 
 /// @brief Most tokens a position can need: two values of three parts and
@@ -303,16 +306,23 @@ bool format_decimal(const GeoPoint& point, char* out, size_t out_size)
     return written > 0 && static_cast<size_t>(written) < out_size;
 }
 
-bool format_degrees_minutes(const GeoPoint& point, const char* degree_mark, char* out,
-                            size_t out_size)
+bool format_degrees_minutes(const GeoPoint& point, const char* degree_mark, int minute_decimals,
+                            char* out, size_t out_size)
 {
-    // Rounded to hundredths of a minute first, so 59.996' carries into the
-    // next degree instead of printing as 60.00'.
-    const auto split = [](double value, long& degrees, double& minutes)
+    const int decimals = std::clamp(minute_decimals, 0, kMaxMinuteDecimals);
+    long scale = 1L;
+    for (int i = 0; i < decimals; ++i)
     {
-        const long hundredths = std::lround(std::fabs(value) * kMinutesPerDegree * 100.0);
-        degrees = hundredths / 6000L;
-        minutes = static_cast<double>(hundredths % 6000L) / 100.0;
+        scale *= 10L;
+    }
+    // Rounded to the shown precision first, so 59.996' carries into the next
+    // degree instead of printing as 60.00'.
+    const long per_degree = static_cast<long>(kMinutesPerDegree) * scale;
+    const auto split = [scale, per_degree](double value, long& degrees, double& minutes)
+    {
+        const long units = std::lround(std::fabs(value) * kMinutesPerDegree * scale);
+        degrees = units / per_degree;
+        minutes = static_cast<double>(units % per_degree) / static_cast<double>(scale);
     };
     long lat_degrees = 0L;
     long lon_degrees = 0L;
@@ -320,10 +330,13 @@ bool format_degrees_minutes(const GeoPoint& point, const char* degree_mark, char
     double lon_minutes = 0.0;
     split(point.latitude, lat_degrees, lat_minutes);
     split(point.longitude, lon_degrees, lon_minutes);
+    // Minutes are zero-padded to two whole digits: width is digits + point + decimals.
+    const int width = (decimals > 0) ? 3 + decimals : 2;
     const int written = std::snprintf(
-        out, out_size, "%c%02ld%s%05.2f' %c%03ld%s%05.2f'", point.latitude < 0.0 ? 'S' : 'N',
-        lat_degrees, degree_mark, lat_minutes, point.longitude < 0.0 ? 'W' : 'E', lon_degrees,
-        degree_mark, lon_minutes);
+        out, out_size, "%c%02ld%s%0*.*f' %c%03ld%s%0*.*f'", point.latitude < 0.0 ? 'S' : 'N',
+        lat_degrees, degree_mark, width, decimals, lat_minutes,
+        point.longitude < 0.0 ? 'W' : 'E', lon_degrees, degree_mark, width, decimals,
+        lon_minutes);
     return written > 0 && static_cast<size_t>(written) < out_size;
 }
 

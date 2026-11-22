@@ -61,15 +61,15 @@ constexpr std::array<SharePeriodDefinition, 5> kSharePeriods = {{
 }};
 
 constexpr std::array<TimeZoneDefinition, kTimeZoneSelectionCount> kTimeZones = {{
-    {TimeZoneSelection::AtlanticStandard, "Atlantic Standard Time", "ATLANTIC"},
-    {TimeZoneSelection::ArgentinaStandard, "Argentina Time", "ARGENTINA"},
-    {TimeZoneSelection::SouthGeorgia, "South Georgia Time", "SOUTH GEORGIA"},
-    {TimeZoneSelection::Azores, "Azores Time", "AZORES"},
-    {TimeZoneSelection::EuropeLondon, "Europe/London", "LONDON"},
-    {TimeZoneSelection::CentralEuropean, "Central European Time", "CENTRAL EUROPEAN"},
-    {TimeZoneSelection::EasternEuropean, "Eastern European Time", "EASTERN EUROPEAN"},
-    {TimeZoneSelection::ArabiaStandard, "Arabia Standard Time", "ARABIA"},
-    {TimeZoneSelection::GulfStandard, "Gulf Standard Time", "GULF"},
+    {TimeZoneSelection::AtlanticStandard, "Atlantic", "ATLANTIC"},
+    {TimeZoneSelection::ArgentinaStandard, "Argentina", "ARGENTINA"},
+    {TimeZoneSelection::SouthGeorgia, "South Georgia", "SOUTH GEORGIA"},
+    {TimeZoneSelection::Azores, "Azores", "AZORES"},
+    {TimeZoneSelection::EuropeLondon, "London", "LONDON"},
+    {TimeZoneSelection::CentralEuropean, "Central Europe", "CENTRAL EUROPEAN"},
+    {TimeZoneSelection::EasternEuropean, "Eastern Europe", "EASTERN EUROPEAN"},
+    {TimeZoneSelection::ArabiaStandard, "Arabia", "ARABIA"},
+    {TimeZoneSelection::GulfStandard, "Gulf", "GULF"},
 }};
 
 constexpr std::array<ScreenSaverDefinition, 8> kScreenSavers = {{
@@ -801,15 +801,28 @@ bool confirm_timeout_edit(ConsoleState& console_state)
 const char* location_selection_text()
 {
     // Degrees and decimal minutes, as on the web page (#87); the panel fonts
-    // are ASCII only, so a space stands in for the degree sign.
+    // are ASCII only, so a space stands in for the degree sign. One decimal
+    // of a minute keeps the value on one 8x12 line (#115).
+    constexpr int kPanelMinuteDecimals = 1;
     static std::array<char, 32> text = {};
     text[0] = '\0';
     if (const std::optional<geo_coordinates::GeoPoint> point =
             geo_coordinates::parse(config_manager::settings().weather_coordinates.data()))
     {
-        (void)geo_coordinates::format_degrees_minutes(*point, " ", text.data(), text.size());
+        (void)geo_coordinates::format_degrees_minutes(*point, " ", kPanelMinuteDecimals,
+                                                      text.data(), text.size());
     }
     return text.data();
+}
+
+const char* entity_selection_text(const char* entity_id)
+{
+    if (entity_id == nullptr)
+    {
+        return "";
+    }
+    const char* dot = std::strchr(entity_id, '.');
+    return (dot != nullptr && dot[1] != '\0') ? dot + 1 : entity_id;
 }
 
 void enter_settings(ConsoleState& console_state)
@@ -935,10 +948,10 @@ void build_home_assistant_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& 
                                  secret_selection_text(config.home_assistant_token[0] != '\0')));
     softkey::set(softkeys, SoftKeyId::Left5,
                  softkey::status(SoftKeyId::Left5, "TRACKED",
-                                 config.home_assistant_entity_id.data()));
+                                 entity_selection_text(config.home_assistant_entity_id.data())));
     softkey::set(softkeys, SoftKeyId::Right1,
                  softkey::status(SoftKeyId::Right1, "SELF",
-                                 config.home_assistant_self_entity_id.data()));
+                                 entity_selection_text(config.home_assistant_self_entity_id.data())));
 }
 
 void build_mqtt_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
@@ -1027,10 +1040,10 @@ void build_weather_sources_softkeys(ConsoleState& console_state, SoftKeyMap& sof
     const bool home_assistant = console_state.weather_source == WeatherSource::HomeAssistant;
     softkey::set(softkeys, SoftKeyId::Right1,
                  softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "LOCATION",
-                                 home_assistant ? config.weather_entity_id.data()
+                                 home_assistant ? entity_selection_text(config.weather_entity_id.data())
                                                 : location_selection_text()));
     softkey::set(softkeys, SoftKeyId::Right2,
-                 softkey::status(SoftKeyId::Right2, "SUN", config.sun_entity_id.data()));
+                 softkey::status(SoftKeyId::Right2, "SUN", entity_selection_text(config.sun_entity_id.data())));
 }
 
 void build_time_zone_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
