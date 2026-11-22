@@ -642,8 +642,10 @@ void build_config_page(const char* message)
         "Display label</label><input name=\"device_label\" "
         "maxlength=\"31\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
         "name=\"location\" maxlength=\"31\" value=\"%s\"></div><div><label>Room</label><input "
-        "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Use names like "
-        "CCU1, CCU2, GroundFloorCCU, KitchenCCU.</p></section>",
+        "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Give each CCU "
+        "its own device name, such as merlin-ground: it is the unit's network name "
+        "(http://merlin-ground/). The display label names the unit on its Status page and in "
+        "Home Assistant.</p></section>",
         device_name, device_label, location, room);
 
     (void)append(
@@ -677,7 +679,8 @@ void build_config_page(const char* message)
         "name=\"ha_token\" type=\"password\" placeholder=\"Leave blank to keep current\">"
         "<label>Tracked entity</label><input name=\"ha_entity\" maxlength=\"63\" "
         "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"63\" "
-        "value=\"%s\"><p class=\"hint\">A bare host such as ha.lan uses the Port above. A URL "
+        "value=\"%s\" placeholder=\"sensor.merlin_ground_status\"><p class=\"hint\">Each CCU needs "
+        "its own self entity. A bare host such as ha.lan uses the Port above. A URL "
         "brings its own port: http:// means 80 and https:// means 443, unless it ends in "
         ":port.</p></fieldset></section>",
         cfg.home_assistant_enabled ? "checked" : "", cfg.home_assistant_enabled ? "" : "disabled",

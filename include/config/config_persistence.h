@@ -389,6 +389,17 @@ std::array<WatchedShareConfig, kMaxWatchedShares> default_watched_shares();
 /// @brief Builds the factory/default configuration used when flash is empty.
 RuntimeConfig make_default_settings();
 
+/// @brief Mask for the part of the board's unique id used in default names.
+inline constexpr uint32_t kUnitSuffixMask = 0xFFFFFFU;
+
+/// @brief Gives a factory-fresh unit names no other unit shares (#149).
+/// @details Several CCUs share one LAN and one Home Assistant. Without this,
+/// every fresh unit would answer to the same host name and post to the same
+/// HA self entity. `unit_suffix` comes from the board's unique id; its low 24
+/// bits make the names, e.g. `merlin-3a4b5c`, `Merlin CCU 3A4B5C` and
+/// `sensor.merlin_3a4b5c_status`. Saved configurations are never changed.
+void apply_unit_defaults(RuntimeConfig& settings, uint32_t unit_suffix);
+
 /// @brief Returns whether HA should be auto-enabled from configured credentials.
 /// @details A previous web-form truncation bug could clear only the HA enable
 /// checkbox while leaving host, token, and entity fields intact in flash. This

@@ -53,8 +53,9 @@ returns `{"message":"API running."}`.
 - **Tracked entity**: the entity the CCU shows on its Status page, such as a
   smart plug (`switch.sean_s_desk_top_room`). Its device must be added to HA
   first; copy the entity ID from *Settings > Devices & services > Entities*.
-- **Self entity**: the default `sensor.merlinccu_status` is fine. The CCU
-  creates it with its first update, so HA reports it as missing until then.
+- **Self entity**: one per CCU, such as `sensor.merlin_ground_status`. A
+  factory-fresh CCU fills in its own, e.g. `sensor.merlin_3a4b5c_status`. The
+  CCU creates it with its first update, so HA reports it as missing until then.
 - **Weather entity** (only for weather source Home Assistant): any `weather.*`
   entity that supports hourly and daily forecasts. The Met.no integration,
   added by default during HA onboarding, provides `weather.forecast_home`.
@@ -86,9 +87,25 @@ sensors, set up by MQTT discovery.
    - Discovery prefix: `homeassistant`. Base topic: `merlinccu`. These are
      the defaults.
 
-Check: a **MerlinCCU** device appears under the MQTT integration with sensors
+Check: a device named after the CCU's display label appears under the MQTT
+integration with sensors
 for Status, Wi-Fi state, IP address, Home Assistant, Home Assistant HTTP and
 Tracked entity.
+
+## Several CCUs
+
+Units can share one network, one HA and one Mosquitto broker. Give each one:
+
+- its own **Device name** (e.g. `merlin-ground`, `merlin-first`). It is the
+  unit's network name, so `http://merlin-ground/` reaches it;
+- a **Display label** (e.g. `Ground floor`), shown on its Status page and as
+  its device name in HA;
+- its own **Self entity** and MQTT login.
+
+A factory-fresh unit names itself from its board id (`merlin-3a4b5c`), so two
+new units never clash. MQTT topics, client id and HA unique ids come from the
+unit's Wi-Fi MAC address, so they are unique already and survive renaming:
+HA keeps each unit's entities and history when its name or label changes.
 
 ## 5. Share price feed
 

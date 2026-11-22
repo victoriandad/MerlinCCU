@@ -281,7 +281,13 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
     std::snprintf(alert_count_text, sizeof(alert_count_text), "%u",
                   static_cast<unsigned>(console_state.alert_count));
 
+    // Which unit this is, when several share a network (#149).
+    const RuntimeConfig& config = config_manager::settings();
+    const char* unit_text =
+        config.device_label[0] != '\0' ? config.device_label.data() : config.device_name.data();
+
     const screens::DetailRow rows[] = {
+        {"UNIT", unit_text},
         {"TIME",
          console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
         {"WIFI", wifi_state_text(console_state.wifi_status.state)},

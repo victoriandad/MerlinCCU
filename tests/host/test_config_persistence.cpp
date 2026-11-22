@@ -353,6 +353,26 @@ HOST_TEST(make_default_settings_disables_the_shares_feed_by_default)
     EXPECT_EQ(settings.shares_feed_token[0], '\0');
 }
 
+HOST_TEST(apply_unit_defaults_gives_each_board_its_own_names)
+{
+    // #149: two factory-fresh units must not share a host name or HA entity.
+    RuntimeConfig first = config_persistence::make_default_settings();
+    RuntimeConfig second = first;
+    config_persistence::apply_unit_defaults(first, 0x12A3B4C5U); // only the low 24 bits count
+    config_persistence::apply_unit_defaults(second, 0x00000001U);
+
+    EXPECT_TRUE(std::strcmp(first.device_name.data(), "merlin-a3b4c5") == 0);
+    EXPECT_TRUE(std::strcmp(first.device_label.data(), "Merlin CCU A3B4C5") == 0);
+    EXPECT_TRUE(std::strcmp(first.home_assistant_self_entity_id.data(),
+                            "sensor.merlin_a3b4c5_status") == 0);
+    EXPECT_TRUE(std::strcmp(second.device_name.data(), "merlin-000001") == 0);
+    EXPECT_TRUE(std::strcmp(first.device_name.data(), second.device_name.data()) != 0);
+
+    // The defaults survive sanitising, and pass the web form's own rules.
+    config_persistence::sanitize_settings_in_place(first);
+    EXPECT_TRUE(std::strcmp(first.device_name.data(), "merlin-a3b4c5") == 0);
+}
+
 HOST_TEST(sanitize_settings_drops_blank_symbol_rows_and_compacts_the_count)
 {
     RuntimeConfig settings = config_persistence::make_default_settings();

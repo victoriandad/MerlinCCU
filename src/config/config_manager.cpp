@@ -7,6 +7,7 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 
 namespace config_manager
 {
@@ -174,6 +175,18 @@ bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequenc
     return valid;
 }
 
+/// @brief Returns the low three bytes of the board's unique id.
+/// @details Read from the flash chip's id, so it is known before Wi-Fi starts
+/// and differs on every board (#149).
+uint32_t board_unit_suffix()
+{
+    pico_unique_board_id_t id = {};
+    pico_get_unique_board_id(&id);
+    constexpr size_t kLast = PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1U;
+    return (static_cast<uint32_t>(id.id[kLast - 2U]) << 16U) |
+           (static_cast<uint32_t>(id.id[kLast - 1U]) << 8U) | id.id[kLast];
+}
+
 /// @brief Replaces the settings with factory defaults and writes them to flash.
 /// @details Kept out of line so its RuntimeConfig temporary and the one in
 /// read_candidate() are never on the stack together (#164). Safe to write
@@ -183,6 +196,7 @@ bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequenc
 {
     std::printf("Config flash empty or invalid; writing defaults\n");
     g_settings = config_persistence::make_default_settings();
+    config_persistence::apply_unit_defaults(g_settings, board_unit_suffix());
     g_sequence = 0;
     (void)save(g_settings);
     (void)flush_pending_save();
