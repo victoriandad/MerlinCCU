@@ -49,6 +49,9 @@ bool set_heap_status(ConsoleState& console_state, const HeapStatus& status);
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.
 bool set_stack_status(ConsoleState& console_state, const StackStatus& status);
 
+/// @brief Updates the running firmware slot and update outcome (#154).
+bool set_firmware_status(ConsoleState& console_state, const FirmwareStatus& status);
+
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(ConsoleState& console_state, const DisplayTimingStatus& status);
 

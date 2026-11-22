@@ -848,6 +848,18 @@ bool set_stack_status(const StackStatus& status)
     return true;
 }
 
+/// @brief Updates the running firmware slot and update outcome (#154).
+bool set_firmware_status(const FirmwareStatus& status)
+{
+    if (!status_controller::set_firmware_status(g_console_state, status))
+    {
+        return false;
+    }
+
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Updates panel scanout timing telemetry shown by Resources status.
 bool set_display_timing_status(const DisplayTimingStatus& status)
 {

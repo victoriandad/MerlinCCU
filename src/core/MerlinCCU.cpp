@@ -22,6 +22,7 @@
 #include "home_assistant_manager.h"
 #include "input.h"
 #include "mqtt_manager.h"
+#include "ota_manager.h"
 #include "page_table.h"
 #include "panel_config.h"
 #include "pinter_store.h"
@@ -234,6 +235,9 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 int main()
 {
     stack_guard::init();
+    // Before anything slow: on a trial boot after an update this starts the
+    // watchdog that sends a hung start-up back to the previous image (#154).
+    ota_manager::boot_check();
     // Before USB and Wi-Fi start: init() briefly takes the QMI off flash with
     // interrupts disabled.
     const psram::Info psram_info = psram::init();
@@ -244,6 +248,8 @@ int main()
     // on the debug console before the display path is running.
     stdio_init_all();
     sleep_ms(kBootConsoleDelayMs);
+    ota_manager::feed_boot_watchdog();
+    ota_manager::log_boot_state();
 
     std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d hblank=(%d,%d)\n", kPanel.clkdiv,
                 kPanel.native_row_offset, kPanel.h_pre_blank, kPanel.h_post_blank);
@@ -253,7 +259,7 @@ int main()
                     static_cast<unsigned long>(stack_guard::last_fault_status()),
                     stack_guard::last_reset_was_stack_overflow() ? ": stack overflow" : "");
     }
-    else if (watchdog_enable_caused_reboot())
+    else if (watchdog_enable_caused_reboot() && !ota_manager::booted_after_update())
     {
         std::printf("Last reboot was caused by a watchdog timeout (main loop hang)\n");
     }
@@ -333,6 +339,8 @@ int main()
     console_controller::set_mqtt_status(mqtt_manager::status());
     console_controller::set_share_market_status(share_price_manager::status());
     console_controller::set_environment_sensor_status(environment_sensor_manager::status());
+    console_controller::set_firmware_status(ota_manager::status());
+    ota_manager::feed_boot_watchdog();
 
     // Render one complete back buffer before scanout starts so the panel never
     // shows an uninitialized frame during bring-up.
@@ -505,6 +513,16 @@ int main()
         update_start = get_absolute_time();
         console_changed = web_config_server::update(wifi_manager::status()) || console_changed;
         log_if_slow("web_config_server::update", update_start);
+
+        // Confirms a trial image once the network is up, falls back if it
+        // never is, and restarts into a freshly uploaded image (#154).
+        const WifiStatus& ota_wifi = wifi_manager::status();
+        if (ota_manager::update(ota_wifi.state == WifiConnectionState::Connected &&
+                                ota_wifi.ip_address[0] != '\0'))
+        {
+            console_changed = console_controller::set_firmware_status(ota_manager::status()) ||
+                              console_changed;
+        }
 
         update_start = get_absolute_time();
         console_changed =

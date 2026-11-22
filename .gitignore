@@ -14,6 +14,7 @@ build*/
 /config/keypad_matrix_config.h
 /config/environment_sensor_config.h
 /config/calendar_identities.h
+/config/ota_credentials.h
 
 # Python tooling cache
 __pycache__/

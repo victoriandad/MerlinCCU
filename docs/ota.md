@@ -1,22 +1,17 @@
 # Over-the-Air Updates
 
 How the CCU updates its firmware over Wi-Fi without anyone opening the case
-(#154). This page covers the flash layout and the update flow. It describes the
-design that the OTA work is building towards. The "Status" section lists the
-parts that exist so far.
+(#154): the flash layout, the update flow, and how to use it.
 
 ## Status
 
 | Step | What | State |
 | --- | --- | --- |
-| 1 | Flash layout and partition table (`tools/ota_partition_table.json`) | Done (this page) |
-| 2 | Web upload into the spare slot, SHA-256 check, reboot into it | To do |
-| 3 | Try-before-you-buy confirm and rollback | To do |
+| 1 | Flash layout and partition table (`tools/ota_partition_table.json`) | Done |
+| 2 | Upload into the spare slot over Wi-Fi, restart into it | Done |
+| 3 | Try-before-you-buy confirm, rollback, `UPDATE FAILED` alert | Done |
 | 4 | Firmware version on the Status page; MQTT `update` entity for HA | To do |
-| 5 | Laptop script that updates every unit | To do |
-
-Until step 2 lands, units are flashed over USB as before, and the partition
-table is not loaded.
+| 5 | Laptop script that updates every unit | To do (`curl` works today) |
 
 ## Why A/B Slots
 
@@ -25,7 +20,7 @@ linked partitions (A and B) and roll back if a new image fails. Using the ROM
 means:
 
 - no second-stage bootloader of our own to write, debug and keep working;
-- a power cut at any point during an update leaves the old image in place;
+- a power cut at any point during an upload leaves the old image in place;
 - a new image that hangs or crashes before it confirms itself is abandoned
   on the next reboot.
 
@@ -48,60 +43,99 @@ The layout fits a standard Pico 2 W (4 MB). The Pimoroni Pico Plus 2 W
 
 Notes:
 
-- **Slot size.** The image is about 740 KB today (text plus the embedded
-  CYW43 Wi-Fi firmware), so a 1.5 MB slot leaves about half the slot for
-  growth. When a build passes the slot size, the next step is to move the
-  CYW43 firmware into its own A/B partitions (`pico_use_wifi_firmware_partition`,
-  about 256 KB each), not to shrink the data area.
+- **Slot size.** The image is about 810 KB (code plus the embedded CYW43
+  Wi-Fi firmware), so a 1.5 MB slot leaves room to grow. When a build
+  passes the slot size, the next step is to move the CYW43 firmware into its
+  own A/B partitions (`pico_use_wifi_firmware_partition`, about 256 KB
+  each), not to shrink the data area.
 - **Data stays where it is.** Settings and Pinter state are found from the
   top of flash (`PICO_FLASH_SIZE_BYTES`), so they keep the same addresses
   after the change, and an update never writes there. The unpartitioned
-  area is `absolute` family with read/write access, so the firmware can
-  still program it.
-- **Addresses.** The boot ROM maps whichever slot it boots to the normal
-  XIP address (`0x10000000`), so the same build runs from A or B. Flash
-  writes (`flash_range_program`) use physical offsets, which do not move.
-- **Partition table sector.** The table sits in the first 4 KB sector,
-  where the boot ROM looks for it. Slot A starts at 8 KB to leave the second
-  sector spare. `picotool partition create` accepts the table and places
-  its block at the start of flash with slots at `0x2000` and `0x182000`;
-  step 2 checks it on a board with `picotool partition info` before any
-  unit relies on it.
+  area is `absolute` family with read/write access.
+- **Reading data.** The boot ROM maps only the running slot at `XIP_BASE`
+  (`0x10000000`), so the same build runs from A or B. Anything else in
+  flash is read through the untranslated alias
+  `XIP_NOCACHE_NOALLOC_NOTRANSLATE_BASE` at its physical offset; the
+  settings and Pinter stores do this. Flash writes (`flash_range_program`)
+  already use physical offsets.
+- **Board flash size.** A build for the wrong board reads its settings from
+  the wrong place: a Pico 2 W build on the Pimoroni looks at the 4 MB
+  mark, not the top of its 16 MB, and starts with defaults. Upload the
+  build made for the board (`build-plus2` for the Pimoroni).
 
-## Update Flow (Steps 2 to 4)
+## How an Update Works
 
-1. The web config page uploads a `.bin` image with its SHA-256. The upload
-   needs a shared token until web access control (#158) lands, because
-   anyone who can upload can replace the firmware.
-2. The CCU picks the slot it is not running from (`rom_get_b_partition` /
-   partition table info), erases it, and writes the image as it arrives.
-   Settings saves are blocked while this runs.
-3. It hashes what it wrote and compares it with the uploaded SHA-256. On a
-   mismatch it stops, and the running image is untouched.
-4. It reboots with `rom_reboot(BOOT_TYPE_FLASH_UPDATE, …)` pointing at the
-   new slot.
-5. The new image is built as try-before-you-buy (TBYB). The boot ROM starts
-   it with a watchdog running. The main loop feeds the watchdog as it does
-   now. Once Wi-Fi is up and the web server answers, the firmware calls
-   `rom_explicit_buy()`, and the new slot becomes the default.
-6. If the new image crashes, hangs, loses power, or has not confirmed within
-   a fixed deadline, the unit reboots and the boot ROM goes back to the old
-   slot. An alert reports the failed update.
+1. **Upload.** `POST /api/ota` with the `.bin` file as the body and the
+   token in an `X-OTA-Token` header. The Firmware page
+   (`http://<unit>/firmware`) sends exactly that; so does `curl`. The token
+   comes from `config/ota_credentials.h` (copy the `.example.h`); with no
+   token built in, every upload is refused. It stands in until web access
+   control (#158) lands, because anyone who can upload can replace the
+   firmware.
+2. **Checks before anything is erased** (`ota_upload.cpp`, host-tested):
+   the token, a `Content-Length` that fits the spare slot, and a running
+   image that is already confirmed. The first sector must hold an RP2350
+   metadata block, which turns away a `.uf2`, an `.elf` or the wrong file.
+3. **Writing.** `ota_manager` writes the slot the unit is not running from,
+   one 4 KB sector per main-loop pass, with interrupts off for each erase
+   and program (as a settings save does), then reads the sector back. The
+   web server holds received data unacknowledged until it is written, so
+   TCP flow control slows the sender to the flash rate. About 810 KB takes
+   about 17 seconds. Any other request gets "busy" meanwhile. If the
+   connection drops part-way, the upload is abandoned and the running
+   image is untouched.
+4. **Restart.** After the reply goes out, the CCU restarts with a
+   flash-update reboot pointing at the new slot, so the boot ROM picks it.
+5. **Trial.** Every image is built try-before-you-buy (TBYB) and carries its
+   own SHA-256 (`pico_hash_binary`); the boot ROM refuses a damaged image
+   and stays on the old one. The new image runs on trial with a watchdog
+   armed from the first instruction of `main()`.
+6. **Confirm.** Once it has run 15 seconds and Wi-Fi has an address, it
+   calls `rom_explicit_buy()` and becomes the image that boots. It then
+   erases the first sector of the old image. Images carry no version
+   number, so with two valid images the boot ROM's choice on a later power
+   cycle would not be the confirmed one; with the old one gone, it is.
+7. **Roll back.** If it crashes, hangs, loses power, or has not confirmed
+   within 90 seconds, the next boot is an ordinary one. The boot ROM skips
+   the unconfirmed image and runs the old one. A record kept in a POWMAN
+   scratch register (it survives resets but not power cuts) lets that boot
+   raise the `UPDATE FAILED` alert.
+
+After confirmation there is no automatic way back: to undo an update,
+upload the previous build.
+
+### Uploading from the laptop
+
+```sh
+curl -H "X-OTA-Token: <token>" --data-binary @build-plus2/MerlinCCU.bin \
+  http://merlinccu/api/ota
+```
+
+The reply says whether it was written. Check the Firmware page a minute
+later: `State: Confirmed` and the other slot letter.
 
 ## Changing a Unit to the A/B Layout
 
-Each unit needs one last USB flash to change over:
+Each unit needs one last USB flash to change over. Settings and Pinter data
+are not touched.
 
-1. Load the partition table: `picotool partition create
-   tools/ota_partition_table.json pt.uf2`, then `picotool load pt.uf2`.
-2. Reboot to BOOTSEL and load the firmware UF2; the boot ROM places it in
-   slot A.
-3. Check the settings survived (Status Overview shows the unit's own name).
+1. Make the table: `picotool partition create tools/ota_partition_table.json
+   pt.uf2`.
+2. Load it: `picotool load -f pt.uf2`. The old firmware stops booting here.
+3. Load the firmware **as a UF2**: `picotool load -x
+   build-plus2/MerlinCCU.uf2`. The boot ROM picks the slot. Do not use
+   `load -x MerlinCCU.elf` from now on: an ELF is written at address 0 and
+   overwrites the partition table.
+4. Leave it powered for 15 seconds so the image confirms itself. With
+   nothing in the other slot it confirms without waiting for Wi-Fi.
+5. Check `http://<unit>/firmware` shows a slot letter and `Confirmed`.
 
-After that, every update goes over Wi-Fi.
+The serial log prints the boot ROM's view on every start:
+`OTA: boot slot=… boot_type=… trial=… rolled_back=…`.
 
 ## Related
 
 - #154: OTA updates
-- #158: web config access control (protects the upload)
+- #158: web config access control (replaces the token)
+- `docs/alerts.md`: the `FirmwareUpdateRolledBack` alert
 - `docs/architecture.md`: memory budgets and the decision log

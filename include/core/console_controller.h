@@ -76,6 +76,9 @@ bool set_heap_status(const HeapStatus& status);
 /// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.
 bool set_stack_status(const StackStatus& status);
 
+/// @brief Copies the running firmware slot and update outcome into the UI state.
+bool set_firmware_status(const FirmwareStatus& status);
+
 /// @brief Updates the panel scanout timing telemetry snapshot.
 bool set_display_timing_status(const DisplayTimingStatus& status);
 

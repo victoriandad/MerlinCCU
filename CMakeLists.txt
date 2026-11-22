@@ -53,6 +53,7 @@ add_executable(MerlinCCU
     src/core/console_model.cpp
     src/core/home_controller.cpp
     src/core/input.cpp
+    src/core/ota_manager.cpp
     src/core/page_table.cpp
     src/core/pinter_controller.cpp
     src/core/pinter_persistence.cpp
@@ -100,6 +101,7 @@ add_executable(MerlinCCU
     src/network/weather_forecast_parser.cpp
     src/network/weather_json_scan.cpp
     src/network/weather_normalisation.cpp
+    src/network/ota_upload.cpp
     src/network/web_config_server.cpp
     src/network/wifi_manager.cpp
     src/sensors/bme_environmental_sensor.cpp
@@ -189,5 +191,12 @@ pico_stdlib
     hardware_flash
     hardware_i2c
 )
+
+# Over-the-air updates (#154, docs/ota.md). Every image is built try-before-
+# you-buy: after a flash-update boot the boot ROM runs it on trial, and
+# ota_manager confirms it once the network is up. The embedded SHA-256 lets
+# the boot ROM refuse a damaged image and keep the old one.
+target_compile_definitions(MerlinCCU PRIVATE PICO_CRT0_IMAGE_TYPE_TBYB=1)
+pico_hash_binary(MerlinCCU)
 
 pico_add_extra_outputs(MerlinCCU)

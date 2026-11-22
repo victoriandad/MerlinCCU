@@ -644,6 +644,17 @@ void sync(ConsoleState& console_state)
     set_alert_condition(console_state, AlertCode::PinterScheduleConflict, false,
                         AlertSeverity::Message, "PINTER", "");
 
+    // Holds for the whole boot: the unit is back on its previous firmware
+    // until the next successful update. A power cut during the trial clears
+    // the record (it lives in a watchdog scratch register), so that case
+    // goes unreported.
+    const FirmwareStatus& firmware = console_state.firmware_status;
+    set_alert_condition(console_state, AlertCode::FirmwareUpdateRolledBack,
+                        firmware.valid && firmware.rolled_back, AlertSeverity::Warning,
+                        "UPDATE FAILED",
+                        "The new firmware did not confirm itself in time.\nThe CCU went back to "
+                        "its previous firmware.\nCheck the serial log, then upload again.");
+
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
         console_state.alert_detail_index =
