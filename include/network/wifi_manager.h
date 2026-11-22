@@ -1,9 +1,16 @@
 #pragma once
 
+#include <cstddef>
+
 #include "console_model.h"
 
 namespace wifi_manager
 {
+
+/// @brief Longest network name the CCU advertises. NetBIOS names hold 15
+/// characters, and lwIP's netbiosns_set_name() asserts (a panic and a reboot
+/// loop on the Pico) on anything longer, so device names are capped here.
+constexpr size_t kMaxHostNameLength = 15U;
 
 /// @brief Initializes the Pico W Wi-Fi stack and starts a station connection if configured.
 /// @details This also captures MAC/hostname information and prepares the

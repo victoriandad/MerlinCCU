@@ -22,6 +22,7 @@
 #include "pico/time.h"
 #include "psram.h"
 #include "text_utils.h"
+#include "wifi_manager.h"
 
 namespace web_config_server
 {
@@ -638,13 +639,13 @@ void build_config_page(const char* message)
         "<form method=\"post\" action=\"/config\"><input type=\"hidden\" "
         "name=\"config_form_marker\" value=\"1\"><div class=\"grid\"><section class=\"card\">"
         "<h2>Device Identity</h2><label>Device name</label><input name=\"device_name\" "
-        "maxlength=\"31\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
+        "maxlength=\"15\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
         "Display label</label><input name=\"device_label\" "
         "maxlength=\"31\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
         "name=\"location\" maxlength=\"31\" value=\"%s\"></div><div><label>Room</label><input "
         "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Give each CCU "
         "its own device name, such as merlin-ground: it is the unit's network name "
-        "(http://merlin-ground/). The display label names the unit on its Status page and in "
+        "(http://merlin-ground/), up to 15 characters. The display label names the unit on its Status page and in "
         "Home Assistant.</p></section>",
         device_name, device_label, location, room);
 
@@ -2372,7 +2373,7 @@ const char* handle_config_post(const char* body)
 
     if (get_form_value(body, "device_name", value, sizeof(value)))
     {
-        if (!validate_text_field("Device name", value, cfg.device_name.size() - 1, true,
+        if (!validate_text_field("Device name", value, wifi_manager::kMaxHostNameLength, true,
                                  is_valid_device_name, validation_error, sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
