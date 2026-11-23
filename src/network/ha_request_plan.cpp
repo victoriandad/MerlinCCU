@@ -15,12 +15,6 @@ bool wanted(RequestKind kind, const Plan& plan)
         return plan.home_assistant;
     case RequestKind::FetchTrackedEntity:
         return plan.home_assistant && plan.tracked_entity;
-    case RequestKind::FetchWeatherEntity:
-    case RequestKind::FetchWeatherForecast:
-    case RequestKind::FetchWeatherDailyForecast:
-        return plan.home_assistant && plan.home_assistant_weather;
-    case RequestKind::FetchSunEntity:
-        return plan.home_assistant && plan.home_assistant_weather && plan.sun_entity;
     case RequestKind::PublishSelfEntity:
         return plan.home_assistant && plan.self_entity;
     case RequestKind::FetchOpenMeteo:
@@ -33,10 +27,6 @@ bool wanted(RequestKind kind, const Plan& plan)
 constexpr RequestKind kOrder[] = {
     RequestKind::ProbeApi,
     RequestKind::FetchTrackedEntity,
-    RequestKind::FetchWeatherEntity,
-    RequestKind::FetchWeatherForecast,
-    RequestKind::FetchWeatherDailyForecast,
-    RequestKind::FetchSunEntity,
     RequestKind::PublishSelfEntity,
     RequestKind::FetchOpenMeteo,
 };

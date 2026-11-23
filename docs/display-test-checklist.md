@@ -50,7 +50,7 @@ quickly without relying only on photographs of the physical panel.
 - Sunrise and sunset are both present when provider data is available.
 - Source footer is visible and readable, and reads `LIVE` through a refresh
   rather than flicking to `STALE` while the fetch is in progress.
-- With each source not set up (no weather entity; no or bad coordinates), the
+- With each source not set up (MQTT off; no or bad coordinates), the
   page shows `WEATHER NOT SET UP` with a hint naming the web config page.
 - Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
   fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.

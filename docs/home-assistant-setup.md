@@ -14,13 +14,14 @@ The CCU settings named below are on the CCU's web config page
 | HA connection | Long-lived access token | Home Assistant: Host, Port, Access token |
 | Tracked entity on the Status page | Any entity, such as a smart plug `switch.*` | Home Assistant: Tracked entity |
 | CCU shown in HA over REST | Nothing; the CCU creates the entity itself | Home Assistant: Self entity |
-| Weather, when the source is Home Assistant | A `weather.*` entity, and `sun.sun` | Weather Source |
-| CCU sensors in HA over MQTT | Mosquitto broker and the MQTT integration | MQTT Discovery |
+| CCU sensors and controls in HA over MQTT | Mosquitto broker and the MQTT integration | MQTT Discovery |
+| Weather, when the source is Home Assistant | The MerlinCCU integration in `ha/`, publishing a `weather.*` entity over MQTT | Weather Source, MQTT Discovery |
 | Share prices | The MerlinCCU integration in `ha/` | Watched Shares, Share Price Feed |
 
 The HA connection, tracked entity and self entity work with either weather
-source. Only HA weather needs the CCU's **Weather source** set to **Home
-Assistant**.
+source. HA weather needs the CCU's **Weather source** set to **Home
+Assistant (MQTT)** and MQTT set up (step 4); it doesn't use the HA
+connection or token.
 
 ## 1. Find HA's address and port
 
@@ -56,10 +57,8 @@ returns `{"message":"API running."}`.
 - **Self entity**: one per CCU, such as `sensor.merlin_ground_status`. A
   factory-fresh CCU fills in its own, e.g. `sensor.merlin_3a4b5c_status`. The
   CCU creates it with its first update, so HA reports it as missing until then.
-- **Weather entity** (only for weather source Home Assistant): any `weather.*`
-  entity that supports hourly and daily forecasts. The Met.no integration,
-  added by default during HA onboarding, provides `weather.forecast_home`.
-- **Sun entity**: `sun.sun`, built into HA.
+- **Weather entity** (only for weather source Home Assistant): set in HA, not
+  on the CCU (step 6).
 
 ## 4. MQTT
 
@@ -208,6 +207,46 @@ How the feed behaves:
 To test the feed's data handling without HA, run
 `python -m unittest discover -s ha/tests` from the repository root.
 
+## 6. Weather over MQTT
+
+HA fetches the weather once and publishes it to every CCU over MQTT, so no
+CCU needs internet access for it (#153; payloads in
+[mqtt-household-data.md](mqtt-household-data.md)). Needs step 4.
+
+1. Copy `ha/custom_components/merlinccu` into HA as in step 5, if it isn't
+   there already.
+2. Add a `weather:` part to the `merlinccu:` block in
+   `/config/configuration.yaml` (see
+   [`ha/configuration.example.yaml`](../ha/configuration.example.yaml)):
+
+   ```yaml
+   merlinccu:
+     weather:
+       entity: weather.forecast_home
+   ```
+
+   Any `weather.*` entity with hourly and daily forecasts works. The Met.no
+   integration, added by default during HA onboarding, provides
+   `weather.forecast_home`. Sunrise and sunset come from `sun.sun`; set
+   `sun:` to use another sun entity, and `base_topic:` if the CCUs don't use
+   the default `merlinccu`. The `shares:` part is optional, so a weather-only
+   block is fine.
+3. Restart HA. HA's log shows
+   `MerlinCCU weather from weather.forecast_home published under merlinccu/house/weather`.
+4. On each CCU, set **Weather source** to **Home Assistant (MQTT)**.
+
+Check: in HA, *Settings > Devices & services > MQTT > Configure > Listen to a
+topic*, listen to `merlinccu/house/weather/#`. Three retained messages
+(`now`, `hourly`, `daily`) arrive at once, and again every 5 minutes. The
+CCU's Weather page shows the forecast, credited to the provider (e.g.
+MET Norway).
+
+- While the weather entity is unavailable (e.g. HA has no internet), HA
+  publishes nothing. The CCUs keep the last forecast, show its age, and mark
+  it stale after 20 minutes.
+- A CCU can still fetch Open-Meteo itself instead: set its **Weather
+  source** to **Open-Meteo** and give it a location.
+
 ## Fresh-install checklist
 
 - [ ] HA reachable at `http://<host>:<port>/`; host and port noted (step 1)
@@ -216,8 +255,8 @@ To test the feed's data handling without HA, run
       connected
 - [ ] Tracked entity's device added to HA and its entity ID entered on the CCU
       (step 3)
-- [ ] Weather source Home Assistant only: `weather.*` entity exists and is
-      entered on the CCU
+- [ ] Weather source Home Assistant only: `merlinccu:` `weather:` block added,
+      HA restarted, `merlinccu/house/weather/#` shows three messages (step 6)
 - [ ] Mosquitto add-on running and set to start on boot; MQTT integration
       added; CCU login made (step 4)
 - [ ] CCU MQTT settings saved; MerlinCCU device and sensors appear in HA
@@ -235,4 +274,7 @@ To test the feed's data handling without HA, run
 | Status page tracked entity blank or `?` | Entity ID wrong, or its device isn't in HA yet; HA answers 404 |
 | No MerlinCCU device in HA | MQTT login refused, or the MQTT integration isn't added; check the Mosquitto add-on log |
 | Shares stay on demo data | Feed disabled on the CCU, token mismatch (HA answers 401), or the symbol differs from the `merlinccu:` list |
+| Weather page says `Set up MQTT in web config` | Weather source is Home Assistant but MQTT is off on the CCU (step 4) |
+| Weather page stays on `WAITING FOR WEATHER` | Nothing on `merlinccu/house/weather/#`: the `weather:` block is missing, HA wasn't restarted, or the base topic differs from the CCU's |
+| Weather footer shows `STALE` | HA has stopped publishing: its weather entity is unavailable, or HA or MQTT is down |
 | Feed returns `data_state: error` | Yahoo doesn't know the symbol, or HA can't reach the internet; HA's log names the symbol |
