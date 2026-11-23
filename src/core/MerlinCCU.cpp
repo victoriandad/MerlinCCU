@@ -7,6 +7,7 @@
 
 #include "hardware/clocks.h"
 #include "hardware/pio.h"
+#include "hardware/structs/powman.h"
 #include "hardware/watchdog.h"
 #include "lwip/memp.h"
 #include "lwip/stats.h"
@@ -35,6 +36,7 @@
 #include "screensaver_starfield.h"
 #include "screensaver_worms.h"
 #include "psram.h"
+#include "reset_reason.h"
 #include "share_price_manager.h"
 #include "stack_guard.h"
 #include "time_manager.h"
@@ -225,6 +227,36 @@ const char* screen_saver_name(ScreenSaverSelection selection)
     return "ScreenSaver";
 }
 
+/// @brief Works out why the unit started (#155).
+/// @details Must run after stack_guard::init() and ota_manager::boot_check(),
+/// which read and clear their own records. POWMAN's chip-reset flags say
+/// what last reset the whole chip; the watchdog flags cover resets of the
+/// cores only, which leave the POWMAN flags as they were.
+ResetReason read_reset_reason()
+{
+    const uint32_t chip_reset = powman_hw->chip_reset;
+    const reset_reason::Signals signals = {
+        .cpu_fault = stack_guard::last_fault_status() != 0U,
+        .stack_overflow = stack_guard::last_reset_was_stack_overflow(),
+        .rolled_back = ota_manager::status().rolled_back,
+        .after_update = ota_manager::booted_after_update(),
+        .watchdog_timeout = watchdog_enable_caused_reboot(),
+        .watchdog_reset = watchdog_caused_reboot(),
+        .brownout = (chip_reset & POWMAN_CHIP_RESET_HAD_BOR_BITS) != 0U,
+        .run_pin = (chip_reset & POWMAN_CHIP_RESET_HAD_RUN_LOW_BITS) != 0U,
+        .power_on = (chip_reset & POWMAN_CHIP_RESET_HAD_POR_BITS) != 0U,
+    };
+    return reset_reason::classify(signals);
+}
+
+/// @brief Whole minutes since boot, from the 64-bit timer so it does not
+/// wrap after 49 days as the 32-bit millisecond count does.
+uint32_t uptime_minutes()
+{
+    constexpr uint64_t kMicrosecondsPerMinute = 60ULL * 1000000ULL;
+    return static_cast<uint32_t>(time_us_64() / kMicrosecondsPerMinute);
+}
+
 /// @brief Firmware entry point.
 /// @details The startup sequence is:
 /// - prepare the first framebuffer contents
@@ -263,6 +295,9 @@ int main()
     {
         std::printf("Last reboot was caused by a watchdog timeout (main loop hang)\n");
     }
+    const ResetReason reset = read_reset_reason();
+    std::printf("Reset reason: %s (POWMAN chip_reset=0x%08lX)\n", reset_reason::text(reset),
+                static_cast<unsigned long>(powman_hw->chip_reset));
     std::printf("Core-0 stack: %lu bytes\n",
                 static_cast<unsigned long>(stack_guard::capacity_bytes()));
     if (psram_info.present)
@@ -340,6 +375,7 @@ int main()
     console_controller::set_share_market_status(share_price_manager::status());
     console_controller::set_environment_sensor_status(environment_sensor_manager::status());
     console_controller::set_firmware_status(ota_manager::status());
+    console_controller::set_boot_status({.reset_reason = reset, .uptime_minutes = uptime_minutes()});
     ota_manager::feed_boot_watchdog();
 
     // Render one complete back buffer before scanout starts so the panel never
@@ -705,6 +741,14 @@ int main()
                 active_mode != ScreenMode::LifeScreensaver;
             if ((loop_load_changed || heap_status_changed || stack_status_changed) &&
                 page_shows_telemetry)
+            {
+                console_controller::request_redraw();
+            }
+            BootStatus boot_status = console_controller::state().boot_status;
+            boot_status.uptime_minutes = uptime_minutes();
+            if (console_controller::set_boot_status(boot_status) &&
+                console_controller::state().active_page == MenuPage::StatusOverview &&
+                active_mode != ScreenMode::LifeScreensaver)
             {
                 console_controller::request_redraw();
             }

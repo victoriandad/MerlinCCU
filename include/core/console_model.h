@@ -6,6 +6,7 @@
 
 #include "alert_codes.h"
 #include "environment_sensor_manager.h"
+#include "reset_reason.h"
 
 /// @brief Physical softkeys mounted beside the display.
 enum class SoftKeyId : uint8_t
@@ -835,6 +836,15 @@ struct StackStatus
     bool overflow_reset;
 };
 
+/// @brief Why the unit last started and how long it has run since (#155).
+/// @details The reason is read once at boot (reset_reason.h); uptime is
+/// whole minutes so the Overview page redraws once a minute at most.
+struct BootStatus
+{
+    ResetReason reset_reason;
+    uint32_t uptime_minutes;
+};
+
 /// @brief Which firmware slot is running and how the last update went (#154).
 /// @details Set by ota_manager from the boot ROM's boot info at start-up and
 /// again when a trial image confirms itself. Drives the
@@ -988,6 +998,7 @@ struct ConsoleState
     MainLoopLoadStatus main_loop_load_status;
     HeapStatus heap_status;
     StackStatus stack_status;
+    BootStatus boot_status;
     FirmwareStatus firmware_status;
     ImageFootprintStatus image_footprint_status;
     DisplayTimingStatus display_timing_status;

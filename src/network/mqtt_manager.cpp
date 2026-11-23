@@ -78,6 +78,11 @@ enum class SensorId : uint8_t
     FirmwareUpdate,
     SettingsChange,
     HaMessageState,
+    // Long-run health (#155).
+    LastReset,
+    Uptime,
+    StackFree,
+    HeapArena,
     // Entities Home Assistant controls (#150), in mqtt_commands::Target order.
     AlertLamp,
     TestLamp,
@@ -146,6 +151,13 @@ constexpr SensorDescriptor kSensorDescriptors[] = {
     // Whether HA's last message is showing or was accepted on the panel (#150).
     {"Message state", "message_state", "mdi:message-check", false,
      "[\"none\",\"active\",\"acknowledged\"]", kNoCommand},
+    // Why the unit last started, uptime, and worst-case stack and heap use
+    // (#155), so HA can chart restarts and slow memory growth over a soak.
+    // Options are filled from reset_reason::slug_options_json().
+    {"Last reset", "last_reset", "mdi:restart-alert", true, nullptr, kNoCommand},
+    {"Uptime", "uptime", "mdi:timer-outline", true, nullptr, kNoCommand},
+    {"Stack free", "stack_free", "mdi:layers-outline", true, nullptr, kNoCommand},
+    {"Heap arena", "heap_arena", "mdi:memory", true, nullptr, kNoCommand},
     {nullptr, nullptr, nullptr, false, nullptr, Target::AlertLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::TestLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::PanelBrightness},
@@ -784,6 +796,10 @@ bool build_discovery_payload(SensorId sensor_id)
     const char* icon = controllable ? mqtt_commands::info(sensor.command).icon : sensor.icon;
     const char* options =
         controllable ? mqtt_commands::options_json(sensor.command) : sensor.options_json;
+    if (sensor_id == SensorId::LastReset)
+    {
+        options = reset_reason::slug_options_json();
+    }
     char extras[512] = {};
     size_t extras_len = 0;
     bool fits = true;
@@ -825,6 +841,21 @@ bool build_discovery_payload(SensorId sensor_id)
     else if (options != nullptr)
     {
         add(",\"device_class\":\"enum\",\"options\":%s", options);
+    }
+    // Numeric health sensors (#155) carry units so HA graphs them.
+    switch (sensor_id)
+    {
+    case SensorId::Uptime:
+        add("%s", ",\"device_class\":\"duration\",\"unit_of_measurement\":\"min\","
+                  "\"state_class\":\"total_increasing\"");
+        break;
+    case SensorId::StackFree:
+    case SensorId::HeapArena:
+        add("%s", ",\"device_class\":\"data_size\",\"unit_of_measurement\":\"B\","
+                  "\"state_class\":\"measurement\"");
+        break;
+    default:
+        break;
     }
     if (!fits)
     {
@@ -978,6 +1009,23 @@ void update_sensor_values(const WifiStatus& wifi_status,
         }
     };
     set_value(SensorId::HaMessageState, console_controller::ha_message_state());
+
+    // Uptime moves once a minute; stack and heap figures are worst cases
+    // since boot, so they change rarely and a rise in the heap arena over a
+    // soak points at a leak (#155).
+    set_value(SensorId::LastReset, reset_reason::slug(console.boot_status.reset_reason));
+    char number_text[16] = {};
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.boot_status.uptime_minutes));
+    set_value(SensorId::Uptime, number_text);
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.stack_status.free_bytes));
+    // Nothing is published until a figure exists: HA refuses non-numbers here.
+    set_value(SensorId::StackFree, console.stack_status.valid ? number_text : "");
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.heap_status.arena_bytes));
+    set_value(SensorId::HeapArena, console.heap_status.valid ? number_text : "");
+
     set_value(SensorId::AlertLamp,
               mqtt_commands::option_name(Target::AlertLamp,
                                          static_cast<uint8_t>(console.lamp_overrides[0])));

@@ -113,6 +113,10 @@ void start_with_data()
     std::snprintf(firmware.version.data(), firmware.version.size(), "2bf47da");
     (void)console_controller::set_firmware_status(firmware);
 
+    // Up for 3 days 5 hours after a power cut (#155).
+    (void)console_controller::set_boot_status(
+        {.reset_reason = ResetReason::PowerOn, .uptime_minutes = (3U * 24U + 5U) * 60U + 12U});
+
     ShareMarketStatus shares = {};
     shares.configured = true;
     shares.data_valid = true;

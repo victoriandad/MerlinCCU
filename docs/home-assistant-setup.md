@@ -91,7 +91,12 @@ integration with sensors
 for Status, Wi-Fi state, IP address, Home Assistant, Home Assistant HTTP,
 Tracked entity, Firmware (the build's git commit), Firmware update
 (`confirmed`, `on_trial`, `rolled_back` or `not_partitioned`; see
-docs/ota.md) and Last settings change (see docs/web-access.md).
+docs/ota.md), Last settings change (see docs/web-access.md), and the
+long-run health diagnostics (#155): Last reset (`power_on`, `reset_pin`,
+`brownout`, `restart`, `update`, `rollback`, `watchdog`, `cpu_fault`,
+`stack_overflow` or `unknown`), Uptime (minutes), Stack free and Heap arena
+(bytes, both worst case since boot). A Heap arena that keeps rising over
+days points at a leak.
 
 ### Controlling the CCU from HA
 

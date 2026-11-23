@@ -26,6 +26,14 @@ quickly without relying only on photographs of the physical panel.
 - Values use mixed case consistently (for example `Disabled`, `Error`, `Up`).
 - Hostnames and IP values are fully visible.
 
+## Status Overview Page
+
+- `UPTIME` reads `12m`, then `5h 03m`, then `3d 05h`, and moves on each
+  minute while the page is open.
+- `LAST RESET` names why the unit started: `Power on` after a power cycle,
+  `Reset pin` after the reset button, `Update` after an OTA upload,
+  `Restart` after a requested restart, `Watchdog` after a hang.
+
 ## Status Resources Page
 
 - `PROGRAM FLASH` and `STATIC RAM` bars are visible and readable.

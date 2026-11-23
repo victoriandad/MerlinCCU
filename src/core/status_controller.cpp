@@ -335,6 +335,18 @@ bool set_stack_status(ConsoleState& console_state, const StackStatus& status)
     return true;
 }
 
+bool set_boot_status(ConsoleState& console_state, const BootStatus& status)
+{
+    if (console_state.boot_status.reset_reason == status.reset_reason &&
+        console_state.boot_status.uptime_minutes == status.uptime_minutes)
+    {
+        return false;
+    }
+
+    console_state.boot_status = status;
+    return true;
+}
+
 bool set_firmware_status(ConsoleState& console_state, const FirmwareStatus& status)
 {
     const FirmwareStatus& current = console_state.firmware_status;

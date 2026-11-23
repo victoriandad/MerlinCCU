@@ -274,6 +274,30 @@ const char* home_assistant_rest_state_text(const ConsoleState& console_state,
     return screens::home_assistant_state_text(console_state.home_assistant_status.state);
 }
 
+/// @brief Formats uptime compactly: "12m", "5h 03m", then "3d 05h".
+void format_uptime(uint32_t minutes, char* out, size_t out_size)
+{
+    constexpr uint32_t kMinutesPerHour = 60U;
+    constexpr uint32_t kMinutesPerDay = 24U * kMinutesPerHour;
+    const uint32_t days = minutes / kMinutesPerDay;
+    const uint32_t hours = (minutes % kMinutesPerDay) / kMinutesPerHour;
+    const uint32_t mins = minutes % kMinutesPerHour;
+    if (days > 0U)
+    {
+        std::snprintf(out, out_size, "%lud %02luh", static_cast<unsigned long>(days),
+                      static_cast<unsigned long>(hours));
+    }
+    else if (hours > 0U)
+    {
+        std::snprintf(out, out_size, "%luh %02lum", static_cast<unsigned long>(hours),
+                      static_cast<unsigned long>(mins));
+    }
+    else
+    {
+        std::snprintf(out, out_size, "%lum", static_cast<unsigned long>(mins));
+    }
+}
+
 /// @brief Draws the high-level system overview status page.
 void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 {
@@ -306,9 +330,16 @@ void draw_status_overview_page(uint8_t* fb, const ConsoleState& console_state)
 
     const config_manager::ChangeRecord last_change = config_manager::last_change();
 
+    // Uptime and why the unit last started (#155), so a restart during an
+    // outage shows on the panel without the serial log.
+    char uptime_text[16] = {};
+    format_uptime(console_state.boot_status.uptime_minutes, uptime_text, sizeof(uptime_text));
+
     const screens::DetailRow rows[] = {
         {"UNIT", unit_text},
         {"FIRMWARE", firmware_text},
+        {"UPTIME", uptime_text},
+        {"LAST RESET", reset_reason::text(console_state.boot_status.reset_reason)},
         {"TIME",
          console_state.time_status.synced ? console_state.time_status.time_text.data() : "--:--"},
         {"WIFI", wifi_state_text(console_state.wifi_status.state)},
