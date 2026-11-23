@@ -364,6 +364,25 @@ HOST_TEST(validate_legacy_slot_v6_accepts_a_correctly_built_slot)
     EXPECT_TRUE(config_persistence::validate_legacy_slot_v6(slot));
 }
 
+HOST_TEST(migrate_legacy_settings_v7_keeps_the_web_pin_with_no_ha_keys)
+{
+    config_persistence::LegacyRuntimeConfigV7 legacy = {};
+    text_utils::copy_text(legacy.device_name, "OldName7");
+    text_utils::copy_text(legacy.mqtt_password, "mqtt-seven");
+    legacy.web_pin_set = true;
+    legacy.web_pin_salt[0] = 0x5AU;
+    legacy.web_pin_hash[31] = 0xA5U;
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v7(legacy);
+
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName7") == 0);
+    EXPECT_TRUE(std::strcmp(migrated.mqtt_password.data(), "mqtt-seven") == 0);
+    EXPECT_TRUE(migrated.web_pin_set);
+    EXPECT_EQ(migrated.web_pin_salt[0], 0x5AU);
+    EXPECT_EQ(migrated.web_pin_hash[31], 0xA5U);
+    EXPECT_EQ(migrated.ha_key_mask, 0U);
+}
+
 HOST_TEST(change_record_names_the_time_source_and_address)
 {
     config_manager::ChangeRecord record = {};

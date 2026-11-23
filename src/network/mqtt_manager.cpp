@@ -13,6 +13,8 @@
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
 #include "console_controller.h"
+#include "ha_key_list.h"
+#include "input.h"
 #include "mqtt_commands.h"
 #include "ota_manager.h"
 #include "page_table.h"
@@ -89,6 +91,8 @@ enum class PendingPublishType : uint8_t
     Availability,
     Discovery,
     State,
+    KeyTrigger,
+    KeyEvent,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -284,6 +288,17 @@ char g_availability_topic[96] = {};
 // arrive on "<prefix>/<slug>/set" (#150).
 char g_topic_prefix[80] = {};
 char g_command_filter[96] = {};
+char g_discovery_prefix[40] = {};
+
+// HA keys (#151): each has a retained device-trigger config so HA's
+// automation editor offers it; a press is a non-retained "press" on
+// "<prefix>/key/<slug>". g_triggers_published tracks which configs HA has,
+// so keys taken off the list get their config cleared.
+constexpr uint64_t kAllKeysMask =
+    (uint64_t{1} << static_cast<unsigned>(ButtonId::Count)) - 1U;
+uint64_t g_triggers_published = kAllKeysMask;
+ButtonId g_key_in_flight = ButtonId::LeftTop;
+bool g_key_trigger_removing = false;
 bool g_subscribed = false;
 bool g_subscribe_in_flight = false;
 
@@ -362,6 +377,9 @@ void reset_runtime(bool reset_publish_state)
     g_availability_published = false;
     g_subscribed = false;
     g_subscribe_in_flight = false;
+    // Unknown after a reconnect or restart: treat every key as published, so
+    // configs for keys no longer on the list are cleared once (#151).
+    g_triggers_published = kAllKeysMask;
 
     if (g_client != nullptr)
     {
@@ -447,6 +465,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         config.mqtt_discovery_prefix[0]
             ? config.mqtt_discovery_prefix.data()
             : (kMqttDiscoveryPrefix[0] ? kMqttDiscoveryPrefix : "homeassistant");
+    std::snprintf(g_discovery_prefix, sizeof(g_discovery_prefix), "%s", discovery_prefix);
     const char* name_suffix = (std::strlen(mac_hex) >= kDeviceNameSuffixLength)
                                   ? (mac_hex + std::strlen(mac_hex) - kDeviceNameSuffixLength)
                                   : mac_hex;
@@ -913,6 +932,17 @@ void mqtt_request_cb(void* arg, err_t err)
                      g_sensor_state_topics[sensor_index(kCompletedSensor)].data(),
                      g_published_sensor_values[sensor_index(kCompletedSensor)].data());
         break;
+    case PendingPublishType::KeyTrigger:
+        if (g_key_trigger_removing)
+        {
+            g_triggers_published &= ~ha_keys::bit(g_key_in_flight);
+        }
+        else
+        {
+            g_triggers_published |= ha_keys::bit(g_key_in_flight);
+        }
+        break;
+    case PendingPublishType::KeyEvent:
     case PendingPublishType::None:
         break;
     }
@@ -1059,7 +1089,9 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
     }
 
     const u16_t kPayloadLength = static_cast<u16_t>(std::strlen(payload));
-    const u8_t kRetain = 1;
+    // Key presses are moments, not state: a retained one would fire HA
+    // automations again on every reconnect.
+    const u8_t kRetain = publish_type == PendingPublishType::KeyEvent ? 0U : 1U;
 
     cyw43_arch_lwip_begin();
     const err_t kRc = mqtt_publish(g_client, topic, payload, kPayloadLength, 0, kRetain,
@@ -1108,6 +1140,56 @@ bool start_next_publish()
                        PendingPublishType::Discovery, sensor_id);
     }
 
+    // Key presses are time-critical (#151), so they go ahead of trigger
+    // configs and state updates.
+    if (const std::optional<ButtonId> key = console_controller::pop_ha_key_press())
+    {
+        char slug[24] = {};
+        ha_keys::slug(input::button_name(*key), slug, sizeof(slug));
+        char topic[112] = {};
+        std::snprintf(topic, sizeof(topic), "%s/key/%s", g_topic_prefix, slug);
+        g_key_in_flight = *key;
+        std::printf("MQTT key press: %s\n", topic);
+        return publish(topic, "press", PendingPublishType::KeyEvent, SensorId::Status);
+    }
+
+    const uint64_t wanted = config_manager::settings().ha_key_mask;
+    const uint64_t changed = wanted ^ g_triggers_published;
+    if (changed != 0U)
+    {
+        auto key = ButtonId::LeftTop;
+        for (size_t i = 0U; i < static_cast<size_t>(ButtonId::Count); ++i)
+        {
+            if ((changed & ha_keys::bit(static_cast<ButtonId>(i))) != 0U)
+            {
+                key = static_cast<ButtonId>(i);
+                break;
+            }
+        }
+        const char* legend = input::button_name(key);
+        char slug[24] = {};
+        ha_keys::slug(legend, slug, sizeof(slug));
+        char topic[160] = {};
+        std::snprintf(topic, sizeof(topic), "%s/device_automation/%s/key_%s/config",
+                      g_discovery_prefix, g_device_id, slug);
+        g_key_in_flight = key;
+        g_key_trigger_removing = !ha_keys::contains(wanted, key);
+        if (g_key_trigger_removing)
+        {
+            // An empty retained config removes the trigger from HA.
+            g_publish_buffer[0] = '\0';
+        }
+        else
+        {
+            std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
+                          "{\"automation_type\":\"trigger\",\"topic\":\"%s/key/%s\","
+                          "\"type\":\"button_short_press\",\"subtype\":\"%s\","
+                          "\"payload\":\"press\",\"device\":{\"identifiers\":[\"%s\"]}}",
+                          g_topic_prefix, slug, legend, g_device_id);
+        }
+        return publish(topic, g_publish_buffer, PendingPublishType::KeyTrigger, SensorId::Status);
+    }
+
     if (find_pending_state(&sensor_id))
     {
         if (!build_state_payload(sensor_id))
@@ -1154,6 +1236,14 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
             const TimeStatus& time_status)
 {
     const MqttStatus kPrevious = g_status;
+
+    // A key press HA cannot hear now is dropped, not sent late (#151).
+    if (!g_connected)
+    {
+        while (console_controller::pop_ha_key_press().has_value())
+        {
+        }
+    }
 
     // Configuration and runtime-disable paths are handled first so the rest of
     // the function can assume MQTT is actually supposed to run.

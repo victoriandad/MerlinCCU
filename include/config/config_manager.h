@@ -92,6 +92,10 @@ struct RuntimeConfig
     bool web_pin_set;
     std::array<uint8_t, kWebPinSaltBytes> web_pin_salt;
     std::array<uint8_t, kWebPinHashBytes> web_pin_hash;
+
+    /// @brief Keys that belong to Home Assistant (#151): one bit per
+    /// ButtonId (ha_keys.h). They do nothing on the panel; presses go to HA.
+    uint64_t ha_key_mask;
 };
 
 namespace config_manager

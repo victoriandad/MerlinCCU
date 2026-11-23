@@ -51,6 +51,7 @@ add_executable(MerlinCCU
     src/core/console_controller.cpp
     src/core/cursor_navigation.cpp
     src/core/console_model.cpp
+    src/core/ha_key_list.cpp
     src/core/home_controller.cpp
     src/core/input.cpp
     src/core/ota_manager.cpp

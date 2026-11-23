@@ -59,6 +59,9 @@ bool screen_saver_active();
 /// @brief "none", "active" or "acknowledged" for Home Assistant's message.
 const char* ha_message_state();
 
+/// @brief Takes the oldest HA key press waiting for MQTT (#151).
+std::optional<ButtonId> pop_ha_key_press();
+
 /// @brief Applies one checked Home Assistant command (#150) to the UI state.
 /// @return true when it was applied.
 bool apply_mqtt_command(const mqtt_commands::Command& command);

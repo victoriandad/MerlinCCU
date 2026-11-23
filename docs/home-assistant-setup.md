@@ -126,6 +126,21 @@ title `HA MESSAGE`. An automation can watch Message state for
 `acknowledged` to know someone accepted it at the panel. Unknown or
 over-long commands are refused and logged on the CCU's serial console.
 
+### Keys that trigger HA automations
+
+Any panel key can belong to HA instead (#151). List them by their legend
+on the config page under MQTT Discovery > **HA keys**, e.g. `F1, T FUNC`.
+Those keys then do nothing on the panel. Each gets a device trigger on the
+CCU's device, so in the automation editor pick **Device**, the CCU, and
+`"T FUNC" pressed`. No YAML is needed.
+
+- One event per press; holding a key sends one.
+- A press while MQTT is down is dropped, not sent later.
+- The topic is `<base>/<mac>/key/<slug>` with payload `press` (not
+  retained); the slug is the legend in lower case, e.g. `t_func`.
+- Taking a key off the list removes its trigger from HA.
+- The web preview's keypad works the same way, which helps when testing.
+
 ## Several CCUs
 
 Units can share one network, one HA and one Mosquitto broker. Give each one:

@@ -10,6 +10,7 @@
 #include "console_controller_internal.h"
 #include "cursor_navigation.h"
 #include "debug_logging.h"
+#include "ha_key_list.h"
 #include "page_table.h"
 #include "pinter_controller.h"
 #include "screens_shared.h"
@@ -34,6 +35,11 @@ bool g_user_activity_requested = false;
 // saver, so a request is passed to it and it reports the result back.
 bool g_screen_saver_requested = false;
 bool g_screen_saver_active = false;
+// HA key presses waiting for MQTT (#151). Small: MQTT drains one per loop
+// pass, and a burst beyond this is dropped rather than replayed late.
+std::array<ButtonId, 8> g_ha_key_queue = {};
+size_t g_ha_key_head = 0U;
+size_t g_ha_key_count = 0U;
 // Sized for the longest Pinter vessel label: title + "[recipe]" (recipe names
 // run up to ~42 characters) + "[stage Nd, ready dd Mon]".
 constexpr size_t kSoftkeyLabelCapacity = 112;
@@ -709,6 +715,18 @@ bool consume_user_activity_request()
     return requested;
 }
 
+std::optional<ButtonId> pop_ha_key_press()
+{
+    if (g_ha_key_count == 0U)
+    {
+        return std::nullopt;
+    }
+    const ButtonId id = g_ha_key_queue[g_ha_key_head];
+    g_ha_key_head = (g_ha_key_head + 1U) % g_ha_key_queue.size();
+    --g_ha_key_count;
+    return id;
+}
+
 bool consume_screen_saver_request()
 {
     const bool requested = g_screen_saver_requested;
@@ -1127,6 +1145,19 @@ bool handle_button_event(const ButtonEvent& event)
     // the live matrix decode directly, so release edges are ignored here.
     if (event.type != ButtonEventType::Pressed)
     {
+        return false;
+    }
+
+    // HA keys (#151) do nothing on the panel: the press is queued for MQTT.
+    // Presses arrive once per key-down (debounced by input), so a held key
+    // sends one event.
+    if (ha_keys::contains(config_manager::settings().ha_key_mask, event.id))
+    {
+        if (g_ha_key_count < g_ha_key_queue.size())
+        {
+            g_ha_key_queue[(g_ha_key_head + g_ha_key_count) % g_ha_key_queue.size()] = event.id;
+            ++g_ha_key_count;
+        }
         return false;
     }
 
