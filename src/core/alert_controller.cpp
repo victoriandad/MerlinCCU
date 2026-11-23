@@ -644,6 +644,15 @@ void sync(ConsoleState& console_state)
     set_alert_condition(console_state, AlertCode::PinterScheduleConflict, false,
                         AlertSeverity::Message, "PINTER", "");
 
+    // A message pushed by Home Assistant (#150). Accepting it on the panel
+    // suppresses it until HA sends a new one; MQTT reports that back.
+    const ConsoleState::HaMessage& ha_message = console_state.ha_message;
+    set_alert_condition(console_state, AlertCode::HomeAssistantMessage, ha_message.active,
+                        ha_message.severity == AlertSeverity::None ? AlertSeverity::Message
+                                                                   : ha_message.severity,
+                        ha_message.title[0] != '\0' ? ha_message.title.data() : "HA MESSAGE",
+                        ha_message.text.data());
+
     // Holds for the whole boot: the unit is back on its previous firmware
     // until the next successful update. A power cut during the trial clears
     // the record (it lives in a watchdog scratch register), so that case
@@ -768,6 +777,19 @@ void accept_alert(ConsoleState& console_state, uint8_t index)
         g_alert_occurrences[code] = 0U;
     }
     erase_active_alert(console_state, index);
+}
+
+bool acknowledged(AlertCode code)
+{
+    const size_t index = alert_code_index(code);
+    return g_alert_was_active[index] && g_alert_suppressed[index];
+}
+
+void rearm(AlertCode code)
+{
+    const size_t index = alert_code_index(code);
+    g_alert_suppressed[index] = false;
+    g_alert_was_active[index] = false;
 }
 
 void suppress_alert_code(uint8_t alert_code_index)

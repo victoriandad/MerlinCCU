@@ -3,6 +3,7 @@
 #include "config_manager.h"
 #include "console_model.h"
 #include "input.h"
+#include "mqtt_commands.h"
 
 namespace console_controller
 {
@@ -44,6 +45,26 @@ void request_user_activity();
 
 /// @brief Returns and clears any pending out-of-band user activity request.
 bool consume_user_activity_request();
+
+/// @brief Returns and clears a Home Assistant request to start the screen
+/// saver (#150). The main loop owns the screen saver.
+bool consume_screen_saver_request();
+
+/// @brief The main loop reports whether the screen saver is showing.
+void set_screen_saver_active(bool active);
+
+/// @brief Whether the screen saver is showing, for MQTT state.
+bool screen_saver_active();
+
+/// @brief "none", "active" or "acknowledged" for Home Assistant's message.
+const char* ha_message_state();
+
+/// @brief Takes the oldest HA key press waiting for MQTT (#151).
+std::optional<ButtonId> pop_ha_key_press();
+
+/// @brief Applies one checked Home Assistant command (#150) to the UI state.
+/// @return true when it was applied.
+bool apply_mqtt_command(const mqtt_commands::Command& command);
 
 /// @brief Copies the latest Wi-Fi status into the logical front-panel state.
 bool set_wifi_status(const WifiStatus& wifi_status);

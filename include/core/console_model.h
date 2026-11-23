@@ -88,6 +88,17 @@ enum class LampMode : uint8_t
     FlashFast,
 };
 
+/// @brief Home Assistant's setting for the ALRT or TEST lamp (#150). Auto
+/// leaves the lamp to the CCU; any other value overrides it.
+enum class LampOverride : uint8_t
+{
+    Auto = 0,
+    Off,
+    On,
+    FlashSlow,
+    FlashFast,
+};
+
 /// @brief Text entry mode controlled by the `LTRS` key.
 /// @details The Merlin panel carries both letter and number legends. The LTRS
 /// key cycles how those physical keys are interpreted by editable UI fields.
@@ -946,6 +957,19 @@ struct ConsoleState
     /// clearing the web PIN (#158, SK-6). Cleared on confirm, cancel or BACK
     /// STEP.
     bool web_pin_clear_confirming;
+
+    /// @brief Home Assistant's lamp settings over MQTT (#150), indexed
+    /// ALRT then TEST.
+    std::array<LampOverride, 2> lamp_overrides;
+
+    /// @brief A message Home Assistant put in the alert list (#150).
+    struct HaMessage
+    {
+        bool active;
+        AlertSeverity severity;
+        std::array<char, 21> title;
+        std::array<char, 301> text;
+    } ha_message;
     ScreenSaverSelection screen_saver_selection;
     TimeZoneSelection time_zone;
     uint16_t screen_saver_timeout_minutes;

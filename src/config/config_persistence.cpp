@@ -1,6 +1,7 @@
 #include "config_persistence.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 
 #include "text_utils.h"
@@ -194,6 +195,34 @@ bool validate_legacy_slot_v6(const LegacyConfigSlotV6& slot)
 RuntimeConfig migrate_legacy_settings_v6(const LegacyRuntimeConfigV6& legacy)
 {
     return migrate_shared_fields(legacy);
+}
+
+// v7 is today's layout without the trailing HA key mask; its fields must sit
+// where version 7 firmware wrote them.
+static_assert(offsetof(LegacyRuntimeConfigV7, web_pin_hash) ==
+                  offsetof(RuntimeConfig, web_pin_hash),
+              "LegacyRuntimeConfigV7 must mirror the version 7 layout");
+
+bool validate_legacy_slot_v7(const LegacyConfigSlotV7& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV7 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV7))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV7));
+    return slot.crc32 == expected;
+}
+
+RuntimeConfig migrate_legacy_settings_v7(const LegacyRuntimeConfigV7& legacy)
+{
+    RuntimeConfig migrated = migrate_shared_fields(legacy);
+    migrated.web_pin_set = legacy.web_pin_set;
+    migrated.web_pin_salt = legacy.web_pin_salt;
+    migrated.web_pin_hash = legacy.web_pin_hash;
+    return migrated;
 }
 
 RuntimeConfig migrate_legacy_settings_v5(const LegacyRuntimeConfigV5& legacy)

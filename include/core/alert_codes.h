@@ -28,6 +28,7 @@ enum class AlertCode : uint8_t
     ShareDataUnavailable,
     PinterScheduleConflict,
     FirmwareUpdateRolledBack,
+    HomeAssistantMessage,
     Count,
 };
 

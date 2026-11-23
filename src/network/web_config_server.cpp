@@ -15,6 +15,8 @@
 #include "debug_logging.h"
 #include "framebuffer.h"
 #include "geo_coordinates.h"
+#include "ha_key_list.h"
+#include "input.h"
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
@@ -724,6 +726,11 @@ void build_config_page(const char* message)
     html_escape(cfg.mqtt_discovery_prefix.data(), mqtt_prefix, sizeof(mqtt_prefix));
     html_escape(cfg.mqtt_base_topic.data(), mqtt_topic, sizeof(mqtt_topic));
     html_escape(message, escaped_message, sizeof(escaped_message));
+    static char ha_keys_list[200] = {};
+    static char ha_keys_text[260] = {};
+    ha_keys::format_list(cfg.ha_key_mask, input::button_name, ha_keys_list,
+                         sizeof(ha_keys_list));
+    html_escape(ha_keys_list, ha_keys_text, sizeof(ha_keys_text));
 
     (void)append(
         cursor, remaining,
@@ -886,9 +893,14 @@ void build_config_page(const char* message)
                  "name=\"mqtt_prefix\" maxlength=\"31\" "
                  "value=\"%s\"></div><div><label>Base topic</label><input name=\"mqtt_topic\" "
                  "maxlength=\"63\" "
-                 "value=\"%s\"></div></div></fieldset></section>",
+                 "value=\"%s\"></div></div><label>HA keys</label><input name=\"ha_keys\" "
+                 "maxlength=\"200\" value=\"%s\" placeholder=\"None: every key works the panel\">"
+                 "<p class=\"hint\">Keys Home Assistant owns, by their legend, e.g. "
+                 "<code>F1, T FUNC</code>. They do nothing on the panel; each press is an HA "
+                 "device trigger (pick it in the automation editor).</p></fieldset></section>",
                  cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled", mqtt_host,
-                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic);
+                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic,
+                 ha_keys_text);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Watched Shares</h2><p class=\"hint\">Up to %u "
@@ -2891,6 +2903,22 @@ const char* handle_config_post(const char* body)
             return validation_error;
         }
         copy_text(cfg.mqtt_base_topic, value);
+    }
+    if (get_form_value(body, "ha_keys", value, sizeof(value)))
+    {
+        std::string_view bad_item;
+        const std::optional<uint64_t> mask =
+            ha_keys::parse_list(value, input::button_name, &bad_item);
+        if (!mask.has_value())
+        {
+            std::snprintf(validation_error, sizeof(validation_error),
+                          "Configuration not saved: '%.*s' is not a key legend.",
+                          static_cast<int>(std::min<size_t>(bad_item.size(), 40U)),
+                          bad_item.data());
+            std::printf("Web config save rejected: %s\n", validation_error);
+            return validation_error;
+        }
+        cfg.ha_key_mask = *mask;
     }
 
     for (size_t i = 0; i < kMaxWatchedShares; ++i)

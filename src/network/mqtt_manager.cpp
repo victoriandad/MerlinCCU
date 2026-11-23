@@ -1,5 +1,6 @@
 #include "mqtt_manager.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -11,7 +12,12 @@
 #include "lwip/dns.h"
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
+#include "console_controller.h"
+#include "ha_key_list.h"
+#include "input.h"
+#include "mqtt_commands.h"
 #include "ota_manager.h"
+#include "page_table.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "text_utils.h"
@@ -67,6 +73,15 @@ enum class SensorId : uint8_t
     FirmwareVersion,
     FirmwareUpdate,
     SettingsChange,
+    HaMessageState,
+    // Entities Home Assistant controls (#150), in mqtt_commands::Target order.
+    AlertLamp,
+    TestLamp,
+    PanelBrightness,
+    KeyBacklight,
+    Display,
+    Page,
+    Message,
     Count,
 };
 
@@ -76,6 +91,8 @@ enum class PendingPublishType : uint8_t
     Availability,
     Discovery,
     State,
+    KeyTrigger,
+    KeyEvent,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -89,32 +106,56 @@ struct SensorDescriptor
     const char* icon;
     bool diagnostic;
     const char* options_json;
+    /// Command target for entities HA controls; Count for read-only sensors.
+    /// Their name, slug, icon, platform and options come from mqtt_commands.
+    mqtt_commands::Target command;
 };
+
+using mqtt_commands::Target;
+constexpr Target kNoCommand = Target::Count;
 
 /// @brief Static discovery metadata for every MQTT-backed sensor exposed by the firmware.
 /// @details This table is kept in enum order so a `SensorId` can directly index into the
 /// matching Home Assistant discovery settings.
 constexpr SensorDescriptor kSensorDescriptors[] = {
-    {"Status", "status", "mdi:radio-tower", false, nullptr},
+    {"Status", "status", "mdi:radio-tower", false, nullptr, kNoCommand},
     {"Wi-Fi state", "wifi_state", "mdi:wifi", true,
      "[\"disabled\",\"unconfigured\",\"initializing\",\"scanning\",\"connecting\",\"waiting_for_"
      "ip\","
-     "\"connected\",\"auth_failed\",\"no_network\",\"connect_failed\",\"error\"]"},
-    {"IP address", "ip_address", "mdi:ip-network", true, nullptr},
+     "\"connected\",\"auth_failed\",\"no_network\",\"connect_failed\",\"error\"]",
+     kNoCommand},
+    {"IP address", "ip_address", "mdi:ip-network", true, nullptr, kNoCommand},
     {"Home Assistant", "home_assistant_state", "mdi:home-assistant", true,
      "[\"disabled\",\"unconfigured\",\"waiting_for_wifi\",\"resolving\",\"connecting\","
      "\"authorizing\","
-     "\"connected\",\"unauthorized\",\"error\"]"},
-    {"Home Assistant HTTP", "home_assistant_http", "mdi:web", true, nullptr},
-    {"Tracked entity", "tracked_entity", "mdi:toggle-switch-outline", false, nullptr},
+     "\"connected\",\"unauthorized\",\"error\"]",
+     kNoCommand},
+    {"Home Assistant HTTP", "home_assistant_http", "mdi:web", true, nullptr, kNoCommand},
+    {"Tracked entity", "tracked_entity", "mdi:toggle-switch-outline", false, nullptr, kNoCommand},
     // Firmware commit and update outcome (#154), so HA shows which build each
     // unit runs and flags one whose last update rolled back.
-    {"Firmware", "firmware_version", "mdi:chip", true, nullptr},
+    {"Firmware", "firmware_version", "mdi:chip", true, nullptr, kNoCommand},
     {"Firmware update", "firmware_update", "mdi:update", false,
-     "[\"confirmed\",\"on_trial\",\"rolled_back\",\"not_partitioned\"]"},
+     "[\"confirmed\",\"on_trial\",\"rolled_back\",\"not_partitioned\"]", kNoCommand},
     // Last settings save since start-up and where it came from (#158).
-    {"Last settings change", "settings_change", "mdi:cog-transfer", true, nullptr},
+    {"Last settings change", "settings_change", "mdi:cog-transfer", true, nullptr, kNoCommand},
+    // Whether HA's last message is showing or was accepted on the panel (#150).
+    {"Message state", "message_state", "mdi:message-check", false,
+     "[\"none\",\"active\",\"acknowledged\"]", kNoCommand},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::AlertLamp},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::TestLamp},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::PanelBrightness},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::KeyBacklight},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::Display},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::Page},
+    {nullptr, nullptr, nullptr, false, nullptr, Target::Message},
 };
+
+/// @brief An entity's slug, from its descriptor or its command target.
+const char* entity_slug(const SensorDescriptor& sensor)
+{
+    return sensor.command != kNoCommand ? mqtt_commands::info(sensor.command).slug : sensor.slug;
+}
 
 static_assert((sizeof(kSensorDescriptors) / sizeof(kSensorDescriptors[0])) ==
                   static_cast<size_t>(SensorId::Count),
@@ -243,6 +284,39 @@ char g_client_id[48] = {};
 char g_device_id[32] = {};
 char g_device_name[32] = {};
 char g_availability_topic[96] = {};
+// "<base>/<mac>": state topics are "<prefix>/<slug>/state" and HA's commands
+// arrive on "<prefix>/<slug>/set" (#150).
+char g_topic_prefix[80] = {};
+char g_command_filter[96] = {};
+char g_discovery_prefix[40] = {};
+
+// HA keys (#151): each has a retained device-trigger config so HA's
+// automation editor offers it; a press is a non-retained "press" on
+// "<prefix>/key/<slug>". g_triggers_published tracks which configs HA has,
+// so keys taken off the list get their config cleared.
+constexpr uint64_t kAllKeysMask =
+    (uint64_t{1} << static_cast<unsigned>(ButtonId::Count)) - 1U;
+uint64_t g_triggers_published = kAllKeysMask;
+ButtonId g_key_in_flight = ButtonId::LeftTop;
+bool g_key_trigger_removing = false;
+bool g_subscribed = false;
+bool g_subscribe_in_flight = false;
+
+/// @brief One received command, copied out of the lwIP callbacks for the
+/// main loop. A second command arriving before the first is applied is
+/// dropped and logged; HA's commands are one-off user actions.
+struct PendingCommand
+{
+    // Shared with the lwIP callbacks; the main loop reads it under the
+    // cyw43 lwIP lock.
+    bool ready;
+    bool receiving;
+    bool overflow;
+    char topic[96];
+    char payload[mqtt_commands::kMaxPayloadLength + 1U];
+    size_t payload_length;
+};
+PendingCommand g_pending_command = {};
 char g_publish_buffer[1024] = {};
 mqtt_connect_client_info_t g_client_info = {};
 std::array<std::array<char, 64>, static_cast<size_t>(SensorId::Count)> g_sensor_unique_ids = {};
@@ -301,6 +375,11 @@ void reset_runtime(bool reset_publish_state)
     g_publish_type_in_flight = PendingPublishType::None;
     g_sensor_in_flight = SensorId::Status;
     g_availability_published = false;
+    g_subscribed = false;
+    g_subscribe_in_flight = false;
+    // Unknown after a reconnect or restart: treat every key as published, so
+    // configs for keys no longer on the list are cleared once (#151).
+    g_triggers_published = kAllKeysMask;
 
     if (g_client != nullptr)
     {
@@ -386,6 +465,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         config.mqtt_discovery_prefix[0]
             ? config.mqtt_discovery_prefix.data()
             : (kMqttDiscoveryPrefix[0] ? kMqttDiscoveryPrefix : "homeassistant");
+    std::snprintf(g_discovery_prefix, sizeof(g_discovery_prefix), "%s", discovery_prefix);
     const char* name_suffix = (std::strlen(mac_hex) >= kDeviceNameSuffixLength)
                                   ? (mac_hex + std::strlen(mac_hex) - kDeviceNameSuffixLength)
                                   : mac_hex;
@@ -417,21 +497,126 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
     }
     std::snprintf(g_availability_topic, sizeof(g_availability_topic), "%s/%s/availability",
                   base_topic, mac_hex);
+    std::snprintf(g_topic_prefix, sizeof(g_topic_prefix), "%s/%s", base_topic, mac_hex);
 
     // Topic strings are precomputed once per session so the publish path can
     // focus on ordering and retry behaviour instead of repeated formatting.
     for (size_t i = 0; i < static_cast<size_t>(SensorId::Count); ++i)
     {
         const SensorDescriptor& sensor = kSensorDescriptors[i];
+        const char* slug = entity_slug(sensor);
+        const char* component =
+            sensor.command != kNoCommand ? mqtt_commands::info(sensor.command).component : "sensor";
         std::snprintf(g_sensor_unique_ids[i].data(), g_sensor_unique_ids[i].size(), "%s_%s",
-                      g_device_id, sensor.slug);
+                      g_device_id, slug);
         std::snprintf(g_sensor_state_topics[i].data(), g_sensor_state_topics[i].size(),
-                      "%s/%s/%s/state", base_topic, mac_hex, sensor.slug);
+                      "%s/%s/state", g_topic_prefix, slug);
         std::snprintf(g_sensor_discovery_topics[i].data(), g_sensor_discovery_topics[i].size(),
-                      "%s/sensor/%s/%s/config", discovery_prefix, g_device_id, sensor.slug);
+                      "%s/%s/%s/%s/config", discovery_prefix, component, g_device_id, slug);
     }
 
     copy_text(g_status.device_id, g_device_id);
+}
+
+/// @brief True while the rest of an incoming publish is being thrown away.
+bool g_dropping_publish = false;
+
+/// @brief Starts receiving one publish from the broker (lwIP context).
+/// @details Only the command topics are subscribed, so this is a command
+/// from HA. It is copied for the main loop; one that is too long, or that
+/// arrives while the last is still waiting, is dropped and logged.
+void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
+{
+    PendingCommand& command = g_pending_command;
+    if (command.ready || tot_len > mqtt_commands::kMaxPayloadLength ||
+        std::strlen(topic) >= sizeof(command.topic))
+    {
+        g_dropping_publish = true;
+        std::printf("MQTT command dropped: %s (%lu bytes)\n", topic,
+                    static_cast<unsigned long>(tot_len));
+        return;
+    }
+    g_dropping_publish = false;
+    std::snprintf(command.topic, sizeof(command.topic), "%s", topic);
+    command.payload_length = 0U;
+    command.receiving = true;
+}
+
+/// @brief Collects a publish's payload, which may arrive in pieces (lwIP
+/// context).
+void incoming_data_cb(void* /*arg*/, const u8_t* data, u16_t len, u8_t flags)
+{
+    PendingCommand& command = g_pending_command;
+    if (g_dropping_publish || !command.receiving)
+    {
+        return;
+    }
+    const size_t room = sizeof(command.payload) - 1U - command.payload_length;
+    const size_t count = len < room ? len : room;
+    std::memcpy(command.payload + command.payload_length, data, count);
+    command.payload_length += count;
+    if ((flags & MQTT_DATA_FLAG_LAST) != 0U)
+    {
+        command.payload[command.payload_length] = '\0';
+        command.receiving = false;
+        command.ready = true;
+    }
+}
+
+/// @brief Records the result of subscribing to the command topics.
+void subscribe_cb(void* /*arg*/, err_t err)
+{
+    g_subscribe_in_flight = false;
+    g_subscribed = err == ERR_OK;
+    std::printf("MQTT command subscribe %s: %s\n", g_subscribed ? "ok" : "failed",
+                g_command_filter);
+}
+
+/// @brief Subscribes to "<prefix>/+/set" once per connection.
+void subscribe_commands()
+{
+    if (g_subscribed || g_subscribe_in_flight || !g_connected || g_client == nullptr)
+    {
+        return;
+    }
+    std::snprintf(g_command_filter, sizeof(g_command_filter), "%s/+/set", g_topic_prefix);
+    cyw43_arch_lwip_begin();
+    const err_t rc = mqtt_subscribe(g_client, g_command_filter, 0, subscribe_cb, nullptr);
+    cyw43_arch_lwip_end();
+    g_subscribe_in_flight = rc == ERR_OK;
+}
+
+/// @brief Applies a command received since the last call (main loop).
+void apply_pending_command()
+{
+    static PendingCommand command = {};
+    cyw43_arch_lwip_begin();
+    const bool ready = g_pending_command.ready;
+    if (ready)
+    {
+        command = g_pending_command;
+        g_pending_command.ready = false;
+    }
+    cyw43_arch_lwip_end();
+    if (!ready)
+    {
+        return;
+    }
+
+    const std::string_view payload(command.payload, command.payload_length);
+    const std::optional<Target> target =
+        mqtt_commands::target_for_topic(command.topic, g_topic_prefix);
+    const std::optional<mqtt_commands::Command> parsed =
+        target.has_value() ? mqtt_commands::parse(*target, payload) : std::nullopt;
+    if (!parsed.has_value())
+    {
+        std::printf("MQTT command refused: %s '%.*s'\n", command.topic,
+                    static_cast<int>(std::min<size_t>(payload.size(), 40U)), payload.data());
+        return;
+    }
+    std::printf("MQTT command: %s '%.*s'\n", command.topic,
+                static_cast<int>(std::min<size_t>(payload.size(), 40U)), payload.data());
+    (void)console_controller::apply_mqtt_command(*parsed);
 }
 
 /// @brief Allocates and configures the lwIP MQTT client on first use.
@@ -448,7 +633,7 @@ bool ensure_client()
     g_client = mqtt_client_new();
     if (g_client != nullptr)
     {
-        mqtt_set_inpub_callback(g_client, nullptr, nullptr, nullptr);
+        mqtt_set_inpub_callback(g_client, incoming_publish_cb, incoming_data_cb, nullptr);
     }
     cyw43_arch_lwip_end();
 
@@ -480,43 +665,56 @@ bool ensure_client()
 bool build_discovery_payload(SensorId sensor_id)
 {
     const SensorDescriptor& sensor = kSensorDescriptors[sensor_index(sensor_id)];
+    const bool controllable = sensor.command != kNoCommand;
+    const char* name = controllable ? mqtt_commands::info(sensor.command).name : sensor.name;
+    const char* icon = controllable ? mqtt_commands::info(sensor.command).icon : sensor.icon;
+    const char* options =
+        controllable ? mqtt_commands::options_json(sensor.command) : sensor.options_json;
     char extras[512] = {};
     size_t extras_len = 0;
+    bool fits = true;
+    const auto add = [&](const char* format, const char* value)
+    {
+        const int length =
+            std::snprintf(extras + extras_len, sizeof(extras) - extras_len, format, value);
+        if (length <= 0 || static_cast<size_t>(length) >= (sizeof(extras) - extras_len))
+        {
+            fits = false;
+            return;
+        }
+        extras_len += static_cast<size_t>(length);
+    };
 
     // Optional Home Assistant metadata is appended incrementally so each sensor
     // can stay compact while still advertising richer diagnostics where useful.
-    if (sensor.icon != nullptr && sensor.icon[0] != '\0')
+    if (icon != nullptr && icon[0] != '\0')
     {
-        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
-                                       ",\"icon\":\"%s\"", sensor.icon);
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
-        {
-            return false;
-        }
-        extras_len += static_cast<size_t>(kLen);
+        add(",\"icon\":\"%s\"", icon);
     }
-
     if (sensor.diagnostic)
     {
-        const int kLen = std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
-                                       ",\"entity_category\":\"diagnostic\"");
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
-        {
-            return false;
-        }
-        extras_len += static_cast<size_t>(kLen);
+        add("%s", ",\"entity_category\":\"diagnostic\"");
     }
-
-    if (sensor.options_json != nullptr)
+    if (controllable)
     {
-        const int kLen =
-            std::snprintf(extras + extras_len, sizeof(extras) - extras_len,
-                          ",\"device_class\":\"enum\",\"options\":%s", sensor.options_json);
-        if (kLen <= 0 || static_cast<size_t>(kLen) >= (sizeof(extras) - extras_len))
+        // HA sends commands to "<prefix>/<slug>/set" (#150); selects list
+        // their options, a notify entity takes free text.
+        char command_topic[112] = {};
+        std::snprintf(command_topic, sizeof(command_topic), "%s/%s/set", g_topic_prefix,
+                      entity_slug(sensor));
+        add(",\"command_topic\":\"%s\"", command_topic);
+        if (options != nullptr)
         {
-            return false;
+            add(",\"options\":%s", options);
         }
-        extras_len += static_cast<size_t>(kLen);
+    }
+    else if (options != nullptr)
+    {
+        add(",\"device_class\":\"enum\",\"options\":%s", options);
+    }
+    if (!fits)
+    {
+        return false;
     }
 
     // The final payload is a retained self-description of the device and one
@@ -529,7 +727,7 @@ bool build_discovery_payload(SensorId sensor_id)
                       "\"origin\":{\"name\":\"MerlinCCU\",\"sw_version\":\"%s\"},"
                       "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\","
                       "\"manufacturer\":\"%s\",\"model\":\"%s\",\"sw_version\":\"%s\"}%s}",
-                      sensor.name, g_sensor_unique_ids[sensor_index(sensor_id)].data(),
+                      name, g_sensor_unique_ids[sensor_index(sensor_id)].data(),
                       g_sensor_state_topics[sensor_index(sensor_id)].data(), g_availability_topic,
                       kOnlineState, kOfflineState, kFirmwareVersion, g_device_id, g_device_name,
                       kManufacturer, kDeviceModel, kFirmwareVersion, extras);
@@ -654,6 +852,43 @@ void update_sensor_values(const WifiStatus& wifi_status,
               g_current_sensor_values[sensor_index(SensorId::SettingsChange)].size(),
               change.valid ? change.text.data() : "none since start-up");
 
+    // State of the entities HA controls (#150), so HA shows what the panel
+    // really does, including changes made at the panel itself.
+    const ConsoleState& console = console_controller::state();
+    const auto set_value = [](SensorId id, const char* value)
+    {
+        if (value != nullptr)
+        {
+            copy_cstr(g_current_sensor_values[sensor_index(id)].data(),
+                      g_current_sensor_values[sensor_index(id)].size(), value);
+        }
+    };
+    set_value(SensorId::HaMessageState, console_controller::ha_message_state());
+    set_value(SensorId::AlertLamp,
+              mqtt_commands::option_name(Target::AlertLamp,
+                                         static_cast<uint8_t>(console.lamp_overrides[0])));
+    set_value(SensorId::TestLamp,
+              mqtt_commands::option_name(Target::TestLamp,
+                                         static_cast<uint8_t>(console.lamp_overrides[1])));
+    set_value(SensorId::PanelBrightness,
+              mqtt_commands::option_name(Target::PanelBrightness,
+                                         static_cast<uint8_t>(console.panel_brightness)));
+    set_value(SensorId::KeyBacklight,
+              mqtt_commands::option_name(Target::KeyBacklight,
+                                         static_cast<uint8_t>(console.key_backlight_brightness)));
+    set_value(SensorId::Display, console_controller::screen_saver_active() ? "screen_saver"
+                                                                           : "awake");
+    // A page HA cannot pick (a Settings subpage, say) reports the nearest
+    // page above it that it can.
+    MenuPage page = console.active_page;
+    std::optional<uint8_t> page_value = mqtt_commands::page_option(page);
+    for (int depth = 0; !page_value.has_value() && depth < 4; ++depth)
+    {
+        page = page_table::describe(page).parent;
+        page_value = mqtt_commands::page_option(page);
+    }
+    set_value(SensorId::Page, mqtt_commands::option_name(Target::Page, page_value.value_or(0U)));
+
     // Time is not published yet, but keeping the parameter in the updater makes
     // the future sensor expansion path obvious.
     (void)time_status;
@@ -697,6 +932,17 @@ void mqtt_request_cb(void* arg, err_t err)
                      g_sensor_state_topics[sensor_index(kCompletedSensor)].data(),
                      g_published_sensor_values[sensor_index(kCompletedSensor)].data());
         break;
+    case PendingPublishType::KeyTrigger:
+        if (g_key_trigger_removing)
+        {
+            g_triggers_published &= ~ha_keys::bit(g_key_in_flight);
+        }
+        else
+        {
+            g_triggers_published |= ha_keys::bit(g_key_in_flight);
+        }
+        break;
+    case PendingPublishType::KeyEvent:
     case PendingPublishType::None:
         break;
     }
@@ -843,7 +1089,9 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
     }
 
     const u16_t kPayloadLength = static_cast<u16_t>(std::strlen(payload));
-    const u8_t kRetain = 1;
+    // Key presses are moments, not state: a retained one would fire HA
+    // automations again on every reconnect.
+    const u8_t kRetain = publish_type == PendingPublishType::KeyEvent ? 0U : 1U;
 
     cyw43_arch_lwip_begin();
     const err_t kRc = mqtt_publish(g_client, topic, payload, kPayloadLength, 0, kRetain,
@@ -892,6 +1140,56 @@ bool start_next_publish()
                        PendingPublishType::Discovery, sensor_id);
     }
 
+    // Key presses are time-critical (#151), so they go ahead of trigger
+    // configs and state updates.
+    if (const std::optional<ButtonId> key = console_controller::pop_ha_key_press())
+    {
+        char slug[24] = {};
+        ha_keys::slug(input::button_name(*key), slug, sizeof(slug));
+        char topic[112] = {};
+        std::snprintf(topic, sizeof(topic), "%s/key/%s", g_topic_prefix, slug);
+        g_key_in_flight = *key;
+        std::printf("MQTT key press: %s\n", topic);
+        return publish(topic, "press", PendingPublishType::KeyEvent, SensorId::Status);
+    }
+
+    const uint64_t wanted = config_manager::settings().ha_key_mask;
+    const uint64_t changed = wanted ^ g_triggers_published;
+    if (changed != 0U)
+    {
+        auto key = ButtonId::LeftTop;
+        for (size_t i = 0U; i < static_cast<size_t>(ButtonId::Count); ++i)
+        {
+            if ((changed & ha_keys::bit(static_cast<ButtonId>(i))) != 0U)
+            {
+                key = static_cast<ButtonId>(i);
+                break;
+            }
+        }
+        const char* legend = input::button_name(key);
+        char slug[24] = {};
+        ha_keys::slug(legend, slug, sizeof(slug));
+        char topic[160] = {};
+        std::snprintf(topic, sizeof(topic), "%s/device_automation/%s/key_%s/config",
+                      g_discovery_prefix, g_device_id, slug);
+        g_key_in_flight = key;
+        g_key_trigger_removing = !ha_keys::contains(wanted, key);
+        if (g_key_trigger_removing)
+        {
+            // An empty retained config removes the trigger from HA.
+            g_publish_buffer[0] = '\0';
+        }
+        else
+        {
+            std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
+                          "{\"automation_type\":\"trigger\",\"topic\":\"%s/key/%s\","
+                          "\"type\":\"button_short_press\",\"subtype\":\"%s\","
+                          "\"payload\":\"press\",\"device\":{\"identifiers\":[\"%s\"]}}",
+                          g_topic_prefix, slug, legend, g_device_id);
+        }
+        return publish(topic, g_publish_buffer, PendingPublishType::KeyTrigger, SensorId::Status);
+    }
+
     if (find_pending_state(&sensor_id))
     {
         if (!build_state_payload(sensor_id))
@@ -938,6 +1236,14 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
             const TimeStatus& time_status)
 {
     const MqttStatus kPrevious = g_status;
+
+    // A key press HA cannot hear now is dropped, not sent late (#151).
+    if (!g_connected)
+    {
+        while (console_controller::pop_ha_key_press().has_value())
+        {
+        }
+    }
 
     // Configuration and runtime-disable paths are handled first so the rest of
     // the function can assume MQTT is actually supposed to run.
@@ -990,6 +1296,11 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
 
     // Once connected, the publisher drains one pending retained message at a
     // time so the callback path can track exactly what completed.
+    if (g_connected)
+    {
+        subscribe_commands();
+        apply_pending_command();
+    }
     if (g_connected && !g_request_in_flight)
     {
         start_next_publish();

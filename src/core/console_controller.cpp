@@ -10,6 +10,7 @@
 #include "console_controller_internal.h"
 #include "cursor_navigation.h"
 #include "debug_logging.h"
+#include "ha_key_list.h"
 #include "page_table.h"
 #include "pinter_controller.h"
 #include "screens_shared.h"
@@ -30,6 +31,15 @@ namespace
 ConsoleState g_console_state = {};
 bool g_redraw_requested = false;
 bool g_user_activity_requested = false;
+// Home Assistant display control (#150): the main loop owns the screen
+// saver, so a request is passed to it and it reports the result back.
+bool g_screen_saver_requested = false;
+bool g_screen_saver_active = false;
+// HA key presses waiting for MQTT (#151). Small: MQTT drains one per loop
+// pass, and a burst beyond this is dropped rather than replayed late.
+std::array<ButtonId, 8> g_ha_key_queue = {};
+size_t g_ha_key_head = 0U;
+size_t g_ha_key_count = 0U;
 // Sized for the longest Pinter vessel label: title + "[recipe]" (recipe names
 // run up to ~42 characters) + "[stage Nd, ready dd Mon]".
 constexpr size_t kSoftkeyLabelCapacity = 112;
@@ -451,6 +461,22 @@ void update_lamps_from_state()
 
     g_console_state.lamps[lamp_index(LampId::PanelBacklight)] =
         (g_console_state.panel_brightness == BrightnessLevel::Off) ? LampMode::Off : LampMode::On;
+
+    // Home Assistant's lamp settings (#150) win over the CCU's own unless
+    // they are Auto.
+    constexpr std::array<LampId, 2> kOverridableLamps = {LampId::AlertLamp, LampId::TestLamp};
+    for (size_t i = 0U; i < kOverridableLamps.size(); ++i)
+    {
+        const LampOverride setting = g_console_state.lamp_overrides[i];
+        if (setting != LampOverride::Auto)
+        {
+            constexpr std::array<LampMode, 5> kModes = {LampMode::Off, LampMode::Off,
+                                                        LampMode::On, LampMode::FlashSlow,
+                                                        LampMode::FlashFast};
+            g_console_state.lamps[lamp_index(kOverridableLamps[i])] =
+                kModes[static_cast<size_t>(setting)];
+        }
+    }
 }
 
 /// @brief Returns the next brighter backlight level without exceeding the max.
@@ -687,6 +713,104 @@ bool consume_user_activity_request()
     const bool requested = g_user_activity_requested;
     g_user_activity_requested = false;
     return requested;
+}
+
+std::optional<ButtonId> pop_ha_key_press()
+{
+    if (g_ha_key_count == 0U)
+    {
+        return std::nullopt;
+    }
+    const ButtonId id = g_ha_key_queue[g_ha_key_head];
+    g_ha_key_head = (g_ha_key_head + 1U) % g_ha_key_queue.size();
+    --g_ha_key_count;
+    return id;
+}
+
+bool consume_screen_saver_request()
+{
+    const bool requested = g_screen_saver_requested;
+    g_screen_saver_requested = false;
+    return requested;
+}
+
+void set_screen_saver_active(bool active)
+{
+    g_screen_saver_active = active;
+}
+
+bool screen_saver_active()
+{
+    return g_screen_saver_active;
+}
+
+const char* ha_message_state()
+{
+    if (!g_console_state.ha_message.active)
+    {
+        return "none";
+    }
+    return alert_controller::acknowledged(AlertCode::HomeAssistantMessage) ? "acknowledged"
+                                                                           : "active";
+}
+
+bool apply_mqtt_command(const mqtt_commands::Command& command)
+{
+    using mqtt_commands::Target;
+    switch (command.target)
+    {
+    case Target::AlertLamp:
+    case Target::TestLamp:
+        g_console_state.lamp_overrides[command.target == Target::AlertLamp ? 0U : 1U] =
+            static_cast<LampOverride>(command.value);
+        break;
+    case Target::PanelBrightness:
+        g_console_state.panel_brightness = static_cast<BrightnessLevel>(command.value);
+        break;
+    case Target::KeyBacklight:
+        g_console_state.key_backlight_brightness = static_cast<BrightnessLevel>(command.value);
+        break;
+    case Target::Display:
+        if (static_cast<mqtt_commands::DisplaySetting>(command.value) ==
+            mqtt_commands::DisplaySetting::ScreenSaver)
+        {
+            g_screen_saver_requested = true;
+        }
+        else
+        {
+            g_user_activity_requested = true;
+        }
+        return true;
+    case Target::Page:
+        g_user_activity_requested = true;
+        (void)page_table::open(g_console_state, mqtt_commands::page_for(command.value));
+        break;
+    case Target::Message:
+    {
+        ConsoleState::HaMessage& message = g_console_state.ha_message;
+        if (command.message.text[0] == '\0')
+        {
+            message.active = false;
+            break;
+        }
+        // A new message shows even if the last one was accepted.
+        alert_controller::rearm(AlertCode::HomeAssistantMessage);
+        message.active = true;
+        message.severity = command.message.severity;
+        message.title = command.message.title;
+        text_case::copy_uppercase(message.title.data(), message.title.data(),
+                                  message.title.size());
+        message.text = command.message.text;
+        g_user_activity_requested = true;
+        break;
+    }
+    case Target::Count:
+        return false;
+    }
+    update_softkeys_from_state();
+    update_lamps_from_state();
+    g_redraw_requested = true;
+    return true;
 }
 
 /// @brief Applies persisted runtime preferences to the visible console state.
@@ -1021,6 +1145,19 @@ bool handle_button_event(const ButtonEvent& event)
     // the live matrix decode directly, so release edges are ignored here.
     if (event.type != ButtonEventType::Pressed)
     {
+        return false;
+    }
+
+    // HA keys (#151) do nothing on the panel: the press is queued for MQTT.
+    // Presses arrive once per key-down (debounced by input), so a held key
+    // sends one event.
+    if (ha_keys::contains(config_manager::settings().ha_key_mask, event.id))
+    {
+        if (g_ha_key_count < g_ha_key_queue.size())
+        {
+            g_ha_key_queue[(g_ha_key_head + g_ha_key_count) % g_ha_key_queue.size()] = event.id;
+            ++g_ha_key_count;
+        }
         return false;
     }
 

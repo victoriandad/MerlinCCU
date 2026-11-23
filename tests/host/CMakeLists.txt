@@ -50,6 +50,8 @@ add_executable(host_tests
     test_ha_request_plan.cpp
     test_ota_upload.cpp
     test_web_auth.cpp
+    test_mqtt_commands.cpp
+    test_ha_keys.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -66,6 +68,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/network/ha_request_plan.cpp
     ${MERLIN_ROOT}/src/network/ota_upload.cpp
     ${MERLIN_ROOT}/src/network/web_auth.cpp
+    ${MERLIN_ROOT}/src/network/mqtt_commands.cpp
     ${MERLIN_ROOT}/src/network/http_response.cpp
     ${MERLIN_ROOT}/src/network/weather_json_scan.cpp
     ${MERLIN_ROOT}/src/network/weather_normalisation.cpp
@@ -95,6 +98,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/softkey_builders.cpp
     ${MERLIN_ROOT}/src/core/cursor_navigation.cpp
     ${MERLIN_ROOT}/src/core/status_controller.cpp
+    ${MERLIN_ROOT}/src/core/ha_key_list.cpp
     ${MERLIN_ROOT}/src/core/home_controller.cpp
     ${MERLIN_ROOT}/src/core/page_table.cpp
 )
