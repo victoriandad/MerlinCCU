@@ -53,6 +53,14 @@ void erase_active_alert(ConsoleState& console_state, uint8_t index);
 /// alert_codes.h).
 void suppress_alert_code(uint8_t alert_code_index);
 
+/// @brief True when the alert's condition still holds but the operator has
+/// accepted it (#150: reported to Home Assistant for its messages).
+bool acknowledged(AlertCode code);
+
+/// @brief Forgets an acceptance so the next activation shows again, e.g. a
+/// new Home Assistant message after the last one was accepted.
+void rearm(AlertCode code);
+
 /// @brief Resets alert history, occurrence counts and failure-sample counters,
 /// e.g. on device reset.
 void reset();

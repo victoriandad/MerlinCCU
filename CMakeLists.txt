@@ -101,6 +101,7 @@ add_executable(MerlinCCU
     src/network/weather_forecast_parser.cpp
     src/network/weather_json_scan.cpp
     src/network/weather_normalisation.cpp
+    src/network/mqtt_commands.cpp
     src/network/ota_upload.cpp
     src/network/web_auth.cpp
     src/network/web_config_server.cpp

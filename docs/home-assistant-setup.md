@@ -94,6 +94,38 @@ Tracked entity, Firmware (the build's git commit), Firmware update
 (`confirmed`, `on_trial`, `rolled_back` or `not_partitioned`; see
 docs/ota.md) and Last settings change (see docs/web-access.md).
 
+### Controlling the CCU from HA
+
+The same device also gets entities HA can change (#150). Each one listens on
+`<base>/<mac>/<slug>/set` and reports back on `<base>/<mac>/<slug>/state`,
+so HA shows what the panel really does, including changes made at the
+panel.
+
+| Entity | Type | Values |
+| --- | --- | --- |
+| ALRT lamp, TEST lamp | select | `auto` (the CCU decides), `off`, `on`, `flash_slow`, `flash_fast` |
+| Panel brightness, Key backlight | select | `off`, `low`, `medium`, `high` (as BRT/DIM) |
+| Display | select | `awake`, `screen_saver` |
+| Page | select | `home`, `weather`, `calendar`, `status`, `alerts`, `shares`, `pinter`, `local_conditions` |
+| Message | notify | text for the alert list; empty text clears it |
+| Message state | sensor | `none`, `active`, `acknowledged` (accepted on the panel) |
+
+A message can also carry a title (up to 20 characters, shown in the alert
+list) and a severity (`message`, `warning` or `alert`) by publishing JSON
+to the message topic:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: merlinccu/<mac>/message/set
+  payload: '{"title":"Washing","message":"The machine has finished","severity":"warning"}'
+```
+
+Plain text from the Message entity's `notify.send_message` action uses the
+title `HA MESSAGE`. An automation can watch Message state for
+`acknowledged` to know someone accepted it at the panel. Unknown or
+over-long commands are refused and logged on the CCU's serial console.
+
 ## Several CCUs
 
 Units can share one network, one HA and one Mosquitto broker. Give each one:

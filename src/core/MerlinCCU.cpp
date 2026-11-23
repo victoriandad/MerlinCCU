@@ -559,12 +559,14 @@ int main()
 
         const uint16_t screen_saver_timeout_minutes =
             console_controller::state().screen_saver_timeout_minutes;
-        if (active_mode == ScreenMode::Menu && screen_saver_timeout_minutes > 0)
+        // Home Assistant can start the screen saver straight away (#150).
+        const bool saver_requested = console_controller::consume_screen_saver_request();
+        if (active_mode == ScreenMode::Menu && (saver_requested || screen_saver_timeout_minutes > 0))
         {
             const int64_t idle_us = absolute_time_diff_us(last_user_activity, get_absolute_time());
             const int64_t timeout_us =
                 static_cast<int64_t>(screen_saver_timeout_minutes) * kMicrosecondsPerMinute;
-            if (idle_us >= timeout_us)
+            if (saver_requested || idle_us >= timeout_us)
             {
                 active_mode = ScreenMode::LifeScreensaver;
                 active_screen_saver =
@@ -574,6 +576,7 @@ int main()
                 next_life_stats = make_timeout_time_ms(1000);
             }
         }
+        console_controller::set_screen_saver_active(active_mode == ScreenMode::LifeScreensaver);
 
         if (active_mode == ScreenMode::LifeScreensaver)
         {

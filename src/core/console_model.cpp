@@ -258,6 +258,9 @@ void make_default_console_state(ConsoleState& out)
     out.heap_status = {};
     out.stack_status = {};
     out.firmware_status = {};
+    out.web_pin_clear_confirming = false;
+    out.lamp_overrides.fill(LampOverride::Auto);
+    out.ha_message = {};
     out.display_timing_status = {};
 
     // The keypad debug surface is always present, so its snapshot fields start

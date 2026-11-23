@@ -83,6 +83,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `StackLow` | Warning | `stack_status.free_bytes` (worst case since boot) below `kStackLowFreeBytes` (1 KB), or `stack_status.overflow_reset` (the previous reset was the stack-limit fault) | `STACK LOW` | Dynamic detail (free bytes, or that the CCU restarted after an overflow) | No debounce: the figure only falls across a boot. Overflow flag comes from `stack_guard` via a watchdog scratch register. Bench: about 2.8 KB of the 8 KB stack used (#164) |
 | `ShareDataUnavailable` | Message | share data configured, invalid, and a real error/HTTP failure | `SHARES` | Static text | -- |
 | `PinterScheduleConflict` | Message | placeholder, hardcoded `false` | `PINTER` | Empty detail | Never fires yet -- see Missing Telemetry |
+| `HomeAssistantMessage` | From HA (default Message) | `ha_message.active`: HA sent a message over MQTT (#150) | HA's title, or `HA MESSAGE` | HA's text | Accepting it is reported to HA as Message state `acknowledged`; a new message shows again; empty text clears it |
 | `FirmwareUpdateRolledBack` | Warning | `firmware_status.rolled_back`: this boot followed an uploaded image that did not confirm itself, and the boot ROM went back to the previous one | `UPDATE FAILED` | Static text | Holds for the whole boot. The record lives in a POWMAN scratch register, so a power cut during the trial goes unreported (docs/ota.md) |
 
 ## Missing Telemetry
