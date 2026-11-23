@@ -11,7 +11,9 @@
 #include "lwip/netif.h"
 #include "pico/cyw43_arch.h"
 #include "pico/error.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
+#include "retry_backoff.h"
 #include "text_utils.h"
 #include <cstddef>
 #include <cstdio>
@@ -67,7 +69,11 @@ constexpr const char* kStaticIpDns = nullptr;
 #endif
 
 constexpr uint32_t kConnectTimeoutMs = 30000;
-constexpr uint32_t kRetryDelayMs = 10000;
+// Pause after a full pass through the credentials fails, doubling to 2
+// minutes (#155). Kept short: each pass already takes up to a minute of
+// join and DHCP time, and a router reboot should be noticed quickly.
+constexpr uint32_t kRetryDelayMs = 10000U;
+constexpr uint32_t kMaxRetryDelayMs = 2U * 60U * 1000U;
 constexpr uint32_t kDhcpWaitTimeoutMs = 30000;
 constexpr uint32_t kInternetProbeIntervalMs = 20000;
 constexpr uint32_t kInternetProbeTimeoutMs = 5000;
@@ -105,6 +111,7 @@ WifiStatus g_status = {};
 bool g_cyw43_initialized = false;
 int g_last_observed_link_status = CYW43_LINK_DOWN;
 absolute_time_t g_next_retry = nil_time;
+RetryBackoff g_retry_backoff(kRetryDelayMs, kMaxRetryDelayMs);
 absolute_time_t g_wait_for_ip_deadline = nil_time;
 // Guards the async join request itself: if cyw43_wifi_link_status() never
 // leaves its pre-connect value (a silent radio-level failure), this is the
@@ -529,7 +536,16 @@ WifiConnectionState state_from_link_status(int link_status)
 /// @brief Schedules the next Wi-Fi reconnect attempt.
 void schedule_retry()
 {
-    g_next_retry = make_timeout_time_ms(kRetryDelayMs);
+    const uint32_t delay_ms = g_retry_backoff.next_delay_ms(get_rand_32());
+    g_next_retry = make_timeout_time_ms(delay_ms);
+    std::printf("WiFi retrying in %lus\n", static_cast<unsigned long>(delay_ms / 1000U));
+}
+
+/// @brief Clears the retry timer and back-off once the link is up.
+void clear_retry()
+{
+    g_next_retry = nil_time;
+    g_retry_backoff.reset();
 }
 
 /// @brief Starts a fresh pass through the configured credential list after a pause.
@@ -900,7 +916,7 @@ bool update()
             update_ip_address();
             g_status.state = WifiConnectionState::Connected;
             start_sntp_if_needed();
-            g_next_retry = nil_time;
+            clear_retry();
             g_wait_for_ip_deadline = nil_time;
             reset_internet_probe_failures();
             g_next_probe = get_absolute_time();
@@ -912,7 +928,7 @@ bool update()
             {
                 g_status.state = WifiConnectionState::Connected;
                 start_sntp_if_needed();
-                g_next_retry = nil_time;
+                clear_retry();
                 g_wait_for_ip_deadline = nil_time;
                 reset_internet_probe_failures();
                 g_next_probe = get_absolute_time();
@@ -950,7 +966,7 @@ bool update()
         g_status.state = WifiConnectionState::Connected;
         start_sntp_if_needed();
         log_ip_address();
-        g_next_retry = nil_time;
+        clear_retry();
         g_wait_for_ip_deadline = nil_time;
         reset_internet_probe_failures();
         g_next_probe = get_absolute_time();

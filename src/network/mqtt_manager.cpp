@@ -19,7 +19,9 @@
 #include "ota_manager.h"
 #include "page_table.h"
 #include "pico/cyw43_arch.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
+#include "retry_backoff.h"
 #include "text_utils.h"
 
 namespace
@@ -274,6 +276,12 @@ bool g_connected = false;
 bool g_request_in_flight = false;
 bool g_availability_published = false;
 absolute_time_t g_dns_deadline = nil_time;
+// After a refused, failed or dropped session, when to start a fresh one
+// (#155). Nil until a failure is seen.
+absolute_time_t g_next_session_at = nil_time;
+constexpr uint32_t kReconnectInitialDelayMs = 5000U;
+constexpr uint32_t kReconnectMaxDelayMs = 5U * 60U * 1000U;
+RetryBackoff g_reconnect_backoff(kReconnectInitialDelayMs, kReconnectMaxDelayMs);
 mqtt_client_t* g_client = nullptr;
 PendingPublishType g_publish_type_in_flight = PendingPublishType::None;
 SensorId g_sensor_in_flight = SensorId::Status;
@@ -371,6 +379,7 @@ void reset_runtime(bool reset_publish_state)
     g_connect_in_progress = false;
     g_connected = false;
     g_dns_deadline = nil_time;
+    g_next_session_at = nil_time;
     g_request_in_flight = false;
     g_publish_type_in_flight = PendingPublishType::None;
     g_sensor_in_flight = SensorId::Status;
@@ -959,6 +968,7 @@ void mqtt_connection_cb(mqtt_client_t* client, void* arg, mqtt_connection_status
     if (status == MQTT_CONNECT_ACCEPTED)
     {
         g_connected = true;
+        g_reconnect_backoff.reset();
         set_status(MqttConnectionState::Connected, 0);
         PERIODIC_LOG("MQTT connected to %s:%u\n", g_broker_host,
                      static_cast<unsigned>(g_broker_port));
@@ -1264,6 +1274,8 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     const bool kWifiReady = wifi_status.ip_address[0] != '\0';
     if (!kWifiReady)
     {
+        // A new network link gets a prompt first attempt.
+        g_reconnect_backoff.reset();
         reset_runtime(true);
         g_status.state = MqttConnectionState::WaitingForWifi;
         g_status.last_error = 0;
@@ -1280,6 +1292,28 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     {
         g_dns_pending = false;
         set_status(MqttConnectionState::Error, ERR_TIMEOUT);
+    }
+
+    // A refused, failed or dropped session (a broker or HA restart) is torn
+    // down and started again after a growing delay. Nothing else retries it
+    // while Wi-Fi stays up (#155). The full reset republishes availability,
+    // discovery and every state, since a restarted broker may have lost them.
+    const bool kSessionDown = g_connect_attempted && !g_connected && !g_connect_in_progress &&
+                              !g_dns_pending && !g_dns_resolved;
+    if (kSessionDown)
+    {
+        if (is_nil_time(g_next_session_at))
+        {
+            const uint32_t kDelayMs = g_reconnect_backoff.next_delay_ms(get_rand_32());
+            g_next_session_at = make_timeout_time_ms(kDelayMs);
+            std::printf("MQTT reconnecting in %lus (failure %lu)\n",
+                        static_cast<unsigned long>(kDelayMs / 1000U),
+                        static_cast<unsigned long>(g_reconnect_backoff.failures()));
+        }
+        else if (time_reached(g_next_session_at))
+        {
+            reset_runtime(true);
+        }
     }
 
     // The connect flow is split across multiple updates: begin session, react

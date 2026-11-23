@@ -52,6 +52,7 @@ add_executable(host_tests
     test_web_auth.cpp
     test_mqtt_commands.cpp
     test_ha_keys.cpp
+    test_retry_backoff.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp

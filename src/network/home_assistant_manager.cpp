@@ -27,8 +27,10 @@
 #include "mbedtls/ssl.h"
 #include "open_meteo_parser.h"
 #include "pico/cyw43_arch.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
 #include "psram.h"
+#include "retry_backoff.h"
 #include "text_utils.h"
 #include "time_manager.h"
 #include "weather_forecast_parser.h"
@@ -76,6 +78,9 @@ constexpr uint32_t kTlsConnectTimeoutMs = 12000;
 constexpr uint32_t kTlsIoTimeoutMs = 12000;
 constexpr uint32_t kRetryDelayMs = 10000;
 constexpr uint32_t kDirectWeatherRetryDelayMs = 5 * 60 * 1000;
+// Repeated failures double those delays up to these caps (#155).
+constexpr uint32_t kMaxRetryDelayMs = 5U * 60U * 1000U;
+constexpr uint32_t kMaxDirectWeatherRetryDelayMs = 30U * 60U * 1000U;
 constexpr uint8_t kTcpPollInterval = 2;
 constexpr size_t kHttpTargetBufferSize = 640;
 constexpr char kOpenMeteoHost[] = "api.open-meteo.com";
@@ -205,6 +210,11 @@ ha_request_plan::Plan g_plan = {};
 Endpoint g_ha_endpoint = {};
 Endpoint g_open_meteo_endpoint = {};
 std::array<ChainSchedule, ha_request_plan::kChainCount> g_chains = {};
+// Per chain, in Chain order: HA, then Open-Meteo.
+std::array<RetryBackoff, ha_request_plan::kChainCount> g_chain_backoff = {
+    RetryBackoff(kRetryDelayMs, kMaxRetryDelayMs),
+    RetryBackoff(kDirectWeatherRetryDelayMs, kMaxDirectWeatherRetryDelayMs),
+};
 ip_addr_t g_resolved_ip = {};
 bool g_dns_pending = false;
 bool g_dns_resolved = false;
@@ -767,18 +777,28 @@ void reset_attempt_state()
 }
 
 /// @brief Finishes a failed request: records the state and restarts the
-/// current chain after `retry_ms` (never when 0).
+/// current chain after a back-off (never when `retry_ms` is 0).
+/// @details A non-zero `retry_ms` only says the failure is worth retrying;
+/// the chain's back-off picks the delay, growing with each failure in a row.
 void finish_request(HomeAssistantConnectionState state, int last_error, int last_http_status,
                     uint32_t retry_ms)
 {
+    const Chain chain = current_chain();
+    if (retry_ms > 0U)
+    {
+        retry_ms = g_chain_backoff[static_cast<size_t>(chain)].next_delay_ms(get_rand_32());
+        std::printf("HA %s retry in %lus\n", chain == Chain::HomeAssistant ? "REST" : "weather",
+                    static_cast<unsigned long>(retry_ms / 1000U));
+    }
     set_status(state, last_error, last_http_status);
-    schedule_chain_restart(current_chain(), retry_ms);
+    schedule_chain_restart(chain, retry_ms);
     reset_attempt_state();
 }
 
 /// @brief Finalizes a successful request and advances the polling sequence.
 void finish_request_success(int http_status)
 {
+    g_chain_backoff[static_cast<size_t>(current_chain())].reset();
     set_status(HomeAssistantConnectionState::Connected, 0, http_status);
     reset_attempt_state();
     advance_request_kind();
@@ -827,6 +847,7 @@ void finish_optional_request_soft_failure(err_t err)
     }
 
     reset_attempt_state();
+    g_chain_backoff[static_cast<size_t>(current_chain())].reset();
     set_status(HomeAssistantConnectionState::Connected, 0,
                http_status > 0 ? http_status : g_status.last_http_status);
     advance_request_kind();
@@ -1728,6 +1749,7 @@ void init()
     {
         schedule_of(chain) = {};
         schedule_chain_restart(chain, 0U);
+        g_chain_backoff[static_cast<size_t>(chain)].reset();
     }
     g_request_kind = RequestKind::ProbeApi;
 }
@@ -1806,6 +1828,7 @@ bool update(const WifiStatus& wifi_status)
         {
             schedule_of(chain) = {};
             schedule_chain_restart(chain, 0U);
+            g_chain_backoff[static_cast<size_t>(chain)].reset();
         }
         return previous != g_status;
     }
