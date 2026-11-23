@@ -3366,11 +3366,25 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     }
     else if (matches_get_path(request, "/api/firmware"))
     {
-        // Plain key=value lines for tools/ota_update.py and other scripts.
+        // Plain key=value lines for tools/ota_update.py, tools/soak_monitor.py
+        // and other scripts. The health lines (#155) are numbers and slugs
+        // so a soak log can be charted without parsing display text.
         const FirmwareStatus firmware = ota_manager::status();
-        std::snprintf(g_response, sizeof(g_response), "%sversion=%s\nslot=%s\nstate=%s\n",
-                      kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
-                      ota_manager::state_name());
+        const ConsoleState& console = console_controller::state();
+        std::snprintf(
+            g_response, sizeof(g_response),
+            "%sversion=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\nwifi_connected=%d\n"
+            "mqtt_connected=%d\nha_connected=%d\nstack_free=%lu\nheap_arena=%lu\nalerts=%u\n",
+            kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
+            ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
+            static_cast<unsigned long>(console.boot_status.uptime_minutes),
+            console.wifi_status.state == WifiConnectionState::Connected ? 1 : 0,
+            console.mqtt_status.state == MqttConnectionState::Connected ? 1 : 0,
+            console.home_assistant_status.state == HomeAssistantConnectionState::Connected ? 1
+                                                                                            : 0,
+            static_cast<unsigned long>(console.stack_status.free_bytes),
+            static_cast<unsigned long>(console.heap_status.arena_bytes),
+            static_cast<unsigned>(console.alert_count));
         send_response(session, pcb, g_response);
         return;
     }
