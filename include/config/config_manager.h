@@ -60,7 +60,10 @@ struct RuntimeConfig
     std::array<char, kHomeAssistantTokenCapacity> home_assistant_token;
     std::array<char, 64> home_assistant_entity_id;
     std::array<char, 64> home_assistant_self_entity_id;
+    /// Unused since HA weather moved to MQTT (#153); kept so the saved
+    /// settings layout is unchanged. Free for reuse in a later version.
     std::array<char, 64> weather_entity_id;
+    /// Unused since #153, as weather_entity_id.
     std::array<char, 64> sun_entity_id;
     std::array<char, 64> weather_coordinates;
 

@@ -1,9 +1,12 @@
-"""MerlinCCU share feed for Home Assistant.
+"""MerlinCCU support for Home Assistant: share feed and house weather.
 
-Serves `GET /api/merlinccu/shares?period=...` on Home Assistant's own port,
-in the shape the MerlinCCU firmware expects (docs/share-feed-design.md).
-Prices come from Yahoo Finance's chart API, fetched here so the CCU never
-talks to a market-data provider itself.
+Share feed: serves `GET /api/merlinccu/shares?period=...` on Home Assistant's
+own port, in the shape the MerlinCCU firmware expects
+(docs/share-feed-design.md). Prices come from Yahoo Finance's chart API,
+fetched here so the CCU never talks to a market-data provider itself.
+
+House weather (#153): publishes one HA weather entity to every CCU over MQTT
+(weather_publisher.py, docs/mqtt-household-data.md).
 
 Configured in configuration.yaml; see docs/home-assistant-setup.md.
 """
@@ -38,6 +41,10 @@ CONF_SHARES = "shares"
 CONF_SYMBOL = "symbol"
 CONF_NAME = "name"
 CONF_EXCHANGE = "exchange"
+CONF_WEATHER = "weather"
+CONF_ENTITY = "entity"
+CONF_SUN = "sun"
+CONF_BASE_TOPIC = "base_topic"
 
 # The CCU gives up on a response after 5 s (kIoTimeoutMs in
 # share_price_manager.cpp), so Yahoo gets less than that; a slow fetch is
@@ -58,14 +65,26 @@ SHARE_SCHEMA = vol.Schema(
     }
 )
 
+WEATHER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ENTITY): cv.entity_domain("weather"),
+        vol.Optional(CONF_SUN, default="sun.sun"): cv.entity_domain("sun"),
+        # The CCUs' MQTT base topic setting (default "merlinccu").
+        vol.Optional(CONF_BASE_TOPIC, default="merlinccu"): vol.All(
+            cv.string, vol.Length(min=1, max=40)
+        ),
+    }
+)
+
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
                 vol.Optional(CONF_FEED_TOKEN): vol.All(cv.string, vol.Length(max=127)),
-                vol.Required(CONF_SHARES): vol.All(
+                vol.Optional(CONF_SHARES): vol.All(
                     cv.ensure_list, [SHARE_SCHEMA], vol.Length(min=1, max=MAX_SHARES)
                 ),
+                vol.Optional(CONF_WEATHER): WEATHER_SCHEMA,
             }
         )
     },
@@ -74,14 +93,29 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the share feed view from the `merlinccu:` YAML block."""
+    """Set up the share feed and the weather publisher from the `merlinccu:` YAML block."""
     conf = config[DOMAIN]
-    shares = [
-        feed.WatchedShare(s[CONF_SYMBOL], s.get(CONF_NAME), s.get(CONF_EXCHANGE))
-        for s in conf[CONF_SHARES]
-    ]
-    hass.http.register_view(SharesFeedView(hass, shares, conf.get(CONF_FEED_TOKEN)))
-    _LOGGER.info("MerlinCCU share feed serving %d share(s) at %s", len(shares), FEED_PATH)
+    if CONF_SHARES in conf:
+        shares = [
+            feed.WatchedShare(s[CONF_SYMBOL], s.get(CONF_NAME), s.get(CONF_EXCHANGE))
+            for s in conf[CONF_SHARES]
+        ]
+        hass.http.register_view(SharesFeedView(hass, shares, conf.get(CONF_FEED_TOKEN)))
+        _LOGGER.info("MerlinCCU share feed serving %d share(s) at %s", len(shares), FEED_PATH)
+
+    if CONF_WEATHER in conf:
+        # Imported here so a share-feed-only setup never needs MQTT.
+        from .weather_publisher import WeatherPublisher
+
+        weather = conf[CONF_WEATHER]
+        WeatherPublisher(
+            hass, weather[CONF_ENTITY], weather[CONF_SUN], weather[CONF_BASE_TOPIC]
+        ).async_start()
+        _LOGGER.info(
+            "MerlinCCU weather from %s published under %s/house/weather",
+            weather[CONF_ENTITY],
+            weather[CONF_BASE_TOPIC],
+        )
     return True
 
 

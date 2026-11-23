@@ -918,13 +918,11 @@ HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)
 {
     using weather_screens::WeatherPageState;
 
-    ConsoleState ha_no_entity = open_weather_page(0);
-    ha_no_entity.home_assistant_status.weather_entity_id.fill('\0');
-    check_weather_state(ha_no_entity, WeatherPageState::NotConfigured,
-                        "weather_not_configured_home_assistant");
-
+    // HA weather arrives over MQTT (#153): only MQTT being off needs setting up.
     ConsoleState ha_off = open_weather_page(0);
     ha_off.home_assistant_status.weather_state = HomeAssistantConnectionState::Unconfigured;
+    check_weather_state(ha_off, WeatherPageState::NotConfigured,
+                        "weather_not_configured_home_assistant");
 
     ConsoleState meteo_no_coords = open_weather_page(0);
     meteo_no_coords.weather_source = WeatherSource::OpenMeteo;
@@ -936,7 +934,7 @@ HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)
     ConsoleState meteo_bad_coords = meteo_no_coords;
     set_text(meteo_bad_coords.home_assistant_status.weather_entity_id, "not,a,place");
 
-    for (const ConsoleState* state : {&ha_no_entity, &ha_off, &meteo_no_coords, &meteo_bad_coords})
+    for (const ConsoleState* state : {&ha_off, &meteo_no_coords, &meteo_bad_coords})
     {
         const weather_screens::WeatherPageMessage message =
             weather_screens::weather_page_message(*state);

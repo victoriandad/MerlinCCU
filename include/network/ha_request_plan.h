@@ -7,13 +7,14 @@
 /// makes, and in what order (#165).
 /// @details One client and one response buffer serve two independent chains
 /// of requests:
-/// - the Home Assistant chain: API probe, tracked entity, HA weather (only
-///   when HA is the weather source) and the self-entity publish;
+/// - the Home Assistant chain: API probe, tracked entity and the self-entity
+///   publish;
 /// - the Open-Meteo chain: one forecast fetch, when Open-Meteo is the
 ///   weather source.
-/// Each chain has its own schedule and status, so one failing never stops
-/// or marks down the other. This header is pure logic so host tests can
-/// cover every combination of settings.
+/// Weather from Home Assistant arrives over MQTT instead (#153), so it adds
+/// no requests here. Each chain has its own schedule and status, so one
+/// failing never stops or marks down the other. This header is pure logic so
+/// host tests can cover every combination of settings.
 namespace ha_request_plan
 {
 
@@ -22,10 +23,6 @@ enum class RequestKind : uint8_t
 {
     ProbeApi = 0,
     FetchTrackedEntity,
-    FetchWeatherEntity,
-    FetchWeatherForecast,
-    FetchWeatherDailyForecast,
-    FetchSunEntity,
     PublishSelfEntity,
     FetchOpenMeteo,
 };
@@ -45,9 +42,6 @@ struct Plan
     /// HA REST is enabled, with a valid host and a token.
     bool home_assistant = false;
     bool tracked_entity = false;
-    /// HA is the weather source and a weather entity is set.
-    bool home_assistant_weather = false;
-    bool sun_entity = false;
     bool self_entity = false;
     /// Open-Meteo is the weather source and the saved location is valid.
     bool open_meteo = false;
@@ -67,8 +61,8 @@ std::optional<RequestKind> first_request(Chain chain, const Plan& plan);
 
 /// @brief Returns the request after `current` in its chain, or nothing when
 /// the chain's cycle is complete.
-/// @details The HA chain probes the API first, then fetches optional data in
-/// priority order. The sun entity is only fetched alongside HA weather.
+/// @details The HA chain probes the API first, then makes the optional
+/// requests in priority order.
 std::optional<RequestKind> next_request(RequestKind current, const Plan& plan);
 
 } // namespace ha_request_plan

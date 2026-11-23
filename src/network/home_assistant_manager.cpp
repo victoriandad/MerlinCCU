@@ -15,7 +15,7 @@
 #include "debug_logging.h"
 #include "geo_coordinates.h"
 #include "ha_request_plan.h"
-#include "home_assistant_weather_parser.h"
+#include "house_weather.h"
 #include "http_response.h"
 #include "lwip/altcp.h"
 #include "lwip/altcp_tcp.h"
@@ -25,6 +25,7 @@
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "mbedtls/ssl.h"
+#include "mqtt_manager.h"
 #include "open_meteo_parser.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
@@ -50,13 +51,6 @@ inline constexpr char HOME_ASSISTANT_ENTITY_ID[] = "";
 inline constexpr char HOME_ASSISTANT_SELF_ENTITY_ID[] = "";
 #endif
 
-#if __has_include("weather_display_config.h")
-#include "weather_display_config.h"
-#else
-inline constexpr char HOME_ASSISTANT_WEATHER_ENTITY_ID[] = "";
-inline constexpr char HOME_ASSISTANT_SUN_ENTITY_ID[] = "";
-#endif
-
 /// @brief Normalizes user-editable credential symbols to the repo's internal naming style.
 /// @details The local configuration headers intentionally keep explicit
 /// `HOME_ASSISTANT_*` names because users edit those files directly. The implementation uses
@@ -66,8 +60,6 @@ inline constexpr uint16_t kHomeAssistantPort = HOME_ASSISTANT_PORT;
 inline constexpr const char* kHomeAssistantToken = HOME_ASSISTANT_TOKEN;
 inline constexpr const char* kTrackedEntityId = HOME_ASSISTANT_ENTITY_ID;
 inline constexpr const char* kSelfEntityId = HOME_ASSISTANT_SELF_ENTITY_ID;
-inline constexpr const char* kWeatherEntityId = HOME_ASSISTANT_WEATHER_ENTITY_ID;
-inline constexpr const char* kSunEntityId = HOME_ASSISTANT_SUN_ENTITY_ID;
 
 constexpr uint32_t kResolveTimeoutMs = 4000;
 constexpr uint32_t kConnectTimeoutMs = 4000;
@@ -87,8 +79,7 @@ bool runtime_home_assistant_config_present()
 {
     const RuntimeConfig& config = config_manager::settings();
     return config.home_assistant_enabled || config.home_assistant_host[0] != '\0' ||
-           config.home_assistant_token[0] != '\0' || config.home_assistant_entity_id[0] != '\0' ||
-           config.weather_entity_id[0] != '\0';
+           config.home_assistant_token[0] != '\0' || config.home_assistant_entity_id[0] != '\0';
 }
 
 bool active_home_assistant_enabled()
@@ -131,19 +122,6 @@ const char* active_self_entity_id()
     const RuntimeConfig& config = config_manager::settings();
     return runtime_home_assistant_config_present() ? config.home_assistant_self_entity_id.data()
                                                    : kSelfEntityId;
-}
-
-const char* active_weather_entity_id()
-{
-    const RuntimeConfig& config = config_manager::settings();
-    return runtime_home_assistant_config_present() ? config.weather_entity_id.data()
-                                                   : kWeatherEntityId;
-}
-
-const char* active_sun_entity_id()
-{
-    const RuntimeConfig& config = config_manager::settings();
-    return runtime_home_assistant_config_present() ? config.sun_entity_id.data() : kSunEntityId;
 }
 
 WeatherSource active_weather_source()
@@ -248,25 +226,6 @@ ChainSchedule& schedule_of(Chain chain)
     return g_chains[static_cast<size_t>(chain)];
 }
 
-/// @brief Returns whether a request fetches weather, from HA or Open-Meteo.
-bool is_weather_request(RequestKind kind)
-{
-    switch (kind)
-    {
-    case RequestKind::FetchWeatherEntity:
-    case RequestKind::FetchWeatherForecast:
-    case RequestKind::FetchWeatherDailyForecast:
-    case RequestKind::FetchOpenMeteo:
-        return true;
-    case RequestKind::ProbeApi:
-    case RequestKind::FetchTrackedEntity:
-    case RequestKind::FetchSunEntity:
-    case RequestKind::PublishSelfEntity:
-        return false;
-    }
-    return false;
-}
-
 /// @brief Emits focused serial diagnostics for direct weather bring-up.
 void direct_weather_log(const char* format, ...)
 {
@@ -324,14 +283,6 @@ const char* request_kind_name(RequestKind kind)
         return "probe";
     case RequestKind::FetchTrackedEntity:
         return "entity";
-    case RequestKind::FetchWeatherEntity:
-        return "weather";
-    case RequestKind::FetchWeatherForecast:
-        return "hourly";
-    case RequestKind::FetchWeatherDailyForecast:
-        return "daily";
-    case RequestKind::FetchSunEntity:
-        return "sun";
     case RequestKind::PublishSelfEntity:
         return "publish";
     case RequestKind::FetchOpenMeteo:
@@ -485,12 +436,6 @@ void clear_weather_alert_status()
     weather_forecast::clear_weather_alert_status(g_status);
 }
 
-/// @brief Updates sunrise and sunset display strings from the sun entity payload.
-void update_sun_times_from_json(const char* json)
-{
-    home_assistant_weather::update_sun_times_from_json(json, g_status);
-}
-
 /// @brief Clears the cached hourly weather forecast rows.
 void clear_weather_forecast()
 {
@@ -501,22 +446,6 @@ void clear_weather_forecast()
 void clear_weather_daily_forecast()
 {
     weather_forecast::clear_weather_daily_forecast(g_status);
-}
-
-/// @brief Parses the hourly weather forecast response into display rows.
-bool parse_hourly_forecast_response(const char* json)
-{
-    return weather_forecast::parse_hourly_forecast_response(json, g_status,
-                                                             g_weather_temperature_unit,
-                                                             g_weather_wind_source_unit);
-}
-
-/// @brief Parses a daily weather forecast response into week-mode rows.
-bool parse_daily_forecast_response(const char* json)
-{
-    return weather_forecast::parse_daily_forecast_response(json, g_status,
-                                                            g_weather_temperature_unit,
-                                                            g_weather_wind_source_unit);
 }
 
 /// @brief Parses an Open-Meteo current/hourly/daily weather response.
@@ -556,10 +485,6 @@ bool request_kind_success(RequestKind kind, int http_status)
     {
     case RequestKind::ProbeApi:
     case RequestKind::FetchTrackedEntity:
-    case RequestKind::FetchWeatherEntity:
-    case RequestKind::FetchWeatherForecast:
-    case RequestKind::FetchWeatherDailyForecast:
-    case RequestKind::FetchSunEntity:
     case RequestKind::FetchOpenMeteo:
         return http_status == 200;
     case RequestKind::PublishSelfEntity:
@@ -662,17 +587,15 @@ void load_plan()
     g_plan.home_assistant =
         parse_home_assistant_endpoint() && active_home_assistant_token()[0] != '\0';
     g_plan.tracked_entity = active_tracked_entity_id()[0] != '\0';
-    g_plan.home_assistant_weather = g_active_weather_source == WeatherSource::HomeAssistant &&
-                                    active_weather_entity_id()[0] != '\0';
-    g_plan.sun_entity = active_sun_entity_id()[0] != '\0';
     g_plan.self_entity = active_self_entity_id()[0] != '\0';
     g_plan.open_meteo = parse_open_meteo_endpoint();
 }
 
 /// @brief Updates the status of the current chain.
-/// @details The HA chain owns the HA link fields; with HA as the weather
-/// source its state is also the weather state. The Open-Meteo chain only
+/// @details The HA chain owns the HA link fields. The Open-Meteo chain only
 /// touches the weather state, so its failures never mark HA down (#165).
+/// With HA as the weather source the weather state follows MQTT instead
+/// (see update_house_weather_state()).
 void set_status(HomeAssistantConnectionState state, int last_error, int last_http_status)
 {
     if (current_chain() == Chain::OpenMeteo)
@@ -684,10 +607,6 @@ void set_status(HomeAssistantConnectionState state, int last_error, int last_htt
     g_status.state = state;
     g_status.last_error = last_error;
     g_status.last_http_status = last_http_status;
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
-    {
-        g_status.weather_state = state;
-    }
 }
 
 /// @brief Sets both chains to the same idle state, leaving an inactive
@@ -695,14 +614,82 @@ void set_status(HomeAssistantConnectionState state, int last_error, int last_htt
 void set_idle_states(HomeAssistantConnectionState state)
 {
     g_status.state = g_plan.home_assistant ? state : HomeAssistantConnectionState::Unconfigured;
-    if (g_active_weather_source == WeatherSource::HomeAssistant)
-    {
-        g_status.weather_state = g_status.state;
-    }
-    else
+    if (g_active_weather_source == WeatherSource::OpenMeteo)
     {
         g_status.weather_state =
             g_plan.open_meteo ? state : HomeAssistantConnectionState::Unconfigured;
+    }
+}
+
+/// @brief Maps the MQTT link onto the weather state, for HA weather (#153).
+HomeAssistantConnectionState weather_state_from_mqtt(MqttConnectionState state)
+{
+    switch (state)
+    {
+    case MqttConnectionState::Disabled:
+        return HomeAssistantConnectionState::Disabled;
+    case MqttConnectionState::Unconfigured:
+        return HomeAssistantConnectionState::Unconfigured;
+    case MqttConnectionState::WaitingForWifi:
+        return HomeAssistantConnectionState::WaitingForWifi;
+    case MqttConnectionState::Resolving:
+        return HomeAssistantConnectionState::Resolving;
+    case MqttConnectionState::Connecting:
+        return HomeAssistantConnectionState::Connecting;
+    case MqttConnectionState::Connected:
+        return HomeAssistantConnectionState::Connected;
+    case MqttConnectionState::AuthFailed:
+        return HomeAssistantConnectionState::Unauthorized;
+    case MqttConnectionState::Error:
+        return HomeAssistantConnectionState::Error;
+    }
+    return HomeAssistantConnectionState::Error;
+}
+
+/// @brief Applies one house weather payload from MQTT (main loop).
+/// @details The data's age comes from the payload's own timestamp once the
+/// clock is set, so data HA kept retained while it was cut off shows its
+/// true age (and goes stale) rather than looking fresh on arrival.
+void apply_house_weather(house_weather::Topic topic, const char* json)
+{
+    if (g_active_weather_source != WeatherSource::HomeAssistant)
+    {
+        return;
+    }
+    const std::optional<uint32_t> timestamp = house_weather::apply(topic, json, g_status);
+    if (!timestamp.has_value())
+    {
+        std::printf("HA weather payload refused (topic %u)\n", static_cast<unsigned>(topic));
+        return;
+    }
+    if (topic != house_weather::Topic::Now)
+    {
+        return;
+    }
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    uint32_t age_ms = 0U;
+    if (const std::optional<uint32_t> utc = time_manager::utc_now();
+        utc.has_value() && *utc > *timestamp)
+    {
+        constexpr uint32_t kMaxAgeSeconds = UINT32_MAX / 1000U;
+        age_ms = std::min(*utc - *timestamp, kMaxAgeSeconds) * 1000U;
+    }
+    // 0 means "never fetched", so very old data is pinned to boot + 1 ms.
+    g_status.weather_last_success_ms = (age_ms < now_ms) ? now_ms - age_ms : 1U;
+    PERIODIC_LOG("HA weather over MQTT: %s %s, %lu s old\n",
+                 g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
+                 g_status.weather_temperature[0] ? g_status.weather_temperature.data() : "-",
+                 static_cast<unsigned long>(age_ms / 1000U));
+}
+
+/// @brief Keeps HA weather in step with MQTT: applies new payloads and
+/// mirrors the link state.
+void update_house_weather()
+{
+    mqtt_manager::take_house_weather(apply_house_weather);
+    if (g_active_weather_source == WeatherSource::HomeAssistant)
+    {
+        g_status.weather_state = weather_state_from_mqtt(mqtt_manager::status().state);
     }
 }
 
@@ -794,29 +781,6 @@ void finish_optional_request_soft_failure(err_t err)
     case RequestKind::FetchTrackedEntity:
         g_status.tracked_entity_state.fill('\0');
         break;
-    case RequestKind::FetchWeatherEntity:
-        g_status.weather_source_hint.fill('\0');
-        g_status.weather_condition.fill('\0');
-        g_status.weather_temperature.fill('\0');
-        g_status.weather_wind_unit.fill('\0');
-        g_weather_wind_source_unit[0] = '\0';
-        break;
-    case RequestKind::FetchWeatherForecast:
-        if (!parse_hourly_forecast_response(response_body()))
-        {
-            clear_weather_forecast();
-        }
-        break;
-    case RequestKind::FetchWeatherDailyForecast:
-        if (!parse_daily_forecast_response(response_body()))
-        {
-            clear_weather_daily_forecast();
-        }
-        break;
-    case RequestKind::FetchSunEntity:
-        g_status.sunrise_text.fill('\0');
-        g_status.sunset_text.fill('\0');
-        break;
     case RequestKind::PublishSelfEntity:
         g_status.self_entity_published = false;
         break;
@@ -868,56 +832,6 @@ bool build_request()
     {
         const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
                                              g_status.tracked_entity_id.data());
-        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
-        {
-            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
-            return false;
-        }
-        target = target_buffer;
-    }
-    else if (g_request_kind == RequestKind::FetchWeatherEntity)
-    {
-        const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
-                                             g_status.weather_entity_id.data());
-        if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
-        {
-            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
-            return false;
-        }
-        target = target_buffer;
-    }
-    else if (g_request_kind == RequestKind::FetchWeatherForecast)
-    {
-        method = "POST";
-        target = "/api/services/weather/get_forecasts?return_response";
-
-        const int body_len = std::snprintf(g_request_body, sizeof(g_request_body),
-                                           "{\"entity_id\":\"%s\",\"type\":\"hourly\"}",
-                                           g_status.weather_entity_id.data());
-        if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
-        {
-            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
-            return false;
-        }
-    }
-    else if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
-    {
-        method = "POST";
-        target = "/api/services/weather/get_forecasts?return_response";
-
-        const int body_len = std::snprintf(g_request_body, sizeof(g_request_body),
-                                           "{\"entity_id\":\"%s\",\"type\":\"daily\"}",
-                                           g_status.weather_entity_id.data());
-        if (body_len <= 0 || static_cast<size_t>(body_len) >= sizeof(g_request_body))
-        {
-            finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
-            return false;
-        }
-    }
-    else if (g_request_kind == RequestKind::FetchSunEntity)
-    {
-        const int target_len = std::snprintf(target_buffer, sizeof(target_buffer), "/api/states/%s",
-                                             active_sun_entity_id());
         if (target_len <= 0 || static_cast<size_t>(target_len) >= sizeof(target_buffer))
         {
             finish_request(HomeAssistantConnectionState::Error, -1, 0, active_failure_retry_ms());
@@ -1058,13 +972,9 @@ void handle_http_status(int http_status)
                  request_kind_name(g_request_kind), static_cast<unsigned>(g_response_peak_len),
                  static_cast<unsigned>(sizeof(g_response)));
 
-    if (is_weather_request(g_request_kind))
-    {
-        g_status.weather_http_status = http_status;
-    }
-
     if (g_request_kind == RequestKind::FetchOpenMeteo)
     {
+        g_status.weather_http_status = http_status;
         if (http_status == 200 && parse_open_meteo_weather(response_body()))
         {
             copy_text(g_status.weather_source_hint, "Open-Meteo");
@@ -1116,55 +1026,6 @@ void handle_http_status(int http_status)
             PERIODIC_LOG("HA entity state %s=%s\n", g_status.tracked_entity_id.data(),
                          g_status.tracked_entity_state.data());
         }
-        else if (g_request_kind == RequestKind::FetchWeatherEntity)
-        {
-            if (home_assistant_weather::parse_current_weather_entity(
-                    response_body(), g_status, g_weather_temperature_unit,
-                    g_weather_wind_source_unit, sizeof(g_weather_wind_source_unit)))
-            {
-                g_status.weather_last_success_ms = to_ms_since_boot(get_absolute_time());
-            }
-
-            PERIODIC_LOG("HA weather %s=%s %s\n", g_status.weather_entity_id.data(),
-                         g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
-                         g_status.weather_temperature[0] ? g_status.weather_temperature.data()
-                                                         : "-");
-        }
-        else if (g_request_kind == RequestKind::FetchWeatherForecast)
-        {
-            if (parse_hourly_forecast_response(response_body()))
-            {
-                PERIODIC_LOG("HA hourly forecast %s count=%u\n", g_status.weather_entity_id.data(),
-                             static_cast<unsigned>(g_status.weather_forecast_count));
-            }
-            else
-            {
-                clear_weather_forecast();
-                PERIODIC_LOG("HA hourly forecast parse failed %s\n",
-                             g_status.weather_entity_id.data());
-            }
-        }
-        else if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
-        {
-            if (parse_daily_forecast_response(response_body()))
-            {
-                PERIODIC_LOG("HA daily forecast %s count=%u\n", g_status.weather_entity_id.data(),
-                             static_cast<unsigned>(g_status.weather_daily_forecast_count));
-            }
-            else
-            {
-                clear_weather_daily_forecast();
-                PERIODIC_LOG("HA daily forecast parse failed %s\n",
-                             g_status.weather_entity_id.data());
-            }
-        }
-        else if (g_request_kind == RequestKind::FetchSunEntity)
-        {
-            update_sun_times_from_json(response_body());
-            PERIODIC_LOG("HA sun %s rise=%s set=%s\n", active_sun_entity_id(),
-                         g_status.sunrise_text[0] ? g_status.sunrise_text.data() : "-",
-                         g_status.sunset_text[0] ? g_status.sunset_text.data() : "-");
-        }
         else if (g_request_kind == RequestKind::PublishSelfEntity)
         {
             g_status.self_entity_published = true;
@@ -1204,58 +1065,6 @@ void handle_http_status(int http_status)
         advance_request_kind();
         PERIODIC_LOG("HA tracked entity unavailable %s status=%d\n",
                      g_status.tracked_entity_id.data(), http_status);
-        return;
-    }
-
-    if (g_request_kind == RequestKind::FetchWeatherEntity)
-    {
-        g_status.weather_source_hint.fill('\0');
-        g_status.weather_condition.fill('\0');
-        g_status.weather_temperature.fill('\0');
-        g_status.weather_wind_unit.fill('\0');
-        clear_current_weather_metrics();
-        clear_weather_alert_status();
-        g_weather_temperature_unit = '\0';
-        g_weather_wind_source_unit[0] = '\0';
-        reset_attempt_state();
-        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
-        advance_request_kind();
-        PERIODIC_LOG("HA weather entity unavailable %s status=%d\n",
-                     g_status.weather_entity_id.data(), http_status);
-        return;
-    }
-
-    if (g_request_kind == RequestKind::FetchWeatherForecast)
-    {
-        clear_weather_forecast();
-        reset_attempt_state();
-        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
-        advance_request_kind();
-        PERIODIC_LOG("HA hourly forecast unavailable %s status=%d\n",
-                     g_status.weather_entity_id.data(), http_status);
-        return;
-    }
-
-    if (g_request_kind == RequestKind::FetchWeatherDailyForecast)
-    {
-        clear_weather_daily_forecast();
-        reset_attempt_state();
-        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
-        advance_request_kind();
-        PERIODIC_LOG("HA daily forecast unavailable %s status=%d\n",
-                     g_status.weather_entity_id.data(), http_status);
-        return;
-    }
-
-    if (g_request_kind == RequestKind::FetchSunEntity)
-    {
-        g_status.sunrise_text.fill('\0');
-        g_status.sunset_text.fill('\0');
-        reset_attempt_state();
-        set_status(HomeAssistantConnectionState::Connected, 0, http_status);
-        advance_request_kind();
-        PERIODIC_LOG("HA sun entity unavailable %s status=%d\n", active_sun_entity_id(),
-                     http_status);
         return;
     }
 
@@ -1712,8 +1521,8 @@ void init()
     clear_runtime_data();
     if (g_active_weather_source == WeatherSource::HomeAssistant)
     {
-        copy_text(g_status.weather_entity_id, active_weather_entity_id());
-        copy_text(g_status.weather_host, g_ha_endpoint.host);
+        // HA weather arrives over MQTT (#153); the Status page shows the broker.
+        copy_text(g_status.weather_host, config_manager::settings().mqtt_host.data());
     }
     else
     {
@@ -1784,6 +1593,7 @@ bool update(const WifiStatus& wifi_status)
         init();
         return previous != g_status;
     }
+    update_house_weather();
 
     // With neither chain set up there is nothing to fetch; init() has
     // already marked both Unconfigured.

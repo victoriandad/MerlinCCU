@@ -48,6 +48,7 @@ add_executable(host_tests
     test_console_navigation.cpp
     test_geo_coordinates.cpp
     test_ha_request_plan.cpp
+    test_house_weather.cpp
     test_ota_upload.cpp
     test_web_auth.cpp
     test_mqtt_commands.cpp
@@ -66,6 +67,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/pinter_persistence.cpp
     ${MERLIN_ROOT}/src/core/calendar_navigation.cpp
     ${MERLIN_ROOT}/src/network/ha_request_plan.cpp
+    ${MERLIN_ROOT}/src/network/house_weather.cpp
     ${MERLIN_ROOT}/src/network/ota_upload.cpp
     ${MERLIN_ROOT}/src/network/web_auth.cpp
     ${MERLIN_ROOT}/src/network/mqtt_commands.cpp
