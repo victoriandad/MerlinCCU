@@ -438,11 +438,17 @@ void sync(ConsoleState& console_state)
         console_state.home_assistant_status.weather_temperature[0] != '\0' ||
         console_state.home_assistant_status.weather_forecast_count > 0U ||
         console_state.home_assistant_status.weather_daily_forecast_count > 0U;
+    // HA's weather arrives over MQTT (#153), so its prerequisite is the MQTT
+    // link (weather_state follows it), not HA's REST connection; a lost link
+    // is MQTT's problem, not a weather one. Open-Meteo needs the internet
+    // and is the only source with an HTTP status of its own.
+    const bool ha_weather = console_state.weather_source == WeatherSource::HomeAssistant;
     const bool weather_prerequisites_ok =
-        (console_state.weather_source == WeatherSource::HomeAssistant)
-            ? (ha_state == HomeAssistantConnectionState::Connected)
-            : console_state.wifi_status.internet_reachable;
-    const bool weather_http_failed = console_state.home_assistant_status.weather_http_status >= 400;
+        ha_weather ? (console_state.home_assistant_status.weather_state ==
+                      HomeAssistantConnectionState::Connected)
+                   : console_state.wifi_status.internet_reachable;
+    const bool weather_http_failed =
+        !ha_weather && console_state.home_assistant_status.weather_http_status >= 400;
     const bool weather_failed_now = !weather_payload_present || weather_http_failed;
     if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
     {
