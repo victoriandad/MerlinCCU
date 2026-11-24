@@ -71,7 +71,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `HomeAssistantOffline` | Message | HA enabled, not Connected/Unauthorized, debounced | `HOME ASSISTANT` | Static text | 5-sample debounce |
 | `HomeAssistantUnauthorized` | Alert | `home_assistant_status.state == Unauthorized` | `AUTH FAILED` | Static text | Fires immediately, no debounce |
 | `HomeAssistantEntityMissing` | Warning | tracked entity state empty/`unknown`/`unavailable` while HA connected | `HA ENTITY` | Static text | Requires a configured tracked entity id |
-| `WeatherUnavailable` | Message | weather refresh failed, debounced | `WEATHER` | Static text | 5-sample debounce |
+| `WeatherUnavailable` | Message | no weather while its source is reachable, debounced: for Home Assistant, the MQTT link is up but no weather has arrived (#153); for Open-Meteo, the internet is reachable but fetches fail | `WEATHER` | Static text | 5-sample debounce. A lost MQTT link is not a weather alert. |
 | `WeatherProviderWarning` | Provider-supplied (falls back to Warning) | `weather_alert_status.provider_warning_active` | Provider-supplied (falls back to `WX WARNING`) | Dynamic, provider-supplied summary/detail | Official provider-warning APIs not wired yet; only severe-condition telemetry (e.g. thunder) currently raises this |
 | `WeatherTemperatureWarning` | Warning | current/forecast temperature <= 0C or >= 30C | `WX TEMP` | Dynamic detail (min/max C) | See `kFreezingTemperatureAlertCelsius`/`kHighTemperatureAlertCelsius` |
 | `WeatherWindWarning` | Warning | current/forecast wind >= 40mph | `WX WIND` | Dynamic detail (max mph) | See `kHighWindAlertMph` |
@@ -85,6 +85,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `PinterScheduleConflict` | Message | placeholder, hardcoded `false` | `PINTER` | Empty detail | Never fires yet -- see Missing Telemetry |
 | `HomeAssistantMessage` | From HA (default Message) | `ha_message.active`: HA sent a message over MQTT (#150) | HA's title, or `HA MESSAGE` | HA's text | Accepting it is reported to HA as Message state `acknowledged`; a new message shows again; empty text clears it |
 | `FirmwareUpdateRolledBack` | Warning | `firmware_status.rolled_back`: this boot followed an uploaded image that did not confirm itself, and the boot ROM went back to the previous one | `UPDATE FAILED` | Static text | Holds for the whole boot. The record lives in a POWMAN scratch register, so a power cut during the trial goes unreported (docs/ota.md) |
+| `UnexpectedRestart` | Warning | `boot_status.reset_reason` is `Watchdog`, `CpuFault` or `Brownout` (#155) | `RESTARTED` | Dynamic detail (the cause, and what to check) | Holds for the whole boot, so a restart overnight is seen. A stack overflow raises `StackLow` instead; power-on, reset pin, update, rollback and asked-for restarts raise nothing |
 
 ## Missing Telemetry
 
