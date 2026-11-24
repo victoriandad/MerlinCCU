@@ -57,6 +57,7 @@ add_executable(host_tests
     test_reset_reason.cpp
     test_png_encoder.cpp
     test_home_controls.cpp
+    test_font_settings.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp

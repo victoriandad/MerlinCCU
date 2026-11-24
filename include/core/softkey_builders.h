@@ -51,6 +51,11 @@ SoftKeyAction select(SoftKeyId key, const char* caption, const char* value, Menu
 /// @brief `CAPTION [Value]`: starts entering this value on the current page.
 SoftKeyAction select(SoftKeyId key, const char* caption, const char* value, SoftKeyRoute route);
 
+/// @brief `CAPTION [Value]`: opens the option page for entry `slot` of a list,
+/// such as one text style on the Fonts page.
+SoftKeyAction select(SoftKeyId key, const char* caption, const char* value, SoftKeyRoute route,
+                     uint8_t slot);
+
 /// @brief A select key whose value is being typed in on this page: shown
 /// inverse as the field being edited (LBL-5), and inert until the entry is
 /// confirmed or cancelled.

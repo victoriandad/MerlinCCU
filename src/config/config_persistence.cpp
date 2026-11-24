@@ -225,6 +225,34 @@ RuntimeConfig migrate_legacy_settings_v7(const LegacyRuntimeConfigV7& legacy)
     return migrated;
 }
 
+// v8 is today's layout without the trailing font choices; its fields must
+// sit where version 8 firmware wrote them.
+static_assert(offsetof(LegacyRuntimeConfigV8, ha_key_mask) == offsetof(RuntimeConfig, ha_key_mask),
+              "LegacyRuntimeConfigV8 must mirror the version 8 layout");
+
+bool validate_legacy_slot_v8(const LegacyConfigSlotV8& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV8 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV8))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV8));
+    return slot.crc32 == expected;
+}
+
+RuntimeConfig migrate_legacy_settings_v8(const LegacyRuntimeConfigV8& legacy)
+{
+    RuntimeConfig migrated = migrate_shared_fields(legacy);
+    migrated.web_pin_set = legacy.web_pin_set;
+    migrated.web_pin_salt = legacy.web_pin_salt;
+    migrated.web_pin_hash = legacy.web_pin_hash;
+    migrated.ha_key_mask = legacy.ha_key_mask;
+    return migrated;
+}
+
 RuntimeConfig migrate_legacy_settings_v5(const LegacyRuntimeConfigV5& legacy)
 {
     return migrate_shared_fields(legacy);
@@ -494,6 +522,14 @@ void sanitize_settings_in_place(RuntimeConfig& sanitized)
     if (sanitized.weather_source == WeatherSource::MetNorway)
     {
         sanitized.weather_source = WeatherSource::OpenMeteo;
+    }
+    // A font this firmware does not have falls back to the style's default.
+    for (uint8_t& choice : sanitized.font_choices)
+    {
+        if (choice > kMaxFontChoice)
+        {
+            choice = 0U;
+        }
     }
     if (should_auto_enable_home_assistant(sanitized))
     {

@@ -53,6 +53,13 @@ SoftKeyAction select(SoftKeyId key, const char* caption, const char* value, Soft
             SoftKeyRole::Select};
 }
 
+SoftKeyAction select(SoftKeyId key, const char* caption, const char* value, SoftKeyRoute route,
+                     uint8_t slot)
+{
+    return {cci::build_selection_softkey_label(key, caption, value), route, true, false,
+            SoftKeyRole::Select, slot};
+}
+
 SoftKeyAction select_editing(SoftKeyId key, const char* caption, const char* value)
 {
     return {cci::build_selection_softkey_label(key, caption, value), SoftKeyRoute::None, false,

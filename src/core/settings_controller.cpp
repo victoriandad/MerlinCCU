@@ -10,9 +10,11 @@
 #include "config_manager.h"
 #include "config_persistence.h"
 #include "geo_coordinates.h"
+#include "page_table.h"
 #include "console_controller.h"
 #include "console_controller_internal.h"
 #include "softkey_builders.h"
+#include "text_styles.h"
 
 namespace settings_controller
 {
@@ -918,6 +920,9 @@ void build_settings_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
                  softkey::navigate(SoftKeyId::Left4, "SCREEN SAVER",
                                    screen_saver_selection_text(console_state),
                                    MenuPage::ScreenSaverSettings));
+    softkey::set(softkeys, SoftKeyId::Right1,
+                 softkey::navigate(SoftKeyId::Right1, "FONTS", fonts_selection_text(),
+                                   MenuPage::FontSettings));
 }
 
 void build_device_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
@@ -1096,6 +1101,137 @@ void build_time_zone_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
                      softkey::option(zone->option_label, SoftKeyRoute::SelectTimeZoneSlot, slot,
                                      zone->zone == console_state.time_zone));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Fonts (#123)
+// ---------------------------------------------------------------------------
+
+static_assert(kFontStyleCount == text_styles::kTextStyleCount,
+              "Fonts page entries must match the text styles");
+static_assert(kFontChoiceCount == text_styles::kTextStyleCount,
+              "RuntimeConfig::font_choices must hold one choice per text style");
+static_assert(kMaxFontChoice == text_styles::kFontFaceCount,
+              "Stored font choices run from 1 to the number of faces");
+
+namespace
+{
+
+/// @brief Option labels, in FontFace order (LBL-2: captions are uppercase).
+constexpr std::array<const char*, text_styles::kFontFaceCount> kFontOptionLabels = {
+    "5X7", "TITLE 8X12", "8X12", "8X14"};
+
+/// @brief The face a stored choice selects for `style`.
+fonts::FontFace face_for_choice(text_styles::TextStyle style, uint8_t choice)
+{
+    return (choice == 0U || choice > kMaxFontChoice) ? text_styles::default_font(style)
+                                                     : static_cast<fonts::FontFace>(choice - 1U);
+}
+
+} // namespace
+
+bool apply_font_choices(const RuntimeConfig& settings)
+{
+    bool changed = false;
+    for (size_t i = 0U; i < kFontChoiceCount; ++i)
+    {
+        const auto style = static_cast<text_styles::TextStyle>(i);
+        const fonts::FontFace face = face_for_choice(style, settings.font_choices[i]);
+        if (text_styles::font(style) != face)
+        {
+            text_styles::set_font(style, face);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+const char* fonts_selection_text()
+{
+    for (size_t i = 0U; i < kFontChoiceCount; ++i)
+    {
+        const auto style = static_cast<text_styles::TextStyle>(i);
+        if (text_styles::font(style) != text_styles::default_font(style))
+        {
+            return "Custom";
+        }
+    }
+    return "Default";
+}
+
+void build_font_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    // One select key per text style, eight to a page (NAV-6), each showing
+    // its current font and opening the four faces as options (SK-7). The
+    // last entry puts every style back to its default.
+    const size_t first = static_cast<size_t>(console_state.font_page_index) * kFontEntriesPerPage;
+    for (uint8_t slot = 0U; slot < kFontEntriesPerPage; ++slot)
+    {
+        const size_t entry = first + slot;
+        const SoftKeyId key = softkey::kListSlots[slot];
+        if (entry < kFontStyleCount)
+        {
+            const auto style = static_cast<text_styles::TextStyle>(entry);
+            softkey::set(softkeys, key,
+                         softkey::select(key, text_styles::style_caption(style),
+                                         text_styles::font_name(text_styles::font(style)),
+                                         SoftKeyRoute::SelectFontStyle, slot));
+        }
+        else if (entry == kFontStyleCount)
+        {
+            softkey::set(softkeys, key, softkey::action("ALL DEFAULTS", SoftKeyRoute::ResetFonts));
+        }
+    }
+}
+
+void build_font_options_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    const auto style = static_cast<text_styles::TextStyle>(
+        std::min<uint8_t>(console_state.font_style_index, kFontStyleCount - 1U));
+    const fonts::FontFace current = text_styles::font(style);
+    for (uint8_t face = 0U; face < text_styles::kFontFaceCount; ++face)
+    {
+        softkey::set(softkeys, softkey::kListSlots[face],
+                     softkey::option(kFontOptionLabels[face], SoftKeyRoute::SelectFontFace, face,
+                                     static_cast<fonts::FontFace>(face) == current));
+    }
+}
+
+bool select_font_style_slot(ConsoleState& console_state, uint8_t slot)
+{
+    const size_t entry =
+        static_cast<size_t>(console_state.font_page_index) * kFontEntriesPerPage + slot;
+    if (slot >= kFontEntriesPerPage || entry >= kFontStyleCount)
+    {
+        return false;
+    }
+    console_state.font_style_index = static_cast<uint8_t>(entry);
+    return page_table::open(console_state, MenuPage::FontOptions);
+}
+
+bool select_font_face(const ConsoleState& console_state, uint8_t face)
+{
+    if (face >= text_styles::kFontFaceCount || console_state.font_style_index >= kFontStyleCount)
+    {
+        return false;
+    }
+    const uint8_t style = console_state.font_style_index;
+    return persist_runtime_config_change(
+        [style, face](RuntimeConfig& settings)
+        {
+            settings.font_choices[style] = static_cast<uint8_t>(face + 1U);
+            return true;
+        });
+}
+
+bool reset_font_choices()
+{
+    return persist_runtime_config_change(
+        [](RuntimeConfig& settings)
+        {
+            settings.font_choices.fill(0U);
+            return true;
+        });
 }
 
 } // namespace settings_controller

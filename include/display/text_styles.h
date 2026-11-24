@@ -67,6 +67,20 @@ void set_font(TextStyle style, fonts::FontFace face);
 /// @brief Restores every style to its default font.
 void reset_fonts();
 
+/// @brief The font `style` uses until changed (docs/ui_requirements.md
+/// section 6).
+fonts::FontFace default_font(TextStyle style);
+
+/// @brief Fonts a style can be given, in the order the Fonts page offers them.
+inline constexpr size_t kFontFaceCount = 4U;
+
+/// @brief Short uppercase name of `style` for the Fonts page (#123), e.g.
+/// "TABLE CELL".
+const char* style_caption(TextStyle style);
+
+/// @brief Mixed-case name of `face`, e.g. "Title 8x12".
+const char* font_name(fonts::FontFace face);
+
 /// @brief Height in pixels of one line of `style`'s current font.
 int line_height(TextStyle style);
 
