@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string_view>
 
 #include "config_manager.h"
 #include "console_controller.h"
@@ -3397,10 +3398,18 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         // so a soak log can be charted without parsing display text.
         const FirmwareStatus firmware = ota_manager::status();
         const ConsoleState& console = console_controller::state();
+        // The unit's MQTT name (its MAC), which HA's Controls setup (#152)
+        // lists each unit's entities under; "-" until MQTT has started.
+        constexpr std::string_view kDevicePrefix = "merlinccu_";
+        const std::string_view device_id(console.mqtt_status.device_id.data());
+        const char* mqtt_unit = device_id.substr(0, kDevicePrefix.size()) == kDevicePrefix
+                                    ? console.mqtt_status.device_id.data() + kDevicePrefix.size()
+                                    : "-";
         std::snprintf(
             g_response, sizeof(g_response),
             "%sversion=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\nwifi_connected=%d\n"
-            "mqtt_connected=%d\nha_connected=%d\nstack_free=%lu\nheap_arena=%lu\nalerts=%u\n",
+            "mqtt_connected=%d\nha_connected=%d\nstack_free=%lu\nheap_arena=%lu\nalerts=%u\n"
+            "mqtt_unit=%s\n",
             kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
             ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
             static_cast<unsigned long>(console.boot_status.uptime_minutes),
@@ -3410,7 +3419,7 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
                                                                                             : 0,
             static_cast<unsigned long>(console.stack_status.free_bytes),
             static_cast<unsigned long>(console.heap_status.arena_bytes),
-            static_cast<unsigned>(console.alert_count));
+            static_cast<unsigned>(console.alert_count), mqtt_unit);
         send_response(session, pcb, g_response);
         return;
     }

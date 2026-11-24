@@ -59,6 +59,10 @@ SoftKeyAction select_editing(SoftKeyId key, const char* caption, const char* val
 /// @brief `VERB`: does the named thing immediately.
 SoftKeyAction action(const char* verb, SoftKeyRoute route);
 
+/// @brief `VERB`: does the named thing to entry `slot` of a list, such as
+/// running a Home Assistant scene from the Controls page.
+SoftKeyAction action(const char* verb, SoftKeyRoute route, uint8_t slot);
+
 /// @brief `VERB`: leaves a decision state for `page`, such as CANCEL.
 SoftKeyAction action(const char* verb, MenuPage page);
 
@@ -68,6 +72,12 @@ SoftKeyAction action(SoftKeyId key, const char* verb, const char* value, SoftKey
 /// @brief `CAPTION [Enabled]` or `CAPTION [Disabled]`: switches a two-state
 /// setting. Never inverse: the state is in the words (SK-9).
 SoftKeyAction toggle(SoftKeyId key, const char* caption, bool on, SoftKeyRoute route);
+
+/// @brief `CAPTION [On]` or `CAPTION [Off]`: switches a device, entry `slot`
+/// of a list, such as a light on the Controls page. Devices are on or off,
+/// not enabled (SK-9).
+SoftKeyAction toggle(SoftKeyId key, const char* caption, const char* state, SoftKeyRoute route,
+                     uint8_t slot);
 
 /// @brief `CAPTION [Value]` at L5: steps what the whole page shows to the next
 /// value, wrapping round (NAV-4).

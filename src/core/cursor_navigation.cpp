@@ -53,6 +53,13 @@ const PageCursor kAlertListPages = {
     { return list_pages(s.alert_list_page_index, alert_list_page_count(s.alert_count)); },
     [](ConsoleState& s, int position) { s.alert_list_page_index = static_cast<uint8_t>(position); }};
 
+const PageCursor kHomeControlPages = {
+    [](const ConsoleState& s)
+    {
+        return list_pages(s.home_controls.page_index, home_controls::page_count(s.home_controls));
+    },
+    [](ConsoleState& s, int position) { s.home_controls.page_index = static_cast<uint8_t>(position); }};
+
 const PageCursor kCalendarDay = {
     [](const ConsoleState& s) {
         return CursorRange{CursorUse::Step, s.calendar_day_offset, kCalendarMinDayOffset,

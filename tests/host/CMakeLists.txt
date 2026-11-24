@@ -56,6 +56,7 @@ add_executable(host_tests
     test_retry_backoff.cpp
     test_reset_reason.cpp
     test_png_encoder.cpp
+    test_home_controls.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -105,6 +106,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/status_controller.cpp
     ${MERLIN_ROOT}/src/core/reset_reason.cpp
     ${MERLIN_ROOT}/src/display/png_encoder.cpp
+    ${MERLIN_ROOT}/src/network/home_controls.cpp
     ${MERLIN_ROOT}/src/core/ha_key_list.cpp
     ${MERLIN_ROOT}/src/core/home_controller.cpp
     ${MERLIN_ROOT}/src/core/page_table.cpp

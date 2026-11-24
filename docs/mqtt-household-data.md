@@ -5,7 +5,8 @@ CCU over MQTT (#153). The CCUs need no internet access and no third-party
 credentials for it. This page is the payload schema; setup is in
 [home-assistant-setup.md](home-assistant-setup.md), step 6.
 
-Today this covers weather. Share prices stay on HA's on-demand share feed
+Today this covers weather, and each unit's Controls list (below). Share
+prices stay on HA's on-demand share feed
 ([share-feed-design.md](share-feed-design.md)).
 
 ## Topics
@@ -88,6 +89,56 @@ shown as `-` or `?`.
   stale after 20 minutes, the same as for Open-Meteo.
 - A refused payload (other version, no `ts`, no `state` or `forecast`)
   leaves the data already shown in place and is logged on the serial console.
+
+## Controls (#152)
+
+Each CCU's Controls page lists Home Assistant entities it can switch or run.
+Unlike the weather, every unit has its own list, under its own prefix
+`<base>/<mac>` (`<mac>` is the unit's Wi-Fi MAC, 12 lower-case hex digits;
+`GET /api/firmware` shows it as `mqtt_unit=`). HA's integration
+(`ha/custom_components/merlinccu/controls.py`) builds the payloads.
+
+| Topic | Direction | Retained | Content |
+| --- | --- | --- | --- |
+| `<base>/<mac>/controls/list` | HA to CCU | yes | The unit's list, up to 2048 bytes |
+| `<base>/<mac>/controls/press` | CCU to HA | no | `<list id>:<index>`, e.g. `5f3a9c01:3` |
+| `<base>/<mac>/controls/result` | HA to CCU | no | Whether that press worked, up to 160 bytes |
+
+### `list`
+
+```json
+{"v":1,"list":"5f3a9c01","names":["Hall light","Evening"],"kinds":["toggle","run"],
+ "states":["on",""]}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `list` | 8 hex digits identifying the entities and names. A press carries it, so HA refuses a press made against a list that has since changed. |
+| `names` | What the keys say: ASCII, at most 20 characters. The CCU uppercases them and shortens one that does not fit its key. |
+| `kinds` | `toggle` (lights, switches, fans, input booleans) or `run` (scenes, scripts) |
+| `states` | `on`, `off` or `unavailable` for a toggle; `""` or `unavailable` for a run entity |
+
+The three arrays have the same length, at most 24. HA republishes the list
+whenever one of its entities changes state, and when HA starts.
+
+### `result`
+
+```json
+{"v":1,"index":3,"ok":false,"error":"Service light.toggle not found"}
+```
+
+`error` is for the CCU's serial log; the panel says only that HA refused.
+
+### On the CCU
+
+- The CCU subscribes to `<base>/<mac>/controls/+` once connected. With no
+  MQTT link the page has no keys and says why; a list cannot go stale, since
+  it arrives over the same link.
+- A key press shows `[Switching]` (or `[Running]`) until HA answers. A
+  refusal, or no answer within 5 seconds, shows a notice on the page for 10
+  seconds. One press at a time.
+- A toggle that worked shows its new state at once; HA's next list confirms
+  it.
 
 ## Changing the schema
 

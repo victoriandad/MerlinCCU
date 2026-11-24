@@ -6,6 +6,7 @@
 
 #include "alert_codes.h"
 #include "environment_sensor_manager.h"
+#include "home_controls.h"
 #include "reset_reason.h"
 
 /// @brief Physical softkeys mounted beside the display.
@@ -170,6 +171,8 @@ enum class MenuPage : uint8_t
     PinterStartTiming,
     Shares,
     ShareDetail,
+    /// Home Assistant entities to switch or run (#152).
+    Controls,
     Count,
 };
 
@@ -642,6 +645,9 @@ enum class SoftKeyRoute : uint8_t
     ResetCalendarFilters,
     /// Opens the calendar event in visible key `slot`.
     SelectCalendarSlot,
+    /// Switches or runs the Home Assistant entity in key `slot` of the
+    /// current Controls page (#152).
+    PressHomeControl,
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
@@ -1013,6 +1019,8 @@ struct ConsoleState
     std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
     std::array<PinterStatus, kPinterCount> pinters;
     std::array<ShareWatchEntry, kMaxWatchedShares> watched_shares;
+    /// @brief The Controls page's list from Home Assistant (#152).
+    HomeControls home_controls;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

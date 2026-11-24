@@ -163,6 +163,30 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Future live share data should come from a bounded local feed, not direct
   provider scraping on the Pico, and must not block navigation.
 
+## Controls Page
+
+Needs HA's `controls:` list for the unit (docs/home-assistant-setup.md,
+step 7).
+
+- Home `R4` opens `CONTROLS`; `R5=HOME`, and BACK STEP returns to Home.
+- Entities fill `L1`-`L4`, then `R1`-`R4`. Lights and switches show
+  `[On]`/`[Off]`; scenes and scripts show their name only. An unavailable
+  entity shows `[Offline]` and does nothing when pressed.
+- Names are uppercase on one line; a long one ends in `..` and never crosses
+  the centre line.
+- More than eight entities: the header shows `CONTROLS 1/2` and the footer
+  arrows page with cursor left/right.
+- Pressing a light shows `[Switching]`, then the new state within a second;
+  the light changes. Switching it from a phone updates the key within a
+  second.
+- Pressing a scene shows `[Running]`, then its name again.
+- With HA refusing (e.g. a script that errors) or not answering, the notice
+  `NAME: HA REFUSED` or `NAME: NO REPLY FROM HA` shows between rows 4 and 5
+  for 10 seconds, clear of the row 4 labels and `HOME`.
+- Stop Mosquitto: the keys go and the page says `HA NOT CONNECTED`. They
+  return when MQTT reconnects. With MQTT not set up it says `MQTT NOT SET UP`;
+  with no list in HA, `NO CONTROLS`.
+
 ## Settings Pages
 
 - Softkey top-line captions are uppercase.

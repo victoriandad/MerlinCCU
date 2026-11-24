@@ -71,7 +71,7 @@ softkeys share the screen.
 
 | Type | Softkeys | Body | Examples |
 | --- | --- | --- | --- |
-| Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list |
+| Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list, Controls |
 | Body page | Row 5 only (L5, R5) | Rows 1-4 at full width | Status sub-pages, Calendar event, Share detail, Weather, graphs, Alert detail |
 | Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test |
 
@@ -82,6 +82,8 @@ softkeys share the screen.
 - **PAGE-3** A key page may show one notice line in the body, centred, in a gap
   between softkey rows, for information the operator must not miss (for
   example why an action is blocked). It must not be used for routine status.
+  The shared position is `ui_layout::kNoticeLineY`, between rows 4 and 5,
+  in footer text; a page using it keeps its row 4 labels to two lines.
 - **PAGE-4** A body page must keep softkeys to row 5. If a body page needs more
   than two keys, it should be split into a key page that leads to body pages.
 - **PAGE-5** A page that changes type with its state (for example a page that
@@ -136,8 +138,9 @@ something else needs a change to this document first.
   with exactly one shown as selected, and choosing one must take effect
   immediately.
 - **SK-8** Two keys on one page must not do the same thing.
-- **SK-9** A toggle shows its state in words (`[Enabled]` / `[Disabled]`),
-  never by inverse video (LBL-5).
+- **SK-9** A toggle shows its state in words (`[Enabled]` / `[Disabled]` for a
+  setting, `[On]` / `[Off]` for a device such as a light), never by inverse
+  video (LBL-5).
 - **SK-10** A setting with more than two values must be a select key, unless
   it changes what the whole page shows, in which case it is the page's view key
   (NAV-4). A step key is for a number with no useful list of choices, such as a
