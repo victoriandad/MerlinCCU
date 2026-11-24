@@ -26,6 +26,7 @@ add_executable(host_tests
     test_config_persistence.cpp
     test_font_settings.cpp
     test_config_fields.cpp
+    test_cert_pin.cpp
     test_date_time_math.cpp
     test_pinter_scheduling.cpp
     test_pinter_persistence.cpp
@@ -112,6 +113,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/png_encoder.cpp
     ${MERLIN_ROOT}/src/display/weather_icons.cpp
     ${MERLIN_ROOT}/src/network/home_controls.cpp
+    ${MERLIN_ROOT}/src/network/cert_pin.cpp
     ${MERLIN_ROOT}/src/core/ha_key_list.cpp
     ${MERLIN_ROOT}/src/core/home_controller.cpp
     ${MERLIN_ROOT}/src/core/page_table.cpp

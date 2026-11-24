@@ -38,6 +38,15 @@ On the CCU, enter a bare host (`ha.lan`) with the port in the Port field. You
 can also enter a URL: `http://` means port 80 and `https://` port 443, unless
 it ends in `:port`.
 
+For `https://`, the CCU also needs HA's certificate fingerprint (#17,
+docs/network-trust.md): paste it into **HA certificate SHA-256** on the web
+config page. Get it from the browser (padlock > certificate > SHA-256
+fingerprint), or run
+`openssl s_client -connect <host>:443 </dev/null | openssl x509 -noout -fingerprint -sha256`.
+Without it the CCU refuses HA, and its serial log prints the fingerprint HA
+presented (`HA https refused: no certificate pinned. HA's is SHA-256 ...`).
+If HA's certificate is renewed, save the new fingerprint.
+
 ## 2. Create the access token
 
 1. In HA, open your user profile (bottom left), then the **Security** tab.

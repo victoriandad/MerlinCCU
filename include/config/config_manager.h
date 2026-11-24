@@ -111,6 +111,12 @@ struct RuntimeConfig
     /// 0 keeps the style's default, otherwise FontFace + 1, so a zeroed or
     /// migrated config means "all defaults".
     std::array<uint8_t, kFontChoiceCount> font_choices;
+
+    /// @brief Home Assistant's pinned TLS certificate (#17): the SHA-256 of
+    /// its DER bytes. An `https://` HA endpoint is used only when the
+    /// certificate it presents matches; with no pin it is refused.
+    bool home_assistant_cert_pinned;
+    std::array<uint8_t, 32> home_assistant_cert_sha256;
 };
 
 namespace config_manager

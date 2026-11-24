@@ -67,6 +67,7 @@ add_executable(MerlinCCU
     src/display/png_encoder.cpp
     src/display/weather_icons.cpp
     src/network/home_controls.cpp
+    src/network/cert_pin.cpp
     src/core/stack_guard.cpp
     src/core/status_controller.cpp
     src/config/config_manager.cpp

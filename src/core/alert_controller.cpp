@@ -409,8 +409,9 @@ void sync(ConsoleState& console_state)
                             g_home_assistant_connect_failures >= kAlertRetryThreshold;
     set_alert_condition(console_state, AlertCode::HomeAssistantOffline, ha_offline,
                         AlertSeverity::Message, "HOME ASSISTANT",
-                        "Home Assistant is not connected.\nCheck host/port/token and network "
-                        "routing.\nStatus page shows the latest connector state.");
+                        "Home Assistant is not connected.\nCheck host/port/token, the https:// "
+                        "certificate pin and network routing.\nStatus page shows the "
+                        "latest connector state.");
     set_alert_condition(console_state, AlertCode::HomeAssistantUnauthorized, ha_unauthorised,
                         AlertSeverity::Alert, "AUTH FAILED",
                         "Home Assistant rejected the API token.\nUpdate the token in Settings > "

@@ -10,6 +10,7 @@
 #include <optional>
 #include <string_view>
 
+#include "cert_pin.h"
 #include "config_fields.h"
 #include "config_manager.h"
 #include "console_controller.h"
@@ -45,6 +46,9 @@ namespace
 constexpr uint16_t kHttpPort = 80;
 constexpr size_t kRequestCapacity = 4096;
 constexpr size_t kResponseCapacity = 24576;
+/// @brief Longest text the HA certificate field takes: a formatted SHA-256
+/// fingerprint with room for an openssl "sha256 Fingerprint=" prefix (#17).
+constexpr size_t kCertPinInputLength = 128U;
 constexpr u16_t kTcpWriteChunkMax = 1024;
 // lwIP's own TCP retransmission/error detection can take tens of seconds to
 // give up on a silently-vanished peer (a dropped Wi-Fi packet, or a browser
@@ -717,6 +721,13 @@ void build_config_page(const char* message)
     html_escape(cfg.home_assistant_host.data(), ha_host, sizeof(ha_host));
     html_escape(cfg.home_assistant_entity_id.data(), ha_entity, sizeof(ha_entity));
     html_escape(cfg.home_assistant_self_entity_id.data(), ha_self, sizeof(ha_self));
+    // The pinned HA certificate (#17), hex and colons only, so no escaping.
+    static char ha_cert_pin[cert_pin::kFormattedLength + 1U] = {};
+    ha_cert_pin[0] = '\0';
+    if (cfg.home_assistant_cert_pinned)
+    {
+        cert_pin::format(cfg.home_assistant_cert_sha256, ha_cert_pin, sizeof(ha_cert_pin));
+    }
     // Shown as degrees and minutes; the degree sign is an HTML entity, and
     // the rest of the text is digits, letters, spaces, dots and primes.
     weather_coordinates[0] = '\0';
@@ -884,11 +895,18 @@ void build_config_page(const char* message)
         "value=\"%s\" placeholder=\"sensor.merlin_ground_status\"><p class=\"hint\">Each CCU needs "
         "its own self entity. A bare host such as ha.lan uses the Port above. A URL "
         "brings its own port: http:// means 80 and https:// means 443, unless it ends in "
-        ":port.</p></fieldset></section>",
+        ":port.</p><label>HA certificate SHA-256 (https:// only)</label><input "
+        "name=\"ha_cert_pin\" maxlength=\"%u\" value=\"%s\" placeholder=\"AB:CD:... "
+        "(blank: https:// is refused)\"><p class=\"hint\">The CCU trusts HA over https:// "
+        "only when HA's certificate has this fingerprint. Get it from the browser's "
+        "certificate viewer or <code>openssl x509 -noout -fingerprint -sha256</code>; the "
+        "serial log also prints the one HA presents. Not needed for http://.</p>"
+        "</fieldset></section>",
         cfg.home_assistant_enabled ? "checked" : "", cfg.home_assistant_enabled ? "" : "disabled",
         max_len(Field::HomeAssistantHost), ha_host, static_cast<unsigned>(cfg.home_assistant_port),
         max_len(Field::HomeAssistantToken), max_len(Field::TrackedEntity), ha_entity,
-        max_len(Field::SelfEntity), ha_self);
+        max_len(Field::SelfEntity), ha_self, static_cast<unsigned>(kCertPinInputLength),
+        ha_cert_pin);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>MQTT Discovery</h2><input type=\"hidden\" "
@@ -2766,6 +2784,27 @@ const char* handle_config_post(const char* body)
             return validation_error;
         }
         copy_text(cfg.home_assistant_self_entity_id, value);
+    }
+    if (get_form_value(body, "ha_cert_pin", value, sizeof(value)))
+    {
+        // Blank removes the pin (and with it https:// to HA); anything else
+        // must be a whole SHA-256 fingerprint (#17).
+        if (value[0] == '\0')
+        {
+            cfg.home_assistant_cert_pinned = false;
+            cfg.home_assistant_cert_sha256 = {};
+        }
+        else if (const std::optional<cert_pin::Fingerprint> pin = cert_pin::parse(value))
+        {
+            cfg.home_assistant_cert_pinned = true;
+            cfg.home_assistant_cert_sha256 = *pin;
+        }
+        else
+        {
+            std::printf("Web config save rejected: HA certificate fingerprint not understood\n");
+            return "Configuration not saved: the HA certificate SHA-256 must be 64 hex digits, "
+                   "with or without colons.";
+        }
     }
     if (get_form_value(body, "weather_coordinates", value, sizeof(value)))
     {

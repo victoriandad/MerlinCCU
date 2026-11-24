@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <new>
+#include <type_traits>
 
 #include "config_persistence.h"
 #include "hardware/flash.h"
@@ -26,6 +28,7 @@ using config_persistence::LegacyConfigSlotV5;
 using config_persistence::LegacyConfigSlotV6;
 using config_persistence::LegacyConfigSlotV7;
 using config_persistence::LegacyConfigSlotV8;
+using config_persistence::LegacyConfigSlotV9;
 
 constexpr uint32_t kFlashSlotCount = 2;
 constexpr uint32_t kConfigStorageBytes = FLASH_SECTOR_SIZE * kFlashSlotCount;
@@ -41,6 +44,16 @@ RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;
 bool g_save_pending = false;
 ChangeRecord g_last_change = {};
+
+/// @brief Builds `settings` from `make()` with no RuntimeConfig temporary on
+/// the 4 KB core-0 stack (#164): the returned object is constructed in place.
+/// An assignment would copy through a 1.6 KB temporary instead.
+template <typename Make> void build_in_place(RuntimeConfig& settings, Make&& make)
+{
+    static_assert(std::is_trivially_destructible_v<RuntimeConfig>,
+                  "RuntimeConfig is rebuilt in place without being destroyed");
+    ::new (static_cast<void*>(&settings)) RuntimeConfig(make());
+}
 
 /// @brief Returns a const pointer to one flash slot.
 const ConfigSlot* flash_slot(uint32_t offset)
@@ -70,12 +83,24 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
         return {true, slot->sequence};
     }
 
+    const auto* legacy_slot_v9 = reinterpret_cast<const LegacyConfigSlotV9*>(slot);
+    if (config_persistence::validate_legacy_slot_v9(*legacy_slot_v9))
+    {
+        if (out_settings != nullptr)
+        {
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v9(legacy_slot_v9->settings); });
+        }
+        return {true, legacy_slot_v9->sequence};
+    }
+
     const auto* legacy_slot_v8 = reinterpret_cast<const LegacyConfigSlotV8*>(slot);
     if (config_persistence::validate_legacy_slot_v8(*legacy_slot_v8))
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v8(legacy_slot_v8->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v8(legacy_slot_v8->settings); });
         }
         return {true, legacy_slot_v8->sequence};
     }
@@ -85,7 +110,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v7(legacy_slot_v7->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v7(legacy_slot_v7->settings); });
         }
         return {true, legacy_slot_v7->sequence};
     }
@@ -95,7 +121,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v6(legacy_slot_v6->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v6(legacy_slot_v6->settings); });
         }
         return {true, legacy_slot_v6->sequence};
     }
@@ -105,7 +132,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v5(legacy_slot_v5->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v5(legacy_slot_v5->settings); });
         }
         return {true, legacy_slot_v5->sequence};
     }
@@ -115,7 +143,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v4(legacy_slot_v4->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v4(legacy_slot_v4->settings); });
         }
         return {true, legacy_slot_v4->sequence};
     }
@@ -125,7 +154,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v3(legacy_slot_v3->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v3(legacy_slot_v3->settings); });
         }
         return {true, legacy_slot_v3->sequence};
     }
@@ -135,7 +165,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings_v2(legacy_slot_v2->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings_v2(legacy_slot_v2->settings); });
         }
         return {true, legacy_slot_v2->sequence};
     }
@@ -145,7 +176,8 @@ ConfigCandidate read_candidate(uint32_t offset, RuntimeConfig* out_settings)
     {
         if (out_settings != nullptr)
         {
-            *out_settings = config_persistence::migrate_legacy_settings(legacy_slot->settings);
+            build_in_place(*out_settings,
+                           [&] { return config_persistence::migrate_legacy_settings(legacy_slot->settings); });
         }
         return {true, legacy_slot->sequence};
     }
@@ -232,7 +264,7 @@ uint32_t board_unit_suffix()
 [[gnu::noinline]] void install_defaults()
 {
     std::printf("Config flash empty or invalid; writing defaults\n");
-    g_settings = config_persistence::make_default_settings();
+    build_in_place(g_settings, [] { return config_persistence::make_default_settings(); });
     config_persistence::apply_unit_defaults(g_settings, board_unit_suffix());
     g_sequence = 0;
     (void)save(g_settings);
