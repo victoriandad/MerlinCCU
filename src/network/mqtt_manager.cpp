@@ -15,6 +15,7 @@
 #include "console_controller.h"
 #include "framebuffer.h"
 #include "ha_key_list.h"
+#include "home_controls.h"
 #include "house_weather.h"
 #include "input.h"
 #include "mqtt_commands.h"
@@ -109,6 +110,7 @@ enum class PendingPublishType : uint8_t
     KeyTrigger,
     KeyEvent,
     ScreenImage,
+    ControlPress,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -361,18 +363,32 @@ MERLIN_PSRAM_BSS char g_house_now[house_weather::kMaxPayloadBytes[0] + 1U];
 MERLIN_PSRAM_BSS char g_house_hourly[house_weather::kMaxPayloadBytes[1] + 1U];
 MERLIN_PSRAM_BSS char g_house_daily[house_weather::kMaxPayloadBytes[2] + 1U];
 
-/// @brief One topic's receive buffer.
-struct HouseBuffer
+/// @brief One topic's receive buffer, filled by the lwIP callbacks and read
+/// by the main loop (house weather and Controls).
+struct InboundBuffer
 {
     char* data;
     size_t capacity;
     size_t length;
     bool ready;
 };
-std::array<HouseBuffer, house_weather::kTopicCount> g_house_buffers = {{
+std::array<InboundBuffer, house_weather::kTopicCount> g_house_buffers = {{
     {g_house_now, sizeof(g_house_now), 0U, false},
     {g_house_hourly, sizeof(g_house_hourly), 0U, false},
     {g_house_daily, sizeof(g_house_daily), 0U, false},
+}};
+
+// This unit's Controls list and HA's answers to its presses (#152), on
+// "<prefix>/controls/{list,result}", indexed by home_controls::Topic.
+// Presses go out on "<prefix>/controls/press".
+char g_controls_filter[96] = {};
+bool g_controls_subscribed = false;
+bool g_controls_subscribe_in_flight = false;
+MERLIN_PSRAM_BSS char g_controls_list[home_controls::kMaxListBytes + 1U];
+char g_controls_result[home_controls::kMaxResultBytes + 1U] = {};
+std::array<InboundBuffer, 2> g_controls_buffers = {{
+    {g_controls_list, sizeof(g_controls_list), 0U, false},
+    {g_controls_result, sizeof(g_controls_result), 0U, false},
 }};
 // Discovery JSON, and the panel PNG (#159). Pages are 0.5 to 2 KB as PNG; a
 // bigger one (heavy dither) is skipped. The lwIP ring (lwipopts.h) holds
@@ -450,6 +466,8 @@ void reset_runtime(bool reset_publish_state)
     g_subscribe_in_flight = false;
     g_house_subscribed = false;
     g_house_subscribe_in_flight = false;
+    g_controls_subscribed = false;
+    g_controls_subscribe_in_flight = false;
     // Unknown after a reconnect or restart: treat every key as published, so
     // configs for keys no longer on the list are cleared once (#151).
     g_triggers_published = kAllKeysMask;
@@ -601,42 +619,49 @@ enum class Receiving : uint8_t
 {
     Nothing = 0,
     Command,
-    HouseWeather,
+    /// House weather or Controls, into g_receiving_buffer.
+    Buffer,
 };
 
 /// @brief Set by incoming_publish_cb for incoming_data_cb (lwIP context).
 Receiving g_receiving = Receiving::Nothing;
-house_weather::Topic g_house_topic_receiving = house_weather::Topic::Now;
+InboundBuffer* g_receiving_buffer = nullptr;
 
-/// @brief Starts receiving one house weather payload (lwIP context).
+/// @brief Starts receiving one payload into `buffer` (lwIP context).
 /// @details One that is too big, or that arrives while the last of the same
-/// topic still waits for the main loop, is dropped; HA republishes every few
-/// minutes.
-void start_house_weather(house_weather::Topic topic, const char* topic_name, u32_t tot_len)
+/// topic still waits for the main loop, is dropped and logged. The main loop
+/// empties buffers every pass, and HA republishes.
+void start_buffer(InboundBuffer& buffer, const char* topic_name, u32_t tot_len)
 {
-    HouseBuffer& buffer = g_house_buffers[static_cast<size_t>(topic)];
     if (buffer.ready || tot_len > buffer.capacity - 1U)
     {
         g_receiving = Receiving::Nothing;
-        std::printf("MQTT house weather dropped: %s (%lu bytes)\n", topic_name,
+        std::printf("MQTT payload dropped: %s (%lu bytes)\n", topic_name,
                     static_cast<unsigned long>(tot_len));
         return;
     }
-    g_receiving = Receiving::HouseWeather;
-    g_house_topic_receiving = topic;
+    g_receiving = Receiving::Buffer;
+    g_receiving_buffer = &buffer;
     buffer.length = 0U;
 }
 
 /// @brief Starts receiving one publish from the broker (lwIP context).
-/// @details House weather (#153) goes to its own buffer. Anything else is a
-/// command from HA. It is copied for the main loop; one that is too long, or
-/// that arrives while the last is still waiting, is dropped and logged.
+/// @details House weather (#153) and this unit's Controls topics (#152) go
+/// to their own buffers. Anything else is a command from HA. It is copied for
+/// the main loop; one that is too long, or that arrives while the last is
+/// still waiting, is dropped and logged.
 void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
 {
     if (const std::optional<house_weather::Topic> house =
             house_weather::topic_for(topic, g_base_topic))
     {
-        start_house_weather(*house, topic, tot_len);
+        start_buffer(g_house_buffers[static_cast<size_t>(*house)], topic, tot_len);
+        return;
+    }
+    if (const std::optional<home_controls::Topic> controls =
+            home_controls::topic_for(topic, g_topic_prefix))
+    {
+        start_buffer(g_controls_buffers[static_cast<size_t>(*controls)], topic, tot_len);
         return;
     }
     PendingCommand& command = g_pending_command;
@@ -658,9 +683,9 @@ void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
 /// context).
 void incoming_data_cb(void* /*arg*/, const u8_t* data, u16_t len, u8_t flags)
 {
-    if (g_receiving == Receiving::HouseWeather)
+    if (g_receiving == Receiving::Buffer && g_receiving_buffer != nullptr)
     {
-        HouseBuffer& buffer = g_house_buffers[static_cast<size_t>(g_house_topic_receiving)];
+        InboundBuffer& buffer = *g_receiving_buffer;
         const size_t count = std::min<size_t>(len, buffer.capacity - 1U - buffer.length);
         std::memcpy(buffer.data + buffer.length, data, count);
         buffer.length += count;
@@ -707,12 +732,21 @@ void house_subscribe_cb(void* /*arg*/, err_t err)
                 g_house_filter);
 }
 
+/// @brief Records the result of subscribing to this unit's Controls topics.
+void controls_subscribe_cb(void* /*arg*/, err_t err)
+{
+    g_controls_subscribe_in_flight = false;
+    g_controls_subscribed = err == ERR_OK;
+    std::printf("MQTT controls subscribe %s: %s\n", g_controls_subscribed ? "ok" : "failed",
+                g_controls_filter);
+}
+
 /// @brief Subscribes to "<prefix>/+/set", then "<base>/house/weather/+",
-/// once per connection.
+/// then "<prefix>/controls/+", once per connection.
 void subscribe_commands()
 {
-    if (g_subscribe_in_flight || g_house_subscribe_in_flight || !g_connected ||
-        g_client == nullptr)
+    if (g_subscribe_in_flight || g_house_subscribe_in_flight || g_controls_subscribe_in_flight ||
+        !g_connected || g_client == nullptr)
     {
         return;
     }
@@ -728,6 +762,16 @@ void subscribe_commands()
             cyw43_arch_lwip_end();
             g_house_subscribe_in_flight = rc == ERR_OK;
         }
+        else if (!g_controls_subscribed)
+        {
+            std::snprintf(g_controls_filter, sizeof(g_controls_filter), "%s/controls/+",
+                          g_topic_prefix);
+            cyw43_arch_lwip_begin();
+            const err_t rc =
+                mqtt_subscribe(g_client, g_controls_filter, 0, controls_subscribe_cb, nullptr);
+            cyw43_arch_lwip_end();
+            g_controls_subscribe_in_flight = rc == ERR_OK;
+        }
         return;
     }
     std::snprintf(g_command_filter, sizeof(g_command_filter), "%s/+/set", g_topic_prefix);
@@ -735,6 +779,38 @@ void subscribe_commands()
     const err_t rc = mqtt_subscribe(g_client, g_command_filter, 0, subscribe_cb, nullptr);
     cyw43_arch_lwip_end();
     g_subscribe_in_flight = rc == ERR_OK;
+}
+
+/// @brief Hands Controls payloads received since the last call to the
+/// Controls page (main loop). The callbacks leave a ready buffer alone, so it
+/// is read unlocked.
+void apply_controls_payloads()
+{
+    for (size_t i = 0U; i < g_controls_buffers.size(); ++i)
+    {
+        InboundBuffer& buffer = g_controls_buffers[i];
+        cyw43_arch_lwip_begin();
+        const bool ready = buffer.ready;
+        cyw43_arch_lwip_end();
+        if (!ready)
+        {
+            continue;
+        }
+        const auto topic = static_cast<home_controls::Topic>(i);
+        if (topic == home_controls::Topic::List &&
+            !console_controller::apply_home_controls(topic, buffer.data))
+        {
+            std::printf("MQTT controls list refused (%u bytes)\n",
+                        static_cast<unsigned>(buffer.length));
+        }
+        else if (topic == home_controls::Topic::Result)
+        {
+            (void)console_controller::apply_home_controls(topic, buffer.data);
+        }
+        cyw43_arch_lwip_begin();
+        buffer.ready = false;
+        cyw43_arch_lwip_end();
+    }
 }
 
 /// @brief Applies a command received since the last call (main loop).
@@ -1139,6 +1215,7 @@ void mqtt_request_cb(void* arg, err_t err)
         g_screen_image_crc = g_screen_image_crc_in_flight;
         break;
     case PendingPublishType::KeyEvent:
+    case PendingPublishType::ControlPress:
     case PendingPublishType::None:
         break;
     }
@@ -1288,8 +1365,11 @@ bool publish_bytes(const char* topic, const void* payload, u16_t length,
 
     const u16_t kPayloadLength = length;
     // Key presses are moments, not state: a retained one would fire HA
-    // automations again on every reconnect.
-    const u8_t kRetain = publish_type == PendingPublishType::KeyEvent ? 0U : 1U;
+    // automations again on every reconnect, or a light again (#152).
+    const u8_t kRetain = (publish_type == PendingPublishType::KeyEvent ||
+                          publish_type == PendingPublishType::ControlPress)
+                             ? 0U
+                             : 1U;
 
     cyw43_arch_lwip_begin();
     const err_t kRc = mqtt_publish(g_client, topic, payload, kPayloadLength, 0, kRetain,
@@ -1401,6 +1481,17 @@ bool start_next_publish()
         return publish(topic, "press", PendingPublishType::KeyEvent, SensorId::Status);
     }
 
+    // A Controls key (#152) is someone waiting at the panel, so it goes next.
+    // A press that cannot be sent times out on the page as no reply.
+    char press[24] = {};
+    if (console_controller::take_home_control_press(press, sizeof(press)))
+    {
+        char topic[112] = {};
+        std::snprintf(topic, sizeof(topic), "%s/controls/press", g_topic_prefix);
+        std::printf("MQTT control press: %s\n", press);
+        return publish(topic, press, PendingPublishType::ControlPress, SensorId::Status);
+    }
+
     const uint64_t wanted = config_manager::settings().ha_key_mask;
     const uint64_t changed = wanted ^ g_triggers_published;
     if (changed != 0U)
@@ -1485,6 +1576,10 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
             const TimeStatus& time_status)
 {
     const MqttStatus kPrevious = g_status;
+
+    // Controls keys act only while a press can reach HA (#152).
+    (void)console_controller::update_home_controls(g_connected && g_controls_subscribed,
+                                                   to_ms_since_boot(get_absolute_time()));
 
     // A key press HA cannot hear now is dropped, not sent late (#151).
     if (!g_connected)
@@ -1573,6 +1668,7 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     {
         subscribe_commands();
         apply_pending_command();
+        apply_controls_payloads();
     }
     if (g_connected && !g_request_in_flight)
     {
@@ -1591,7 +1687,7 @@ void take_house_weather(HouseWeatherHandler handler)
 {
     for (size_t i = 0; i < g_house_buffers.size(); ++i)
     {
-        HouseBuffer& buffer = g_house_buffers[i];
+        InboundBuffer& buffer = g_house_buffers[i];
         cyw43_arch_lwip_begin();
         const bool ready = buffer.ready;
         cyw43_arch_lwip_end();

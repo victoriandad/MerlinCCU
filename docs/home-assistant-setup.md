@@ -288,6 +288,49 @@ MET Norway).
 - A CCU can still fetch Open-Meteo itself instead: set its **Weather
   source** to **Open-Meteo** and give it a location.
 
+## 7. Controls page
+
+Each CCU's **Controls** page (Home, R4) switches lights, switches, fans and
+input booleans, and runs scenes and scripts (#152). Each unit has its own
+list, kept in HA, so the ground floor and the loft can offer different
+things and a list changes without touching the CCU. Needs step 4 and the
+integration from step 5.
+
+1. Find each unit's MQTT name: open `http://<unit>/api/firmware` and copy
+   the `mqtt_unit=` value (12 hex digits, its Wi-Fi MAC).
+2. Add a `controls:` part to the `merlinccu:` block:
+
+   ```yaml
+   merlinccu:
+     controls:
+       units:
+         "2ccf67a1b2c3":          # ground floor
+           - light.hall
+           - light.kitchen_spots
+           - entity: scene.evening
+             name: Evening        # optional; defaults to HA's name
+           - script.goodnight
+         "2ccf67d4e5f6":          # loft
+           - switch.loft_heater
+   ```
+
+   Quote each MAC, so YAML never reads one as a number. Up to 24 entities per
+   unit, eight to a page. Lights, switches, fans and
+   `input_boolean`s toggle; scenes and scripts run. HA refuses other domains
+   when it loads the YAML. Names are cut to 20 characters. Set `base_topic:`
+   beside `units:` if the CCUs don't use the default `merlinccu`.
+3. Restart HA. HA's log shows `MerlinCCU controls published for 2 unit(s)`.
+
+Check: open Controls on the CCU. Each key shows the entity's name and state;
+switch a light from your phone and the key follows within a second. Press a
+key: it shows `[Switching]` until HA answers. If HA refuses, or does not
+answer within 5 seconds, the page says so for 10 seconds, the
+`CONTROL FAILED` alert stays until a press works, and the serial log says why.
+
+- With MQTT down the page has no keys and says so.
+- `NO CONTROLS` means the unit has no list: check its `mqtt_unit` against
+  the YAML.
+
 ## Fresh-install checklist
 
 - [ ] HA reachable at `http://<host>:<port>/`; host and port noted (step 1)
@@ -305,6 +348,8 @@ MET Norway).
       `merlinccu_feed_token` added; HA restarted (step 5)
 - [ ] Feed `curl` returns live data; CCU share feed enabled with the token; the
       Shares page shows live prices instead of demo data
+- [ ] Controls: each unit's `mqtt_unit` listed under `controls: units:`; HA
+      restarted; the CCU's Controls page shows its keys (step 7)
 
 ## Troubleshooting
 

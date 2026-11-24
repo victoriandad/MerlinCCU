@@ -98,6 +98,11 @@ constexpr int softkey_slot_centre_y(int row)
     return softkey_slot_top_y(row) + (kSoftkeySlotHeight / 2);
 }
 
+/// @brief Top of a key page's one notice line (PAGE-3): a 5x7 line centred
+/// in the gap between softkey rows 4 and 5, below one-line row 4 labels.
+inline constexpr int kNoticeLineY =
+    ((softkey_slot_centre_y(3) + softkey_slot_centre_y(4)) / 2) - (7 / 2);
+
 /// @brief Top of a label block of `lines` lines, each `line_height` tall, on
 /// softkey row `row`. The first kSoftkeyCentredLines lines are centred on
 /// the slot; any more extend downward.

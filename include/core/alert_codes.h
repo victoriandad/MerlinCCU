@@ -31,6 +31,8 @@ enum class AlertCode : uint8_t
     HomeAssistantMessage,
     /// The CCU restarted on its own: watchdog, fault or brown-out (#155).
     UnexpectedRestart,
+    /// A Controls key press HA refused or did not answer (#152).
+    ControlFailed,
     Count,
 };
 

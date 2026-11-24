@@ -40,6 +40,9 @@ bool g_screen_saver_active = false;
 std::array<ButtonId, 8> g_ha_key_queue = {};
 size_t g_ha_key_head = 0U;
 size_t g_ha_key_count = 0U;
+// The time update_home_controls() last saw, so a Controls key press can be
+// timed without the controller reading a clock (#152).
+uint32_t g_home_controls_now_ms = 0U;
 // Sized for the longest Pinter vessel label: title + "[recipe]" (recipe names
 // run up to ~42 characters) + "[stage Nd, ready dd Mon]".
 constexpr size_t kSoftkeyLabelCapacity = 112;
@@ -626,6 +629,19 @@ bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
         return calendar_controller::reset_filters(g_console_state);
     case SoftKeyRoute::SelectCalendarSlot:
         return calendar_controller::open_detail_from_slot(g_console_state, slot);
+    case SoftKeyRoute::PressHomeControl:
+    {
+        HomeControls& controls = g_console_state.home_controls;
+        const size_t index =
+            static_cast<size_t>(controls.page_index) * home_controls::kControlsPerPage + slot;
+        if (g_console_state.active_page != MenuPage::Controls ||
+            slot >= home_controls::kControlsPerPage || index >= controls.count)
+        {
+            return false;
+        }
+        return home_controls::press(controls, static_cast<uint8_t>(index),
+                                    g_home_controls_now_ms);
+    }
     case SoftKeyRoute::SelectTimeZoneSlot:
         return settings_controller::select_time_zone_slot(g_console_state, slot);
     case SoftKeyRoute::SelectAlertSlot:
@@ -752,6 +768,70 @@ const char* ha_message_state()
     }
     return alert_controller::acknowledged(AlertCode::HomeAssistantMessage) ? "acknowledged"
                                                                            : "active";
+}
+
+namespace
+{
+
+/// @brief Rebuilds the keys after a Controls change, and redraws only when
+/// the Controls page is showing: HA republishes the list on every state
+/// change of its entities, which other pages need not redraw for.
+bool home_controls_changed(bool changed)
+{
+    if (changed)
+    {
+        update_softkeys_from_state();
+        if (g_console_state.active_page == MenuPage::Controls)
+        {
+            g_redraw_requested = true;
+        }
+    }
+    return changed;
+}
+
+} // namespace
+
+/// @brief Reports a press that failed since `failures_before`.
+void note_home_control_failure(uint32_t failures_before)
+{
+    const HomeControls& controls = g_console_state.home_controls;
+    if (controls.failure_count == failures_before)
+    {
+        return;
+    }
+    // alert_controller raises CONTROL FAILED from controls.last_failure; the
+    // lamps and whichever page is showing pick it up now.
+    update_lamps_from_state();
+    g_redraw_requested = true;
+    std::printf("Controls: entry %u failed (%s)\n", static_cast<unsigned>(controls.failure_index),
+                controls.failure == ControlFailure::Refused ? "HA refused" : "no reply");
+}
+
+bool apply_home_controls(home_controls::Topic topic, const char* json)
+{
+    HomeControls& controls = g_console_state.home_controls;
+    const uint32_t failures_before = controls.failure_count;
+    const bool changed = topic == home_controls::Topic::List
+                             ? home_controls::apply_list(json, controls)
+                             : home_controls::apply_result(json, controls, g_home_controls_now_ms);
+    note_home_control_failure(failures_before);
+    return home_controls_changed(changed);
+}
+
+bool take_home_control_press(char* out, size_t out_size)
+{
+    return home_controls::take_press(g_console_state.home_controls, out, out_size);
+}
+
+bool update_home_controls(bool link_up, uint32_t now_ms)
+{
+    g_home_controls_now_ms = now_ms;
+    HomeControls& controls = g_console_state.home_controls;
+    const bool link_changed = home_controls::set_link(controls, link_up);
+    const uint32_t failures_before = controls.failure_count;
+    const bool ticked = home_controls::tick(controls, now_ms);
+    note_home_control_failure(failures_before);
+    return home_controls_changed(link_changed || ticked);
 }
 
 bool apply_mqtt_command(const mqtt_commands::Command& command)

@@ -30,6 +30,7 @@ using cursor_navigation::kAlertDetailScroll;
 using cursor_navigation::kAlertListPages;
 using cursor_navigation::kBrewCataloguePages;
 using cursor_navigation::kCalendarDay;
+using cursor_navigation::kHomeControlPages;
 using cursor_navigation::kSettingsPages;
 using cursor_navigation::kTimeZonePages;
 using text_styles::TextStyle;
@@ -174,6 +175,9 @@ constexpr std::array<PageDescriptor, kMenuPageCount> kPages = {{
     {MenuPage::ShareDetail, "SHARE", MenuPage::Shares, kBody, kStd, kLines,
      settings_controller::build_share_detail_softkeys, shares_screens::draw_share_detail_page,
      nullptr, nullptr, kDataAge, ShareFetch::SelectedPeriod},
+    {MenuPage::Controls, "CONTROLS", MenuPage::Home, kKey, kStd, kLines,
+     home_controller::build_controls_softkeys, screens::draw_controls_page,
+     home_controller::enter_controls, &kHomeControlPages, kOnChange, kNoFetch},
 }};
 // clang-format on
 

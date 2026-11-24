@@ -62,6 +62,19 @@ const char* ha_message_state();
 /// @brief Takes the oldest HA key press waiting for MQTT (#151).
 std::optional<ButtonId> pop_ha_key_press();
 
+/// @brief Applies a Controls list or press result from Home Assistant (#152).
+/// @return true when the Controls page changed.
+bool apply_home_controls(home_controls::Topic topic, const char* json);
+
+/// @brief Takes a Controls key press waiting to go to HA as its MQTT payload.
+/// @return false when there is none.
+bool take_home_control_press(char* out, size_t out_size);
+
+/// @brief Tells the Controls page whether HA can be reached, and times out a
+/// press HA has not answered. Called every main-loop pass by mqtt_manager.
+/// @return true when the Controls page changed.
+bool update_home_controls(bool link_up, uint32_t now_ms);
+
 /// @brief Applies one checked Home Assistant command (#150) to the UI state.
 /// @return true when it was applied.
 bool apply_mqtt_command(const mqtt_commands::Command& command);

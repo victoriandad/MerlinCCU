@@ -1,6 +1,6 @@
 # MerlinCCU integration (docs/home-assistant-setup.md, steps 5 and 6).
 # Add this block to Home Assistant's configuration.yaml, then restart HA.
-# Both parts are optional; keep the ones you use.
+# Every part is optional; keep the ones you use.
 merlinccu:
   # Share feed (step 5).
   # The CCU's "Feed token" setting. Put the value in secrets.yaml as
@@ -20,3 +20,13 @@ merlinccu:
     # Optional; these are the defaults.
     sun: sun.sun
     base_topic: merlinccu
+
+  # Controls pages (step 7). Needs the MQTT integration.
+  controls:
+    units:
+      # Each unit's mqtt_unit from http://<unit>/api/firmware, quoted.
+      "2ccf67a1b2c3":
+        - light.hall
+        - entity: scene.evening
+          # Optional. Left out, the key shows HA's name for the entity.
+          name: Evening

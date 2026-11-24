@@ -13,4 +13,11 @@ void build_home_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
 /// @brief Local Conditions: one reading key per measured quantity.
 void build_local_conditions_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
 
+/// @brief Controls (#152): one key per Home Assistant entity on this unit's
+/// list, eight to a page.
+void build_controls_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+
+/// @brief Keeps the Controls list page in range when the page opens.
+void enter_controls(ConsoleState& console_state);
+
 } // namespace home_controller

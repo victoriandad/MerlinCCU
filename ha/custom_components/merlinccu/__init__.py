@@ -8,6 +8,10 @@ fetched here so the CCU never talks to a market-data provider itself.
 House weather (#153): publishes one HA weather entity to every CCU over MQTT
 (weather_publisher.py, docs/mqtt-household-data.md).
 
+Controls (#152): gives each CCU its own list of lights, switches, scenes and
+scripts for its Controls page, and carries out its key presses
+(controls_publisher.py).
+
 Configured in configuration.yaml; see docs/home-assistant-setup.md.
 """
 
@@ -29,7 +33,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from . import feed
+from . import controls, feed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +49,8 @@ CONF_WEATHER = "weather"
 CONF_ENTITY = "entity"
 CONF_SUN = "sun"
 CONF_BASE_TOPIC = "base_topic"
+CONF_CONTROLS = "controls"
+CONF_UNITS = "units"
 
 # The CCU gives up on a response after 5 s (kIoTimeoutMs in
 # share_price_manager.cpp), so Yahoo gets less than that; a slow fetch is
@@ -76,6 +82,43 @@ WEATHER_SCHEMA = vol.Schema(
     }
 )
 
+def _control_entity(value: str) -> str:
+    """An entity ID in a domain a Controls key can switch or run."""
+    entity_id = cv.entity_id(value)
+    if entity_id.split(".", 1)[0] not in controls.SUPPORTED_DOMAINS:
+        raise vol.Invalid(
+            f"{entity_id}: Controls keys take {', '.join(sorted(controls.SUPPORTED_DOMAINS))}"
+        )
+    return entity_id
+
+
+CONTROL_SCHEMA = vol.Any(
+    vol.All(_control_entity, lambda entity: {CONF_ENTITY: entity}),
+    vol.Schema(
+        {
+            vol.Required(CONF_ENTITY): _control_entity,
+            vol.Optional(CONF_NAME): vol.All(cv.string, vol.Length(min=1)),
+        }
+    ),
+)
+
+# A unit is named by its Wi-Fi MAC, as in its MQTT topics: 12 lower-case hex
+# digits (the CCU's Device Identity page and MQTT device show it).
+UNIT_MAC = vol.All(cv.string, vol.Lower, vol.Match(r"^[0-9a-f]{12}$"))
+
+CONTROLS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_UNITS): {
+            UNIT_MAC: vol.All(
+                cv.ensure_list, [CONTROL_SCHEMA], vol.Length(max=controls.MAX_CONTROLS)
+            )
+        },
+        vol.Optional(CONF_BASE_TOPIC, default="merlinccu"): vol.All(
+            cv.string, vol.Length(min=1, max=40)
+        ),
+    }
+)
+
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
@@ -85,6 +128,7 @@ CONFIG_SCHEMA = vol.Schema(
                     cv.ensure_list, [SHARE_SCHEMA], vol.Length(min=1, max=MAX_SHARES)
                 ),
                 vol.Optional(CONF_WEATHER): WEATHER_SCHEMA,
+                vol.Optional(CONF_CONTROLS): CONTROLS_SCHEMA,
             }
         )
     },
@@ -116,6 +160,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             weather[CONF_ENTITY],
             weather[CONF_BASE_TOPIC],
         )
+
+    if CONF_CONTROLS in conf:
+        from .controls_publisher import ControlsPublisher
+
+        units = {
+            mac: [(entry[CONF_ENTITY], entry.get(CONF_NAME)) for entry in entries]
+            for mac, entries in conf[CONF_CONTROLS][CONF_UNITS].items()
+        }
+        ControlsPublisher(hass, conf[CONF_CONTROLS][CONF_BASE_TOPIC], units).async_start()
+        _LOGGER.info("MerlinCCU controls published for %d unit(s)", len(units))
     return True
 
 

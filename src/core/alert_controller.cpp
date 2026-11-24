@@ -695,6 +695,26 @@ void sync(ConsoleState& console_state)
                         AlertSeverity::Warning, "RESTARTED",
                         unexpected_restart ? alert_detail_scratch : "");
 
+    // A Controls key press that did not work (#152) holds until a press
+    // works, so a light that did not switch is not mistaken for one that
+    // did once the page's short notice has gone.
+    const HomeControls& controls = console_state.home_controls;
+    const bool control_failed = controls.last_failure != ControlFailure::None;
+    if (control_failed)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "%s did not switch.\n%s\nTry again; this clears when a Controls key "
+                      "works.",
+                      controls.last_failure_name[0] != '\0' ? controls.last_failure_name.data()
+                                                            : "A control",
+                      controls.last_failure == ControlFailure::Refused
+                          ? "Home Assistant refused it; its log says why."
+                          : "Home Assistant did not answer within 5 seconds.");
+    }
+    set_alert_condition(console_state, AlertCode::ControlFailed, control_failed,
+                        AlertSeverity::Warning, "CONTROL FAILED",
+                        control_failed ? alert_detail_scratch : "");
+
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
         console_state.alert_detail_index =

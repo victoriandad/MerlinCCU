@@ -1072,6 +1072,39 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*n
               TextStyle::Footer);
 }
 
+/// @details Entities are keys, so the body holds only an empty state when
+/// there are none to show, and a notice line for a press that failed (PAGE-3).
+/// The list arrives over MQTT from HA, whose broker carries the link, so a
+/// list is either live or the link is down: there is no stale state.
+void draw_controls_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*now_ms*/)
+{
+    const HomeControls& controls = console_state.home_controls;
+    if (!controls.link_up)
+    {
+        if (!console_state.mqtt_status.configured)
+        {
+            draw_empty_state(fb, "MQTT NOT SET UP", "Set up MQTT in Settings > MQTT Discovery");
+        }
+        else
+        {
+            draw_empty_state(fb, "HA NOT CONNECTED", "Controls return when MQTT reconnects");
+        }
+        return;
+    }
+    if (!controls.received || controls.count == 0U)
+    {
+        draw_empty_state(fb, "NO CONTROLS", "Add this unit's list in HA's MerlinCCU setup");
+        return;
+    }
+    char notice[48] = {};
+    home_controls::failure_notice(controls, notice, sizeof(notice));
+    if (notice[0] != '\0')
+    {
+        draw_centered_text(fb, ui_layout::kCentreX, ui_layout::kNoticeLineY, notice,
+                           TextStyle::Footer);
+    }
+}
+
 /// @brief Draws a simple geometry and fill-pattern test screen.
 /// @details This is meant for quick panel sanity checks, not realistic UI, so it
 /// emphasizes contrast, clipping, and obvious motion-free shapes.

@@ -44,6 +44,7 @@ extern const PageCursor kSettingsPages;
 extern const PageCursor kTimeZonePages;
 extern const PageCursor kBrewCataloguePages;
 extern const PageCursor kAlertListPages;
+extern const PageCursor kHomeControlPages;
 extern const PageCursor kCalendarDay;
 extern const PageCursor kAlertDetailScroll;
 

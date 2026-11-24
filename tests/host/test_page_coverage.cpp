@@ -39,6 +39,15 @@ namespace
 
 using text_styles::TextStyle;
 
+/// @brief A Controls list as HA's integration publishes it (#152).
+constexpr char kControlsList[] =
+    "{\"v\":1,\"list\":\"5f3a9c01\","
+    "\"names\":[\"Hall light\",\"Landing\",\"Kitchen spots\",\"Porch\",\"Evening\","
+    "\"Goodnight\",\"Fan\",\"Christmas tree lights\",\"Garage door\",\"Movie time\"],"
+    "\"kinds\":[\"toggle\",\"toggle\",\"toggle\",\"toggle\",\"run\",\"run\",\"toggle\","
+    "\"toggle\",\"toggle\",\"run\"],"
+    "\"states\":[\"on\",\"off\",\"on\",\"unavailable\",\"\",\"\",\"off\",\"on\",\"off\",\"\"]}";
+
 /// @brief Fixed boot-uptime for every render, so freshness text is stable.
 constexpr uint32_t kCoverageNowMs = 900000U;
 
@@ -81,6 +90,7 @@ constexpr std::array<const char*, kPageCount> kPageNames = {
     "pinter_start_timing",
     "shares",
     "share_detail",
+    "controls",
 };
 
 void press(ButtonId id)
@@ -167,6 +177,11 @@ void start_with_data()
     std::snprintf(time.date_text.data(), time.date_text.size(), "2026-11-13");
     time.weekday_index = 5U;
     (void)console_controller::set_time_status(time);
+
+    // Ten Home Assistant controls (#152): two pages, every kind and state,
+    // and a name too long for its key.
+    (void)console_controller::update_home_controls(true, kCoverageNowMs);
+    (void)console_controller::apply_home_controls(home_controls::Topic::List, kControlsList);
 
     // Four keys held at once is a keypad line fault: after its debounce the
     // KEYPAD alert is active, so the Alert list and Alert detail have an

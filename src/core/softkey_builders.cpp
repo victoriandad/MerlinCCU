@@ -64,6 +64,11 @@ SoftKeyAction action(const char* verb, SoftKeyRoute route)
     return {verb, route, true, false, SoftKeyRole::Action};
 }
 
+SoftKeyAction action(const char* verb, SoftKeyRoute route, uint8_t slot)
+{
+    return {verb, route, true, false, SoftKeyRole::Action, slot};
+}
+
 SoftKeyAction action(const char* verb, MenuPage page)
 {
     return {verb, SoftKeyRoute::GoPage, true, false, SoftKeyRole::Action, page_slot(page)};
@@ -79,6 +84,13 @@ SoftKeyAction toggle(SoftKeyId key, const char* caption, bool on, SoftKeyRoute r
     return {cci::build_selection_softkey_label(key, caption,
                                                settings_controller::enabled_selection_text(on)),
             route, true, false, SoftKeyRole::Toggle};
+}
+
+SoftKeyAction toggle(SoftKeyId key, const char* caption, const char* state, SoftKeyRoute route,
+                     uint8_t slot)
+{
+    return {cci::build_selection_softkey_label(key, caption, state), route, true, false,
+            SoftKeyRole::Toggle, slot};
 }
 
 SoftKeyAction view(SoftKeyId key, const char* caption, const char* value, SoftKeyRoute route)
