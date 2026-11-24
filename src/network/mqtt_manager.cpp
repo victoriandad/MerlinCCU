@@ -392,8 +392,9 @@ std::array<InboundBuffer, 2> g_controls_buffers = {{
 }};
 // Discovery JSON, and the panel PNG (#159). Pages are 0.5 to 2 KB as PNG; a
 // bigger one (heavy dither) is skipped. The lwIP ring (lwipopts.h) holds
-// this plus the topic.
-constexpr size_t kScreenImageMaxBytes = 3584U;
+// this plus the topic. Without PSRAM (Pico 2 W) the buffer is in SRAM,
+// which is nearly full, so it is smaller there and more pages are skipped.
+constexpr size_t kScreenImageMaxBytes = kBoardHasPsram ? 3584U : 1536U;
 MERLIN_PSRAM_BSS char g_publish_buffer[kScreenImageMaxBytes];
 // The panel picture goes out when the screen has changed, at most this often,
 // so a dashboard stays current without loading the broker or the loop.

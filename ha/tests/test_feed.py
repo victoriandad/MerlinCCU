@@ -46,7 +46,9 @@ class ShareFromChartTests(unittest.TestCase):
         self.assertEqual(entry["change"], f"{expected:+.2f}%")
         self.assertEqual(entry["data_state"], "live")
         self.assertEqual(len(entry["history"]), feed.HISTORY_POINTS)
-        self.assertTrue(all(isinstance(v, int) for v in entry["history"]))
+        # The CCU measures the graph from the base: yesterday's close (#178).
+        self.assertEqual(entry["base"], feed.graph_point(meta["chartPreviousClose"]))
+        self.assertTrue(all(isinstance(v, (int, float)) for v in entry["history"]))
 
     def test_today_is_flat_when_nothing_has_traded_today(self):
         # The fixture's last trade was a Friday; ask on the Saturday.
@@ -57,7 +59,8 @@ class ShareFromChartTests(unittest.TestCase):
 
         self.assertEqual(entry["price"], meta["regularMarketPrice"])
         self.assertEqual(entry["change"], "+0.00%")
-        self.assertEqual(entry["history"], [round(meta["regularMarketPrice"])])
+        self.assertEqual(entry["history"], [feed.graph_point(meta["regularMarketPrice"])])
+        self.assertEqual(entry["base"], entry["history"][0])
 
     def test_only_today_goes_flat_out_of_hours(self):
         chart = fixture("yahoo_ba_l_1y_1wk.json")
@@ -127,6 +130,12 @@ class PayloadTests(unittest.TestCase):
         entries = [dict(entry, symbol=f"SYMBOL{i}.L", name="A" * 23) for i in range(6)]
         size = len(feed.payload(entries).encode("utf-8"))
         self.assertLess(size + HEADER_ALLOWANCE, CCU_RESPONSE_BUFFER)
+
+class GraphPointTests(unittest.TestCase):
+    def test_low_prices_keep_their_detail(self):
+        # #178: a share under 10 keeps four decimals, others two.
+        self.assertEqual(feed.graph_point(0.452349), 0.4523)
+        self.assertEqual(feed.graph_point(1372.456), 1372.46)
 
 
 if __name__ == "__main__":

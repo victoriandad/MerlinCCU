@@ -145,7 +145,7 @@ void start_with_data()
         std::snprintf(share.change_text.data(), share.change_text.size(), "+0.4%%");
         for (size_t p = 0U; p < share.history_points.size(); ++p)
         {
-            share.history_points[p] = static_cast<uint16_t>(1200U + (p * 5U));
+            share.history_points[p] = 1200.0F + (static_cast<float>(p) * 5.0F);
         }
     }
     (void)console_controller::set_share_market_status(shares);

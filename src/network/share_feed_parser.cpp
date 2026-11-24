@@ -16,8 +16,6 @@ namespace
 {
 using text_utils::copy_text;
 
-constexpr size_t kMaxParsedHistoryValues = 256U;
-
 /// @brief Formats a price compactly enough for one bracketed softkey line.
 void format_price_text(double price, std::array<char, 12>& out)
 {
@@ -36,55 +34,13 @@ void format_price_text(double price, std::array<char, 12>& out)
     std::snprintf(out.data(), out.size(), "%.1f", price);
 }
 
-/// @brief Converts a parsed price into the uint16 graph range used by the renderer.
-uint16_t graph_value_from_price(double price)
+/// @brief Reads the numbers of a `history` array, from `cursor` (just past
+/// its `[`), calling `take(index, value)` for each.
+/// @return How many numbers it holds.
+template <typename Take>
+size_t scan_history(const char* cursor, const char* obj_end, Take&& take)
 {
-    const long rounded = std::lround(price);
-    if (rounded < 0L)
-    {
-        return 0U;
-    }
-    if (rounded > 65535L)
-    {
-        return 65535U;
-    }
-
-    return static_cast<uint16_t>(rounded);
-}
-
-/// @brief Downsamples arbitrary close values into the fixed 24-point CCU graph buffer.
-void copy_history_points(const std::array<uint16_t, kMaxParsedHistoryValues>& parsed_values,
-                         size_t count, ShareWatchEntry& share, uint16_t fallback_price)
-{
-    if (count == 0U)
-    {
-        share.history_points.fill(fallback_price);
-        return;
-    }
-
-    for (size_t i = 0U; i < share.history_points.size(); ++i)
-    {
-        const size_t source_index =
-            (count == 1U) ? 0U : ((i * (count - 1U)) / (share.history_points.size() - 1U));
-        share.history_points[i] = parsed_values[source_index];
-    }
-}
-
-/// @brief Parses one share object's bounded `"history":[...]` array into graph points.
-bool parse_bounded_history(const char* obj_start, const char* obj_end, ShareWatchEntry& share,
-                           double fallback_price)
-{
-    const char* cursor = bounded_json::find_bounded(obj_start, obj_end, "\"history\":[");
-    if (cursor == nullptr)
-    {
-        copy_history_points({}, 0U, share, graph_value_from_price(fallback_price));
-        return false;
-    }
-
-    cursor += std::strlen("\"history\":[");
-    size_t value_count = 0U;
-    std::array<uint16_t, kMaxParsedHistoryValues> parsed_values = {};
-
+    size_t count = 0U;
     while (cursor < obj_end)
     {
         cursor = bounded_json::skip_space(cursor);
@@ -104,15 +60,52 @@ bool parse_bounded_history(const char* obj_start, const char* obj_end, ShareWatc
         {
             break;
         }
-        if (value_count < parsed_values.size())
-        {
-            parsed_values[value_count++] = graph_value_from_price(value);
-        }
+        take(count++, static_cast<float>(value));
         cursor = end;
     }
+    return count;
+}
 
-    copy_history_points(parsed_values, value_count, share, graph_value_from_price(fallback_price));
-    return value_count > 0U;
+/// @brief Parses one share object's bounded `"history":[...]` array into the
+/// fixed 24-point graph buffer, downsampling a longer array.
+/// @details Prices are kept as given, fractions included, so a share priced
+/// under 1 still has a shape (#178). Two passes over the text, counting then
+/// picking, keep the parse free of a buffer for the whole array; the Pico
+/// 2 W has no RAM to spare for one.
+bool parse_bounded_history(const char* obj_start, const char* obj_end, ShareWatchEntry& share,
+                           double fallback_price)
+{
+    const char* cursor = bounded_json::find_bounded(obj_start, obj_end, "\"history\":[");
+    if (cursor == nullptr)
+    {
+        share.history_points.fill(static_cast<float>(fallback_price));
+        return false;
+    }
+    cursor += std::strlen("\"history\":[");
+
+    const size_t count = scan_history(cursor, obj_end, [](size_t, float) {});
+    if (count == 0U)
+    {
+        share.history_points.fill(static_cast<float>(fallback_price));
+        return false;
+    }
+
+    const size_t points = share.history_points.size();
+    (void)scan_history(cursor, obj_end,
+                       [&share, count, points](size_t index, float value)
+                       {
+                           // Every graph point whose source is this value.
+                           for (size_t i = 0U; i < points; ++i)
+                           {
+                               const size_t source =
+                                   count == 1U ? 0U : (i * (count - 1U)) / (points - 1U);
+                               if (source == index)
+                               {
+                                   share.history_points[i] = value;
+                               }
+                           }
+                       });
+    return true;
 }
 
 /// @brief Finds the watched share entry matching `symbol`, or nullptr.
@@ -238,6 +231,15 @@ bool parse_shares_feed_response(const char* body, const char* buffer_end,
                 }
 
                 parse_bounded_history(cursor, obj_end, *share, price);
+
+                // The price the period's change is measured from (#178):
+                // yesterday's close for Today, the first close otherwise.
+                // Older feeds leave it out, and the graph uses its first point.
+                double base = 0.0;
+                share->base_valid =
+                    bounded_json::extract_bounded_number(cursor, obj_end, "\"base\"", &base) &&
+                    base > 0.0;
+                share->base_price = share->base_valid ? static_cast<float>(base) : 0.0F;
                 updated_any = true;
             }
         }

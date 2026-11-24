@@ -1,5 +1,6 @@
 #include "share_feed_parser.h"
 
+#include <cmath>
 #include <cstring>
 
 #include "test_framework.h"
@@ -138,4 +139,26 @@ HOST_TEST(parse_shares_feed_response_falls_back_to_price_as_the_history_graph_wh
     {
         EXPECT_TRUE(point == 50U);
     }
+}
+
+HOST_TEST(parse_shares_feed_response_keeps_fractions_and_the_base_price)
+{
+    // A share under 1 keeps its shape, and the period's base comes with it
+    // (#178).
+    const char* json = "{\"shares\":[{\"symbol\":\"LLOY.L\",\"currency\":\"GBX\",\"price\":0.4523,"
+                       "\"base\":0.4410,\"history\":[0.4410,0.4475,0.4523]}]}";
+    const char* end = json + std::strlen(json);
+    auto watched_shares = make_watchlist("LLOY.L");
+    EXPECT_TRUE(share_feed::parse_shares_feed_response(json, end, watched_shares, 1));
+    EXPECT_TRUE(watched_shares[0].base_valid);
+    EXPECT_TRUE(std::fabs(watched_shares[0].base_price - 0.4410F) < 0.0001F);
+    EXPECT_TRUE(std::fabs(watched_shares[0].history_points[0] - 0.4410F) < 0.0001F);
+    EXPECT_TRUE(std::fabs(watched_shares[0].history_points[23] - 0.4523F) < 0.0001F);
+
+    // An older feed without a base leaves the graph to use its first point.
+    const char* old_json = "{\"shares\":[{\"symbol\":\"LLOY.L\",\"price\":45.2,"
+                           "\"history\":[44,45]}]}";
+    EXPECT_TRUE(share_feed::parse_shares_feed_response(
+        old_json, old_json + std::strlen(old_json), watched_shares, 1));
+    EXPECT_FALSE(watched_shares[0].base_valid);
 }

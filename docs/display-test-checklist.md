@@ -155,8 +155,14 @@ full 35-item catalogue, right when you actually have a pack in hand.
 - Pressing the BAE Systems softkey opens the share detail page.
 - Share detail page shows a full-width graph in the upper display region with
   no graph bounding box and no overlap with softkey labels.
-- `MIN` (left) and `MAX` (right) graph values are shown directly beneath the
-  graph and remain readable across all periods.
+- The graph's scale is percent change from the period's base (yesterday's
+  close for `Today`): `+x.xx%` at the top, the middle and `-y.yy%` at the
+  bottom, with a dotted base line. Bars rise above it for a gain and hang
+  below it for a loss; a move under 1% fills only part of the height (#178).
+- The timeline reads `OPEN`, `5 DAYS AGO`, `1 MONTH AGO`, `1 YEAR AGO` or
+  `FIRST TRADE` on the left and `NOW` on the right, by period.
+- `PRICE` shows its currency; GBX (pence) shares read in pounds, e.g.
+  `13.46 GBP`.
 - `PERIOD` softkey at `L5` cycles `Today` -> `Week` -> `Month` -> `Year` ->
   `All-time` and wraps back to `Today`.
 - `R5=HOME` remains available from the shares pages.

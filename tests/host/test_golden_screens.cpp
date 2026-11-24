@@ -112,11 +112,39 @@ HOST_TEST(share_detail_page_renders_consistently)
     std::strncpy(share.change_text.data(), "+0.02%", share.change_text.size());
     for (size_t i = 0; i < share.history_points.size(); ++i)
     {
-        share.history_points[i] = static_cast<uint16_t>(1350U + (i * 2U));
+        share.history_points[i] = 1350.0F + (static_cast<float>(i) * 2.0F);
     }
 
     const auto fb = render_page(state, 60000U);
     EXPECT_TRUE(golden_test::check_golden("share_detail_page", fb.data()));
+}
+
+HOST_TEST(share_detail_graph_shows_a_fall_from_the_previous_close_in_percent)
+{
+    // #178: a GBX share that opened above yesterday's close and fell through
+    // it. Bars rise and fall from the dotted base line, the axis is in
+    // percent, and the price row reads in pounds.
+    ConsoleState state = {};
+    state.active_page = MenuPage::ShareDetail;
+    state.share_count = 1;
+    state.share_period = SharePeriod::Today;
+    state.share_data_valid = true;
+    state.share_data_last_success_ms = 30000U;
+    ShareWatchEntry& share = state.watched_shares[0];
+    std::strncpy(share.display_name.data(), "BAE SYSTEMS", share.display_name.size());
+    std::strncpy(share.symbol.data(), "BA.L", share.symbol.size());
+    std::strncpy(share.currency.data(), "GBX", share.currency.size());
+    std::strncpy(share.price_text.data(), "1,346.5", share.price_text.size());
+    std::strncpy(share.change_text.data(), "-1.71%", share.change_text.size());
+    share.base_price = 1370.0F;
+    share.base_valid = true;
+    for (size_t i = 0; i < share.history_points.size(); ++i)
+    {
+        share.history_points[i] = 1378.0F - (static_cast<float>(i) * 1.4F);
+    }
+
+    const auto fb = render_page(state, 60000U);
+    EXPECT_TRUE(golden_test::check_golden("share_detail_fall_from_close", fb.data()));
 }
 
 HOST_TEST(settings_page_renders_consistently)

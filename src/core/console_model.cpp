@@ -438,7 +438,7 @@ void make_default_console_state(ConsoleState& out)
         share.currency.fill('\0');
         share.price_text.fill('\0');
         share.change_text.fill('\0');
-        share.history_points.fill(0U);
+        share.history_points.fill(0.0F);
     }
 
     ShareWatchEntry& bae = out.watched_shares[0];

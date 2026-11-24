@@ -711,7 +711,13 @@ struct ShareWatchEntry
     std::array<char, 8> currency;
     std::array<char, 12> price_text;
     std::array<char, 12> change_text;
-    std::array<uint16_t, 24> history_points;
+    /// Closing prices across the period, oldest first, in the feed's unit
+    /// (pence for GBX), fractions kept (#178).
+    std::array<float, 24> history_points;
+    /// The price the period's change is measured from, when the feed sends
+    /// it: the previous close for Today. Otherwise the first point is used.
+    float base_price;
+    bool base_valid;
 };
 
 /// @brief Compares two watched-share rows field-by-field for redraw detection.
@@ -720,7 +726,8 @@ inline bool operator==(const ShareWatchEntry& lhs, const ShareWatchEntry& rhs)
     return lhs.display_name == rhs.display_name && lhs.symbol == rhs.symbol &&
            lhs.exchange == rhs.exchange && lhs.currency == rhs.currency &&
            lhs.price_text == rhs.price_text && lhs.change_text == rhs.change_text &&
-           lhs.history_points == rhs.history_points;
+           lhs.history_points == rhs.history_points && lhs.base_price == rhs.base_price &&
+           lhs.base_valid == rhs.base_valid;
 }
 
 /// @brief Latest market-data snapshot that can be copied into the UI model.
