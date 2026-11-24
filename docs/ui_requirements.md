@@ -228,7 +228,10 @@ Fonts are chosen by what the text is for, not page by page.
   directly.
 - **TXT-2** The font for each category must be changeable in one place, and
   selectable at run time from a Settings page, so that sizes can be tried on
-  the panel without rebuilding.
+  the panel without rebuilding. That page is Settings > Fonts (#123): one
+  select key per text style (`text_styles.h`), each opening the four faces,
+  and `ALL DEFAULTS`; the web config page's Fonts card offers the same, and
+  the choices are saved with the settings.
 - **TXT-3** Everything that depends on a font (line spacing, bracket size,
   wrapping width, lines per label, row pitch) must be derived from that
   font's measurements, so any category can take any available font.

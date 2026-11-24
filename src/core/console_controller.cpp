@@ -18,6 +18,7 @@
 #include "softkey_builders.h"
 #include "status_controller.h"
 #include "text_case.h"
+#include "text_styles.h"
 
 namespace console_controller
 {
@@ -629,6 +630,12 @@ bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
         return calendar_controller::reset_filters(g_console_state);
     case SoftKeyRoute::SelectCalendarSlot:
         return calendar_controller::open_detail_from_slot(g_console_state, slot);
+    case SoftKeyRoute::SelectFontStyle:
+        return settings_controller::select_font_style_slot(g_console_state, slot);
+    case SoftKeyRoute::ResetFonts:
+        return settings_controller::reset_font_choices();
+    case SoftKeyRoute::SelectFontFace:
+        return settings_controller::select_font_face(g_console_state, slot);
     case SoftKeyRoute::PressHomeControl:
     {
         HomeControls& controls = g_console_state.home_controls;
@@ -673,6 +680,9 @@ bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
 void init()
 {
     make_default_console_state(g_console_state);
+    // Fonts start at their defaults; apply_runtime_config() then applies the
+    // saved choices (#123).
+    text_styles::reset_fonts();
     g_redraw_requested = false;
     alert_controller::reset();
     g_softkey_label_override_active.fill(false);
@@ -920,6 +930,12 @@ bool apply_runtime_config(const RuntimeConfig& settings)
     {
         g_console_state.screen_saver_timeout_minutes = settings.screen_saver_timeout_minutes;
         g_console_state.screen_saver_timeout_edit_minutes = settings.screen_saver_timeout_minutes;
+        changed = true;
+    }
+    // Fonts chosen on the Fonts page or the web page (#123) show on the next
+    // frame of every page.
+    if (settings_controller::apply_font_choices(settings))
+    {
         changed = true;
     }
 

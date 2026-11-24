@@ -62,6 +62,38 @@ void reset_fonts()
     g_fonts = kDefaultFonts;
 }
 
+fonts::FontFace default_font(TextStyle style)
+{
+    return kDefaultFonts[style_index(style)];
+}
+
+const char* style_caption(TextStyle style)
+{
+    // One line each at 8x12 beside a value (LBL-7); see the Fonts page.
+    constexpr std::array<const char*, kTextStyleCount> kCaptions = {
+        "PAGE TITLE",  "CLOCK",      "BADGE",       "SOFTKEY",   "DENSE KEY", "INFO LABEL",
+        "BODY VALUE",  "DETAIL ROW", "BODY TEXT",   "TABLE HEAD", "TABLE CELL", "GRAPH LABEL",
+        "BIG VALUE",   "HEADLINE",   "HINT",        "FOOTER",    "TYPING",
+    };
+    return kCaptions[style_index(style)];
+}
+
+const char* font_name(fonts::FontFace face)
+{
+    switch (face)
+    {
+    case FontFace::Font5x7:
+        return "5x7";
+    case FontFace::FontTitle8x12:
+        return "Title 8x12";
+    case FontFace::Font8x12:
+        return "8x12";
+    case FontFace::Font8x14:
+        return "8x14";
+    }
+    return "-";
+}
+
 int line_height(TextStyle style)
 {
     return framebuffer::font_height(font(style));

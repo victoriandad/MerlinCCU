@@ -173,6 +173,10 @@ enum class MenuPage : uint8_t
     ShareDetail,
     /// Home Assistant entities to switch or run (#152).
     Controls,
+    /// The font of each text style, chosen on the panel (#123).
+    FontSettings,
+    /// The fonts one style can take.
+    FontOptions,
     Count,
 };
 
@@ -554,6 +558,13 @@ inline constexpr uint8_t kTimeZoneOptionsPerPage = 8U;
 inline constexpr uint8_t kTimeZonePageCount =
     list_page_count(kTimeZoneSelectionCount, kTimeZoneOptionsPerPage);
 
+/// @brief Fonts page entries (#123): one per text style, then ALL DEFAULTS.
+/// settings_controller.cpp checks the style count against text_styles.
+inline constexpr uint8_t kFontStyleCount = 17U;
+inline constexpr uint8_t kFontListEntryCount = kFontStyleCount + 1U;
+inline constexpr uint8_t kFontEntriesPerPage = 8U;
+inline constexpr uint8_t kFontPageCount = list_page_count(kFontListEntryCount, kFontEntriesPerPage);
+
 /// @brief Local environmental metric selected for the graph detail page.
 enum class LocalConditionMetric : uint8_t
 {
@@ -648,6 +659,13 @@ enum class SoftKeyRoute : uint8_t
     /// Switches or runs the Home Assistant entity in key `slot` of the
     /// current Controls page (#152).
     PressHomeControl,
+    /// Opens the font options for the style in key `slot` of the current
+    /// Fonts page (#123).
+    SelectFontStyle,
+    /// Puts every text style back to its default font.
+    ResetFonts,
+    /// Gives the selected style font `slot` (fonts::FontFace).
+    SelectFontFace,
 };
 
 /// @brief Maximum simultaneously active alerts (matches ConsoleState::active_alerts).
@@ -937,6 +955,9 @@ struct ConsoleState
     MenuPage active_page;
     uint8_t settings_page_index;
     uint8_t time_zone_page_index;
+    /// Fonts page (#123): the list page shown, and the style being changed.
+    uint8_t font_page_index;
+    uint8_t font_style_index;
     WeatherSource weather_source;
     WeatherPeriod weather_period;
     LocalConditionMetric local_condition_metric;

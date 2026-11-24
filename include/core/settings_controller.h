@@ -5,6 +5,8 @@
 #include "console_model.h"
 #include "input.h"
 
+struct RuntimeConfig;
+
 /// @brief Settings route handling and softkey-caption formatting, split out
 /// of console_controller.cpp -- issue #44 (staged, following the
 /// pinter_controller.h/alert_controller.h/calendar_controller.h precedent).
@@ -113,6 +115,29 @@ const char* screen_saver_timeout_selection_text(const ConsoleState& console_stat
 
 /// @brief Updates the selected weather source when a new provider is chosen.
 bool select_weather_source(WeatherSource source);
+
+/// @brief Gives each text style the font stored for it (#123).
+/// @return True when any style's font changed, so the screen needs redrawing.
+bool apply_font_choices(const RuntimeConfig& settings);
+
+/// @brief The Fonts key's value: "Default", or "Custom" once any style differs.
+const char* fonts_selection_text();
+
+/// @brief Fonts page: one select key per text style, then ALL DEFAULTS.
+void build_font_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+
+/// @brief Font options page: the four faces for the chosen style.
+void build_font_options_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+
+/// @brief Opens the font options for the style in key `slot` of the current
+/// Fonts page.
+bool select_font_style_slot(ConsoleState& console_state, uint8_t slot);
+
+/// @brief Saves font `face` for the style being changed; it shows at once.
+bool select_font_face(const ConsoleState& console_state, uint8_t face);
+
+/// @brief Saves every style back to its default font.
+bool reset_font_choices();
 
 /// @brief Advances the active weather page range without touching persisted config.
 bool cycle_weather_period(ConsoleState& console_state);

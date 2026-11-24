@@ -383,6 +383,39 @@ HOST_TEST(migrate_legacy_settings_v7_keeps_the_web_pin_with_no_ha_keys)
     EXPECT_EQ(migrated.ha_key_mask, 0U);
 }
 
+HOST_TEST(migrate_legacy_settings_v8_keeps_ha_keys_with_default_fonts)
+{
+    config_persistence::LegacyConfigSlotV8 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV8;
+    slot.payload_size = sizeof(config_persistence::LegacyRuntimeConfigV8);
+    text_utils::copy_text(slot.settings.device_name, "OldName8");
+    slot.settings.web_pin_set = true;
+    slot.settings.ha_key_mask = 0x24U;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(config_persistence::LegacyRuntimeConfigV8));
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v8(slot));
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v8(slot.settings);
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName8") == 0);
+    EXPECT_TRUE(migrated.web_pin_set);
+    EXPECT_EQ(migrated.ha_key_mask, 0x24U);
+    for (const uint8_t choice : migrated.font_choices)
+    {
+        EXPECT_EQ(choice, 0U);
+    }
+}
+
+HOST_TEST(sanitize_resets_a_font_choice_this_firmware_lacks)
+{
+    RuntimeConfig settings = config_persistence::make_default_settings();
+    settings.font_choices[0] = kMaxFontChoice;
+    settings.font_choices[1] = kMaxFontChoice + 1U;
+    config_persistence::sanitize_settings_in_place(settings);
+    EXPECT_EQ(settings.font_choices[0], kMaxFontChoice);
+    EXPECT_EQ(settings.font_choices[1], 0U);
+}
+
 HOST_TEST(change_record_names_the_time_source_and_address)
 {
     config_manager::ChangeRecord record = {};

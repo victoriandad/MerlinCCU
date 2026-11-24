@@ -91,6 +91,8 @@ constexpr std::array<const char*, kPageCount> kPageNames = {
     "shares",
     "share_detail",
     "controls",
+    "font_settings",
+    "font_options",
 };
 
 void press(ButtonId id)

@@ -208,6 +208,15 @@ step 7).
   - `SAVER` opens the `SAVER` option page: the eight savers on `L1`-`L4`,
     `R1`-`R4`, the current one inverse, `R5=HOME`. Picking one takes effect at
     once and stays on the page; `BACK STEP` returns to `SCREEN SAVER`.
+- Settings 2/2 `R1=FONTS [Default]` opens `FONTS 1/3`: one key per text
+  style showing its font (`PAGE TITLE [Title 8x12]`), eight to a page, with
+  `ALL DEFAULTS` last on page 3; the cursor keys page.
+  - A style key opens `FONT`: `5X7`, `TITLE 8X12`, `8X12`, `8X14` on
+    `L1`-`L4`, the current one inverse. Picking one changes that text on
+    every page at once and survives a restart; `FONTS` then reads `[Custom]`.
+  - Try sizes by eye on the panel; no page may lose keys under any choice.
+  - `ALL DEFAULTS` puts every style back and `FONTS` reads `[Default]`.
+  - The web page's Fonts card shows the same choices and saves them.
 
 ## Alert Workflow Pages
 

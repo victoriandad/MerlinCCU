@@ -60,6 +60,10 @@ const PageCursor kHomeControlPages = {
     },
     [](ConsoleState& s, int position) { s.home_controls.page_index = static_cast<uint8_t>(position); }};
 
+const PageCursor kFontPages = {
+    [](const ConsoleState& s) { return list_pages(s.font_page_index, kFontPageCount); },
+    [](ConsoleState& s, int position) { s.font_page_index = static_cast<uint8_t>(position); }};
+
 const PageCursor kCalendarDay = {
     [](const ConsoleState& s) {
         return CursorRange{CursorUse::Step, s.calendar_day_offset, kCalendarMinDayOffset,

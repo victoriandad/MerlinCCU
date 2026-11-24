@@ -30,6 +30,7 @@
 #include "pico/rand.h"
 #include "pico/time.h"
 #include "psram.h"
+#include "text_styles.h"
 #include "text_utils.h"
 #include "web_auth.h"
 #include "wifi_manager.h"
@@ -1003,8 +1004,39 @@ void build_config_page(const char* message)
         cursor, remaining,
         "</select><label>Screen-saver timeout minutes</label><input name=\"screen_timeout\" "
         "type=\"number\" min=\"0\" max=\"120\" inputmode=\"numeric\" value=\"%u\">"
-        "<p class=\"hint\">0 disables timeout. Valid range: 0-120."
-        "</p></section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved "
+        "<p class=\"hint\">0 disables timeout. Valid range: 0-120.</p></section>",
+        static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
+
+    // Fonts (#123): the same choices as the panel's Settings > Fonts page, so
+    // a set can be tried while watching /preview. Value 0 keeps the default.
+    (void)append(cursor, remaining,
+                 "<section class=\"card\"><h2>Fonts</h2><p class=\"hint\">Font for each kind "
+                 "of text. Save, then watch the preview; Settings &gt; Fonts on the panel "
+                 "offers the same.</p>");
+    for (size_t style = 0U; style < kFontChoiceCount; ++style)
+    {
+        const auto text_style = static_cast<text_styles::TextStyle>(style);
+        char selected[4] = {};
+        std::snprintf(selected, sizeof(selected), "%u",
+                      static_cast<unsigned>(cfg.font_choices[style]));
+        char default_label[24] = {};
+        std::snprintf(default_label, sizeof(default_label), "Default (%s)",
+                      text_styles::font_name(text_styles::default_font(text_style)));
+        (void)append(cursor, remaining, "<label>%s</label><select name=\"font_%u\">",
+                     text_styles::style_caption(text_style), static_cast<unsigned>(style));
+        (void)append_option(cursor, remaining, "0", default_label, selected);
+        for (uint8_t face = 0U; face < text_styles::kFontFaceCount; ++face)
+        {
+            const char value[2] = {static_cast<char>('1' + face), '\0'};
+            (void)append_option(cursor, remaining, value,
+                                text_styles::font_name(static_cast<fonts::FontFace>(face)),
+                                selected);
+        }
+        (void)append(cursor, remaining, "%s", "</select>");
+    }
+    (void)append(
+        cursor, remaining,
+        "</section></div><div class=\"actions\"><span class=\"hint\">Configuration is saved "
         "locally on this CCU.</span>"
         "<button type=\"submit\">Save Configuration</button></div></form>"
         "<script>"
@@ -1055,8 +1087,7 @@ void build_config_page(const char* message)
         "'popup=yes,width=900,height=1550,resizable=yes,scrollbars=yes');"
         "if(!popup){window.location.href='/preview';}"
         "});}"
-        "</script></main></body></html>",
-        static_cast<unsigned>(cfg.screen_saver_timeout_minutes));
+        "</script></main></body></html>");
 }
 
 enum class PinterTimelineStage : uint8_t
@@ -2981,6 +3012,19 @@ const char* handle_config_post(const char* body)
             return "Configuration not saved: screen-saver timeout must be 0-120 minutes.";
         }
         cfg.screen_saver_timeout_minutes = timeout_minutes;
+    }
+    // Fonts (#123): 0 keeps a style's default, 1-4 pick a face. Anything
+    // else leaves the saved choice alone.
+    for (size_t style = 0U; style < kFontChoiceCount; ++style)
+    {
+        char field[12] = {};
+        std::snprintf(field, sizeof(field), "font_%u", static_cast<unsigned>(style));
+        uint16_t choice = 0U;
+        if (get_form_value(body, field, value, sizeof(value)) &&
+            parse_u16_field(value, 0, kMaxFontChoice, &choice))
+        {
+            cfg.font_choices[style] = static_cast<uint8_t>(choice);
+        }
     }
 
     const char* pin_error = apply_pin_change(body, cfg);

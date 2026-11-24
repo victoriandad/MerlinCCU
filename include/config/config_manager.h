@@ -39,6 +39,13 @@ inline constexpr size_t kHomeAssistantTokenCapacity = 256U;
 inline constexpr size_t kWebPinSaltBytes = 16U;
 inline constexpr size_t kWebPinHashBytes = 32U;
 
+/// @brief Text styles with a stored font choice (#123); matches
+/// text_styles::kTextStyleCount (checked in settings_controller.cpp).
+inline constexpr size_t kFontChoiceCount = 17U;
+
+/// @brief Highest stored font choice: FontFace values 0-3, stored plus one.
+inline constexpr uint8_t kMaxFontChoice = 4U;
+
 /// @brief Persistent runtime configuration for one Merlin CCU.
 /// @details The structure is deliberately fixed-size so it can be stored
 /// directly in flash with simple versioning and CRC checks. Empty strings mean
@@ -99,6 +106,11 @@ struct RuntimeConfig
     /// @brief Keys that belong to Home Assistant (#151): one bit per
     /// ButtonId (ha_keys.h). They do nothing on the panel; presses go to HA.
     uint64_t ha_key_mask;
+
+    /// @brief Font chosen for each text style (#123), in TextStyle order:
+    /// 0 keeps the style's default, otherwise FontFace + 1, so a zeroed or
+    /// migrated config means "all defaults".
+    std::array<uint8_t, kFontChoiceCount> font_choices;
 };
 
 namespace config_manager

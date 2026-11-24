@@ -24,6 +24,7 @@ add_executable(host_tests
     test_alert_ordering.cpp
     test_keypad_matrix_decode.cpp
     test_config_persistence.cpp
+    test_font_settings.cpp
     test_date_time_math.cpp
     test_pinter_scheduling.cpp
     test_pinter_persistence.cpp
