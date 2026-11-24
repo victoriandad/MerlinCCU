@@ -10,6 +10,7 @@
 #include <optional>
 #include <string_view>
 
+#include "config_fields.h"
 #include "config_manager.h"
 #include "console_controller.h"
 #include "date_time_math.h"
@@ -799,20 +800,27 @@ void build_config_page(const char* message)
                     escaped_message);
     }
 
+    // Every maxlength and stated limit comes from config_fields, the same
+    // table the save handler checks against (#185).
+    using config_fields::Field;
+    const auto max_len = [](Field field)
+    { return static_cast<unsigned>(config_fields::limit(field).max_length); };
     (void)append(
         cursor, remaining,
         "<form method=\"post\" action=\"/config\"><input type=\"hidden\" "
         "name=\"config_form_marker\" value=\"1\"><div class=\"grid\"><section class=\"card\">"
         "<h2>Device Identity</h2><label>Device name</label><input name=\"device_name\" "
-        "maxlength=\"15\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
+        "maxlength=\"%u\" required pattern=\"[A-Za-z0-9_-]+\" value=\"%s\"><label>"
         "Display label</label><input name=\"device_label\" "
-        "maxlength=\"31\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
-        "name=\"location\" maxlength=\"31\" value=\"%s\"></div><div><label>Room</label><input "
-        "name=\"room\" maxlength=\"31\" value=\"%s\"></div></div><p class=\"hint\">Give each CCU "
+        "maxlength=\"%u\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
+        "name=\"location\" maxlength=\"%u\" value=\"%s\"></div><div><label>Room</label><input "
+        "name=\"room\" maxlength=\"%u\" value=\"%s\"></div></div><p class=\"hint\">Give each CCU "
         "its own device name, such as merlin-ground: it is the unit's network name "
-        "(http://merlin-ground/), up to 15 characters. The display label names the unit on its Status page and in "
-        "Home Assistant.</p></section>",
-        device_name, device_label, location, room);
+        "(http://merlin-ground/), up to %u letters, digits, - and _. The display label names "
+        "the unit on its Status page and in Home Assistant.</p></section>",
+        max_len(Field::DeviceName), device_name, max_len(Field::DeviceLabel), device_label,
+        max_len(Field::Location), location, max_len(Field::Room), room,
+        max_len(Field::DeviceName));
 
     (void)append(
         cursor, remaining,
@@ -854,12 +862,12 @@ void build_config_page(const char* message)
     (void)append(
         cursor, remaining,
         "<section class=\"card\"><h2>Network</h2><label>Wi-Fi SSID</label><input "
-        "name=\"wifi_ssid\" maxlength=\"32\" value=\"%s\"><label>Wi-Fi password</label>"
-        "<input name=\"wifi_password\" type=\"password\" placeholder=\"Leave blank to keep "
-        "current\">"
+        "name=\"wifi_ssid\" maxlength=\"%u\" value=\"%s\"><label>Wi-Fi password</label>"
+        "<input name=\"wifi_password\" type=\"password\" maxlength=\"%u\" placeholder=\"Leave "
+        "blank to keep current\">"
         "<p class=\"hint\">The web server starts once the CCU joins Wi-Fi. Changing Wi-Fi requires "
         "a reboot.</p></section>",
-        wifi_ssid);
+        max_len(Field::WifiSsid), wifi_ssid, max_len(Field::WifiPassword));
 
     (void)append(
         cursor, remaining,
@@ -867,44 +875,48 @@ void build_config_page(const char* message)
         "name=\"ha_enabled_present\" value=\"1\"><label class=\"check\"><input "
         "type=\"checkbox\" name=\"ha_enabled\" data-controls=\"ha_fields\" %s>Enable "
         "REST integration</label><fieldset id=\"ha_fields\" class=\"%s\"><label>Host</label>"
-        "<input name=\"ha_host\" maxlength=\"63\" value=\"%s\"><label>Port</label>"
+        "<input name=\"ha_host\" maxlength=\"%u\" value=\"%s\"><label>Port</label>"
         "<input name=\"ha_port\" type=\"number\" min=\"1\" max=\"65535\" "
         "inputmode=\"numeric\" value=\"%u\"><label>Access token</label><input "
-        "name=\"ha_token\" type=\"password\" placeholder=\"Leave blank to keep current\">"
-        "<label>Tracked entity</label><input name=\"ha_entity\" maxlength=\"63\" "
-        "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"63\" "
+        "name=\"ha_token\" type=\"password\" maxlength=\"%u\" placeholder=\"Leave blank to keep "
+        "current\"><label>Tracked entity</label><input name=\"ha_entity\" maxlength=\"%u\" "
+        "value=\"%s\"><label>Self entity</label><input name=\"ha_self\" maxlength=\"%u\" "
         "value=\"%s\" placeholder=\"sensor.merlin_ground_status\"><p class=\"hint\">Each CCU needs "
         "its own self entity. A bare host such as ha.lan uses the Port above. A URL "
         "brings its own port: http:// means 80 and https:// means 443, unless it ends in "
         ":port.</p></fieldset></section>",
         cfg.home_assistant_enabled ? "checked" : "", cfg.home_assistant_enabled ? "" : "disabled",
-        ha_host, static_cast<unsigned>(cfg.home_assistant_port), ha_entity, ha_self);
+        max_len(Field::HomeAssistantHost), ha_host, static_cast<unsigned>(cfg.home_assistant_port),
+        max_len(Field::HomeAssistantToken), max_len(Field::TrackedEntity), ha_entity,
+        max_len(Field::SelfEntity), ha_self);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>MQTT Discovery</h2><input type=\"hidden\" "
                  "name=\"mqtt_enabled_present\" value=\"1\"><label class=\"check\"><input "
                  "type=\"checkbox\" name=\"mqtt_enabled\" data-controls=\"mqtt_fields\" %s>Enable "
                  "MQTT</label><fieldset id=\"mqtt_fields\" class=\"%s\"><label>Broker host</label>"
-                 "<input name=\"mqtt_host\" maxlength=\"63\" value=\"%s\"><div "
+                 "<input name=\"mqtt_host\" maxlength=\"%u\" value=\"%s\"><div "
                  "class=\"row\"><div><label>Port</label>"
                  "<input name=\"mqtt_port\" type=\"number\" min=\"1\" max=\"65535\" "
                  "inputmode=\"numeric\" value=\"%u\"></div><div><label>Username</label>"
-                 "<input name=\"mqtt_username\" maxlength=\"63\" "
+                 "<input name=\"mqtt_username\" maxlength=\"%u\" "
                  "value=\"%s\"></div></div><label>Password</label>"
-                 "<input name=\"mqtt_password\" type=\"password\" placeholder=\"Leave blank to "
-                 "keep current\">"
+                 "<input name=\"mqtt_password\" type=\"password\" maxlength=\"%u\" "
+                 "placeholder=\"Leave blank to keep current\">"
                  "<div class=\"row\"><div><label>Discovery prefix</label><input "
-                 "name=\"mqtt_prefix\" maxlength=\"31\" "
+                 "name=\"mqtt_prefix\" maxlength=\"%u\" "
                  "value=\"%s\"></div><div><label>Base topic</label><input name=\"mqtt_topic\" "
-                 "maxlength=\"63\" "
+                 "maxlength=\"%u\" "
                  "value=\"%s\"></div></div><label>HA keys</label><input name=\"ha_keys\" "
                  "maxlength=\"200\" value=\"%s\" placeholder=\"None: every key works the panel\">"
                  "<p class=\"hint\">Keys Home Assistant owns, by their legend, e.g. "
                  "<code>F1, T FUNC</code>. They do nothing on the panel; each press is an HA "
                  "device trigger (pick it in the automation editor).</p></fieldset></section>",
-                 cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled", mqtt_host,
-                 static_cast<unsigned>(cfg.mqtt_port), mqtt_user, mqtt_prefix, mqtt_topic,
-                 ha_keys_text);
+                 cfg.mqtt_enabled ? "checked" : "", cfg.mqtt_enabled ? "" : "disabled",
+                 max_len(Field::MqttHost), mqtt_host, static_cast<unsigned>(cfg.mqtt_port),
+                 max_len(Field::MqttUsername), mqtt_user, max_len(Field::MqttPassword),
+                 max_len(Field::MqttDiscoveryPrefix), mqtt_prefix, max_len(Field::MqttBaseTopic),
+                 mqtt_topic, ha_keys_text);
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Watched Shares</h2><p class=\"hint\">Up to %u "
@@ -920,11 +932,12 @@ void build_config_page(const char* message)
         html_escape(cfg.watched_shares[i].display_name.data(), share_name, sizeof(share_name));
         (void)append(cursor, remaining,
                      "<div class=\"row\"><div><label>Symbol %u</label><input "
-                     "name=\"share%u_symbol\" maxlength=\"9\" value=\"%s\"></div>"
+                     "name=\"share%u_symbol\" maxlength=\"%u\" value=\"%s\"></div>"
                      "<div><label>Display name %u</label><input name=\"share%u_name\" "
-                     "maxlength=\"23\" value=\"%s\"></div></div>",
-                     static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1), symbol,
-                     static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1), share_name);
+                     "maxlength=\"%u\" value=\"%s\"></div></div>",
+                     static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1),
+                     max_len(Field::ShareSymbol), symbol, static_cast<unsigned>(i + 1),
+                     static_cast<unsigned>(i + 1), max_len(Field::ShareName), share_name);
     }
     (void)append(cursor, remaining, "</section>");
 
@@ -937,11 +950,11 @@ void build_config_page(const char* message)
         "small local endpoint at <code>GET /api/merlinccu/shares?period=...</code>, served by "
         "the MerlinCCU Home Assistant integration in the repository's ha/ folder. See "
         "docs/home-assistant-setup.md.</p><label>Feed token (optional)</label><input "
-        "name=\"shares_feed_token\" type=\"password\" placeholder=\"Leave blank to keep "
-        "current\"><p class=\"hint\">Sent as an Authorization: Bearer header if set. Use the "
-        "integration's feed_token, not the Home Assistant token above.</p>"
+        "name=\"shares_feed_token\" type=\"password\" maxlength=\"%u\" placeholder=\"Leave "
+        "blank to keep current\"><p class=\"hint\">Sent as an Authorization: Bearer header if "
+        "set. Use the integration's feed_token, not the Home Assistant token above.</p>"
         "</section>",
-        cfg.shares_feed_enabled ? "checked" : "");
+        cfg.shares_feed_enabled ? "checked" : "", max_len(Field::SharesFeedToken));
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
@@ -2418,79 +2431,6 @@ bool parse_u16_field(const char* text, uint16_t min_value, uint16_t max_value, u
     return true;
 }
 
-/// @brief Returns whether text can be stored as a short human-facing label.
-bool is_printable_config_text(const char* text)
-{
-    if (text == nullptr)
-    {
-        return false;
-    }
-
-    for (size_t i = 0; text[i] != '\0'; ++i)
-    {
-        const auto ch = static_cast<unsigned char>(text[i]);
-        if (ch < 0x20U || ch > 0x7EU)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// @brief Returns whether a device name is safe for hostnames and entity IDs.
-bool is_valid_device_name(const char* text)
-{
-    if (text == nullptr || text[0] == '\0')
-    {
-        return false;
-    }
-
-    for (size_t i = 0; text[i] != '\0'; ++i)
-    {
-        const auto ch = static_cast<unsigned char>(text[i]);
-        if (!std::isalnum(ch) && ch != '-' && ch != '_')
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/// @brief Validates one bounded text field before it is copied into flash config.
-bool validate_text_field(const char* label, const char* value, size_t max_length, bool required,
-                         bool (*validator)(const char*), char* error, size_t error_size)
-{
-    if (value == nullptr)
-    {
-        value = "";
-    }
-
-    if (required && value[0] == '\0')
-    {
-        std::snprintf(error, error_size, "Configuration not saved: %s is required.", label);
-        return false;
-    }
-
-    if (std::strlen(value) > max_length)
-    {
-        std::snprintf(error, error_size,
-                      "Configuration not saved: %s is too long; maximum is %u characters.", label,
-                      static_cast<unsigned>(max_length));
-        return false;
-    }
-
-    if (value[0] != '\0' && validator != nullptr && !validator(value))
-    {
-        std::snprintf(error, error_size,
-                      "Configuration not saved: %s contains unsupported characters.", label);
-        return false;
-    }
-
-    return true;
-}
-
 WeatherSource parse_weather_source(const char* text, WeatherSource fallback)
 {
     if (std::strcmp(text, "open_meteo") == 0)
@@ -2706,7 +2646,7 @@ const char* handle_config_post(const char* body)
     static RuntimeConfig cfg = {};
     cfg = config_manager::settings();
     // Sized one past the widest field (the HA token) so an over-long value is
-    // still long enough after truncation to fail validate_text_field rather
+    // still long enough after truncation to fail config_fields::validate rather
     // than being silently cut.
     static char value[kHomeAssistantTokenCapacity + 1U] = {};
     value[0] = '\0';
@@ -2715,8 +2655,8 @@ const char* handle_config_post(const char* body)
 
     if (get_form_value(body, "device_name", value, sizeof(value)))
     {
-        if (!validate_text_field("Device name", value, wifi_manager::kMaxHostNameLength, true,
-                                 is_valid_device_name, validation_error, sizeof(validation_error)))
+        if (!config_fields::validate(config_fields::Field::DeviceName, value, validation_error,
+                                 sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
@@ -2725,8 +2665,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "device_label", value, sizeof(value)))
     {
-        if (!validate_text_field("Display label", value, cfg.device_label.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::DeviceLabel, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2736,8 +2675,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "location", value, sizeof(value)))
     {
-        if (!validate_text_field("Location", value, cfg.location.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::Location, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2747,8 +2685,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "room", value, sizeof(value)))
     {
-        if (!validate_text_field("Room", value, cfg.room.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::Room, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2760,8 +2697,7 @@ const char* handle_config_post(const char* body)
 
     if (get_form_value(body, "wifi_ssid", value, sizeof(value)))
     {
-        if (!validate_text_field("Wi-Fi SSID", value, cfg.wifi_ssid.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::WifiSsid, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2771,8 +2707,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "wifi_password", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!validate_text_field("Wi-Fi password", value, cfg.wifi_password.size() - 1, true,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::WifiPassword, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2784,8 +2719,7 @@ const char* handle_config_post(const char* body)
     cfg.home_assistant_enabled = form_has_key(body, "ha_enabled");
     if (get_form_value(body, "ha_host", value, sizeof(value)))
     {
-        if (!validate_text_field("Home Assistant host", value, cfg.home_assistant_host.size() - 1,
-                                 false, is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::HomeAssistantHost, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2805,8 +2739,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "ha_token", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!validate_text_field("Home Assistant token", value, cfg.home_assistant_token.size() - 1,
-                                 true, is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::HomeAssistantToken, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2816,8 +2749,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "ha_entity", value, sizeof(value)))
     {
-        if (!validate_text_field("Tracked entity", value, cfg.home_assistant_entity_id.size() - 1,
-                                 false, is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::TrackedEntity, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2827,8 +2759,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "ha_self", value, sizeof(value)))
     {
-        if (!validate_text_field("Self entity", value, cfg.home_assistant_self_entity_id.size() - 1,
-                                 false, is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::SelfEntity, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2868,8 +2799,7 @@ const char* handle_config_post(const char* body)
     cfg.mqtt_enabled = form_has_key(body, "mqtt_enabled");
     if (get_form_value(body, "mqtt_host", value, sizeof(value)))
     {
-        if (!validate_text_field("MQTT broker host", value, cfg.mqtt_host.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::MqttHost, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2889,8 +2819,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "mqtt_username", value, sizeof(value)))
     {
-        if (!validate_text_field("MQTT username", value, cfg.mqtt_username.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::MqttUsername, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2900,8 +2829,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "mqtt_password", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!validate_text_field("MQTT password", value, cfg.mqtt_password.size() - 1, true,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::MqttPassword, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2911,9 +2839,8 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "mqtt_prefix", value, sizeof(value)))
     {
-        if (!validate_text_field(
-                "MQTT discovery prefix", value, cfg.mqtt_discovery_prefix.size() - 1, false,
-                is_printable_config_text, validation_error, sizeof(validation_error)))
+        if (!config_fields::validate(config_fields::Field::MqttDiscoveryPrefix, value, validation_error,
+                                 sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
             return validation_error;
@@ -2922,8 +2849,7 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "mqtt_topic", value, sizeof(value)))
     {
-        if (!validate_text_field("MQTT base topic", value, cfg.mqtt_base_topic.size() - 1, false,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::MqttBaseTopic, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);
@@ -2955,10 +2881,8 @@ const char* handle_config_post(const char* body)
                      static_cast<unsigned>(i + 1));
         if (get_form_value(body, field_name, value, sizeof(value)))
         {
-            if (!validate_text_field("Share symbol", value,
-                                     cfg.watched_shares[i].symbol.size() - 1, false,
-                                     is_printable_config_text, validation_error,
-                                     sizeof(validation_error)))
+            if (!config_fields::validate(config_fields::Field::ShareSymbol, value, validation_error,
+                                 sizeof(validation_error)))
             {
                 std::printf("Web config save rejected: %s\n", validation_error);
                 return validation_error;
@@ -2969,10 +2893,8 @@ const char* handle_config_post(const char* body)
         std::snprintf(field_name, sizeof(field_name), "share%u_name", static_cast<unsigned>(i + 1));
         if (get_form_value(body, field_name, value, sizeof(value)))
         {
-            if (!validate_text_field("Share display name", value,
-                                     cfg.watched_shares[i].display_name.size() - 1, false,
-                                     is_printable_config_text, validation_error,
-                                     sizeof(validation_error)))
+            if (!config_fields::validate(config_fields::Field::ShareName, value, validation_error,
+                                 sizeof(validation_error)))
             {
                 std::printf("Web config save rejected: %s\n", validation_error);
                 return validation_error;
@@ -2985,8 +2907,7 @@ const char* handle_config_post(const char* body)
     cfg.shares_feed_enabled = form_has_key(body, "shares_feed_enabled");
     if (get_form_value(body, "shares_feed_token", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!validate_text_field("Share feed token", value, cfg.shares_feed_token.size() - 1, true,
-                                 is_printable_config_text, validation_error,
+        if (!config_fields::validate(config_fields::Field::SharesFeedToken, value, validation_error,
                                  sizeof(validation_error)))
         {
             std::printf("Web config save rejected: %s\n", validation_error);

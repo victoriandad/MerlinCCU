@@ -11,6 +11,7 @@
 #include <limits>
 #include <optional>
 
+#include "config_fields.h"
 #include "config_manager.h"
 #include "debug_logging.h"
 #include "geo_coordinates.h"
@@ -169,7 +170,7 @@ using ha_request_plan::RequestKind;
 /// @brief Where one chain's requests go.
 struct Endpoint
 {
-    char host[48] = {};
+    char host[config_fields::kHostLength + 1U] = {};
     uint16_t port = 0U;
     bool tls = false;
 };
@@ -209,7 +210,7 @@ char g_request_body[256] = {};
 // PSRAM on boards that have it (#162): filled from pbufs and parsed by the CPU.
 MERLIN_PSRAM_BSS char g_response[16384];
 // The endpoint of the request in flight, copied from its chain's Endpoint.
-char g_configured_host[48] = {};
+char g_configured_host[config_fields::kHostLength + 1U] = {};
 char g_configured_location[128] = {};
 uint16_t g_configured_port = kHomeAssistantPort;
 bool g_request_uses_tls = false;

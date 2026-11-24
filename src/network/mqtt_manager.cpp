@@ -5,6 +5,7 @@
 #include <cstring>
 #include <limits>
 
+#include "config_fields.h"
 #include "config_manager.h"
 #include "debug_logging.h"
 #include "firmware_version.h"
@@ -309,7 +310,7 @@ RetryBackoff g_reconnect_backoff(kReconnectInitialDelayMs, kReconnectMaxDelayMs)
 mqtt_client_t* g_client = nullptr;
 PendingPublishType g_publish_type_in_flight = PendingPublishType::None;
 SensorId g_sensor_in_flight = SensorId::Status;
-char g_broker_host[48] = {};
+char g_broker_host[config_fields::kHostLength + 1U] = {};
 uint16_t g_broker_port = kMqttPort;
 bool g_config_valid = false;
 char g_client_id[48] = {};
@@ -356,6 +357,8 @@ PendingCommand g_pending_command = {};
 // kept. The lwIP callbacks fill a buffer and set `ready`; the main loop
 // reads it and clears `ready`, and the callbacks never touch a ready buffer.
 char g_base_topic[48] = {};
+static_assert(sizeof(g_base_topic) > config_fields::kMqttBaseTopicLength,
+              "g_base_topic must hold the longest base topic the web page accepts");
 char g_house_filter[96] = {};
 bool g_house_subscribed = false;
 bool g_house_subscribe_in_flight = false;
