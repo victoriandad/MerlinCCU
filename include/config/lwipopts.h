@@ -46,7 +46,11 @@ extern "C"
 #define MEMP_NUM_TCP_SEG 32
 #define MEMP_NUM_SYS_TIMEOUT (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 10)
 #define MEMP_NUM_ARP_QUEUE 10
-#define MQTT_OUTPUT_RINGBUF_SIZE 1024
+// lwIP's MQTT client queues a whole publish in this ring before sending it,
+// so it bounds the largest message. 4 KB carries the panel picture (#159,
+// up to mqtt_manager's kScreenImageMaxBytes) plus its topic. It lives inside
+// the MQTT client, allocated from MEM_SIZE.
+#define MQTT_OUTPUT_RINGBUF_SIZE 4096
 #define MQTT_REQ_TIMEOUT 10
 #define MQTT_CONNECT_TIMOUT 10
 #define PBUF_POOL_SIZE 24

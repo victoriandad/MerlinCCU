@@ -98,6 +98,42 @@ long-run health diagnostics (#155): Last reset (`power_on`, `reset_pin`,
 (bytes, both worst case since boot). A Heap arena that keeps rising over
 days points at a leak.
 
+### Seeing the panels on a dashboard
+
+Each CCU also has a **Screen** image entity (#159): a PNG of what its panel
+shows, in the panel's amber on dark green. The CCU publishes it to
+`<base>/<mac>/screen/state` (retained) when the screen changes, at most
+every 5 seconds. HA receives it over MQTT, so a dashboard never polls the
+CCU's web server and the keys stay responsive.
+
+To show every unit side by side, add a card like this (one `picture-entity`
+per CCU; the entity IDs follow the display labels):
+
+```yaml
+type: grid
+columns: 3
+square: false
+cards:
+  - type: picture-entity
+    entity: image.ground_floor_screen
+    show_state: false
+  - type: picture-entity
+    entity: image.first_floor_screen
+    show_state: false
+  - type: picture-entity
+    entity: image.loft_screen
+    show_state: false
+```
+
+Notes:
+
+- Most pages are 0.5 to 2 KB. A page too big for the CCU's 3.5 KB message
+  limit (a heavily dithered one) is not sent, the serial log says
+  `MQTT screen image too large`, and HA keeps the previous picture.
+- A browser can fetch the same PNG from `http://<unit>/api/framebuffer.png`.
+  With a web PIN set (docs/web-access.md) that needs a login, so HA should
+  use the MQTT entity.
+
 ### Controlling the CCU from HA
 
 The same device also gets entities HA can change (#150). Each one listens on

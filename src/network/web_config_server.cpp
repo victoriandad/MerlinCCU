@@ -25,6 +25,7 @@
 #include "ota_upload.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
+#include "png_encoder.h"
 #include "pico/rand.h"
 #include "pico/time.h"
 #include "psram.h"
@@ -69,6 +70,11 @@ constexpr char kHttpBinaryHeader[] =
     "Connection: close\r\n\r\n";
 constexpr char kHttpPbmHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: image/x-portable-bitmap\r\nCache-Control: no-store\r\n"
+    "Connection: close\r\n\r\n";
+// The panel as a picture for Home Assistant dashboards and browsers (#159).
+// A short max-age lets a dashboard showing several panels reuse one fetch.
+constexpr char kHttpPngHeader[] =
+    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=2\r\n"
     "Connection: close\r\n\r\n";
 constexpr char kHttpTextHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n";
@@ -2150,6 +2156,26 @@ size_t build_framebuffer_pbm_response()
     return header_total + kUiFbSize;
 }
 
+/// @brief Builds a PNG of the panel for Home Assistant picture cards and
+/// browsers (#159).
+/// @details Typical pages are 0.5 to 2 KB, so a poll every few seconds costs
+/// the single-session server little; it is sent low priority, so a key press
+/// still pre-empts it.
+size_t build_framebuffer_png_response()
+{
+    const size_t header_len = sizeof(kHttpPngHeader) - 1U;
+    std::memcpy(g_response, kHttpPngHeader, header_len);
+    const uint8_t* source = framebuffer::front();
+    if (source == nullptr)
+    {
+        return 0;
+    }
+    const size_t png_len = png_encoder::encode_1bpp(
+        source, kUiWidth, kUiHeight, kUiStride, png_encoder::kPanelPaper, png_encoder::kPanelInk,
+        reinterpret_cast<uint8_t*>(g_response + header_len), sizeof(g_response) - header_len);
+    return png_len == 0U ? 0U : header_len + png_len;
+}
+
 /// @brief Returns true when the first request line matches the provided path.
 /// @details Accepts plain path, optional trailing slash, and optional query.
 bool matches_get_path(const char* request, const char* path)
@@ -3401,6 +3427,20 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         {
             std::snprintf(g_response, sizeof(g_response),
                           "%sFramebuffer PBM response buffer exhausted\n", kHttpBadRequestHeader);
+            send_response(session, pcb, g_response);
+            return;
+        }
+
+        send_response_with_length(session, pcb, g_response, response_len, true);
+        return;
+    }
+    else if (matches_get_path(request, "/api/framebuffer.png"))
+    {
+        const size_t response_len = build_framebuffer_png_response();
+        if (response_len == 0)
+        {
+            std::snprintf(g_response, sizeof(g_response),
+                          "%sFramebuffer PNG response buffer exhausted\n", kHttpBadRequestHeader);
             send_response(session, pcb, g_response);
             return;
         }

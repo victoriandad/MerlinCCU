@@ -65,7 +65,10 @@ The firmware currently exposes these operator/developer surfaces:
   `config/keypad_matrix_config.h`.
 - Local web configuration at `/config` or `/` when remote configuration is enabled.
 - Local browser preview at `/preview`.
-- Framebuffer snapshot endpoints at `/api/framebuffer` and `/api/framebuffer.pbm`.
+- Framebuffer snapshot endpoints at `/api/framebuffer`, `/api/framebuffer.pbm` and
+  `/api/framebuffer.png` (in the panel's colours, for browsers and HA).
+- The panel as an HA image entity (`Screen`) over MQTT, for dashboards
+  (docs/home-assistant-setup.md).
 - Browser key/lamp preview endpoints under `/api/button` and `/api/panel-state`.
 - MQTT discovery/state topics when the MQTT manager is configured and enabled.
 - USB serial diagnostics for boot, network, fetch, and selected timing events.
