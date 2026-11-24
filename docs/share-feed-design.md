@@ -45,7 +45,8 @@ Response shape:
       "price": "1372.0",
       "change": "+0.02%",
       "data_state": "live",
-      "history": [1362, 1364, 1361, 1372]
+      "base": 1371.73,
+      "history": [1362.5, 1364.0, 1361.25, 1372.0]
     }
   ]
 }
@@ -70,8 +71,13 @@ Field notes (matching `share_price_manager.cpp`'s parser exactly):
 - `name`/`exchange`/`currency` are optional; if omitted, MerlinCCU keeps
   whatever was already configured/displayed for that symbol.
 - `history` is optional and can be any length -- MerlinCCU downsamples it to
-  its fixed 24-point graph buffer. Omit it (or send an empty array) to leave
-  the existing graph in place.
+  its fixed 24-point graph buffer, keeping fractions (a share under 1 keeps its
+  shape; #178). Omit it (or send an empty array) to leave the existing graph in
+  place.
+- `base` is optional: the price `change` is measured from (the previous close
+  for `today`, the first close of the period otherwise). The share graph shows
+  each point as a percent change from it, with a dotted line at the base; without
+  it the graph measures from its first point.
 - Unknown response fields are ignored. A response with `"shares": []`, a
   missing `"shares"` key entirely, or a symbol not on the watchlist is not an
   error at the HTTP level -- MerlinCCU treats "nothing usable in this

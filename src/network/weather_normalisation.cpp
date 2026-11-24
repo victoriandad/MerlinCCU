@@ -104,7 +104,18 @@ bool normalize_weather_provider_name(const char* raw_text, char* out, size_t out
     }
 
     std::snprintf(out, out_size, "%s", provider);
+    // Attributions run on ("met.no, delivered by the Norwegian Meteorological
+    // Institute."); the provider is the part before the first comma (#186).
+    if (char* comma = std::strchr(out, ','); comma != nullptr)
+    {
+        *comma = '\0';
+    }
     trim_text_in_place(out);
+    // met.no is MET Norway's domain; the footer names the institute.
+    if (starts_with_ignore_case(out, "met.no") && out[6] == '\0')
+    {
+        std::snprintf(out, out_size, "%s", "MET Norway");
+    }
     return out[0] != '\0';
 }
 

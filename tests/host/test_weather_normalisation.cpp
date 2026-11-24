@@ -18,7 +18,20 @@ HOST_TEST(normalize_weather_provider_name_trims_trailing_period)
     char out[64] = {};
     EXPECT_TRUE(
         weather_normalisation::normalize_weather_provider_name("Provided by Met.no.", out, sizeof(out)));
-    EXPECT_TRUE(std::strcmp(out, "Met.no") == 0);
+    EXPECT_TRUE(std::strcmp(out, "MET Norway") == 0);
+}
+
+HOST_TEST(normalize_weather_provider_name_keeps_the_provider_before_a_comma)
+{
+    // HA's Met.no integration (#186).
+    char out[64] = {};
+    EXPECT_TRUE(weather_normalisation::normalize_weather_provider_name(
+        "Weather forecast from met.no, delivered by the Norwegian Meteorological Institute.", out,
+        sizeof(out)));
+    EXPECT_TRUE(std::strcmp(out, "MET Norway") == 0);
+    EXPECT_TRUE(weather_normalisation::normalize_weather_provider_name(
+        "Data provided by Met Office, UK", out, sizeof(out)));
+    EXPECT_TRUE(std::strcmp(out, "Met Office") == 0);
 }
 
 HOST_TEST(normalize_wind_speed_unit_maps_common_labels)

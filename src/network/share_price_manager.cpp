@@ -144,7 +144,7 @@ void seed_from_config(ShareMarketStatus& status)
         share.currency.fill('\0');
         share.price_text.fill('\0');
         share.change_text.fill('\0');
-        share.history_points.fill(0U);
+        share.history_points.fill(0.0F);
         if (i >= count)
         {
             continue;

@@ -73,6 +73,12 @@ def downsample(values: list[float], count: int = HISTORY_POINTS) -> list[float]:
     return [values[(i * last) // (count - 1)] for i in range(count)]
 
 
+def graph_point(value: float) -> float:
+    """A price for the CCU's graph, with enough decimals to keep the shape of
+    a share priced under 10 (#178) without wasting the CCU's buffer."""
+    return round(value, 2) if abs(value) >= 10 else round(value, 4)
+
+
 def format_change(percent: float) -> str:
     """Format a percentage change as the CCU displays it, e.g. `+0.02%`."""
     if abs(percent) < 0.005:
@@ -145,16 +151,17 @@ def share_from_chart(
     entry["price"] = round(float(price), 2)
     if isinstance(base, (int, float)) and base > 0:
         entry["change"] = format_change((float(price) - base) / base * 100.0)
+        # The CCU graphs the change from this price (#178).
+        entry["base"] = graph_point(float(base))
     entry["data_state"] = "live"
-    # The CCU graphs whole units (share_feed_parser.cpp rounds each point),
-    # so fractions would only cost buffer space.
-    entry["history"] = [round(v) for v in downsample(closes)]
+    entry["history"] = [graph_point(v) for v in downsample(closes)]
 
     # With no trading yet today (weekend, holiday, before the open), Today
     # shows no movement rather than the last trading day's.
     if period_key == "today" and not _traded_today(meta, now):
         entry["change"] = format_change(0.0)
-        entry["history"] = [round(float(price))]
+        entry["history"] = [graph_point(float(price))]
+        entry["base"] = graph_point(float(price))
     return entry
 
 

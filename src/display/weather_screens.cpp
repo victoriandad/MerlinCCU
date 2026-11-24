@@ -409,7 +409,6 @@ void draw_weather_sun_times(uint8_t* fb, const ConsoleState& console_state)
 /// which backend is driving the weather data on the screen.
 void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
 {
-    constexpr int kFooterLineGap = 2;
 
     // The fetcher owns the stale threshold and what counts as a failed fetch
     // (STATE-4). Both sources fill the same status struct, so this is right
@@ -420,27 +419,27 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
         home_assistant_manager::kWeatherStaleAfterMs, freshness_text, sizeof(freshness_text));
 
+    // One line only: a second line would rise into the row-5 PERIOD label
+    // (#186). A source name too long for the line is shortened, ending in
+    // "..", and the freshness is always kept whole.
+    const char* source = weather_source_label_text(console_state);
+    constexpr const char* kShortenedMark = "..";
     char footer_label[80] = {};
-    std::snprintf(footer_label, sizeof(footer_label), "%s - %s",
-                  weather_source_label_text(console_state), freshness_text);
-
-    const screens::WrappedSoftkeyLabel kWrapped =
-        screens::wrap_label_lines(footer_label, TextStyle::Footer, ui_layout::kContentWidth, 2);
-    const int kLineHeight = text_styles::line_height(TextStyle::Footer);
-    const int kFirstLineY =
-        ui_layout::kFooterLineY - ((kWrapped.line_count - 1) * (kLineHeight + kFooterLineGap));
-
-    if (kWrapped.line_one[0] != '\0')
+    std::snprintf(footer_label, sizeof(footer_label), "%s - %s", source, freshness_text);
+    int keep = static_cast<int>(std::strlen(source));
+    while (keep > 1 &&
+           screens::text_width(footer_label, TextStyle::Footer) > ui_layout::kContentWidth)
     {
-        screens::draw_text(fb, ui_layout::kMarginX, kFirstLineY, kWrapped.line_one,
-                           TextStyle::Footer);
+        --keep;
+        while (keep > 1 && source[keep - 1] == ' ')
+        {
+            --keep;
+        }
+        std::snprintf(footer_label, sizeof(footer_label), "%.*s%s - %s", keep, source,
+                      kShortenedMark, freshness_text);
     }
-
-    if (kWrapped.line_count > 1 && kWrapped.line_two[0] != '\0')
-    {
-        screens::draw_text(fb, ui_layout::kMarginX, kFirstLineY + kLineHeight + kFooterLineGap,
-                           kWrapped.line_two, TextStyle::Footer);
-    }
+    screens::draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY, footer_label,
+                       TextStyle::Footer);
 }
 
 /// @brief Converts a weather phrase to simple title case for display.
