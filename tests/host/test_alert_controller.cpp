@@ -268,6 +268,60 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     EXPECT_EQ(state.alert_count, 0U);
 }
 
+HOST_TEST(sync_raises_restarted_only_for_a_restart_nobody_asked_for)
+{
+    for (const ResetReason reason : {ResetReason::Watchdog, ResetReason::CpuFault,
+                                     ResetReason::Brownout})
+    {
+        ConsoleState state = make_healthy_state();
+        state.boot_status.reset_reason = reason;
+        alert_controller::sync(state);
+        EXPECT_EQ(state.alert_count, 1U);
+        EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "RESTARTED") == 0);
+    }
+    for (const ResetReason reason :
+         {ResetReason::Unknown, ResetReason::PowerOn, ResetReason::ResetPin, ResetReason::Restart,
+          ResetReason::Update, ResetReason::Rollback, ResetReason::StackOverflow})
+    {
+        ConsoleState state = make_healthy_state();
+        state.boot_status.reset_reason = reason;
+        alert_controller::sync(state);
+        EXPECT_EQ(state.alert_count, 0U);
+    }
+}
+
+HOST_TEST(sync_raises_weather_unavailable_when_ha_sends_no_weather_over_mqtt)
+{
+    // HA's weather comes over MQTT (#153): the REST connection does not
+    // matter, the MQTT link does.
+    ConsoleState state = make_healthy_state();
+    state.weather_source = WeatherSource::HomeAssistant;
+    state.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
+    state.home_assistant_status.weather_state = HomeAssistantConnectionState::Connected;
+    for (int i = 0; i < 6; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_EQ(state.alert_count, 1U);
+    EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "WEATHER") == 0);
+
+    // Weather arriving clears it.
+    std::strncpy(state.home_assistant_status.weather_condition.data(), "rainy",
+                 state.home_assistant_status.weather_condition.size());
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    // With the MQTT link down there is no WEATHER alert, however long.
+    state = make_healthy_state();
+    state.weather_source = WeatherSource::HomeAssistant;
+    state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
+    for (int i = 0; i < 6; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_EQ(state.alert_count, 0U);
+}
+
 namespace
 {
 

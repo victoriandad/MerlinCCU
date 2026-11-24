@@ -17,8 +17,10 @@
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "pico/cyw43_arch.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
 #include "psram.h"
+#include "retry_backoff.h"
 #include "share_feed_parser.h"
 #include "text_utils.h"
 
@@ -31,7 +33,11 @@ namespace
 constexpr uint32_t kResolveTimeoutMs = 4000U;
 constexpr uint32_t kConnectTimeoutMs = 5000U;
 constexpr uint32_t kIoTimeoutMs = 5000U;
+// A failed fetch is retried after 1 minute, doubling to 30 (#155): HA being
+// down for hours should not cost a request a minute.
 constexpr uint32_t kRetryDelayMs = 60U * 1000U;
+constexpr uint32_t kMaxRetryDelayMs = 30U * 60U * 1000U;
+RetryBackoff g_retry_backoff(kRetryDelayMs, kMaxRetryDelayMs);
 constexpr size_t kRequestBufferSize = 512U;
 // The local feed's compact multi-share JSON (issue #42) is far smaller than
 // Yahoo's single-symbol chart payload was; shrunk from 16KB to reclaim
@@ -363,7 +369,7 @@ void finish_failure(err_t err, int http_status)
     // NOLINTNEXTLINE(bugprone-signed-char-misuse)
     g_status.last_error = static_cast<int>(err);
     g_status.last_http_status = http_status;
-    schedule_next_attempt(kRetryDelayMs);
+    schedule_next_attempt(g_retry_backoff.next_delay_ms(get_rand_32()));
 }
 
 /// @brief Records a successful fetch and schedules the next refresh.
@@ -374,6 +380,7 @@ void finish_success(int http_status)
     g_status.last_error = 0;
     g_status.last_http_status = http_status;
     g_status.last_success_ms = to_ms_since_boot(get_absolute_time());
+    g_retry_backoff.reset();
     schedule_next_attempt(kRefreshIntervalMs);
 }
 

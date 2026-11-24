@@ -1,6 +1,8 @@
-# MerlinCCU share feed (docs/home-assistant-setup.md, step 5).
+# MerlinCCU integration (docs/home-assistant-setup.md, steps 5 and 6).
 # Add this block to Home Assistant's configuration.yaml, then restart HA.
+# Both parts are optional; keep the ones you use.
 merlinccu:
+  # Share feed (step 5).
   # The CCU's "Feed token" setting. Put the value in secrets.yaml as
   # merlinccu_feed_token. Remove this line to serve the feed without a token.
   feed_token: !secret merlinccu_feed_token
@@ -10,3 +12,11 @@ merlinccu:
     - symbol: BA.L
       # Optional. Left out, the CCU keeps the display name set on the CCU.
       name: BAE SYSTEMS
+
+  # House weather over MQTT (step 6). Needs the MQTT integration.
+  weather:
+    # Any weather entity with hourly and daily forecasts.
+    entity: weather.forecast_home
+    # Optional; these are the defaults.
+    sun: sun.sun
+    base_topic: merlinccu

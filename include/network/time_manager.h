@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
+
 #include "console_model.h"
 
 namespace time_manager
@@ -19,6 +21,10 @@ bool update();
 
 /// @brief Returns the latest time status snapshot for the UI/controller.
 const TimeStatus& status();
+
+/// @brief Returns the current UTC time in Unix seconds, or nothing before
+/// the first SNTP sync.
+std::optional<uint32_t> utc_now();
 
 /// @brief Formats an ISO-8601 time in the configured display time zone.
 /// @details Inputs without an explicit `Z` or numeric offset are treated as

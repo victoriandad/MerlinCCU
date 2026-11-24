@@ -1072,13 +1072,13 @@ void build_weather_sources_softkeys(ConsoleState& console_state, SoftKeyMap& sof
                                      static_cast<uint8_t>(source),
                                      console_state.weather_source == source));
     }
+    // HA weather arrives over MQTT (#153), so HA needs MQTT set up.
     const bool home_assistant = console_state.weather_source == WeatherSource::HomeAssistant;
+    const bool mqtt_set_up = config.mqtt_enabled && config.mqtt_host[0] != '\0';
     softkey::set(softkeys, SoftKeyId::Right1,
-                 softkey::status(SoftKeyId::Right1, home_assistant ? "WEATHER" : "LOCATION",
-                                 home_assistant ? entity_selection_text(config.weather_entity_id.data())
+                 softkey::status(SoftKeyId::Right1, home_assistant ? "MQTT" : "LOCATION",
+                                 home_assistant ? enabled_selection_text(mqtt_set_up)
                                                 : location_selection_text()));
-    softkey::set(softkeys, SoftKeyId::Right2,
-                 softkey::status(SoftKeyId::Right2, "SUN", entity_selection_text(config.sun_entity_id.data())));
 }
 
 void build_time_zone_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)

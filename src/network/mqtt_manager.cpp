@@ -14,12 +14,16 @@
 #include "lwip/ip_addr.h"
 #include "console_controller.h"
 #include "ha_key_list.h"
+#include "house_weather.h"
 #include "input.h"
 #include "mqtt_commands.h"
 #include "ota_manager.h"
 #include "page_table.h"
 #include "pico/cyw43_arch.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
+#include "psram.h"
+#include "retry_backoff.h"
 #include "text_utils.h"
 
 namespace
@@ -74,6 +78,11 @@ enum class SensorId : uint8_t
     FirmwareUpdate,
     SettingsChange,
     HaMessageState,
+    // Long-run health (#155).
+    LastReset,
+    Uptime,
+    StackFree,
+    HeapArena,
     // Entities Home Assistant controls (#150), in mqtt_commands::Target order.
     AlertLamp,
     TestLamp,
@@ -142,6 +151,13 @@ constexpr SensorDescriptor kSensorDescriptors[] = {
     // Whether HA's last message is showing or was accepted on the panel (#150).
     {"Message state", "message_state", "mdi:message-check", false,
      "[\"none\",\"active\",\"acknowledged\"]", kNoCommand},
+    // Why the unit last started, uptime, and worst-case stack and heap use
+    // (#155), so HA can chart restarts and slow memory growth over a soak.
+    // Options are filled from reset_reason::slug_options_json().
+    {"Last reset", "last_reset", "mdi:restart-alert", true, nullptr, kNoCommand},
+    {"Uptime", "uptime", "mdi:timer-outline", true, nullptr, kNoCommand},
+    {"Stack free", "stack_free", "mdi:layers-outline", true, nullptr, kNoCommand},
+    {"Heap arena", "heap_arena", "mdi:memory", true, nullptr, kNoCommand},
     {nullptr, nullptr, nullptr, false, nullptr, Target::AlertLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::TestLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::PanelBrightness},
@@ -274,6 +290,12 @@ bool g_connected = false;
 bool g_request_in_flight = false;
 bool g_availability_published = false;
 absolute_time_t g_dns_deadline = nil_time;
+// After a refused, failed or dropped session, when to start a fresh one
+// (#155). Nil until a failure is seen.
+absolute_time_t g_next_session_at = nil_time;
+constexpr uint32_t kReconnectInitialDelayMs = 5000U;
+constexpr uint32_t kReconnectMaxDelayMs = 5U * 60U * 1000U;
+RetryBackoff g_reconnect_backoff(kReconnectInitialDelayMs, kReconnectMaxDelayMs);
 mqtt_client_t* g_client = nullptr;
 PendingPublishType g_publish_type_in_flight = PendingPublishType::None;
 SensorId g_sensor_in_flight = SensorId::Status;
@@ -317,6 +339,33 @@ struct PendingCommand
     size_t payload_length;
 };
 PendingCommand g_pending_command = {};
+
+// House weather from HA (#153): retained "<base>/house/weather/{now,hourly,
+// daily}", shared by every CCU on the broker. Each topic has its own buffer,
+// so the three retained messages that arrive together on subscribe are all
+// kept. The lwIP callbacks fill a buffer and set `ready`; the main loop
+// reads it and clears `ready`, and the callbacks never touch a ready buffer.
+char g_base_topic[48] = {};
+char g_house_filter[96] = {};
+bool g_house_subscribed = false;
+bool g_house_subscribe_in_flight = false;
+MERLIN_PSRAM_BSS char g_house_now[house_weather::kMaxPayloadBytes[0] + 1U];
+MERLIN_PSRAM_BSS char g_house_hourly[house_weather::kMaxPayloadBytes[1] + 1U];
+MERLIN_PSRAM_BSS char g_house_daily[house_weather::kMaxPayloadBytes[2] + 1U];
+
+/// @brief One topic's receive buffer.
+struct HouseBuffer
+{
+    char* data;
+    size_t capacity;
+    size_t length;
+    bool ready;
+};
+std::array<HouseBuffer, house_weather::kTopicCount> g_house_buffers = {{
+    {g_house_now, sizeof(g_house_now), 0U, false},
+    {g_house_hourly, sizeof(g_house_hourly), 0U, false},
+    {g_house_daily, sizeof(g_house_daily), 0U, false},
+}};
 char g_publish_buffer[1024] = {};
 mqtt_connect_client_info_t g_client_info = {};
 std::array<std::array<char, 64>, static_cast<size_t>(SensorId::Count)> g_sensor_unique_ids = {};
@@ -371,12 +420,15 @@ void reset_runtime(bool reset_publish_state)
     g_connect_in_progress = false;
     g_connected = false;
     g_dns_deadline = nil_time;
+    g_next_session_at = nil_time;
     g_request_in_flight = false;
     g_publish_type_in_flight = PendingPublishType::None;
     g_sensor_in_flight = SensorId::Status;
     g_availability_published = false;
     g_subscribed = false;
     g_subscribe_in_flight = false;
+    g_house_subscribed = false;
+    g_house_subscribe_in_flight = false;
     // Unknown after a reconnect or restart: treat every key as published, so
     // configs for keys no longer on the list are cleared once (#151).
     g_triggers_published = kAllKeysMask;
@@ -498,6 +550,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
     std::snprintf(g_availability_topic, sizeof(g_availability_topic), "%s/%s/availability",
                   base_topic, mac_hex);
     std::snprintf(g_topic_prefix, sizeof(g_topic_prefix), "%s/%s", base_topic, mac_hex);
+    std::snprintf(g_base_topic, sizeof(g_base_topic), "%s", base_topic);
 
     // Topic strings are precomputed once per session so the publish path can
     // focus on ordering and retry behaviour instead of repeated formatting.
@@ -518,25 +571,59 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
     copy_text(g_status.device_id, g_device_id);
 }
 
-/// @brief True while the rest of an incoming publish is being thrown away.
-bool g_dropping_publish = false;
+/// @brief Where the payload of the publish being received goes.
+enum class Receiving : uint8_t
+{
+    Nothing = 0,
+    Command,
+    HouseWeather,
+};
+
+/// @brief Set by incoming_publish_cb for incoming_data_cb (lwIP context).
+Receiving g_receiving = Receiving::Nothing;
+house_weather::Topic g_house_topic_receiving = house_weather::Topic::Now;
+
+/// @brief Starts receiving one house weather payload (lwIP context).
+/// @details One that is too big, or that arrives while the last of the same
+/// topic still waits for the main loop, is dropped; HA republishes every few
+/// minutes.
+void start_house_weather(house_weather::Topic topic, const char* topic_name, u32_t tot_len)
+{
+    HouseBuffer& buffer = g_house_buffers[static_cast<size_t>(topic)];
+    if (buffer.ready || tot_len > buffer.capacity - 1U)
+    {
+        g_receiving = Receiving::Nothing;
+        std::printf("MQTT house weather dropped: %s (%lu bytes)\n", topic_name,
+                    static_cast<unsigned long>(tot_len));
+        return;
+    }
+    g_receiving = Receiving::HouseWeather;
+    g_house_topic_receiving = topic;
+    buffer.length = 0U;
+}
 
 /// @brief Starts receiving one publish from the broker (lwIP context).
-/// @details Only the command topics are subscribed, so this is a command
-/// from HA. It is copied for the main loop; one that is too long, or that
-/// arrives while the last is still waiting, is dropped and logged.
+/// @details House weather (#153) goes to its own buffer. Anything else is a
+/// command from HA. It is copied for the main loop; one that is too long, or
+/// that arrives while the last is still waiting, is dropped and logged.
 void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
 {
+    if (const std::optional<house_weather::Topic> house =
+            house_weather::topic_for(topic, g_base_topic))
+    {
+        start_house_weather(*house, topic, tot_len);
+        return;
+    }
     PendingCommand& command = g_pending_command;
     if (command.ready || tot_len > mqtt_commands::kMaxPayloadLength ||
         std::strlen(topic) >= sizeof(command.topic))
     {
-        g_dropping_publish = true;
+        g_receiving = Receiving::Nothing;
         std::printf("MQTT command dropped: %s (%lu bytes)\n", topic,
                     static_cast<unsigned long>(tot_len));
         return;
     }
-    g_dropping_publish = false;
+    g_receiving = Receiving::Command;
     std::snprintf(command.topic, sizeof(command.topic), "%s", topic);
     command.payload_length = 0U;
     command.receiving = true;
@@ -546,8 +633,22 @@ void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
 /// context).
 void incoming_data_cb(void* /*arg*/, const u8_t* data, u16_t len, u8_t flags)
 {
+    if (g_receiving == Receiving::HouseWeather)
+    {
+        HouseBuffer& buffer = g_house_buffers[static_cast<size_t>(g_house_topic_receiving)];
+        const size_t count = std::min<size_t>(len, buffer.capacity - 1U - buffer.length);
+        std::memcpy(buffer.data + buffer.length, data, count);
+        buffer.length += count;
+        if ((flags & MQTT_DATA_FLAG_LAST) != 0U)
+        {
+            buffer.data[buffer.length] = '\0';
+            buffer.ready = true;
+            g_receiving = Receiving::Nothing;
+        }
+        return;
+    }
     PendingCommand& command = g_pending_command;
-    if (g_dropping_publish || !command.receiving)
+    if (g_receiving != Receiving::Command || !command.receiving)
     {
         return;
     }
@@ -572,11 +673,36 @@ void subscribe_cb(void* /*arg*/, err_t err)
                 g_command_filter);
 }
 
-/// @brief Subscribes to "<prefix>/+/set" once per connection.
+/// @brief Records the result of subscribing to the house weather topics.
+void house_subscribe_cb(void* /*arg*/, err_t err)
+{
+    g_house_subscribe_in_flight = false;
+    g_house_subscribed = err == ERR_OK;
+    std::printf("MQTT house weather subscribe %s: %s\n", g_house_subscribed ? "ok" : "failed",
+                g_house_filter);
+}
+
+/// @brief Subscribes to "<prefix>/+/set", then "<base>/house/weather/+",
+/// once per connection.
 void subscribe_commands()
 {
-    if (g_subscribed || g_subscribe_in_flight || !g_connected || g_client == nullptr)
+    if (g_subscribe_in_flight || g_house_subscribe_in_flight || !g_connected ||
+        g_client == nullptr)
     {
+        return;
+    }
+    if (g_subscribed)
+    {
+        if (!g_house_subscribed)
+        {
+            std::snprintf(g_house_filter, sizeof(g_house_filter), "%s/house/weather/+",
+                          g_base_topic);
+            cyw43_arch_lwip_begin();
+            const err_t rc =
+                mqtt_subscribe(g_client, g_house_filter, 0, house_subscribe_cb, nullptr);
+            cyw43_arch_lwip_end();
+            g_house_subscribe_in_flight = rc == ERR_OK;
+        }
         return;
     }
     std::snprintf(g_command_filter, sizeof(g_command_filter), "%s/+/set", g_topic_prefix);
@@ -670,6 +796,10 @@ bool build_discovery_payload(SensorId sensor_id)
     const char* icon = controllable ? mqtt_commands::info(sensor.command).icon : sensor.icon;
     const char* options =
         controllable ? mqtt_commands::options_json(sensor.command) : sensor.options_json;
+    if (sensor_id == SensorId::LastReset)
+    {
+        options = reset_reason::slug_options_json();
+    }
     char extras[512] = {};
     size_t extras_len = 0;
     bool fits = true;
@@ -711,6 +841,21 @@ bool build_discovery_payload(SensorId sensor_id)
     else if (options != nullptr)
     {
         add(",\"device_class\":\"enum\",\"options\":%s", options);
+    }
+    // Numeric health sensors (#155) carry units so HA graphs them.
+    switch (sensor_id)
+    {
+    case SensorId::Uptime:
+        add("%s", ",\"device_class\":\"duration\",\"unit_of_measurement\":\"min\","
+                  "\"state_class\":\"total_increasing\"");
+        break;
+    case SensorId::StackFree:
+    case SensorId::HeapArena:
+        add("%s", ",\"device_class\":\"data_size\",\"unit_of_measurement\":\"B\","
+                  "\"state_class\":\"measurement\"");
+        break;
+    default:
+        break;
     }
     if (!fits)
     {
@@ -864,6 +1009,23 @@ void update_sensor_values(const WifiStatus& wifi_status,
         }
     };
     set_value(SensorId::HaMessageState, console_controller::ha_message_state());
+
+    // Uptime moves once a minute; stack and heap figures are worst cases
+    // since boot, so they change rarely and a rise in the heap arena over a
+    // soak points at a leak (#155).
+    set_value(SensorId::LastReset, reset_reason::slug(console.boot_status.reset_reason));
+    char number_text[16] = {};
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.boot_status.uptime_minutes));
+    set_value(SensorId::Uptime, number_text);
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.stack_status.free_bytes));
+    // Nothing is published until a figure exists: HA refuses non-numbers here.
+    set_value(SensorId::StackFree, console.stack_status.valid ? number_text : "");
+    std::snprintf(number_text, sizeof(number_text), "%lu",
+                  static_cast<unsigned long>(console.heap_status.arena_bytes));
+    set_value(SensorId::HeapArena, console.heap_status.valid ? number_text : "");
+
     set_value(SensorId::AlertLamp,
               mqtt_commands::option_name(Target::AlertLamp,
                                          static_cast<uint8_t>(console.lamp_overrides[0])));
@@ -959,6 +1121,7 @@ void mqtt_connection_cb(mqtt_client_t* client, void* arg, mqtt_connection_status
     if (status == MQTT_CONNECT_ACCEPTED)
     {
         g_connected = true;
+        g_reconnect_backoff.reset();
         set_status(MqttConnectionState::Connected, 0);
         PERIODIC_LOG("MQTT connected to %s:%u\n", g_broker_host,
                      static_cast<unsigned>(g_broker_port));
@@ -1264,6 +1427,8 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     const bool kWifiReady = wifi_status.ip_address[0] != '\0';
     if (!kWifiReady)
     {
+        // A new network link gets a prompt first attempt.
+        g_reconnect_backoff.reset();
         reset_runtime(true);
         g_status.state = MqttConnectionState::WaitingForWifi;
         g_status.last_error = 0;
@@ -1280,6 +1445,28 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
     {
         g_dns_pending = false;
         set_status(MqttConnectionState::Error, ERR_TIMEOUT);
+    }
+
+    // A refused, failed or dropped session (a broker or HA restart) is torn
+    // down and started again after a growing delay. Nothing else retries it
+    // while Wi-Fi stays up (#155). The full reset republishes availability,
+    // discovery and every state, since a restarted broker may have lost them.
+    const bool kSessionDown = g_connect_attempted && !g_connected && !g_connect_in_progress &&
+                              !g_dns_pending && !g_dns_resolved;
+    if (kSessionDown)
+    {
+        if (is_nil_time(g_next_session_at))
+        {
+            const uint32_t kDelayMs = g_reconnect_backoff.next_delay_ms(get_rand_32());
+            g_next_session_at = make_timeout_time_ms(kDelayMs);
+            std::printf("MQTT reconnecting in %lus (failure %lu)\n",
+                        static_cast<unsigned long>(kDelayMs / 1000U),
+                        static_cast<unsigned long>(g_reconnect_backoff.failures()));
+        }
+        else if (time_reached(g_next_session_at))
+        {
+            reset_runtime(true);
+        }
     }
 
     // The connect flow is split across multiple updates: begin session, react
@@ -1312,6 +1499,26 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
 const MqttStatus& status()
 {
     return g_status;
+}
+
+void take_house_weather(HouseWeatherHandler handler)
+{
+    for (size_t i = 0; i < g_house_buffers.size(); ++i)
+    {
+        HouseBuffer& buffer = g_house_buffers[i];
+        cyw43_arch_lwip_begin();
+        const bool ready = buffer.ready;
+        cyw43_arch_lwip_end();
+        if (!ready)
+        {
+            continue;
+        }
+        // The callbacks leave a ready buffer alone, so it is read unlocked.
+        handler(static_cast<house_weather::Topic>(i), buffer.data);
+        cyw43_arch_lwip_begin();
+        buffer.ready = false;
+        cyw43_arch_lwip_end();
+    }
 }
 
 } // namespace mqtt_manager

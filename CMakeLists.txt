@@ -63,6 +63,7 @@ add_executable(MerlinCCU
     src/core/psram.cpp
     src/core/settings_controller.cpp
     src/core/softkey_builders.cpp
+    src/core/reset_reason.cpp
     src/core/stack_guard.cpp
     src/core/status_controller.cpp
     src/config/config_manager.cpp
@@ -91,6 +92,7 @@ add_executable(MerlinCCU
     src/network/date_time_math.cpp
     src/network/bounded_json.cpp
     src/network/ha_request_plan.cpp
+    src/network/house_weather.cpp
     src/network/home_assistant_manager.cpp
     src/network/home_assistant_weather_parser.cpp
     src/network/http_response.cpp

@@ -159,6 +159,17 @@ const TimeStatus& status()
     return g_status;
 }
 
+std::optional<uint32_t> utc_now()
+{
+    if (!g_status.synced || is_nil_time(g_last_ntp_sync_time))
+    {
+        return std::nullopt;
+    }
+    const int64_t elapsed_us = absolute_time_diff_us(g_last_ntp_sync_time, get_absolute_time());
+    return g_last_ntp_epoch_utc +
+           (elapsed_us > 0 ? static_cast<uint32_t>(elapsed_us / 1000000) : 0U);
+}
+
 bool format_local_time_from_iso8601(const char* iso_datetime, char* out, size_t out_size)
 {
     if (iso_datetime == nullptr || out == nullptr || out_size < 6)

@@ -97,6 +97,9 @@ bool set_heap_status(const HeapStatus& status);
 /// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.
 bool set_stack_status(const StackStatus& status);
 
+/// @brief Copies the last reset reason and uptime into the UI state (#155).
+bool set_boot_status(const BootStatus& status);
+
 /// @brief Copies the running firmware slot and update outcome into the UI state.
 bool set_firmware_status(const FirmwareStatus& status);
 

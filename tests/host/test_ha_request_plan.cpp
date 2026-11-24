@@ -30,7 +30,6 @@ Plan home_assistant_plan()
     plan.home_assistant = true;
     plan.tracked_entity = true;
     plan.self_entity = true;
-    plan.sun_entity = true;
     return plan;
 }
 
@@ -51,31 +50,15 @@ HOST_TEST(ha_plan_runs_presence_and_tracked_entity_with_open_meteo_weather)
                 std::vector<RequestKind>{RequestKind::FetchOpenMeteo});
 }
 
-HOST_TEST(ha_plan_fetches_ha_weather_in_order_when_ha_is_the_source)
-{
-    Plan plan = home_assistant_plan();
-    plan.home_assistant_weather = true;
-
-    const std::vector<RequestKind> expected = {
-        RequestKind::ProbeApi,           RequestKind::FetchTrackedEntity,
-        RequestKind::FetchWeatherEntity, RequestKind::FetchWeatherForecast,
-        RequestKind::FetchWeatherDailyForecast, RequestKind::FetchSunEntity,
-        RequestKind::PublishSelfEntity};
-    EXPECT_TRUE(walk(Chain::HomeAssistant, plan) == expected);
-    EXPECT_FALSE(ha_request_plan::chain_active(Chain::OpenMeteo, plan));
-}
-
 HOST_TEST(ha_plan_skips_optional_requests_that_are_not_set)
 {
     Plan plan;
     plan.home_assistant = true;
     EXPECT_TRUE(walk(Chain::HomeAssistant, plan) ==
                 std::vector<RequestKind>{RequestKind::ProbeApi});
-
-    // The sun entity only comes with HA weather.
-    plan.sun_entity = true;
-    EXPECT_TRUE(walk(Chain::HomeAssistant, plan) ==
-                std::vector<RequestKind>{RequestKind::ProbeApi});
+    // HA weather arrives over MQTT (#153), so HA as the weather source adds
+    // no requests and leaves the Open-Meteo chain idle.
+    EXPECT_FALSE(ha_request_plan::chain_active(Chain::OpenMeteo, plan));
 }
 
 HOST_TEST(ha_plan_open_meteo_runs_without_home_assistant)
@@ -99,7 +82,7 @@ HOST_TEST(ha_plan_with_nothing_set_up_runs_nothing)
 HOST_TEST(ha_plan_requests_belong_to_their_own_chain)
 {
     EXPECT_TRUE(ha_request_plan::chain_of(RequestKind::FetchOpenMeteo) == Chain::OpenMeteo);
-    EXPECT_TRUE(ha_request_plan::chain_of(RequestKind::FetchWeatherEntity) ==
+    EXPECT_TRUE(ha_request_plan::chain_of(RequestKind::FetchTrackedEntity) ==
                 Chain::HomeAssistant);
     // The last HA request never hands over to the Open-Meteo chain.
     Plan plan = home_assistant_plan();

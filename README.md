@@ -208,8 +208,6 @@ Local machine- or network-specific fallback headers are intentionally kept out o
 - `config/home_assistant_credentials.example.h` ->
   `config/home_assistant_credentials.h`
 - `config/mqtt_credentials.example.h` -> `config/mqtt_credentials.h`
-- `config/weather_display_config.example.h` ->
-  `config/weather_display_config.h`
 - `config/keypad_matrix_config.example.h` -> `config/keypad_matrix_config.h`
 - `config/environment_sensor_config.example.h` ->
   `config/environment_sensor_config.h`

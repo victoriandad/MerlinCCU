@@ -693,8 +693,6 @@ void build_config_page(const char* message)
     static char ha_host[96] = {};
     static char ha_entity[96] = {};
     static char ha_self[96] = {};
-    static char weather_entity[96] = {};
-    static char sun_entity[96] = {};
     static char weather_coordinates[96] = {};
     static char mqtt_host[96] = {};
     static char mqtt_user[96] = {};
@@ -710,8 +708,6 @@ void build_config_page(const char* message)
     html_escape(cfg.home_assistant_host.data(), ha_host, sizeof(ha_host));
     html_escape(cfg.home_assistant_entity_id.data(), ha_entity, sizeof(ha_entity));
     html_escape(cfg.home_assistant_self_entity_id.data(), ha_self, sizeof(ha_self));
-    html_escape(cfg.weather_entity_id.data(), weather_entity, sizeof(weather_entity));
-    html_escape(cfg.sun_entity_id.data(), sun_entity, sizeof(sun_entity));
     // Shown as degrees and minutes; the degree sign is an HTML entity, and
     // the rest of the text is digits, letters, spaces, dots and primes.
     weather_coordinates[0] = '\0';
@@ -941,19 +937,17 @@ void build_config_page(const char* message)
 
     (void)append(cursor, remaining,
                  "<section class=\"card\"><h2>Weather Source</h2><label>Weather source</label>"
-                 "<select name=\"weather_source\" id=\"weather_source_select\">");
+                 "<select name=\"weather_source\">");
     const char* selected_weather = weather_token(cfg.weather_source);
-    (void)append_option(cursor, remaining, "home_assistant", "Home Assistant", selected_weather);
+    (void)append_option(cursor, remaining, "home_assistant", "Home Assistant (MQTT)",
+                        selected_weather);
     (void)append_option(cursor, remaining, "open_meteo", "Open-Meteo", selected_weather);
-    const bool weather_is_home_assistant = cfg.weather_source == WeatherSource::HomeAssistant;
-    (void)append(
-        cursor, remaining,
-        "</select><fieldset id=\"weather_ha_fields\" class=\"%s\"><div class=\"row\"><div><label>"
-        "Home Assistant weather entity</label><input name=\"weather_entity\" maxlength=\"63\" "
-        "value=\"%s\"></div><div><label>Home Assistant sun entity</label><input "
-        "name=\"sun_entity\" maxlength=\"63\" value=\"%s\"></div></div></fieldset>"
-        "<p class=\"hint\">Open-Meteo forecasts for the Location below.</p></section>",
-        weather_is_home_assistant ? "" : "disabled", weather_entity, sun_entity);
+    (void)append(cursor, remaining,
+                 "</select><p class=\"hint\">Home Assistant publishes the weather for every "
+                 "CCU over MQTT, so it needs MQTT Discovery set up on this page and the MerlinCCU "
+                 "integration's weather block in HA (docs/home-assistant-setup.md). "
+                 "Open-Meteo is fetched by this CCU itself for the Location below.</p>"
+                 "</section>");
 
     // Location (#87): a place search run by the browser, which has internet
     // access the form needs anyway, fills the coordinates; they can also be
@@ -1014,9 +1008,6 @@ void build_config_page(const char* message)
         "var toggles=document.querySelectorAll('input[data-controls]');"
         "for(var i=0;i<toggles.length;i++){(function(box){box.onchange=function(){syncCheck(box)};"
         "syncCheck(box)})(toggles[i])}"
-        "var weather=byId('weather_source_select'),weatherHaFields=byId('weather_ha_fields');"
-        "function syncWeather(){setDisabled(weatherHaFields,weather.value!=='home_assistant')}"
-        "if(weather){weather.onchange=syncWeather;syncWeather()}"
         "function dm(v,pos,neg,w){var t=Math.round(Math.abs(v)*6000);"
         "return (v<0?neg:pos)+String(Math.floor(t/6000)).padStart(w,'0')+'\\u00b0'+"
         "((t%%6000)/100).toFixed(2).padStart(5,'0')+\"'\"}"
@@ -2787,28 +2778,6 @@ const char* handle_config_post(const char* body)
         }
         copy_text(cfg.home_assistant_self_entity_id, value);
     }
-    if (get_form_value(body, "weather_entity", value, sizeof(value)))
-    {
-        if (!validate_text_field("Weather entity", value, cfg.weather_entity_id.size() - 1, false,
-                                 is_printable_config_text, validation_error,
-                                 sizeof(validation_error)))
-        {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
-        }
-        copy_text(cfg.weather_entity_id, value);
-    }
-    if (get_form_value(body, "sun_entity", value, sizeof(value)))
-    {
-        if (!validate_text_field("Sun entity", value, cfg.sun_entity_id.size() - 1, false,
-                                 is_printable_config_text, validation_error,
-                                 sizeof(validation_error)))
-        {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
-        }
-        copy_text(cfg.sun_entity_id, value);
-    }
     if (get_form_value(body, "weather_coordinates", value, sizeof(value)))
     {
         // Any common form is accepted, but stored one way so every reader
@@ -3397,11 +3366,25 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     }
     else if (matches_get_path(request, "/api/firmware"))
     {
-        // Plain key=value lines for tools/ota_update.py and other scripts.
+        // Plain key=value lines for tools/ota_update.py, tools/soak_monitor.py
+        // and other scripts. The health lines (#155) are numbers and slugs
+        // so a soak log can be charted without parsing display text.
         const FirmwareStatus firmware = ota_manager::status();
-        std::snprintf(g_response, sizeof(g_response), "%sversion=%s\nslot=%s\nstate=%s\n",
-                      kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
-                      ota_manager::state_name());
+        const ConsoleState& console = console_controller::state();
+        std::snprintf(
+            g_response, sizeof(g_response),
+            "%sversion=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\nwifi_connected=%d\n"
+            "mqtt_connected=%d\nha_connected=%d\nstack_free=%lu\nheap_arena=%lu\nalerts=%u\n",
+            kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
+            ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
+            static_cast<unsigned long>(console.boot_status.uptime_minutes),
+            console.wifi_status.state == WifiConnectionState::Connected ? 1 : 0,
+            console.mqtt_status.state == MqttConnectionState::Connected ? 1 : 0,
+            console.home_assistant_status.state == HomeAssistantConnectionState::Connected ? 1
+                                                                                            : 0,
+            static_cast<unsigned long>(console.stack_status.free_bytes),
+            static_cast<unsigned long>(console.heap_status.arena_bytes),
+            static_cast<unsigned>(console.alert_count));
         send_response(session, pcb, g_response);
         return;
     }

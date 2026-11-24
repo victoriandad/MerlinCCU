@@ -12,12 +12,6 @@
 #include "screens_shared.h"
 #include "ui_layout.h"
 
-#if __has_include("weather_display_config.h")
-#include "weather_display_config.h"
-#else
-inline constexpr char HOME_ASSISTANT_WEATHER_SOURCE_LABEL[] = "";
-#endif
-
 namespace weather_screens
 {
 
@@ -336,8 +330,8 @@ const char* next_seven_days_label_text(uint8_t row_index, const char* date_text,
 }
 
 /// @brief Returns the best weather-source label available for the footer.
-/// @details Runtime hints take priority so the UI can show the actual selected
-/// source rather than only the build-time default.
+/// @details The provider HA names (e.g. MET Norway) takes priority, so the
+/// footer credits the real forecast source.
 const char* weather_source_label_text(const ConsoleState& console_state)
 {
     if (console_state.weather_source == WeatherSource::OpenMeteo)
@@ -350,8 +344,7 @@ const char* weather_source_label_text(const ConsoleState& console_state)
         return console_state.home_assistant_status.weather_source_hint.data();
     }
 
-    return HOME_ASSISTANT_WEATHER_SOURCE_LABEL[0] ? HOME_ASSISTANT_WEATHER_SOURCE_LABEL
-                                                  : "Home Assistant";
+    return "Home Assistant";
 }
 
 /// @brief Returns whether there is enough sun-time data to render that section.
@@ -636,8 +629,8 @@ bool weather_period_has_data(const ConsoleState& console_state,
 }
 
 /// @brief Says where the selected source is set up, or null when it is set up.
-/// @details Both sources are set up on the web config page's Weather Source
-/// card (STATE-5).
+/// @details Both sources are set up on the web config page (STATE-5): HA
+/// weather arrives over MQTT (#153), Open-Meteo needs a location.
 const char* weather_setup_hint(const ConsoleState& console_state)
 {
     const HomeAssistantStatus& status = console_state.home_assistant_status;
@@ -645,12 +638,7 @@ const char* weather_setup_hint(const ConsoleState& console_state)
                             status.weather_state == HomeAssistantConnectionState::Disabled;
     if (console_state.weather_source == WeatherSource::HomeAssistant)
     {
-        if (kSourceOff)
-        {
-            return "Set up Home Assistant in web config";
-        }
-        return status.weather_entity_id[0] == '\0' ? "Set the weather entity in web config"
-                                                    : nullptr;
+        return kSourceOff ? "Set up MQTT in web config" : nullptr;
     }
     if (kSourceOff)
     {
@@ -694,7 +682,8 @@ WeatherPageMessage weather_page_message(const ConsoleState& console_state)
     switch (status.weather_state)
     {
     case HomeAssistantConnectionState::Unauthorized:
-        set_message(WeatherPageState::Failed, kFailedHeadline, "Check the HA token in web config");
+        // Only HA weather has a login: the MQTT broker's.
+        set_message(WeatherPageState::Failed, kFailedHeadline, "Check the MQTT login in web config");
         return message;
     case HomeAssistantConnectionState::Error:
         set_message(WeatherPageState::Failed, kFailedHeadline, "Details in Status > Integrations");

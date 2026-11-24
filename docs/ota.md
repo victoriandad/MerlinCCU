@@ -136,7 +136,10 @@ The version and slot show on:
 - the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
 - the Firmware web page;
 - `GET /api/firmware`: `version=`, `slot=` and `state=` lines, where
-  state is `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`;
+  state is `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`.
+  Health lines follow for `tools/soak_monitor.py` (#155, docs/soak-test.md):
+  `reset=`, `uptime_min=`, `wifi_connected=`, `mqtt_connected=`,
+  `ha_connected=`, `stack_free=`, `heap_arena=` and `alerts=`;
 - Home Assistant, over MQTT: a `Firmware` diagnostic sensor (the version,
   also the device's software version) and a `Firmware update` sensor (the
   state above). An automation on `rolled_back` can notify you.

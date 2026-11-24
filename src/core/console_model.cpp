@@ -257,6 +257,7 @@ void make_default_console_state(ConsoleState& out)
     out.main_loop_load_status = {};
     out.heap_status = {};
     out.stack_status = {};
+    out.boot_status = {};
     out.firmware_status = {};
     out.web_pin_clear_confirming = false;
     out.lamp_overrides.fill(LampOverride::Auto);
