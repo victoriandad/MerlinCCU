@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "config_manager.h"
+#include "config_persistence.h"
 #include "console_controller.h"
 #include "golden_test_support.h"
 #include "input.h"
@@ -44,7 +45,10 @@ void open_fonts_page()
 
 HOST_TEST(choosing_a_font_on_the_panel_saves_and_shows_it)
 {
+    // Start from factory settings, so what earlier tests saved (weather
+    // source, fonts) cannot change the golden image below.
     const RuntimeConfig saved = config_manager::settings();
+    (void)config_manager::save(config_persistence::make_default_settings());
     console_controller::init();
     (void)console_controller::apply_runtime_config(config_manager::settings());
 
