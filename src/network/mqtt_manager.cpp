@@ -13,15 +13,18 @@
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
 #include "console_controller.h"
+#include "framebuffer.h"
 #include "ha_key_list.h"
 #include "house_weather.h"
 #include "input.h"
 #include "mqtt_commands.h"
 #include "ota_manager.h"
 #include "page_table.h"
+#include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/rand.h"
 #include "pico/stdlib.h"
+#include "png_encoder.h"
 #include "psram.h"
 #include "retry_backoff.h"
 #include "text_utils.h"
@@ -83,6 +86,9 @@ enum class SensorId : uint8_t
     Uptime,
     StackFree,
     HeapArena,
+    // The panel as a picture for dashboards (#159): an HA image entity whose
+    // PNG is published by publish_screen_image(), not the value table.
+    Screen,
     // Entities Home Assistant controls (#150), in mqtt_commands::Target order.
     AlertLamp,
     TestLamp,
@@ -102,6 +108,7 @@ enum class PendingPublishType : uint8_t
     State,
     KeyTrigger,
     KeyEvent,
+    ScreenImage,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -158,6 +165,7 @@ constexpr SensorDescriptor kSensorDescriptors[] = {
     {"Uptime", "uptime", "mdi:timer-outline", true, nullptr, kNoCommand},
     {"Stack free", "stack_free", "mdi:layers-outline", true, nullptr, kNoCommand},
     {"Heap arena", "heap_arena", "mdi:memory", true, nullptr, kNoCommand},
+    {"Screen", "screen", "mdi:monitor-screenshot", false, nullptr, kNoCommand},
     {nullptr, nullptr, nullptr, false, nullptr, Target::AlertLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::TestLamp},
     {nullptr, nullptr, nullptr, false, nullptr, Target::PanelBrightness},
@@ -366,7 +374,20 @@ std::array<HouseBuffer, house_weather::kTopicCount> g_house_buffers = {{
     {g_house_hourly, sizeof(g_house_hourly), 0U, false},
     {g_house_daily, sizeof(g_house_daily), 0U, false},
 }};
-char g_publish_buffer[1024] = {};
+// Discovery JSON, and the panel PNG (#159). Pages are 0.5 to 2 KB as PNG; a
+// bigger one (heavy dither) is skipped. The lwIP ring (lwipopts.h) holds
+// this plus the topic.
+constexpr size_t kScreenImageMaxBytes = 3584U;
+MERLIN_PSRAM_BSS char g_publish_buffer[kScreenImageMaxBytes];
+// The panel picture goes out when the screen has changed, at most this often,
+// so a dashboard stays current without loading the broker or the loop.
+constexpr uint32_t kScreenImageIntervalMs = 5000U;
+absolute_time_t g_screen_image_due = nil_time;
+// CRC of the frame HA has (or that was too big to send); `valid` is false
+// until one is sent on this session.
+bool g_screen_image_valid = false;
+uint32_t g_screen_image_crc = 0U;
+uint32_t g_screen_image_crc_in_flight = 0U;
 mqtt_connect_client_info_t g_client_info = {};
 std::array<std::array<char, 64>, static_cast<size_t>(SensorId::Count)> g_sensor_unique_ids = {};
 std::array<std::array<char, 96>, static_cast<size_t>(SensorId::Count)> g_sensor_state_topics = {};
@@ -432,6 +453,8 @@ void reset_runtime(bool reset_publish_state)
     // Unknown after a reconnect or restart: treat every key as published, so
     // configs for keys no longer on the list are cleared once (#151).
     g_triggers_published = kAllKeysMask;
+    g_screen_image_valid = false;
+    g_screen_image_due = nil_time;
 
     if (g_client != nullptr)
     {
@@ -559,7 +582,9 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
         const SensorDescriptor& sensor = kSensorDescriptors[i];
         const char* slug = entity_slug(sensor);
         const char* component =
-            sensor.command != kNoCommand ? mqtt_commands::info(sensor.command).component : "sensor";
+            sensor.command != kNoCommand
+                ? mqtt_commands::info(sensor.command).component
+                : (static_cast<SensorId>(i) == SensorId::Screen ? "image" : "sensor");
         std::snprintf(g_sensor_unique_ids[i].data(), g_sensor_unique_ids[i].size(), "%s_%s",
                       g_device_id, slug);
         std::snprintf(g_sensor_state_topics[i].data(), g_sensor_state_topics[i].size(),
@@ -854,6 +879,9 @@ bool build_discovery_payload(SensorId sensor_id)
         add("%s", ",\"device_class\":\"data_size\",\"unit_of_measurement\":\"B\","
                   "\"state_class\":\"measurement\"");
         break;
+    case SensorId::Screen:
+        add("%s", ",\"content_type\":\"image/png\"");
+        break;
     default:
         break;
     }
@@ -863,16 +891,18 @@ bool build_discovery_payload(SensorId sensor_id)
     }
 
     // The final payload is a retained self-description of the device and one
-    // sensor entity. State values are published separately afterward.
+    // sensor entity. State values are published separately afterward. An
+    // image entity takes its picture from "image_topic" instead.
+    const char* topic_key = sensor_id == SensorId::Screen ? "image_topic" : "state_topic";
     const int kLen =
         std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
                       "{\"name\":\"%s\",\"unique_id\":\"%s\","
-                      "\"state_topic\":\"%s\",\"availability_topic\":\"%s\","
+                      "\"%s\":\"%s\",\"availability_topic\":\"%s\","
                       "\"payload_available\":\"%s\",\"payload_not_available\":\"%s\","
                       "\"origin\":{\"name\":\"MerlinCCU\",\"sw_version\":\"%s\"},"
                       "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\","
                       "\"manufacturer\":\"%s\",\"model\":\"%s\",\"sw_version\":\"%s\"}%s}",
-                      name, g_sensor_unique_ids[sensor_index(sensor_id)].data(),
+                      name, g_sensor_unique_ids[sensor_index(sensor_id)].data(), topic_key,
                       g_sensor_state_topics[sensor_index(sensor_id)].data(), g_availability_topic,
                       kOnlineState, kOfflineState, kFirmwareVersion, g_device_id, g_device_name,
                       kManufacturer, kDeviceModel, kFirmwareVersion, extras);
@@ -1104,6 +1134,10 @@ void mqtt_request_cb(void* arg, err_t err)
             g_triggers_published |= ha_keys::bit(g_key_in_flight);
         }
         break;
+    case PendingPublishType::ScreenImage:
+        g_screen_image_valid = true;
+        g_screen_image_crc = g_screen_image_crc_in_flight;
+        break;
     case PendingPublishType::KeyEvent:
     case PendingPublishType::None:
         break;
@@ -1241,9 +1275,10 @@ bool start_session()
     return false;
 }
 
-/// @brief Starts one retained MQTT publish and records its in-flight metadata.
-bool publish(const char* topic, const char* payload, PendingPublishType publish_type,
-             SensorId sensor_id)
+/// @brief Starts one MQTT publish of `length` bytes and records its in-flight
+/// metadata. Everything but key presses is retained.
+bool publish_bytes(const char* topic, const void* payload, u16_t length,
+                   PendingPublishType publish_type, SensorId sensor_id)
 {
     if (!g_connected || g_request_in_flight || g_client == nullptr || topic == nullptr ||
         payload == nullptr)
@@ -1251,7 +1286,7 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
         return false;
     }
 
-    const u16_t kPayloadLength = static_cast<u16_t>(std::strlen(payload));
+    const u16_t kPayloadLength = length;
     // Key presses are moments, not state: a retained one would fire HA
     // automations again on every reconnect.
     const u8_t kRetain = publish_type == PendingPublishType::KeyEvent ? 0U : 1U;
@@ -1272,6 +1307,56 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
     g_publish_type_in_flight = publish_type;
     g_sensor_in_flight = sensor_id;
     return true;
+}
+
+/// @brief Starts one MQTT publish of a text payload.
+bool publish(const char* topic, const char* payload, PendingPublishType publish_type,
+             SensorId sensor_id)
+{
+    return payload != nullptr &&
+           publish_bytes(topic, payload, static_cast<u16_t>(std::strlen(payload)), publish_type,
+                         sensor_id);
+}
+
+/// @brief Publishes the panel as a PNG to the Screen image entity (#159)
+/// when the picture changed and the last one is old enough.
+/// @details Checked every kScreenImageIntervalMs, so the 10 KB CRC and the
+/// encode run at most that often. A page too big for kScreenImageMaxBytes is
+/// logged once and skipped; HA keeps the previous picture.
+bool publish_screen_image()
+{
+    if (!g_sensor_discovery_published[sensor_index(SensorId::Screen)] ||
+        (!is_nil_time(g_screen_image_due) && !time_reached(g_screen_image_due)))
+    {
+        return false;
+    }
+    g_screen_image_due = make_timeout_time_ms(kScreenImageIntervalMs);
+
+    const uint8_t* frame = framebuffer::front();
+    if (frame == nullptr)
+    {
+        return false;
+    }
+    const uint32_t crc = png_encoder::crc32(frame, static_cast<size_t>(kUiFbSize));
+    if (g_screen_image_valid && crc == g_screen_image_crc)
+    {
+        return false;
+    }
+    const size_t length = png_encoder::encode_1bpp(
+        frame, kUiWidth, kUiHeight, kUiStride, png_encoder::kPanelPaper, png_encoder::kPanelInk,
+        reinterpret_cast<uint8_t*>(g_publish_buffer), sizeof(g_publish_buffer));
+    if (length == 0U)
+    {
+        std::printf("MQTT screen image too large for %u bytes; skipped\n",
+                    static_cast<unsigned>(sizeof(g_publish_buffer)));
+        g_screen_image_valid = true;
+        g_screen_image_crc = crc;
+        return false;
+    }
+    g_screen_image_crc_in_flight = crc;
+    return publish_bytes(g_sensor_state_topics[sensor_index(SensorId::Screen)].data(),
+                         g_publish_buffer, static_cast<u16_t>(length),
+                         PendingPublishType::ScreenImage, SensorId::Screen);
 }
 
 /// @brief Starts the next queued availability, discovery, or state publish.
@@ -1364,7 +1449,8 @@ bool start_next_publish()
                        PendingPublishType::State, sensor_id);
     }
 
-    return false;
+    // The picture goes last: it is the largest message and the least urgent.
+    return publish_screen_image();
 }
 
 } // namespace

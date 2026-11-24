@@ -64,6 +64,7 @@ add_executable(MerlinCCU
     src/core/settings_controller.cpp
     src/core/softkey_builders.cpp
     src/core/reset_reason.cpp
+    src/display/png_encoder.cpp
     src/core/stack_guard.cpp
     src/core/status_controller.cpp
     src/config/config_manager.cpp
