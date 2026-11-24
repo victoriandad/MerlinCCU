@@ -182,6 +182,19 @@ corrected.
   `TableHeader` style and may be mixed case (TXT-5). Cells use `TableCell`.
   The divider runs margin to margin under the headers.
 
+### Weather Icon
+
+- Intent: let a forecast row be read at a glance (#10).
+- Use When: a cell names a weather condition.
+- Source: `weather_icons::classify()` and `weather_icons::draw()` in
+  `include/display/weather_icons.h`: one 9x9 bitmap per kind of weather, and a
+  short name of at most 12 characters for each condition word either source
+  sends. `weather_icons_sheet.pbm` shows every icon at 1x and 4x.
+- Rules: the icon sits one pixel above the 7-pixel cell text, then a
+  2-pixel gap, then the short name. An unrecognised condition gets no icon
+  and shows the provider's words. Keep the set small: a new icon must stay
+  legible at one pixel per dot.
+
 ## Anti-Patterns
 
 - Duplicating the same value in the centre body and on a softkey.

@@ -49,7 +49,7 @@ Still incomplete or provisional:
 - Real calendar participant labels belong in local `config/calendar_identities.h`,
   which is ignored by git. Tracked demo calendar data uses synthetic examples.
 - Watched share symbols are configurable from the web config page (issue #9); on-device text entry for them is still missing.
-- Weather iconography and warning/threshold alert rules are still planned.
+- Forecast rows carry a small icon per condition (#10); weather warning thresholds raise alerts (docs/alerts.md).
 - Disabled I2C sensor-discovery scaffolding exists for the optional Waveshare
   Pico Environment Sensor board, including BME280/BME680 chip-ID probing; full
   sensor reads are not implemented yet.

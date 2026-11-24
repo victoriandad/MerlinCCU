@@ -11,6 +11,7 @@
 #include "panel_config.h"
 #include "screens_shared.h"
 #include "ui_layout.h"
+#include "weather_icons.h"
 
 namespace weather_screens
 {
@@ -72,6 +73,14 @@ struct ForecastRenderSlice
     int current_hour_floor;
 };
 
+/// @brief Where the conditions column starts: its icon, then its text.
+/// Leaves room for the longest short name (weather_icons.h) before the
+/// right margin.
+constexpr int kConditionsX = 154;
+
+/// @brief Gap between a condition's icon and its text.
+constexpr int kIconTextGap = 2;
+
 // One table frame for every forecast period (BODY-3): header line, divider,
 // first row and row pitch are shared; only the columns differ.
 constexpr size_t kForecastVisibleRows = 10U;
@@ -91,7 +100,7 @@ constexpr ForecastColumns kHourlyColumns = {{
     {ui_layout::kMarginX, "Time"},
     {60, "Temp"},
     {102, "Wind mph"},
-    {160, "Conditions"},
+    {kConditionsX, "Conditions"},
 }};
 
 // The day column is wider than the time column so "Tomorrow" fits.
@@ -99,7 +108,7 @@ constexpr ForecastColumns kDailyColumns = {{
     {ui_layout::kMarginX, "Day"},
     {66, "Temp"},
     {102, "Wind mph"},
-    {160, "Conditions"},
+    {kConditionsX, "Conditions"},
 }};
 
 /// @brief Returns the top of forecast table row `index`.
@@ -488,18 +497,35 @@ void draw_forecast_table_header(uint8_t* fb, const ForecastColumns& columns)
 }
 
 /// @brief Draws one forecast table row: when, temperature, wind, conditions.
+/// @details A recognised condition gets its icon (#10) and a short name that
+/// fits beside it; anything else shows the provider's words, title-cased,
+/// where the icon would be.
 void draw_forecast_table_row(uint8_t* fb, const ForecastColumns& columns, size_t index,
                              const char* when, const char* temperature, const char* wind,
                              const char* condition)
 {
-    char formatted_condition[24] = {};
-    format_weather_phrase(condition, formatted_condition, sizeof(formatted_condition));
-    const std::array<const char*, 4> cells = {
-        when, temperature, wind, formatted_condition[0] != '\0' ? formatted_condition : condition};
+    const int y = forecast_row_y(index);
+    const std::array<const char*, 3> cells = {when, temperature, wind};
     for (size_t i = 0U; i < cells.size(); ++i)
     {
-        screens::draw_text(fb, columns[i].x, forecast_row_y(index), cells[i], TextStyle::TableCell);
+        screens::draw_text(fb, columns[i].x, y, cells[i], TextStyle::TableCell);
     }
+
+    const int conditions_x = columns[3].x;
+    const weather_icons::Condition kind = weather_icons::classify(condition);
+    if (kind.icon != weather_icons::WeatherIcon::None)
+    {
+        // The 9-pixel icon sits one pixel above the 7-pixel text, centred on it.
+        weather_icons::draw(fb, conditions_x, y - 1, kind.icon);
+        screens::draw_text(fb, conditions_x + weather_icons::kIconSize + kIconTextGap, y,
+                           kind.short_name, TextStyle::TableCell);
+        return;
+    }
+    char formatted_condition[24] = {};
+    format_weather_phrase(condition, formatted_condition, sizeof(formatted_condition));
+    screens::draw_text(fb, conditions_x, y,
+                       formatted_condition[0] != '\0' ? formatted_condition : condition,
+                       TextStyle::TableCell);
 }
 
 /// @brief Draws one hourly forecast entry as a table row.
