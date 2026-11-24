@@ -49,6 +49,20 @@ Framebuffer render_current()
     return fb;
 }
 
+/// @brief The active alert with this summary, if any.
+const ActiveAlert* find_alert(const char* summary)
+{
+    const ConsoleState& state = console_controller::state();
+    for (uint8_t i = 0U; i < state.alert_count; ++i)
+    {
+        if (std::strcmp(state.active_alerts[i].summary.data(), summary) == 0)
+        {
+            return &state.active_alerts[i];
+        }
+    }
+    return nullptr;
+}
+
 /// @brief Opens Controls from Home with `json` as the list, as an operator would.
 void open_controls(bool link_up, const char* json)
 {
@@ -208,6 +222,28 @@ HOST_TEST(home_controls_a_new_list_ends_the_press_and_keeps_the_page_in_range)
     EXPECT_TRUE(home_controls::apply_list(kList, controls));
     EXPECT_FALSE(controls.pending.has_value());
     EXPECT_EQ(controls.page_index, uint8_t{0U});
+}
+
+HOST_TEST(a_failed_control_press_raises_control_failed_until_one_works)
+{
+    open_controls(true, kList);
+    press_button(ButtonId::LeftTop); // Hall light
+    (void)console_controller::apply_home_controls(home_controls::Topic::Result,
+                                                  "{\"v\":1,\"index\":0,\"ok\":false}");
+    const ActiveAlert* alert = find_alert("CONTROL FAILED");
+    EXPECT_TRUE(alert != nullptr);
+    EXPECT_TRUE(alert != nullptr && std::strstr(alert->detail.data(), "Hall light") != nullptr);
+
+    // It outlasts the page's notice...
+    (void)console_controller::update_home_controls(true, 1000U + home_controls::kFailureNoticeMs);
+    EXPECT_TRUE(find_alert("CONTROL FAILED") != nullptr);
+
+    // ...and clears when a press works.
+    press_button(ButtonId::LeftTop);
+    (void)console_controller::apply_home_controls(home_controls::Topic::Result,
+                                                  "{\"v\":1,\"index\":0,\"ok\":true}");
+    EXPECT_TRUE(find_alert("CONTROL FAILED") == nullptr);
+    console_controller::init();
 }
 
 HOST_TEST(controls_page_states_match_their_golden_images)

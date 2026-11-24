@@ -136,7 +136,8 @@ whenever one of its entities changes state, and when HA starts.
   it arrives over the same link.
 - A key press shows `[Switching]` (or `[Running]`) until HA answers. A
   refusal, or no answer within 5 seconds, shows a notice on the page for 10
-  seconds. One press at a time.
+  seconds and raises `CONTROL FAILED` until a press works. One press at a
+  time.
 - A toggle that worked shows its new state at once; HA's next list confirms
   it.
 

@@ -324,8 +324,8 @@ integration from step 5.
 Check: open Controls on the CCU. Each key shows the entity's name and state;
 switch a light from your phone and the key follows within a second. Press a
 key: it shows `[Switching]` until HA answers. If HA refuses, or does not
-answer within 5 seconds, the page says so for 10 seconds and the serial log
-says why.
+answer within 5 seconds, the page says so for 10 seconds, the
+`CONTROL FAILED` alert stays until a press works, and the serial log says why.
 
 - With MQTT down the page has no keys and says so.
 - `NO CONTROLS` means the unit has no list: check its `mqtt_unit` against

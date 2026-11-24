@@ -182,7 +182,8 @@ step 7).
 - Pressing a scene shows `[Running]`, then its name again.
 - With HA refusing (e.g. a script that errors) or not answering, the notice
   `NAME: HA REFUSED` or `NAME: NO REPLY FROM HA` shows between rows 4 and 5
-  for 10 seconds, clear of the row 4 labels and `HOME`.
+  for 10 seconds, clear of the row 4 labels and `HOME`, and `CONTROL FAILED`
+  joins the alert list until a press works.
 - Stop Mosquitto: the keys go and the page says `HA NOT CONNECTED`. They
   return when MQTT reconnects. With MQTT not set up it says `MQTT NOT SET UP`;
   with no list in HA, `NO CONTROLS`.

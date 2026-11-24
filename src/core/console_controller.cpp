@@ -799,10 +799,10 @@ void note_home_control_failure(uint32_t failures_before)
     {
         return;
     }
-    // TODO(#152): raise a CONTROL FAILED alert here (AlertCode::ControlFailed,
-    // Warning) from controls.failure_count, as docs/alerts.md requires. Not
-    // added yet: alert_controller.cpp was held open by a stuck compiler when
-    // this was written. Until then the page's notice line is the feedback.
+    // alert_controller raises CONTROL FAILED from controls.last_failure; the
+    // lamps and whichever page is showing pick it up now.
+    update_lamps_from_state();
+    g_redraw_requested = true;
     std::printf("Controls: entry %u failed (%s)\n", static_cast<unsigned>(controls.failure_index),
                 controls.failure == ControlFailure::Refused ? "HA refused" : "no reply");
 }

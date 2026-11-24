@@ -98,8 +98,12 @@ struct HomeControls
     ControlFailure failure;
     uint8_t failure_index;
     uint32_t failure_at_ms;
-    /// Failures since start-up; the hook for a CONTROL FAILED alert.
+    /// Failures since start-up, for the serial log.
     uint32_t failure_count;
+    /// How the last answered press went, None once one works; it holds the
+    /// CONTROL FAILED alert, with the entity's name, until then.
+    ControlFailure last_failure;
+    std::array<char, home_controls::kNameLength + 1U> last_failure_name;
 };
 
 namespace home_controls

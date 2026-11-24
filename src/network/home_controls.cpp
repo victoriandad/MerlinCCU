@@ -53,6 +53,18 @@ std::optional<size_t> string_array_length(const char* array)
     return count;
 }
 
+/// @brief Records a failed press: the page's notice, and the lasting failure
+/// the CONTROL FAILED alert shows until a press works.
+void record_failure(HomeControls& controls, ControlFailure failure, uint8_t index, uint32_t now_ms)
+{
+    controls.failure = failure;
+    controls.failure_index = index;
+    controls.failure_at_ms = now_ms;
+    ++controls.failure_count;
+    controls.last_failure = failure;
+    controls.last_failure_name = controls.items[index].name;
+}
+
 } // namespace
 
 std::optional<Topic> topic_for(std::string_view topic, std::string_view prefix)
@@ -149,13 +161,11 @@ bool apply_result(const char* json, HomeControls& controls, uint32_t now_ms)
         {
             item.state = item.state == ControlState::On ? ControlState::Off : ControlState::On;
         }
+        controls.last_failure = ControlFailure::None;
     }
     else
     {
-        controls.failure = ControlFailure::Refused;
-        controls.failure_index = static_cast<uint8_t>(*index);
-        controls.failure_at_ms = now_ms;
-        ++controls.failure_count;
+        record_failure(controls, ControlFailure::Refused, static_cast<uint8_t>(*index), now_ms);
     }
     controls.pending.reset();
     return true;
@@ -213,10 +223,7 @@ bool tick(HomeControls& controls, uint32_t now_ms)
     bool changed = false;
     if (controls.pending.has_value() && now_ms - controls.pending_since_ms >= kReplyTimeoutMs)
     {
-        controls.failure = ControlFailure::NoReply;
-        controls.failure_index = *controls.pending;
-        controls.failure_at_ms = now_ms;
-        ++controls.failure_count;
+        record_failure(controls, ControlFailure::NoReply, *controls.pending, now_ms);
         controls.pending.reset();
         controls.press_queued = false;
         changed = true;
