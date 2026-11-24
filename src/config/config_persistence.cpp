@@ -225,6 +225,36 @@ RuntimeConfig migrate_legacy_settings_v7(const LegacyRuntimeConfigV7& legacy)
     return migrated;
 }
 
+// v9 is today's layout without the trailing HA certificate pin; its fields
+// must sit where version 9 firmware wrote them.
+static_assert(offsetof(LegacyRuntimeConfigV9, font_choices) ==
+                  offsetof(RuntimeConfig, font_choices),
+              "LegacyRuntimeConfigV9 must mirror the version 9 layout");
+
+bool validate_legacy_slot_v9(const LegacyConfigSlotV9& slot)
+{
+    if (slot.magic != kConfigMagic || slot.version != kLegacyConfigVersionV9 ||
+        slot.payload_size != sizeof(LegacyRuntimeConfigV9))
+    {
+        return false;
+    }
+
+    const uint32_t expected =
+        crc32(reinterpret_cast<const uint8_t*>(&slot.settings), sizeof(LegacyRuntimeConfigV9));
+    return slot.crc32 == expected;
+}
+
+RuntimeConfig migrate_legacy_settings_v9(const LegacyRuntimeConfigV9& legacy)
+{
+    RuntimeConfig migrated = migrate_shared_fields(legacy);
+    migrated.web_pin_set = legacy.web_pin_set;
+    migrated.web_pin_salt = legacy.web_pin_salt;
+    migrated.web_pin_hash = legacy.web_pin_hash;
+    migrated.ha_key_mask = legacy.ha_key_mask;
+    migrated.font_choices = legacy.font_choices;
+    return migrated;
+}
+
 // v8 is today's layout without the trailing font choices; its fields must
 // sit where version 8 firmware wrote them.
 static_assert(offsetof(LegacyRuntimeConfigV8, ha_key_mask) == offsetof(RuntimeConfig, ha_key_mask),

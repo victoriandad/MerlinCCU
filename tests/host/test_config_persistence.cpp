@@ -406,6 +406,26 @@ HOST_TEST(migrate_legacy_settings_v8_keeps_ha_keys_with_default_fonts)
     }
 }
 
+HOST_TEST(migrate_legacy_settings_v9_keeps_fonts_with_no_certificate_pinned)
+{
+    config_persistence::LegacyConfigSlotV9 slot = {};
+    slot.magic = config_persistence::kConfigMagic;
+    slot.version = config_persistence::kLegacyConfigVersionV9;
+    slot.payload_size = sizeof(config_persistence::LegacyRuntimeConfigV9);
+    text_utils::copy_text(slot.settings.device_name, "OldName9");
+    slot.settings.ha_key_mask = 0x11U;
+    slot.settings.font_choices[3] = 4U;
+    slot.crc32 = config_persistence::crc32(reinterpret_cast<const uint8_t*>(&slot.settings),
+                                          sizeof(config_persistence::LegacyRuntimeConfigV9));
+    EXPECT_TRUE(config_persistence::validate_legacy_slot_v9(slot));
+
+    const RuntimeConfig migrated = config_persistence::migrate_legacy_settings_v9(slot.settings);
+    EXPECT_TRUE(std::strcmp(migrated.device_name.data(), "OldName9") == 0);
+    EXPECT_EQ(migrated.ha_key_mask, 0x11U);
+    EXPECT_EQ(migrated.font_choices[3], 4U);
+    EXPECT_FALSE(migrated.home_assistant_cert_pinned);
+}
+
 HOST_TEST(sanitize_resets_a_font_choice_this_firmware_lacks)
 {
     RuntimeConfig settings = config_persistence::make_default_settings();

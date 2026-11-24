@@ -11,6 +11,7 @@
 #include <limits>
 #include <optional>
 
+#include "cert_pin.h"
 #include "config_fields.h"
 #include "config_manager.h"
 #include "debug_logging.h"
@@ -25,7 +26,9 @@
 #include "lwip/inet.h"
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
+#include "mbedtls/sha256.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/x509_crt.h"
 #include "mqtt_manager.h"
 #include "open_meteo_parser.h"
 #include "pico/cyw43_arch.h"
@@ -214,6 +217,47 @@ char g_configured_host[config_fields::kHostLength + 1U] = {};
 char g_configured_location[128] = {};
 uint16_t g_configured_port = kHomeAssistantPort;
 bool g_request_uses_tls = false;
+// The current TLS session's certificate matched the pinned fingerprint (#17).
+bool g_pin_matched = false;
+
+/// @brief mbedtls certificate check for HA over `https://` (#17).
+/// @details With no CA store, trust is the pinned SHA-256 fingerprint: the
+/// server certificate (depth 0) must hash to it. Anything else, or no pin at
+/// all, fails the handshake before the HA token is sent. The fingerprint
+/// seen is logged so it can be checked and pasted into the web config.
+/// Chain certificates above the server's are not checked: the pin alone
+/// decides, and mbedtls's own "not trusted" flags are cleared for them.
+int check_pinned_certificate(void* /*context*/, mbedtls_x509_crt* certificate, int depth,
+                             uint32_t* flags)
+{
+    if (depth != 0)
+    {
+        *flags = 0U;
+        return 0;
+    }
+    cert_pin::Fingerprint seen = {};
+    if (mbedtls_sha256(certificate->raw.p, certificate->raw.len, seen.data(), 0) != 0)
+    {
+        return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+    }
+    char seen_text[cert_pin::kFormattedLength + 1U] = {};
+    cert_pin::format(seen, seen_text, sizeof(seen_text));
+    const RuntimeConfig& config = config_manager::settings();
+    if (!config.home_assistant_cert_pinned)
+    {
+        std::printf("HA https refused: no certificate pinned. HA's is SHA-256 %s\n", seen_text);
+        return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+    }
+    if (seen != config.home_assistant_cert_sha256)
+    {
+        std::printf("HA https refused: certificate SHA-256 %s does not match the pin\n",
+                    seen_text);
+        return MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
+    }
+    g_pin_matched = true;
+    *flags = 0U;
+    return 0;
+}
 // Set once the socket connects, so the poll callback only resumes a send
 // that has somewhere to go.
 bool g_tcp_connected = false;
@@ -949,6 +993,15 @@ err_t on_tcp_connected(void* arg, altcp_pcb* pcb, err_t err)
     }
 
     direct_weather_log("connect callback ok tls=%u\n", g_request_uses_tls ? 1U : 0U);
+    // Belt and braces for #17: a TLS session whose certificate was never
+    // matched to the pin is closed before the token is sent.
+    if (g_request_uses_tls && !g_pin_matched)
+    {
+        std::printf("HA https refused: certificate not checked against the pin\n");
+        finish_request(HomeAssistantConnectionState::Error, ERR_ABRT, 0,
+                       active_failure_retry_ms());
+        return ERR_ABRT;
+    }
     g_tcp_connected = true;
     if (request_updates_connection_state())
     {
@@ -1372,9 +1425,8 @@ bool start_socket_connect()
     cyw43_arch_lwip_begin();
     if (g_request_uses_tls)
     {
-        // The first TLS implementation intentionally uses the platform TLS
-        // stack without a CA bundle. Certificate verification can be added
-        // later as a separate trust-store concern.
+        // No CA bundle: HA's certificate is trusted only when it matches the
+        // fingerprint pinned in the settings (check_pinned_certificate, #17).
         g_tls_config = altcp_tls_create_config_client(nullptr, 0);
         if (g_tls_config != nullptr)
         {
@@ -1383,6 +1435,12 @@ bool start_socket_connect()
             if (g_pcb != nullptr)
             {
                 auto* ssl = static_cast<mbedtls_ssl_context*>(altcp_tls_context(g_pcb));
+                if (ssl != nullptr)
+                {
+                    // Trust comes from the pinned fingerprint alone (#17).
+                    g_pin_matched = false;
+                    mbedtls_ssl_set_verify(ssl, check_pinned_certificate, nullptr);
+                }
                 if (ssl == nullptr || mbedtls_ssl_set_hostname(ssl, g_configured_host) != 0)
                 {
                     direct_weather_log("tls hostname failed ssl=%u host=%s\n",
