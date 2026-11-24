@@ -18,15 +18,6 @@
 #define MERLIN_PSRAM_BSS
 #endif
 
-/// @brief False on boards whose MERLIN_PSRAM_BSS buffers land in SRAM, so a
-/// large optional buffer can be sized down there.
-inline constexpr bool kBoardHasPsram =
-#if defined(PIMORONI_PICO_PLUS2_W_PSRAM_CS_PIN)
-    true;
-#else
-    false;
-#endif
-
 /// @brief External QSPI PSRAM on the RP2350's second XIP chip select (#162).
 /// @details Only boards whose SDK board header names a PSRAM chip-select pin
 /// have one; the Pimoroni Pico Plus 2 W carries an 8 MB APS6404L on GPIO 47.
