@@ -25,13 +25,16 @@ constexpr int kLifeScale = 2;
 constexpr int kLifeWidth = kUiWidth / kLifeScale;
 constexpr int kLifeHeight = kUiHeight / kLifeScale;
 constexpr int kLifeCellCount = kLifeWidth * kLifeHeight;
+/// @brief One bit per cell: 2.5 KB a grid rather than 20 KB. On the Pico 2 W
+/// the grids live in SRAM, which the rest of the firmware has nearly filled.
+constexpr int kLifeGridBytes = (kLifeCellCount + 7) / 8;
 constexpr uint32_t kLifeStableReseedFrames = 200;
 constexpr size_t kLifeHashHistorySize = 8;
 constexpr uint32_t kLifeRepeatReseedFrames = 100;
 
 // PSRAM on boards that have it (#162): only the CPU touches the grids.
-MERLIN_PSRAM_BSS uint8_t g_life_a[kLifeCellCount];
-MERLIN_PSRAM_BSS uint8_t g_life_b[kLifeCellCount];
+MERLIN_PSRAM_BSS uint8_t g_life_a[kLifeGridBytes];
+MERLIN_PSRAM_BSS uint8_t g_life_b[kLifeGridBytes];
 uint8_t* g_life_front = g_life_a;
 uint8_t* g_life_back = g_life_b;
 uint32_t g_life_hash_ring[kLifeHashHistorySize];
@@ -48,10 +51,30 @@ inline int life_index(int x, int y)
     return y * kLifeWidth + x;
 }
 
+/// @brief True when cell `index` is alive.
+inline bool life_alive(const uint8_t* grid, int index)
+{
+    return (grid[index >> 3] & (1U << (index & 7))) != 0U;
+}
+
+/// @brief Sets cell `index` alive or dead.
+inline void life_set(uint8_t* grid, int index, bool alive)
+{
+    const auto mask = static_cast<uint8_t>(1U << (index & 7));
+    if (alive)
+    {
+        grid[index >> 3] = static_cast<uint8_t>(grid[index >> 3] | mask);
+    }
+    else
+    {
+        grid[index >> 3] = static_cast<uint8_t>(grid[index >> 3] & ~mask);
+    }
+}
+
 /// @brief Clears a Life grid to an all-dead state.
 void life_clear(uint8_t* grid)
 {
-    std::memset(grid, 0, kLifeCellCount);
+    std::memset(grid, 0, kLifeGridBytes);
 }
 
 /// @brief Seeds a Life grid with a sparse random population.
@@ -59,7 +82,7 @@ void life_seed_random(uint8_t* grid)
 {
     for (int i = 0; i < kLifeCellCount; ++i)
     {
-        grid[i] = (std::rand() % 100) < 28 ? 1U : 0U;
+        life_set(grid, i, (std::rand() % 100) < 28);
     }
 }
 
@@ -92,9 +115,9 @@ int life_seed_from_frame(uint8_t* grid, const uint8_t* seed_fb)
                 }
             }
 
-            const uint8_t cell_alive = (lit_pixels >= 2) ? 1U : 0U;
-            grid[life_index(x, y)] = cell_alive;
-            live_count += cell_alive != 0 ? 1 : 0;
+            const bool cell_alive = lit_pixels >= 2;
+            life_set(grid, life_index(x, y), cell_alive);
+            live_count += cell_alive ? 1 : 0;
         }
     }
 
@@ -106,7 +129,7 @@ uint32_t life_hash_grid(const uint8_t* grid)
 {
     uint32_t hash = 2166136261U;
 
-    for (int i = 0; i < kLifeCellCount; ++i)
+    for (int i = 0; i < kLifeGridBytes; ++i)
     {
         hash ^= grid[i];
         hash *= 16777619U;
@@ -162,7 +185,7 @@ uint8_t life_count_neighbors(const uint8_t* grid, int x, int y)
 
             const int wrapped_x = (xx + kLifeWidth) % kLifeWidth;
             const int wrapped_y = (yy + kLifeHeight) % kLifeHeight;
-            count += grid[life_index(wrapped_x, wrapped_y)] != 0 ? 1U : 0U;
+            count += life_alive(grid, life_index(wrapped_x, wrapped_y)) ? 1U : 0U;
         }
     }
 
@@ -180,13 +203,13 @@ bool life_step(const uint8_t* src, uint8_t* dst)
         for (int x = 0; x < kLifeWidth; ++x)
         {
             const int index = life_index(x, y);
-            const bool alive = src[index] != 0;
+            const bool alive = life_alive(src, index);
             const uint8_t neighbors = life_count_neighbors(src, x, y);
             const bool next_alive = alive ? (neighbors == 2 || neighbors == 3) : (neighbors == 3);
 
-            dst[index] = next_alive ? 1U : 0U;
+            life_set(dst, index, next_alive);
             live_count += next_alive ? 1 : 0;
-            changed = changed || (dst[index] != src[index]);
+            changed = changed || (next_alive != alive);
         }
     }
 
@@ -216,7 +239,7 @@ void draw_life_screen(uint8_t* fb, const uint8_t* grid)
     {
         for (int x = 0; x < kLifeWidth; ++x)
         {
-            if (grid[life_index(x, y)] == 0)
+            if (!life_alive(grid, life_index(x, y)))
             {
                 continue;
             }
