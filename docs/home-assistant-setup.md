@@ -288,6 +288,32 @@ MET Norway).
 - A CCU can still fetch Open-Meteo itself instead: set its **Weather
   source** to **Open-Meteo** and give it a location.
 
+### Using the Met Office (#192)
+
+The CCUs show whichever weather entity the `weather:` block names, so
+switching provider is done in HA alone:
+
+1. Get a free API key from the Met Office Weather DataHub
+   (<https://datahub.metoffice.gov.uk/>, its free site-specific forecast
+   plan; HA's Met Office integration page says which one it needs). The key
+   stays in HA.
+2. In HA, add the **Met Office** integration (*Settings > Devices &
+   services > Add integration*), give it the key, and check the location.
+   It creates a weather entity such as `weather.met_office_home`.
+3. Point the block at it and restart HA:
+
+   ```yaml
+   merlinccu:
+     weather:
+       entity: weather.met_office_home
+   ```
+
+Check: each CCU's Weather footer reads `Met Office - LIVE`. HA's Met Office
+entity gives up to 48 hourly rows and extra fields; the integration sends
+the first 24 hourly and 7 daily rows and only the fields the CCU reads, so
+every payload fits the limits in docs/mqtt-household-data.md (host-tested in
+`ha/tests/test_house_weather.py`).
+
 ## 7. Controls page
 
 Each CCU's **Controls** page (Home, R4) switches lights, switches, fans and

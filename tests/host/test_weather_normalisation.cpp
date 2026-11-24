@@ -34,6 +34,15 @@ HOST_TEST(normalize_weather_provider_name_keeps_the_provider_before_a_comma)
     EXPECT_TRUE(std::strcmp(out, "Met Office") == 0);
 }
 
+HOST_TEST(normalize_weather_provider_name_credits_the_met_office)
+{
+    // HA's Met Office integration (#192).
+    char out[64] = {};
+    EXPECT_TRUE(weather_normalisation::normalize_weather_provider_name(
+        "Data provided by the Met Office", out, sizeof(out)));
+    EXPECT_TRUE(std::strcmp(out, "Met Office") == 0);
+}
+
 HOST_TEST(normalize_wind_speed_unit_maps_common_labels)
 {
     char out[8] = {};

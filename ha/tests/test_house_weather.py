@@ -114,6 +114,27 @@ class ForecastPayloadTest(unittest.TestCase):
         self.assertIsNone(hw.forecast_payload(hw.HOURLY, None, ATTRIBUTES, TS))
         self.assertIsNone(hw.forecast_payload(hw.DAILY, [{"condition": "sunny"}], ATTRIBUTES, TS))
 
+    def test_met_office_forecasts_fit(self):
+        # HA's Met Office integration (#192): 48 hourly rows with extra
+        # fields, daily rows with a low, and its own credit.
+        rows = hourly_rows(48, condition="partlycloudy")
+        for row in rows:
+            row.update({"precipitation_probability": 40, "uv_index": 1,
+                        "apparent_temperature": 4.1, "wind_gust_speed": 30.6})
+        hourly = json.loads(hw.forecast_payload(hw.HOURLY, rows, ATTRIBUTES, TS))
+        self.assertEqual(len(hourly["forecast"]), hw.MAX_ENTRIES[hw.HOURLY])
+        self.assertNotIn("uv_index", hourly["forecast"][0])
+
+        days = [{"datetime": f"2026-11-{24 + i}T00:00:00+00:00", "condition": "rainy",
+                 "temperature": 11.0, "templow": 4.0, "wind_speed": 20.0,
+                 "wind_bearing": 200, "precipitation_probability": 80} for i in range(7)]
+        daily = json.loads(hw.forecast_payload(hw.DAILY, days, ATTRIBUTES, TS))
+        self.assertEqual(len(daily["forecast"]), 7)
+
+        attributes = dict(ATTRIBUTES, attribution="Data provided by the Met Office")
+        now = json.loads(hw.now_payload("partlycloudy", attributes, SUN, TS))
+        self.assertEqual(now["attribution"], "Data provided by the Met Office")
+
     def test_topics(self):
         self.assertEqual(hw.topic("merlinccu", hw.NOW), "merlinccu/house/weather/now")
 

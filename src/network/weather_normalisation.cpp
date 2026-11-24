@@ -103,6 +103,11 @@ bool normalize_weather_provider_name(const char* raw_text, char* out, size_t out
         }
     }
 
+    // HA's Met Office integration credits "the Met Office" (#192).
+    if (starts_with_ignore_case(provider, "the "))
+    {
+        provider += 4;
+    }
     std::snprintf(out, out_size, "%s", provider);
     // Attributions run on ("met.no, delivered by the Norwegian Meteorological
     // Institute."); the provider is the part before the first comma (#186).
