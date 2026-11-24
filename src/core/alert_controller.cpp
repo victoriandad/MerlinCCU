@@ -670,6 +670,31 @@ void sync(ConsoleState& console_state)
                         "The new firmware did not confirm itself in time.\nThe CCU went back to "
                         "its previous firmware.\nCheck the serial log, then upload again.");
 
+    // A restart nobody asked for (#155): the watchdog caught a hang, the CPU
+    // faulted, or the supply dipped. It stays until accepted, so one seen
+    // overnight is not missed. A stack overflow is STACK LOW's, and power
+    // cuts, the reset pin, updates and asked-for restarts are expected.
+    const ResetReason reset = console_state.boot_status.reset_reason;
+    const bool unexpected_restart =
+        reset_reason::unexpected(reset) && reset != ResetReason::StackOverflow;
+    if (unexpected_restart)
+    {
+        const char* cause = reset == ResetReason::Watchdog
+                                ? "The watchdog restarted it after the firmware stopped "
+                                  "responding."
+                            : reset == ResetReason::CpuFault
+                                ? "The processor hit a fault and restarted."
+                                : "Its supply voltage dipped too low (a brown-out).";
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "The CCU restarted on its own.\n%s\n%s", cause,
+                      reset == ResetReason::Brownout
+                          ? "Check the power supply and its cable."
+                          : "Report it with what was being done at the time.");
+    }
+    set_alert_condition(console_state, AlertCode::UnexpectedRestart, unexpected_restart,
+                        AlertSeverity::Warning, "RESTARTED",
+                        unexpected_restart ? alert_detail_scratch : "");
+
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
         console_state.alert_detail_index =

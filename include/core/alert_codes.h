@@ -29,6 +29,8 @@ enum class AlertCode : uint8_t
     PinterScheduleConflict,
     FirmwareUpdateRolledBack,
     HomeAssistantMessage,
+    /// The CCU restarted on its own: watchdog, fault or brown-out (#155).
+    UnexpectedRestart,
     Count,
 };
 

@@ -85,6 +85,7 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `PinterScheduleConflict` | Message | placeholder, hardcoded `false` | `PINTER` | Empty detail | Never fires yet -- see Missing Telemetry |
 | `HomeAssistantMessage` | From HA (default Message) | `ha_message.active`: HA sent a message over MQTT (#150) | HA's title, or `HA MESSAGE` | HA's text | Accepting it is reported to HA as Message state `acknowledged`; a new message shows again; empty text clears it |
 | `FirmwareUpdateRolledBack` | Warning | `firmware_status.rolled_back`: this boot followed an uploaded image that did not confirm itself, and the boot ROM went back to the previous one | `UPDATE FAILED` | Static text | Holds for the whole boot. The record lives in a POWMAN scratch register, so a power cut during the trial goes unreported (docs/ota.md) |
+| `UnexpectedRestart` | Warning | `boot_status.reset_reason` is `Watchdog`, `CpuFault` or `Brownout` (#155) | `RESTARTED` | Dynamic detail (the cause, and what to check) | Holds for the whole boot, so a restart overnight is seen. A stack overflow raises `StackLow` instead; power-on, reset pin, update, rollback and asked-for restarts raise nothing |
 
 ## Missing Telemetry
 

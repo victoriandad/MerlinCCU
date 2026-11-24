@@ -268,6 +268,28 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     EXPECT_EQ(state.alert_count, 0U);
 }
 
+HOST_TEST(sync_raises_restarted_only_for_a_restart_nobody_asked_for)
+{
+    for (const ResetReason reason : {ResetReason::Watchdog, ResetReason::CpuFault,
+                                     ResetReason::Brownout})
+    {
+        ConsoleState state = make_healthy_state();
+        state.boot_status.reset_reason = reason;
+        alert_controller::sync(state);
+        EXPECT_EQ(state.alert_count, 1U);
+        EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "RESTARTED") == 0);
+    }
+    for (const ResetReason reason :
+         {ResetReason::Unknown, ResetReason::PowerOn, ResetReason::ResetPin, ResetReason::Restart,
+          ResetReason::Update, ResetReason::Rollback, ResetReason::StackOverflow})
+    {
+        ConsoleState state = make_healthy_state();
+        state.boot_status.reset_reason = reason;
+        alert_controller::sync(state);
+        EXPECT_EQ(state.alert_count, 0U);
+    }
+}
+
 HOST_TEST(sync_raises_weather_unavailable_when_ha_sends_no_weather_over_mqtt)
 {
     // HA's weather comes over MQTT (#153): the REST connection does not
