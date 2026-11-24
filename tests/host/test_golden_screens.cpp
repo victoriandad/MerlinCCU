@@ -873,7 +873,9 @@ bool weather_body_stays_out_of_row_5(const ConsoleState& state)
         key.label = "";
     }
     const auto fb = render_page(body_only, kWeatherTestNowMs);
-    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1, kFooterTopY - 1) &&
+    // Up to the footer line itself: a wrapped footer rising into the PERIOD
+    // label is the overlap #186 found.
+    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1, ui_layout::kFooterLineY - 1) &&
            !any_pixel_lit(fb.data(), kUiWidth - 11, kBodyTopY, kUiWidth - 1, kFooterTopY - 1);
 }
 
@@ -912,6 +914,18 @@ HOST_TEST(weather_page_shows_stale_data_in_the_footer)
     state.home_assistant_status.weather_last_success_ms = 1000U;
     state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
     check_weather_state(state, weather_screens::WeatherPageState::Forecast, "weather_stale");
+}
+
+HOST_TEST(weather_page_shortens_a_long_attribution_to_one_footer_line)
+{
+    // A provider credit too long for the footer is cut short, ending in "..",
+    // rather than wrapping up into the PERIOD label (#186).
+    ConsoleState state = open_weather_page(0);
+    fill_weather_data(state);
+    set_text(state.home_assistant_status.weather_source_hint,
+             "Norwegian Meteorological Institute and NRK");
+    check_weather_state(state, weather_screens::WeatherPageState::Forecast,
+                        "weather_long_attribution");
 }
 
 HOST_TEST(weather_page_not_configured_says_where_to_set_it_up)

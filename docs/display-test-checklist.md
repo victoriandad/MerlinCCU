@@ -59,6 +59,8 @@ quickly without relying only on photographs of the physical panel.
   table frame and row pitch as the hourly tables.
 - Times are local-time oriented and progress sensibly from the current period.
 - Sunrise and sunset are both present when provider data is available.
+- Source footer is one line under `PERIOD`, never touching it: a long
+  provider credit ends in `..` and `met.no` shows as `MET Norway` (#186).
 - Source footer is visible and readable, and reads `LIVE` through a refresh
   rather than flicking to `STALE` while the fetch is in progress.
 - With each source not set up (MQTT off; no or bad coordinates), the
