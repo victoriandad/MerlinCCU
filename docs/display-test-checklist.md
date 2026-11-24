@@ -49,6 +49,9 @@ quickly without relying only on photographs of the physical panel.
 - `PERIOD` softkey cycles `Hourly` -> `Next 24 Hours` -> `Next 7 Days` and wraps
   back to `Hourly`.
 - Forecast table columns align (`Time`, `Temp`, `Wind mph`, `Conditions`).
+- Each recognised condition has its 9x9 icon before a short name (`Part cloudy`,
+  `Rain`, `Thunder`); icons are crisp on the panel and match `/preview`,
+  and no name runs past the right margin.
 - `Next 24 Hours` period represents the next 24 hours using the same single-line
   table columns, including `Conditions`.
 - `Next 7 Days` period shows provider daily rows (typically up to 7 entries) with
