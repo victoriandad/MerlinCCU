@@ -104,7 +104,7 @@ struct RuntimeConfig
     std::array<uint8_t, kWebPinHashBytes> web_pin_hash;
 
     /// @brief Keys that belong to Home Assistant (#151): one bit per
-    /// ButtonId (ha_keys.h). They do nothing on the panel; presses go to HA.
+    /// ButtonId (ha_key_list.h). They do nothing on the panel; presses go to HA.
     uint64_t ha_key_mask;
 
     /// @brief Font chosen for each text style (#123), in TextStyle order:
