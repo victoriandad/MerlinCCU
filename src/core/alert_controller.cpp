@@ -438,11 +438,17 @@ void sync(ConsoleState& console_state)
         console_state.home_assistant_status.weather_temperature[0] != '\0' ||
         console_state.home_assistant_status.weather_forecast_count > 0U ||
         console_state.home_assistant_status.weather_daily_forecast_count > 0U;
+    // HA's weather arrives over MQTT (#153), so its prerequisite is the MQTT
+    // link (weather_state follows it), not HA's REST connection; a lost link
+    // is MQTT's problem, not a weather one. Open-Meteo needs the internet
+    // and is the only source with an HTTP status of its own.
+    const bool ha_weather = console_state.weather_source == WeatherSource::HomeAssistant;
     const bool weather_prerequisites_ok =
-        (console_state.weather_source == WeatherSource::HomeAssistant)
-            ? (ha_state == HomeAssistantConnectionState::Connected)
-            : console_state.wifi_status.internet_reachable;
-    const bool weather_http_failed = console_state.home_assistant_status.weather_http_status >= 400;
+        ha_weather ? (console_state.home_assistant_status.weather_state ==
+                      HomeAssistantConnectionState::Connected)
+                   : console_state.wifi_status.internet_reachable;
+    const bool weather_http_failed =
+        !ha_weather && console_state.home_assistant_status.weather_http_status >= 400;
     const bool weather_failed_now = !weather_payload_present || weather_http_failed;
     if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
     {
@@ -663,6 +669,31 @@ void sync(ConsoleState& console_state)
                         "UPDATE FAILED",
                         "The new firmware did not confirm itself in time.\nThe CCU went back to "
                         "its previous firmware.\nCheck the serial log, then upload again.");
+
+    // A restart nobody asked for (#155): the watchdog caught a hang, the CPU
+    // faulted, or the supply dipped. It stays until accepted, so one seen
+    // overnight is not missed. A stack overflow is STACK LOW's, and power
+    // cuts, the reset pin, updates and asked-for restarts are expected.
+    const ResetReason reset = console_state.boot_status.reset_reason;
+    const bool unexpected_restart =
+        reset_reason::unexpected(reset) && reset != ResetReason::StackOverflow;
+    if (unexpected_restart)
+    {
+        const char* cause = reset == ResetReason::Watchdog
+                                ? "The watchdog restarted it after the firmware stopped "
+                                  "responding."
+                            : reset == ResetReason::CpuFault
+                                ? "The processor hit a fault and restarted."
+                                : "Its supply voltage dipped too low (a brown-out).";
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "The CCU restarted on its own.\n%s\n%s", cause,
+                      reset == ResetReason::Brownout
+                          ? "Check the power supply and its cable."
+                          : "Report it with what was being done at the time.");
+    }
+    set_alert_condition(console_state, AlertCode::UnexpectedRestart, unexpected_restart,
+                        AlertSeverity::Warning, "RESTARTED",
+                        unexpected_restart ? alert_detail_scratch : "");
 
     if (console_state.alert_detail_index >= console_state.alert_count)
     {
