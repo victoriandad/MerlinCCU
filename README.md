@@ -53,7 +53,7 @@ Still incomplete or provisional:
 - Disabled I2C sensor-discovery scaffolding exists for the optional Waveshare
   Pico Environment Sensor board, including BME280/BME680 chip-ID probing; full
   sensor reads are not implemented yet.
-- TLS certificate validation is not complete. HTTPS/TLS client paths exist, but trust-store and certificate validation policy still need hardening.
+- An `https://` Home Assistant endpoint is encrypted but its certificate is not checked; what each connection trusts is in docs/network-trust.md (#17).
 - Multicore separation is not implemented yet.
 
 ## Runtime Surfaces
@@ -236,7 +236,7 @@ leaves that AP and moves to the next configured credential.
 Important limits:
 
 - Home Assistant endpoints may be configured as host, `http://host[:port]`, or `https://host[:port]`.
-- HTTPS currently uses the Pico TLS path without a completed CA/trust-store validation design.
+- `https://` to Home Assistant does not check the certificate (docs/network-trust.md).
 - Open-Meteo currently uses HTTP on port 80.
 - MQTT is currently plain TCP MQTT, not MQTT over TLS.
 - If `.local` name resolution is unreliable, use a fixed IP.
