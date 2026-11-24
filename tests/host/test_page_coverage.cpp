@@ -303,8 +303,11 @@ std::vector<std::string> body_overlaps(const ConsoleState& state)
         const int x0 = left ? 0 : ui_layout::kCentreX;
         const int x1 = left ? ui_layout::kCentreX - 1 : kUiWidth - 1;
         bool hit = false;
-        for (int y = std::max(top, ui_layout::kBodyTopY);
-             y <= std::min(bottom, ui_layout::kFooterTopY - 1) && !hit; ++y)
+        // A row 5 label reaches below the footer's top edge, so the check
+        // runs to the label block's own bottom: footer text rising into it is
+        // an overlap too (#186).
+        for (int y = std::max(top, ui_layout::kBodyTopY); y <= std::min(bottom, kUiHeight - 1) && !hit;
+             ++y)
         {
             for (int x = x0; x <= x1 && !hit; ++x)
             {

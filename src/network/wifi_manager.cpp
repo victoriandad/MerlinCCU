@@ -1,5 +1,10 @@
 #include "wifi_manager.h"
 
+#include "config_fields.h"
+
+static_assert(wifi_manager::kMaxHostNameLength == config_fields::kNetbiosNameLength,
+              "The web page's device-name limit must match the NetBIOS name limit (#185)");
+
 #include "config_manager.h"
 #include "debug_logging.h"
 #include "lwip/apps/netbiosns.h"
