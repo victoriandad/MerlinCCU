@@ -121,6 +121,9 @@ add_executable(MerlinCCU
     src/sensors/i2c_register_device.cpp
     src/sensors/local_conditions.cpp
     src/sensors/sgp40_air_quality_sensor.cpp
+    # lwIP's MQTT client with a fix for topics split across TCP segments,
+    # in place of the SDK's pico_lwip_mqtt (third_party/lwip/README.md).
+    third_party/lwip/mqtt.c
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
@@ -204,7 +207,6 @@ target_link_libraries(MerlinCCU
 pico_stdlib
     hardware_watchdog
     pico_cyw43_arch_lwip_threadsafe_background
-    pico_lwip_mqtt
     pico_lwip_mbedtls
     pico_lwip_netbios
     pico_lwip_sntp
