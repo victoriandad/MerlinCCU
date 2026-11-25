@@ -235,12 +235,17 @@ const char* screen_saver_name(ScreenSaverSelection selection)
 ResetReason read_reset_reason()
 {
     const uint32_t chip_reset = powman_hw->chip_reset;
+    // A hang is the armed watchdog's timer running out. A forced trigger
+    // (watchdog_reboot(), a fault, some ROM reboots) is never one, even when
+    // scratch 4 still holds watchdog_enable()'s mark (#204).
+    const bool timer_ran_out = (watchdog_hw->reason & WATCHDOG_REASON_TIMER_BITS) != 0U;
     const reset_reason::Signals signals = {
         .cpu_fault = stack_guard::last_fault_status() != 0U,
         .stack_overflow = stack_guard::last_reset_was_stack_overflow(),
         .rolled_back = ota_manager::status().rolled_back,
         .after_update = ota_manager::booted_after_update(),
-        .watchdog_timeout = watchdog_enable_caused_reboot(),
+        .flash_update_boot = ota_manager::booted_as_flash_update(),
+        .watchdog_timeout = timer_ran_out && watchdog_enable_caused_reboot(),
         .watchdog_reset = watchdog_caused_reboot(),
         .brownout = (chip_reset & POWMAN_CHIP_RESET_HAD_BOR_BITS) != 0U,
         .run_pin = (chip_reset & POWMAN_CHIP_RESET_HAD_RUN_LOW_BITS) != 0U,
@@ -285,17 +290,17 @@ int main()
 
     std::printf("MerlinCCU start. clkdiv=%.2f row_offset=%d hblank=(%d,%d)\n", kPanel.clkdiv,
                 kPanel.native_row_offset, kPanel.h_pre_blank, kPanel.h_post_blank);
+    const ResetReason reset = read_reset_reason();
     if (stack_guard::last_fault_status() != 0U)
     {
         std::printf("Last reboot was caused by a CPU fault (CFSR=0x%08lX)%s\n",
                     static_cast<unsigned long>(stack_guard::last_fault_status()),
                     stack_guard::last_reset_was_stack_overflow() ? ": stack overflow" : "");
     }
-    else if (watchdog_enable_caused_reboot() && !ota_manager::booted_after_update())
+    else if (reset == ResetReason::Watchdog)
     {
         std::printf("Last reboot was caused by a watchdog timeout (main loop hang)\n");
     }
-    const ResetReason reset = read_reset_reason();
     std::printf("Reset reason: %s (POWMAN chip_reset=0x%08lX)\n", reset_reason::text(reset),
                 static_cast<unsigned long>(powman_hw->chip_reset));
     std::printf("Core-0 stack: %lu bytes\n",

@@ -16,7 +16,7 @@ enum class ResetReason : uint8_t
     Brownout,
     /// The firmware restarted itself on purpose, e.g. to apply settings.
     Restart,
-    /// First start of a newly uploaded firmware image.
+    /// First start of newly loaded firmware, over Wi-Fi or USB.
     Update,
     /// An uploaded image failed its trial and the previous one was restored.
     Rollback,
@@ -46,7 +46,11 @@ struct Signals
     bool rolled_back;
     /// ota_manager saw an update record for this slot.
     bool after_update;
-    /// The armed watchdog ran out (watchdog_enable_caused_reboot()).
+    /// The boot ROM started this image as a flash update, as after a USB
+    /// (picotool) load (#204).
+    bool flash_update_boot;
+    /// The armed watchdog's timer ran out: watchdog_enable() had marked
+    /// scratch 4 and the reset reason is the timer, not a forced trigger.
     bool watchdog_timeout;
     /// Any watchdog reset, including watchdog_reboot() (watchdog_caused_reboot()).
     bool watchdog_reset;

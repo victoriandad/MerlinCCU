@@ -7,7 +7,9 @@ ResetReason classify(const Signals& signals)
 {
     // A fault and an update both restart through the watchdog, so they are
     // checked before it; the POWMAN flags are checked last because a
-    // watchdog reset of the cores does not clear them.
+    // watchdog reset of the cores does not clear them. A USB load leaves no
+    // update record, only the boot type, but its ROM reboot can still carry
+    // the old firmware's watchdog mark (#204).
     if (signals.cpu_fault)
     {
         return signals.stack_overflow ? ResetReason::StackOverflow : ResetReason::CpuFault;
@@ -16,7 +18,7 @@ ResetReason classify(const Signals& signals)
     {
         return ResetReason::Rollback;
     }
-    if (signals.after_update)
+    if (signals.after_update || signals.flash_update_boot)
     {
         return ResetReason::Update;
     }

@@ -30,6 +30,14 @@ void feed_boot_watchdog();
 /// so the watchdog reset behind it is not a hang.
 bool booted_after_update();
 
+/// @brief True when the boot ROM started this image as a flash update (#204).
+/// @details Both ways of loading new firmware end in a flash-update reboot: a
+/// USB load (picotool, VS Code's Run) and an update restart. It is the only
+/// trace a USB load leaves. The ROM reboot behind it is a watchdog reset that
+/// can still carry the old firmware's watchdog_enable() mark, so without this
+/// it looks like a hang.
+bool booted_as_flash_update();
+
 /// @brief Prints what boot_check() found, once stdio is up.
 void log_boot_state();
 
