@@ -6,8 +6,8 @@
             "type": "process",
             "isBuildCommand": true,
             "command": "${userHome}/.pico-sdk/ninja/v1.12.1/ninja",
-            "args": ["-C", "${workspaceFolder}/build"],
-            "group": "build",
+            "args": ["-C", "${workspaceFolder}/build-plus2"],
+            "group": { "kind": "build", "isDefault": true },
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"
@@ -23,7 +23,7 @@
             "command": "${env:HOME}/.pico-sdk/picotool/2.2.0-a4/picotool/picotool",
             "args": [
                 "load",
-                "${command:raspberry-pi-pico.launchTargetPath}",
+                "${workspaceFolder}/build-plus2/MerlinCCU.uf2",
                 "-fx"
             ],
             "presentation": {
@@ -34,6 +34,19 @@
             "windows": {
                 "command": "${env:USERPROFILE}/.pico-sdk/picotool/2.2.0-a4/picotool/picotool.exe"
             }
+        },
+        {
+            "label": "Upload over Wi-Fi",
+            "detail": "Build the Pimoroni image and update the CCU over Wi-Fi (docs/ota.md)",
+            "type": "process",
+            "command": "python",
+            "args": ["tools/ota_update.py", "merlinccu"],
+            "dependsOn": "Compile Project",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Flash",

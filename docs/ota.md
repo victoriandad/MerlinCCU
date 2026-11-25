@@ -106,6 +106,13 @@ upload the previous build.
 
 ### Uploading from the laptop
 
+In VS Code, the Pico extension's **Compile** button builds the Pimoroni
+image (`build-plus2`), and **Run** loads `build-plus2/MerlinCCU.uf2` over USB.
+Run loads the UF2, never the ELF, so the partition table survives. The task
+**Upload over Wi-Fi** (Terminal > Run Task) builds, then runs the script
+below for `merlinccu`. The Pico 2 W image (`build/`) is built from the
+command line.
+
 `tools/ota_update.py` updates units one at a time and stops at the first
 failure, so a bad build never reaches them all:
 
