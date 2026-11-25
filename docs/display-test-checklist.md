@@ -68,6 +68,18 @@ quickly without relying only on photographs of the physical panel.
   page shows `WEATHER NOT SET UP` with a hint naming the web config page.
 - Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
   fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.
+- Exceptional weather (#202, thresholds in `docs/alerts.md`): only the cell
+  that crosses a threshold is inverse (Temp for cold or heat, Wind for gales or
+  gusts, Conditions for heavy rain, heavy snow or dense fog), with its icon
+  dark on the highlight. A row with a gale and heavy rain shows two inverse
+  cells. Highlights do not touch the next column or row, and the text inside
+  is fully readable on the panel.
+- On `Next 24 Hours`, an exceptional hour between two sampled rows takes the
+  later row's place rather than being skipped.
+- With an official warning in force, the footer starts with it inverse (e.g.
+  `AMBER WIND`), the source and freshness after it on the same line, and the
+  ALRT page lists it at the matching severity. With none, the footer is as
+  before.
 
 ## Local Conditions
 
@@ -244,6 +256,22 @@ step 7).
   - `R5=ACCEPT` removes selected alert and returns to list.
   - `L5=IGNORE` returns to list without removing selected alert.
   - Cursor arrows scroll additional detail text.
+- The alert list shows eight alerts to a page (L1-L4, R1-R4) and `L5=HISTORY`.
+- History page (#203):
+  - Shows `NO PAST ALERTS` when empty, with no `CLEAR ALL` key.
+  - An alert that clears, or is accepted, appears at L1; L4 is newer than R1,
+    and R4 is the oldest on the page. `HISTORY n/m` and arrows page through
+    up to 16 entries.
+  - The same alert ending again within an hour shows `[HH:MM x2]` on one key.
+  - An entry from an earlier day shows its date, e.g. `[12 Nov 23:50]`.
+  - The detail page shows raised, ignored (if `IGNORE` was pressed), and
+    cleared or accepted times, then the alert text; cursor keys scroll it.
+  - `L5=CLEAR ALL` asks first: `CANCEL` and `BACK STEP` keep the history,
+    `R5=CLEAR ALL` empties it. Active alerts are not touched.
+  - History survives a restart: note an entry, power-cycle a minute later,
+    and it is still there.
+  - `http://<unit>/alerts` lists the same active and past alerts with their
+    full text; `/api/alerts` gives one tab-separated line per alert.
 
 ## Failure Capture
 

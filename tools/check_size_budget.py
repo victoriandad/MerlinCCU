@@ -25,10 +25,11 @@ from pathlib import Path
 
 
 # Bytes carved out of program flash by on-device persistence stores.
-# Must track config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes;
+# Must track config_manager::kReservedFlashBytes + pinter_store::kReservedFlashBytes
+# + alert_history_store::kReservedFlashBytes;
 # both are statically asserted against their real flash reservation in C++,
 # there is no way to read them from a .map file alone.
-RESERVED_FLASH_BYTES = (4096 * 2) + (4096 * 2)
+RESERVED_FLASH_BYTES = (4096 * 2) + (4096 * 2) + (4096 * 4)
 
 WARN_PERCENT_DEFAULT = 90.0
 

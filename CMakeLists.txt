@@ -45,6 +45,8 @@ pico_sdk_init()
 add_executable(MerlinCCU
     src/core/MerlinCCU.cpp
     src/core/alert_controller.cpp
+    src/core/alert_history.cpp
+    src/core/alert_history_store.cpp
     src/core/alert_ordering.cpp
     src/core/calendar_controller.cpp
     src/core/calendar_navigation.cpp
@@ -70,6 +72,7 @@ add_executable(MerlinCCU
     src/network/cert_pin.cpp
     src/core/stack_guard.cpp
     src/core/status_controller.cpp
+    src/core/weather_extremes.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/config/config_fields.cpp
@@ -120,6 +123,9 @@ add_executable(MerlinCCU
     src/sensors/i2c_register_device.cpp
     src/sensors/local_conditions.cpp
     src/sensors/sgp40_air_quality_sensor.cpp
+    # lwIP's MQTT client with a fix for topics split across TCP segments,
+    # in place of the SDK's pico_lwip_mqtt (third_party/lwip/README.md).
+    third_party/lwip/mqtt.c
 )
 
 pico_set_program_name(MerlinCCU "MerlinCCU")
@@ -203,7 +209,6 @@ target_link_libraries(MerlinCCU
 pico_stdlib
     hardware_watchdog
     pico_cyw43_arch_lwip_threadsafe_background
-    pico_lwip_mqtt
     pico_lwip_mbedtls
     pico_lwip_netbios
     pico_lwip_sntp

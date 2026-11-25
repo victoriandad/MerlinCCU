@@ -297,6 +297,43 @@ MET Norway).
 - A CCU can still fetch Open-Meteo itself instead: set its **Weather
   source** to **Open-Meteo** and give it a location.
 
+### Weather and flood warnings
+
+HA can also send the CCUs the Met Office's weather warnings for your region
+and the Environment Agency's flood warnings near you (#202). Each CCU shows
+the highest as an alert (Yellow: message, Amber: warning, Red: alert) and at
+the start of its Weather footer. This works whichever weather source a CCU
+uses, as long as its MQTT is set up.
+
+1. Add a `warnings:` part to the `merlinccu:` block:
+
+   ```yaml
+   merlinccu:
+     warnings:
+       met_office_region: sw    # Met Office warning region
+       flood_latitude: 50.62    # centre of the flood search
+       flood_longitude: -2.45
+       flood_distance_km: 5     # optional, 1-50, default 5
+   ```
+
+   Region codes: `os` Orkney & Shetland, `he` Highlands & Eilean Siar, `gr`
+   Grampian, `st` Strathclyde, `ta` Central, Tayside & Fife, `dg` Dumfries,
+   Galloway, Lothian & Borders, `ni` Northern Ireland, `wl` Wales, `nw` North
+   West England, `ne` North East England, `yh` Yorkshire & Humber, `wm` West
+   Midlands, `em` East Midlands, `ee` East of England, `sw` South West
+   England, `se` London & South East England. Either part can be left out;
+   flood warnings cover England only. Set `base_topic:` if the CCUs don't use
+   the default `merlinccu`.
+2. Restart HA. HA's log shows `MerlinCCU warnings (Met Office region sw,
+   floods on) published under merlinccu/house/weather/warnings`.
+
+Check: listen to `merlinccu/house/weather/warnings`. A retained message
+arrives at once and every 15 minutes, `"level":"none"` when nothing is in
+force. With a warning in force, the CCU's ALRT page lists it, e.g.
+`AMBER WIND`. If the Met Office or the Environment Agency cannot be reached,
+HA sends nothing that round; after 2 hours the CCU's alert says the warnings
+were not updated, rather than dropping them.
+
 ## 7. Controls page
 
 Each CCU's **Controls** page (Home, R4) switches lights, switches, fans and
@@ -350,6 +387,8 @@ answer within 5 seconds, the page says so for 10 seconds, the
       (step 3)
 - [ ] Weather source Home Assistant only: `merlinccu:` `weather:` block added,
       HA restarted, `merlinccu/house/weather/#` shows three messages (step 6)
+- [ ] Warnings, optional: `warnings:` block added, HA restarted,
+      `merlinccu/house/weather/warnings` shows a message (step 6)
 - [ ] Mosquitto add-on running and set to start on boot; MQTT integration
       added; CCU login made (step 4)
 - [ ] CCU MQTT settings saved; MerlinCCU device and sensors appear in HA
@@ -372,4 +411,6 @@ answer within 5 seconds, the page says so for 10 seconds, the
 | Weather page says `Set up MQTT in web config` | Weather source is Home Assistant but MQTT is off on the CCU (step 4) |
 | Weather page stays on `WAITING FOR WEATHER` | Nothing on `merlinccu/house/weather/#`: the `weather:` block is missing, HA wasn't restarted, or the base topic differs from the CCU's |
 | Weather footer shows `STALE` | HA has stopped publishing: its weather entity is unavailable, or HA or MQTT is down |
+| HA config check: `'warnings' is an invalid option` (or `weather`, `controls`) | HA has an older copy of the integration; copy `ha/custom_components/merlinccu` again and restart HA |
+| Warning alert says `Not updated for over 2 hours.` | HA can't reach the Met Office or the Environment Agency; HA's log names the URL |
 | Feed returns `data_state: error` | Yahoo doesn't know the symbol, or HA can't reach the internet; HA's log names the symbol |

@@ -16,6 +16,11 @@ inline constexpr uint32_t kRefreshIntervalMs = 5U * 60U * 1000U;
 /// that shows weather freshness uses the same threshold (STATE-4).
 inline constexpr uint32_t kWeatherStaleAfterMs = 4U * kRefreshIntervalMs;
 
+/// @brief Age at which official warnings (#202) count as possibly out of
+/// date. HA refreshes them every 15 minutes, so two hours is eight missed
+/// refreshes: HA or the warning services are down, not just slow.
+inline constexpr uint32_t kWarningsStaleAfterMs = 2U * 60U * 60U * 1000U;
+
 /// @brief Returns true unless the latest weather fetch failed or the source
 /// is switched off or not set up.
 /// @details A refresh passes through Resolving, Connecting and Authorizing
@@ -54,5 +59,9 @@ bool update(const WifiStatus& wifi_status);
 
 /// @brief Returns the latest Home Assistant status snapshot for the UI/controller.
 const HomeAssistantStatus& status();
+
+/// @brief Returns the official weather and flood warnings HA last sent
+/// (#202), whichever weather source is in use.
+const WeatherWarnings& weather_warnings();
 
 } // namespace home_assistant_manager

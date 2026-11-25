@@ -13,6 +13,8 @@
 #include "lwip/stats.h"
 #include "pico/stdlib.h"
 
+#include "alert_history.h"
+#include "alert_history_store.h"
 #include "config_manager.h"
 #include "console_controller.h"
 #include "debug_logging.h"
@@ -27,6 +29,8 @@
 #include "page_table.h"
 #include "panel_config.h"
 #include "pinter_store.h"
+#include "psram.h"
+#include "reset_reason.h"
 #include "screens.h"
 #include "screensaver_clock.h"
 #include "screensaver_life.h"
@@ -35,8 +39,6 @@
 #include "screensaver_rain.h"
 #include "screensaver_starfield.h"
 #include "screensaver_worms.h"
-#include "psram.h"
-#include "reset_reason.h"
 #include "share_price_manager.h"
 #include "stack_guard.h"
 #include "time_manager.h"
@@ -365,6 +367,10 @@ int main()
     {
         console_controller::apply_persisted_pinters(persisted_pinters);
     }
+    // Past alerts survive a restart (#203), so the history shows what led up
+    // to one.
+    alert_history::reset();
+    alert_history_store::load();
 
     time_manager::init();
     wifi_manager::init();
@@ -483,6 +489,10 @@ int main()
         console_controller::flush_pending_pinter_save();
         log_if_slow("console_controller::flush_pending_pinter_save", update_start);
 
+        update_start = get_absolute_time();
+        alert_history_store::flush(to_ms_since_boot(update_start));
+        log_if_slow("alert_history_store::flush", update_start);
+
         const absolute_time_t loop_start = get_absolute_time();
         // Poll hardware first, then let the controller translate those raw
         // events into menu/state changes before the integrations update.
@@ -587,6 +597,9 @@ int main()
             console_controller::set_time_status(time_manager::status()) || console_changed;
         console_changed =
             console_controller::set_home_assistant_status(home_assistant_manager::status()) ||
+            console_changed;
+        console_changed =
+            console_controller::set_weather_warnings(home_assistant_manager::weather_warnings()) ||
             console_changed;
         console_changed =
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;

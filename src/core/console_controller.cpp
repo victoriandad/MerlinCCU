@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "alert_controller.h"
+#include "alert_history.h"
 #include "alert_ordering.h"
 #include "calendar_controller.h"
 #include "console_controller_internal.h"
@@ -362,6 +363,10 @@ void update_softkeys_from_state()
     {
         g_console_state.web_pin_clear_confirming = false;
     }
+    if (g_console_state.active_page != MenuPage::AlertHistory)
+    {
+        g_console_state.alert_history_clear_confirming = false;
+    }
 
     SoftKeyMap softkeys = {};
     softkeys.fill(softkey::blank());
@@ -667,7 +672,25 @@ bool apply_softkey_route(SoftKeyRoute route, uint8_t slot)
         {
             return false;
         }
+        alert_controller::ignore_alert(g_console_state, g_console_state.alert_detail_index);
         g_console_state.active_page = MenuPage::AlertList;
+        return true;
+    case SoftKeyRoute::SelectAlertHistorySlot:
+        return alert_controller::open_history_detail_from_slot(g_console_state, slot);
+    case SoftKeyRoute::RequestClearAlertHistory:
+        if (alert_history::count() == 0U)
+        {
+            return false;
+        }
+        g_console_state.alert_history_clear_confirming = true;
+        return true;
+    case SoftKeyRoute::ConfirmClearAlertHistory:
+        g_console_state.alert_history_clear_confirming = false;
+        alert_history::clear_all();
+        alert_controller::clamp_history_page(g_console_state);
+        return true;
+    case SoftKeyRoute::CancelClearAlertHistory:
+        g_console_state.alert_history_clear_confirming = false;
         return true;
     }
 
@@ -1000,6 +1023,18 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
     return true;
 }
 
+/// @brief Updates the cached official weather warnings in the console model.
+bool set_weather_warnings(const WeatherWarnings& weather_warnings)
+{
+    if (!status_controller::set_weather_warnings(g_console_state, weather_warnings))
+    {
+        return false;
+    }
+
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {
@@ -1322,6 +1357,10 @@ bool handle_button_event(const ButtonEvent& event)
         else if (g_console_state.web_pin_clear_confirming)
         {
             route_changed = apply_softkey_route(SoftKeyRoute::CancelClearWebPin, 0U);
+        }
+        else if (g_console_state.alert_history_clear_confirming)
+        {
+            route_changed = apply_softkey_route(SoftKeyRoute::CancelClearAlertHistory, 0U);
         }
         else
         {

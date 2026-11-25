@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdio>
 
+#include "alert_history_store.h"
 #include "config_manager.h"
 #include "hardware/flash.h"
 #include "pinter_store.h"
@@ -281,6 +282,10 @@ void make_default_console_state(ConsoleState& out)
     out.alert_detail_index = 0U;
     out.alert_detail_scroll_line = 0U;
     out.alert_parent_page = MenuPage::Home;
+    out.alert_history_page_index = 0U;
+    out.alert_history_detail_sequence = 0U;
+    out.alert_history_scroll_line = 0U;
+    out.alert_history_clear_confirming = false;
 
     set_pinter(out.pinters[0], "Pinter 1 (Original)");
     set_pinter(out.pinters[1], "Pinter3 #1");
@@ -461,7 +466,8 @@ void make_default_console_state(ConsoleState& out)
     // here rather than re-sampled every tick like HeapStatus/StackStatus --
     // see ImageFootprintStatus's own comment.
     constexpr uint32_t kReservedFlashBytes = config_manager::kReservedFlashBytes +
-                                             pinter_store::kReservedFlashBytes;
+                                             pinter_store::kReservedFlashBytes +
+                                             alert_history_store::kReservedFlashBytes;
     out.image_footprint_status.valid = true;
     out.image_footprint_status.program_flash_bytes = program_flash_bytes();
     out.image_footprint_status.flash_budget_bytes =

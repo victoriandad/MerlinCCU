@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
 #include "console_model.h"
 
@@ -31,6 +32,13 @@ void include_forecast_temperature_celsius(HomeAssistantStatus& status,
 /// @brief Adds one wind-speed reading to the cached forecast alert maximum.
 void include_forecast_wind_speed_mph(HomeAssistantStatus& status, float wind_speed_mph);
 
+/// @brief Adds one wind-gust reading to the cached forecast alert maximum.
+void include_forecast_wind_gust_mph(HomeAssistantStatus& status, float wind_gust_mph);
+
+/// @brief Reads a numeric field such as `"precipitation":1.2`, or nothing
+/// when it is missing or not a number.
+std::optional<float> read_number(const char* json, const char* key);
+
 /// @brief Records one severe provider condition as a weather warning for the
 /// ALRT page, if `condition_text` is severe enough (see
 /// weather_normalisation::weather_condition_is_warning()).
@@ -49,13 +57,19 @@ void clear_weather_daily_forecast(HomeAssistantStatus& status);
 /// @details `temperature_unit` and `wind_source_unit` are the provider units
 /// currently in effect (see home_assistant_weather_parser.h), used to
 /// populate `status.weather_metrics`' alert-range values alongside the
-/// display text. Returns true if at least one forecast row was parsed.
+/// display text. Each row's exceptional weather (#202) is marked in its
+/// `hazards`, from `precipitation` (in the payload's `precipitation_unit`,
+/// mm or in) and `wind_gust_speed` where HA sends them, and from a
+/// `pouring` condition. HA forecasts carry no snowfall, so a `snowy` row's
+/// precipitation is read as snow at weather_extremes::kSnowCmPerPrecipitationMm.
+/// Returns true if at least one forecast row was parsed.
 bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& status,
                                     char temperature_unit, const char* wind_source_unit);
 
 /// @brief Parses a Home Assistant weather-entity `forecast` attribute array
-/// (daily mode) into `status.weather_daily_forecast`. Returns true if at
-/// least one forecast row was parsed.
+/// (daily mode) into `status.weather_daily_forecast`, marking each day's
+/// hazards against the daily thresholds as the hourly parser does. Returns
+/// true if at least one forecast row was parsed.
 bool parse_daily_forecast_response(const char* json, HomeAssistantStatus& status,
                                    char temperature_unit, const char* wind_source_unit);
 

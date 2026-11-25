@@ -117,7 +117,11 @@ corrected.
   `src/display/alert_screens.cpp`; alert softkeys in
   `src/core/console_controller.cpp`.
 - Rules: list entries show summary and time; detail pages provide accept,
-  ignore, and scroll behaviour.
+  ignore, and scroll behaviour. L5 on the list opens History (#203): past
+  alerts newest first, keyed `SUMMARY` over `[06:12-07:40]` (`[06:12 x3]`
+  when it recurred within the hour, the date instead of the end when it is
+  not today), L5 `CLEAR ALL` with a confirm step, and a read-only detail page
+  (`draw_alert_history_page()`, `draw_alert_history_detail_page()`).
 
 ### Text Block
 
@@ -181,6 +185,19 @@ corrected.
 - Rules: a page defines only its columns (x and header text). Headers use the
   `TableHeader` style and may be mixed case (TXT-5). Cells use `TableCell`.
   The divider runs margin to margin under the headers.
+
+### Exceptional Value Highlight
+
+- Intent: make an exceptional value stand out without an alert (#202).
+- Use When: one cell's value crosses a threshold defined beside the alert that
+  shares it (BODY-7), such as a gale in a forecast row.
+- Source: `draw_cell_highlight()` and `draw_cell_text()` in
+  `src/display/weather_screens.cpp`; hazards per row from
+  `weather_extremes::classify()`.
+- Rules: only the exceptional cell is inverse, never the row; a one-pixel pad
+  on every side; the box is as tall as a weather icon so a row's highlights
+  line up; an icon inside it is drawn dark. A warning leading a footer uses
+  the same pad.
 
 ### Weather Icon
 

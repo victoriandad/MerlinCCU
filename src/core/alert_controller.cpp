@@ -5,10 +5,12 @@
 #include <cstdio>
 #include <cstring>
 
+#include "alert_history.h"
 #include "alert_ordering.h"
 #include "config_manager.h"
 #include "console_controller_internal.h"
 #include "softkey_builders.h"
+#include "weather_extremes.h"
 
 namespace alert_controller
 {
@@ -45,9 +47,6 @@ constexpr uint32_t kPercentScale = 100U;
 /// several KB of the 8 KB stack (#164); 1 KB is room for one more large
 /// frame, such as a printf with floats or an lwIP callback, on top of it.
 constexpr uint32_t kStackLowFreeBytes = 1024U;
-constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
-constexpr float kHighTemperatureAlertCelsius = 30.0F;
-constexpr float kHighWindAlertMph = 40.0F;
 constexpr uint32_t kStormLowPressurePa = 98000U;
 constexpr uint32_t kStormRapidPressureFallPa = 200U;
 constexpr uint8_t kStormPressureMinimumSamples = 6U;
@@ -93,6 +92,10 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
         const int existing = find_alert_by_code(console_state, code);
         if (existing >= 0)
         {
+            // It has ended on its own; history keeps it (#203).
+            alert_history::record(console_state.active_alerts[static_cast<size_t>(existing)],
+                                  alert_history::Ending::Cleared,
+                                  alert_history::local_minute(console_state.time_status));
             erase_active_alert(console_state, static_cast<uint8_t>(existing));
         }
         return;
@@ -134,6 +137,9 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
     alert.code = static_cast<uint8_t>(code);
     alert.sequence = g_alert_sequence_counter++;
     alert.occurrence_count = g_alert_occurrences[code_idx];
+    alert.ignored = false;
+    alert.raised_minute = alert_history::local_minute(console_state.time_status);
+    alert.ignored_minute = 0U;
     std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%s",
                   console_state.time_status.synced ? console_state.time_status.time_text.data()
                                                    : "--:--");
@@ -179,23 +185,20 @@ bool weather_temperature_alert_range(const WeatherMetrics& metrics, float& min_c
     return have_range;
 }
 
-/// @brief Builds the maximum current/forecast wind value used by weather alerts.
-bool weather_wind_alert_maximum(const WeatherMetrics& metrics, float& max_wind_mph)
+/// @brief The highest current or forecast mean wind used by weather alerts.
+std::optional<float> weather_wind_alert_maximum(const WeatherMetrics& metrics)
 {
-    bool have_wind = false;
+    std::optional<float> max_wind_mph;
     if (metrics.current_wind_speed_mph_valid)
     {
         max_wind_mph = metrics.current_wind_speed_mph;
-        have_wind = true;
     }
     if (metrics.forecast_max_wind_speed_mph_valid &&
-        (!have_wind || metrics.forecast_max_wind_speed_mph > max_wind_mph))
+        (!max_wind_mph.has_value() || metrics.forecast_max_wind_speed_mph > *max_wind_mph))
     {
         max_wind_mph = metrics.forecast_max_wind_speed_mph;
-        have_wind = true;
     }
-
-    return have_wind;
+    return max_wind_mph;
 }
 
 /// @brief Formats the operator-facing temperature alert detail.
@@ -209,8 +212,8 @@ void build_weather_temperature_alert_detail(float min_celsius, float max_celsius
 
     const int min_celsius_rounded = static_cast<int>(std::lround(min_celsius));
     const int max_celsius_rounded = static_cast<int>(std::lround(max_celsius));
-    const bool freezing = min_celsius <= kFreezingTemperatureAlertCelsius;
-    const bool hot = max_celsius >= kHighTemperatureAlertCelsius;
+    const bool freezing = weather_extremes::is_cold(min_celsius);
+    const bool hot = weather_extremes::is_hot(max_celsius);
 
     if (freezing && hot)
     {
@@ -232,19 +235,52 @@ void build_weather_temperature_alert_detail(float min_celsius, float max_celsius
     }
 }
 
-/// @brief Formats the operator-facing wind alert detail.
-void build_weather_wind_alert_detail(float max_wind_mph, char* out, size_t out_size)
+/// @brief Formats the operator-facing wind alert detail, with the gusts when
+/// the source gives them.
+void build_weather_wind_alert_detail(std::optional<float> max_wind_mph,
+                                     std::optional<float> max_gust_mph, char* out, size_t out_size)
 {
     if (out == nullptr || out_size == 0U)
     {
         return;
     }
 
-    const int max_wind_rounded = static_cast<int>(std::lround(max_wind_mph));
-    std::snprintf(out, out_size,
-                  "Weather source reports wind up to %d mph.\nSecure loose items and check local "
-                  "warnings.",
-                  max_wind_rounded);
+    const int kWind = static_cast<int>(std::lround(max_wind_mph.value_or(0.0F)));
+    const int kGust = static_cast<int>(std::lround(max_gust_mph.value_or(0.0F)));
+    constexpr const char* kAdvice = "Secure loose items and check local warnings.";
+    if (max_wind_mph.has_value() && max_gust_mph.has_value())
+    {
+        std::snprintf(out, out_size,
+                      "Weather source reports wind up to %d mph,\ngusts to %d mph.\n%s", kWind,
+                      kGust, kAdvice);
+    }
+    else if (max_gust_mph.has_value())
+    {
+        std::snprintf(out, out_size, "Weather source reports gusts to %d mph.\n%s", kGust, kAdvice);
+    }
+    else
+    {
+        std::snprintf(out, out_size, "Weather source reports wind up to %d mph.\n%s", kWind,
+                      kAdvice);
+    }
+}
+
+/// @brief The alert severity of an official warning level (#202): Yellow is
+/// a message, Amber a warning, and Red an alert, so the ALRT lamp treats a
+/// Red warning like any other alert.
+AlertSeverity warning_level_severity(WarningLevel level)
+{
+    switch (level)
+    {
+    case WarningLevel::Red:
+        return AlertSeverity::Alert;
+    case WarningLevel::Amber:
+        return AlertSeverity::Warning;
+    case WarningLevel::Yellow:
+    case WarningLevel::None:
+        break;
+    }
+    return AlertSeverity::Message;
 }
 
 /// @brief Formats pascals as tenths of a hectopascal for operator messages.
@@ -486,8 +522,8 @@ void sync(ConsoleState& console_state)
         weather_alert_status.provider_warning_detail[0] != '\0'
             ? weather_alert_status.provider_warning_detail.data()
             : "Weather source reports a warning.\nCheck the latest local forecast.";
-    // Official provider-warning APIs are not wired yet. Current weather providers
-    // can still raise this hook from severe condition telemetry such as thunder.
+    // Severe conditions in the forecast, such as thunder; official warnings
+    // are OfficialWeatherWarning below.
     set_alert_condition(console_state, AlertCode::WeatherProviderWarning,
                         weather_alert_data_current && weather_alert_status.provider_warning_active,
                         provider_warning_severity, provider_warning_summary,
@@ -498,10 +534,9 @@ void sync(ConsoleState& console_state)
     float max_temperature_celsius = 0.0F;
     const bool have_temperature_range = weather_temperature_alert_range(
         weather_metrics, min_temperature_celsius, max_temperature_celsius);
-    const bool temperature_warning =
-        weather_alert_data_current && have_temperature_range &&
-        (min_temperature_celsius <= kFreezingTemperatureAlertCelsius ||
-         max_temperature_celsius >= kHighTemperatureAlertCelsius);
+    const bool temperature_warning = weather_alert_data_current && have_temperature_range &&
+                                     (weather_extremes::is_cold(min_temperature_celsius) ||
+                                      weather_extremes::is_hot(max_temperature_celsius));
     // Reused for each alert's detail text below rather than one 320-byte
     // buffer per alert: every use is built then immediately consumed by
     // set_alert_condition (which copies it into ActiveAlert), so lifetimes
@@ -519,17 +554,35 @@ void sync(ConsoleState& console_state)
                         AlertSeverity::Warning, "WX TEMP",
                         temperature_warning ? alert_detail_scratch : "");
 
-    float max_wind_mph = 0.0F;
-    const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
+    const std::optional<float> max_wind_mph = weather_wind_alert_maximum(weather_metrics);
+    const std::optional<float> max_gust_mph =
+        weather_metrics.forecast_max_wind_gust_mph_valid
+            ? std::optional<float>(weather_metrics.forecast_max_wind_gust_mph)
+            : std::nullopt;
     const bool wind_warning =
-        weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
+        weather_alert_data_current && weather_extremes::is_high_wind(max_wind_mph, max_gust_mph);
     if (wind_warning)
     {
-        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch,
+        build_weather_wind_alert_detail(max_wind_mph, max_gust_mph, alert_detail_scratch,
                                         sizeof(alert_detail_scratch));
     }
     set_alert_condition(console_state, AlertCode::WeatherWindWarning, wind_warning,
                         AlertSeverity::Warning, "WX WIND", wind_warning ? alert_detail_scratch : "");
+
+    // Official warnings (#202) arrive from HA whatever the weather source.
+    // Stale ones stay up, marked, rather than vanish: a warning HA could not
+    // refresh is more likely still in force than over.
+    const WeatherWarnings& warnings = console_state.weather_warnings;
+    const bool official_warning = warnings.level != WarningLevel::None;
+    if (official_warning)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch), "%s%s",
+                      warnings.stale ? "Not updated for over 2 hours.\n" : "",
+                      warnings.detail.data());
+    }
+    set_alert_condition(console_state, AlertCode::OfficialWeatherWarning, official_warning,
+                        warning_level_severity(warnings.level), warnings.summary.data(),
+                        official_warning ? alert_detail_scratch : "");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = console_state.mqtt_status.state;
@@ -727,6 +780,7 @@ void sync(ConsoleState& console_state)
     {
         console_state.alert_list_page_index = static_cast<uint8_t>(pages - 1U);
     }
+    clamp_history_page(console_state);
 }
 
 uint8_t page_count(const ConsoleState& console_state)
@@ -823,12 +877,25 @@ void accept_alert(ConsoleState& console_state, uint8_t index)
         return;
     }
     const uint8_t code = console_state.active_alerts[index].code;
+    alert_history::record(console_state.active_alerts[index], alert_history::Ending::Accepted,
+                          alert_history::local_minute(console_state.time_status));
     suppress_alert_code(code);
     if (code < g_alert_occurrences.size())
     {
         g_alert_occurrences[code] = 0U;
     }
     erase_active_alert(console_state, index);
+}
+
+void ignore_alert(ConsoleState& console_state, uint8_t index)
+{
+    if (index >= console_state.alert_count)
+    {
+        return;
+    }
+    ActiveAlert& alert = console_state.active_alerts[index];
+    alert.ignored = true;
+    alert.ignored_minute = alert_history::local_minute(console_state.time_status);
 }
 
 bool acknowledged(AlertCode code)
@@ -876,29 +943,97 @@ void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
     build_display_indices(console_state, alert_indices, &sorted_count);
     const uint8_t page_start =
         static_cast<uint8_t>(console_state.alert_list_page_index * kAlertsPerPage);
-    // The Alert list also uses L5 (NAV-6).
-    constexpr std::array<SoftKeyId, kAlertsPerPage> kSlots = {
-        SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
-        SoftKeyId::Left4,  SoftKeyId::Left5,  SoftKeyId::Right1,
-        SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
-    for (uint8_t i = 0U; i < kSlots.size(); ++i)
+    static_assert(softkey::kListSlots.size() == kAlertsPerPage, "one alert per list slot");
+    for (uint8_t i = 0U; i < softkey::kListSlots.size(); ++i)
     {
         const uint8_t index = static_cast<uint8_t>(page_start + i);
         if (index >= sorted_count)
         {
             continue;
         }
+        const SoftKeyId slot = softkey::kListSlots[i];
         const ActiveAlert& alert = console_state.active_alerts[alert_indices[index]];
-        softkey::set(softkeys, kSlots[i],
-                     softkey::item(build_softkey_label(kSlots[i], alert),
-                                   SoftKeyRoute::SelectAlertSlot, i));
+        softkey::set(
+            softkeys, slot,
+            softkey::item(build_softkey_label(slot, alert), SoftKeyRoute::SelectAlertSlot, i));
     }
+    // Past alerts are a page of their own rather than a view of this one, so
+    // History's L5 is free for CLEAR ALL (#203).
+    softkey::set(softkeys, SoftKeyId::Left5, softkey::navigate("HISTORY", MenuPage::AlertHistory));
 }
 
 void build_detail_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
 {
     softkey::set(softkeys, SoftKeyId::Left5, softkey::action("IGNORE", SoftKeyRoute::AlertIgnore));
     softkey::set(softkeys, SoftKeyId::Right5, softkey::action("ACCEPT", SoftKeyRoute::AlertAccept));
+}
+
+void enter_history(ConsoleState& console_state)
+{
+    console_state.alert_history_page_index = 0U;
+    console_state.alert_history_clear_confirming = false;
+}
+
+void build_history_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    if (console_state.alert_history_clear_confirming)
+    {
+        // Decision state: only decline (L5) and confirm (R5) (NAV-3).
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CANCEL", SoftKeyRoute::CancelClearAlertHistory));
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action("CLEAR ALL", SoftKeyRoute::ConfirmClearAlertHistory));
+        return;
+    }
+
+    const uint8_t count = alert_history::count();
+    const uint32_t today = alert_history::local_minute(console_state.time_status);
+    const uint8_t page_start =
+        static_cast<uint8_t>(console_state.alert_history_page_index * kAlertsPerPage);
+    for (uint8_t i = 0U; i < softkey::kListSlots.size(); ++i)
+    {
+        const uint8_t index = static_cast<uint8_t>(page_start + i);
+        if (index >= count)
+        {
+            break;
+        }
+        const SoftKeyId slot = softkey::kListSlots[i];
+        const alert_history::Entry& entry = alert_history::entry(index);
+        char value[24] = {};
+        alert_history::format_key_value(entry, today, value, sizeof(value));
+        size_t capacity = 0U;
+        char* label = cci::dynamic_softkey_label_buffer(slot, capacity);
+        std::snprintf(label, capacity, "%s\n%s", entry.summary.data(), value);
+        softkey::set(softkeys, slot, softkey::item(label, SoftKeyRoute::SelectAlertHistorySlot, i));
+    }
+    if (count > 0U)
+    {
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CLEAR ALL", SoftKeyRoute::RequestClearAlertHistory));
+    }
+}
+
+bool open_history_detail_from_slot(ConsoleState& console_state, uint8_t page_slot)
+{
+    const uint8_t index =
+        static_cast<uint8_t>((console_state.alert_history_page_index * kAlertsPerPage) + page_slot);
+    if (index >= alert_history::count())
+    {
+        return false;
+    }
+    console_state.alert_history_detail_sequence = alert_history::entry(index).sequence;
+    console_state.alert_history_scroll_line = 0U;
+    console_state.active_page = MenuPage::AlertHistoryDetail;
+    return true;
+}
+
+void clamp_history_page(ConsoleState& console_state)
+{
+    const uint8_t pages = alert_history::page_count();
+    if (console_state.alert_history_page_index >= pages)
+    {
+        console_state.alert_history_page_index = static_cast<uint8_t>(pages - 1U);
+    }
 }
 
 } // namespace alert_controller

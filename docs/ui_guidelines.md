@@ -83,6 +83,10 @@ implied by the current UI code:
 - Alert summaries should be short enough to fit list and softkey constraints.
 - Alert detail text should explain the impact and next likely operator action.
 - Alert presentation should remain concise and operational rather than verbose.
+- History answers "what happened while I was away". It keeps each past
+  alert's full text, so an entry still explains itself after the condition
+  has gone, and folds repeats within the hour so a flapping alert stays one
+  key rather than burying the rest.
 
 ## Status Display Standards
 

@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "alert_history.h"
 #include "calendar_controller.h"
 #include "config_manager.h"
 #include "console_controller.h"
@@ -50,6 +51,9 @@ constexpr char kControlsList[] =
 
 /// @brief Fixed boot-uptime for every render, so freshness text is stable.
 constexpr uint32_t kCoverageNowMs = 900000U;
+
+/// @brief 13 Nov 2026, the date the coverage clock shows.
+constexpr uint32_t kCoverageEpochDay = 20770U;
 
 constexpr int kPageCount = static_cast<int>(kMenuPageCount);
 
@@ -93,6 +97,8 @@ constexpr std::array<const char*, kPageCount> kPageNames = {
     "controls",
     "font_settings",
     "font_options",
+    "alert_history",
+    "alert_history_detail",
 };
 
 void press(ButtonId id)
@@ -177,8 +183,35 @@ void start_with_data()
     time.synced = true;
     std::snprintf(time.time_text.data(), time.time_text.size(), "12:34");
     std::snprintf(time.date_text.data(), time.date_text.size(), "2026-11-13");
+    time.local_epoch_day = kCoverageEpochDay;
     time.weekday_index = 5U;
     (void)console_controller::set_time_status(time);
+
+    // Past alerts (#203): one from today, one that recurred, and one from
+    // yesterday, so History and its detail page have every key form.
+    alert_history::reset();
+    const auto past = [](uint8_t code, const char* summary, uint32_t raised, uint32_t ended,
+                         alert_history::Ending ending)
+    {
+        ActiveAlert alert = {};
+        alert.code = code;
+        alert.severity = AlertSeverity::Warning;
+        alert.raised_minute = raised;
+        std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
+        std::snprintf(alert.detail.data(), alert.detail.size(),
+                      "%s needed attention.\nIt has since ended.", summary);
+        alert_history::record(alert, ending, ended);
+    };
+    constexpr uint32_t kToday = kCoverageEpochDay * 1440U;
+    constexpr uint32_t kYesterday = kToday - 1440U;
+    past(1U, "RESTARTED", kYesterday + (23U * 60U) + 50U, kToday + 5U,
+         alert_history::Ending::Accepted);
+    past(2U, "WX WIND", kToday + (6U * 60U) + 12U, kToday + (6U * 60U) + 20U,
+         alert_history::Ending::Cleared);
+    past(2U, "WX WIND", kToday + (6U * 60U) + 40U, kToday + (7U * 60U) + 5U,
+         alert_history::Ending::Cleared);
+    past(3U, "WIFI", kToday + (9U * 60U) + 2U, kToday + (9U * 60U) + 7U,
+         alert_history::Ending::Cleared);
 
     // Ten Home Assistant controls (#152): two pages, every kind and state,
     // and a name too long for its key.

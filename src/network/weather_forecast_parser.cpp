@@ -1,9 +1,11 @@
 #include "weather_forecast_parser.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "text_utils.h"
+#include "weather_extremes.h"
 #include "weather_json_scan.h"
 #include "weather_normalisation.h"
 
@@ -13,7 +15,73 @@ namespace weather_forecast
 namespace
 {
 using text_utils::copy_text;
+
+constexpr float kMillimetresPerInch = 25.4F;
+
+/// @brief Millimetres in one unit of the payload's `precipitation_unit`.
+/// @details HA reports precipitation in mm or inches; mm is assumed when the
+/// unit is missing, as it is for the UK providers.
+float precipitation_mm_per_unit(const char* json)
+{
+    char unit[8] = {};
+    if (weather_json::extract_json_string_value(json, "\"precipitation_unit\":\"", unit,
+                                                sizeof(unit)) &&
+        std::strcmp(unit, "in") == 0)
+    {
+        return kMillimetresPerInch;
+    }
+    return 1.0F;
+}
+
+/// @brief Adds an HA forecast object's precipitation and gusts to `reading`.
+/// @details HA has no snowfall field, so a `snowy` period's precipitation is
+/// read as snow; any other period's as rain. `pouring` is HA's heavy rain.
+/// @return The gust in mph, when the object has one.
+std::optional<float> add_precipitation_and_gust(const char* object_json, const char* condition,
+                                                const char* wind_source_unit, float mm_per_unit,
+                                                weather_extremes::Reading& reading)
+{
+    if (const std::optional<float> precipitation = read_number(object_json, "\"precipitation\":");
+        precipitation.has_value())
+    {
+        const float kMillimetres = *precipitation * mm_per_unit;
+        if (std::strcmp(condition, "snowy") == 0)
+        {
+            reading.snow_cm = kMillimetres * weather_extremes::kSnowCmPerPrecipitationMm;
+        }
+        else
+        {
+            reading.rain_mm = kMillimetres;
+        }
+    }
+    reading.heavy_rain_condition = std::strcmp(condition, "pouring") == 0;
+
+    char gust_text[16] = {};
+    float gust_mph = 0.0F;
+    if (weather_json::extract_json_scalar_value(object_json, "\"wind_gust_speed\":", gust_text,
+                                                sizeof(gust_text)) &&
+        weather_normalisation::convert_wind_speed_to_mph_value(gust_text, wind_source_unit,
+                                                               &gust_mph))
+    {
+        reading.gust_mph = gust_mph;
+        return gust_mph;
+    }
+    return std::nullopt;
+}
+
 } // namespace
+
+std::optional<float> read_number(const char* json, const char* key)
+{
+    char text[16] = {};
+    float value = 0.0F;
+    if (!weather_json::extract_json_scalar_value(json, key, text, sizeof(text)) ||
+        !weather_normalisation::parse_float_value(text, &value))
+    {
+        return std::nullopt;
+    }
+    return value;
+}
 
 void clear_current_weather_metrics(HomeAssistantStatus& status)
 {
@@ -31,6 +99,8 @@ void clear_forecast_weather_metrics(HomeAssistantStatus& status)
     status.weather_metrics.forecast_max_temperature_celsius = 0.0F;
     status.weather_metrics.forecast_max_wind_speed_mph_valid = false;
     status.weather_metrics.forecast_max_wind_speed_mph = 0.0F;
+    status.weather_metrics.forecast_max_wind_gust_mph_valid = false;
+    status.weather_metrics.forecast_max_wind_gust_mph = 0.0F;
 }
 
 void clear_weather_alert_status(HomeAssistantStatus& status)
@@ -71,6 +141,17 @@ void include_forecast_wind_speed_mph(HomeAssistantStatus& status, float wind_spe
     }
 }
 
+void include_forecast_wind_gust_mph(HomeAssistantStatus& status, float wind_gust_mph)
+{
+    WeatherMetrics& metrics = status.weather_metrics;
+    if (!metrics.forecast_max_wind_gust_mph_valid ||
+        wind_gust_mph > metrics.forecast_max_wind_gust_mph)
+    {
+        metrics.forecast_max_wind_gust_mph = wind_gust_mph;
+        metrics.forecast_max_wind_gust_mph_valid = true;
+    }
+}
+
 void record_weather_condition_warning(HomeAssistantStatus& status, const char* condition_text,
                                       const char* source_context)
 {
@@ -99,6 +180,7 @@ void clear_weather_forecast(HomeAssistantStatus& status)
         entry.temperature_text.fill('\0');
         entry.wind_text.fill('\0');
         entry.condition_text.fill('\0');
+        entry.hazards = weather_extremes::kNone;
     }
 }
 
@@ -111,6 +193,7 @@ void clear_weather_daily_forecast(HomeAssistantStatus& status)
         entry.temperature_text.fill('\0');
         entry.wind_text.fill('\0');
         entry.condition_text.fill('\0');
+        entry.hazards = weather_extremes::kNone;
     }
 }
 
@@ -138,6 +221,7 @@ bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& statu
     // Start from a blank forecast so a partial parse never leaves stale rows
     // from an earlier successful response on screen.
     clear_weather_forecast(status);
+    const float kMmPerUnit = precipitation_mm_per_unit(json);
 
     while (*cursor != '\0' && *cursor != ']' &&
            status.weather_forecast_count < kWeatherForecastEntryCount)
@@ -188,6 +272,7 @@ bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& statu
             continue;
         }
 
+        weather_extremes::Reading reading = {};
         if (weather_json::extract_json_scalar_value(object_json, "\"temperature\":",
                                                      temperature_text, sizeof(temperature_text)))
         {
@@ -196,6 +281,8 @@ bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& statu
                     temperature_text, temperature_unit, &temperature_celsius))
             {
                 include_forecast_temperature_celsius(status, temperature_celsius);
+                reading.low_celsius = temperature_celsius;
+                reading.high_celsius = temperature_celsius;
             }
 
             if (temperature_unit != '\0')
@@ -234,17 +321,15 @@ bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& statu
                     wind_speed_text, wind_source_unit, &wind_speed_mph))
             {
                 include_forecast_wind_speed_mph(status, wind_speed_mph);
+                reading.wind_mph = wind_speed_mph;
             }
         }
 
-        if (weather_normalisation::format_compact_wind_text(
+        if (!weather_normalisation::format_compact_wind_text(
                 have_wind_speed ? wind_speed_text : nullptr,
                 have_wind_bearing ? wind_bearing_text : nullptr, wind_source_unit,
                 status.weather_forecast[status.weather_forecast_count].wind_text.data(),
                 status.weather_forecast[status.weather_forecast_count].wind_text.size()))
-        {
-        }
-        else
         {
             copy_text(status.weather_forecast[status.weather_forecast_count].wind_text, "-");
         }
@@ -260,6 +345,15 @@ bool parse_hourly_forecast_response(const char* json, HomeAssistantStatus& statu
         {
             copy_text(status.weather_forecast[status.weather_forecast_count].condition_text, "?");
         }
+
+        if (const std::optional<float> gust_mph = add_precipitation_and_gust(
+                object_json, condition_text, wind_source_unit, kMmPerUnit, reading);
+            gust_mph.has_value())
+        {
+            include_forecast_wind_gust_mph(status, *gust_mph);
+        }
+        status.weather_forecast[status.weather_forecast_count].hazards =
+            weather_extremes::classify(reading, weather_extremes::Period::Hour);
 
         ++status.weather_forecast_count;
         cursor = object_end + 1;
@@ -290,6 +384,7 @@ bool parse_daily_forecast_response(const char* json, HomeAssistantStatus& status
     ++cursor;
 
     clear_weather_daily_forecast(status);
+    const float kMmPerUnit = precipitation_mm_per_unit(json);
 
     while (*cursor != '\0' && *cursor != ']' &&
            status.weather_daily_forecast_count < kWeatherDailyForecastEntryCount)
@@ -348,8 +443,27 @@ bool parse_daily_forecast_response(const char* json, HomeAssistantStatus& status
             copy_text(entry.temperature_text, "-");
         }
 
+        weather_extremes::Reading reading = {};
+        float celsius = 0.0F;
+        if (have_temperature_high && weather_normalisation::convert_temperature_to_celsius(
+                                         temperature_high_text, temperature_unit, &celsius))
+        {
+            reading.high_celsius = celsius;
+        }
+        if (have_temperature_low && weather_normalisation::convert_temperature_to_celsius(
+                                        temperature_low_text, temperature_unit, &celsius))
+        {
+            reading.low_celsius = celsius;
+        }
+
         const bool have_wind_speed = weather_json::extract_json_scalar_value(
             object_json, "\"wind_speed\":", wind_speed_text, sizeof(wind_speed_text));
+        float wind_speed_mph = 0.0F;
+        if (have_wind_speed && weather_normalisation::convert_wind_speed_to_mph_value(
+                                   wind_speed_text, wind_source_unit, &wind_speed_mph))
+        {
+            reading.wind_mph = wind_speed_mph;
+        }
         const bool have_wind_bearing =
             weather_json::extract_json_string_value(object_json, "\"wind_bearing\":\"",
                                                      wind_bearing_text,
@@ -375,6 +489,10 @@ bool parse_daily_forecast_response(const char* json, HomeAssistantStatus& status
         {
             copy_text(entry.condition_text, "?");
         }
+
+        (void)add_precipitation_and_gust(object_json, condition_text, wind_source_unit, kMmPerUnit,
+                                         reading);
+        entry.hazards = weather_extremes::classify(reading, weather_extremes::Period::Day);
 
         ++status.weather_daily_forecast_count;
         cursor = object_end + 1;

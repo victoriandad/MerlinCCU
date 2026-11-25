@@ -273,9 +273,11 @@ HOST_TEST(every_page_is_reachable_and_back_step_returns_to_a_page_that_leads_the
     // Pages that need data or a hard key to reach, and so are not expected
     // from softkey and cursor presses alone on a fresh controller.
     const std::set<int> not_softkey_reachable = {
-        static_cast<int>(MenuPage::CalendarDetail), // Needs calendar events.
-        static_cast<int>(MenuPage::AlertList),      // Opened by the ALERT hard key.
-        static_cast<int>(MenuPage::AlertDetail),    // Needs an active alert.
+        static_cast<int>(MenuPage::CalendarDetail),      // Needs calendar events.
+        static_cast<int>(MenuPage::AlertList),           // Opened by the ALERT hard key.
+        static_cast<int>(MenuPage::AlertDetail),         // Needs an active alert.
+        static_cast<int>(MenuPage::AlertHistory),        // From the Alert list.
+        static_cast<int>(MenuPage::AlertHistoryDetail),  // Needs a past alert.
         static_cast<int>(MenuPage::LocalConditionGraph), // Needs sensor readings.
     };
 

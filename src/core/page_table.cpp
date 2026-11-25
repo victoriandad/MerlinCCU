@@ -27,6 +27,8 @@ namespace
 {
 
 using cursor_navigation::kAlertDetailScroll;
+using cursor_navigation::kAlertHistoryDetailScroll;
+using cursor_navigation::kAlertHistoryPages;
 using cursor_navigation::kAlertListPages;
 using cursor_navigation::kBrewCataloguePages;
 using cursor_navigation::kCalendarDay;
@@ -185,6 +187,13 @@ constexpr std::array<PageDescriptor, kMenuPageCount> kPages = {{
     {MenuPage::FontOptions, "FONT", MenuPage::FontSettings, kKey, kStd, kLines,
      settings_controller::build_font_options_softkeys, nullptr,
      nullptr, nullptr, kOnChange, kNoFetch},
+    {MenuPage::AlertHistory, "HISTORY", MenuPage::AlertList, kKey, kStd, kLines,
+     alert_controller::build_history_softkeys,
+     without_time<alert_screens::draw_alert_history_page>,
+     alert_controller::enter_history, &kAlertHistoryPages, kOnChange, kNoFetch},
+    {MenuPage::AlertHistoryDetail, "PAST ALERT", MenuPage::AlertHistory, kBody, kStd, kLines,
+     nullptr, without_time<alert_screens::draw_alert_history_detail_page>,
+     nullptr, &kAlertHistoryDetailScroll, kOnChange, kNoFetch},
 }};
 // clang-format on
 

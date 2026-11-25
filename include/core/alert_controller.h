@@ -45,6 +45,18 @@ bool open_detail_from_slot(ConsoleState& console_state, uint8_t page_slot);
 /// @details A no-op when `index` is past the active alert count.
 void accept_alert(ConsoleState& console_state, uint8_t index);
 
+/// @brief Notes that the operator pressed IGNORE on one alert, and when, so
+/// its history entry says so once it ends (#203). It stays active.
+/// @details A no-op when `index` is past the active alert count.
+void ignore_alert(ConsoleState& console_state, uint8_t index);
+
+/// @brief Opens the History page's detail for the entry in `page_slot`.
+bool open_history_detail_from_slot(ConsoleState& console_state, uint8_t page_slot);
+
+/// @brief Keeps the History page index within the pages that exist, e.g.
+/// after CLEAR ALL.
+void clamp_history_page(ConsoleState& console_state);
+
 /// @brief Removes one alert from the active queue and compacts trailing entries.
 void erase_active_alert(ConsoleState& console_state, uint8_t index);
 
@@ -69,6 +81,12 @@ void reset();
 /// @{
 void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
 void build_detail_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
+/// @brief History (#203): past alerts newest first, L1-L4 then R1-R4, and
+/// CLEAR ALL at L5 with its confirm step.
+void build_history_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys);
 /// @}
+
+/// @brief History's on_enter hook: first page, no confirm pending.
+void enter_history(ConsoleState& console_state);
 
 } // namespace alert_controller

@@ -119,14 +119,14 @@ HOST_TEST(sync_does_not_raise_share_data_unavailable_when_not_configured)
     EXPECT_EQ(state.alert_count, 0U);
 }
 
-HOST_TEST(page_count_rounds_up_by_nine_per_page)
+HOST_TEST(page_count_rounds_up_by_eight_per_page)
 {
     ConsoleState state = make_healthy_state();
     state.alert_count = 0U;
     EXPECT_EQ(alert_controller::page_count(state), 1U);
-    state.alert_count = 9U;
+    state.alert_count = 8U;
     EXPECT_EQ(alert_controller::page_count(state), 1U);
-    state.alert_count = 10U;
+    state.alert_count = 9U;
     EXPECT_EQ(alert_controller::page_count(state), 2U);
 }
 

@@ -33,6 +33,36 @@ failure modes are handled consistently across firmware features.
   the next recurrence counts as the first. A restart also resets every count.
 - The alert list is newest-first; detail pages support accept and ignore flows.
 
+## Alert History
+
+Past alerts are kept so the operator can see what happened overnight or
+before a restart (#203). `alert_history` holds them and
+`alert_history_store` keeps them in flash.
+
+- **When an entry is added:** when an alert's condition clears (`Cleared`)
+  or the operator accepts it (`Accepted`). An accepted alert whose condition
+  clears later adds nothing more. `IGNORE` leaves the alert active; its
+  entry, once it ends, records that it was ignored and when.
+- **Repeats:** the same alert ending again within an hour of its entry being
+  raised raises that entry's count and moves it to the top, rather than
+  adding another. Without a synced clock entries never fold.
+- **What is kept:** summary, severity, raised, ended and ignored times (local
+  minutes since the epoch, 0 before the clock syncs), how it ended, the
+  count, and the full detail text.
+- **Size:** the newest 16 entries (two History pages); the oldest drops off
+  (NAV-6b). The whole history is about 6 KB, kept in PSRAM on the Pimoroni
+  and in SRAM on a Pico 2 W.
+- **Persistence:** two copies of two flash sectors each, below the Pinter
+  store, written alternately with a rising sequence and a CRC, so a power cut
+  mid-save leaves the previous copy. A save follows a new entry or
+  `CLEAR ALL` after at least a minute since the last save, and a fold after
+  at least 10 minutes, to bound flash wear from a flapping alert. History
+  that has not been saved yet is lost if the unit restarts in that window.
+- **Clear:** History's `CLEAR ALL`, after a confirm step. Active alerts are
+  not affected.
+- **Remote:** `/alerts` on the web page shows active and past alerts with
+  their full text; `/api/alerts` lists them one tab-separated line each.
+
 ## Severity Guide
 
 - `Message`: useful operator notice or degraded optional service.
@@ -72,9 +102,10 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `HomeAssistantUnauthorized` | Alert | `home_assistant_status.state == Unauthorized` | `AUTH FAILED` | Static text | Fires immediately, no debounce |
 | `HomeAssistantEntityMissing` | Warning | tracked entity state empty/`unknown`/`unavailable` while HA connected | `HA ENTITY` | Static text | Requires a configured tracked entity id |
 | `WeatherUnavailable` | Message | no weather while its source is reachable, debounced: for Home Assistant, the MQTT link is up but no weather has arrived (#153); for Open-Meteo, the internet is reachable but fetches fail | `WEATHER` | Static text | 5-sample debounce. A lost MQTT link is not a weather alert. |
-| `WeatherProviderWarning` | Provider-supplied (falls back to Warning) | `weather_alert_status.provider_warning_active` | Provider-supplied (falls back to `WX WARNING`) | Dynamic, provider-supplied summary/detail | Official provider-warning APIs not wired yet; only severe-condition telemetry (e.g. thunder) currently raises this |
-| `WeatherTemperatureWarning` | Warning | current/forecast temperature <= 0C or >= 30C | `WX TEMP` | Dynamic detail (min/max C) | See `kFreezingTemperatureAlertCelsius`/`kHighTemperatureAlertCelsius` |
-| `WeatherWindWarning` | Warning | current/forecast wind >= 40mph | `WX WIND` | Dynamic detail (max mph) | See `kHighWindAlertMph` |
+| `WeatherProviderWarning` | Provider-supplied (falls back to Warning) | `weather_alert_status.provider_warning_active` | Provider-supplied (falls back to `WX WARNING`) | Dynamic, provider-supplied summary/detail | Raised by severe conditions in the forecast (thunder, hail); official warnings are `OfficialWeatherWarning` |
+| `OfficialWeatherWarning` | Yellow: Message, Amber: Warning, Red: Alert | `weather_warnings.level`: a Met Office weather warning or Environment Agency flood warning in force, from HA over MQTT (#202) | The highest warning, e.g. `AMBER WIND`, `YELLOW FOG`, `RED FLOOD` | Every warning in force, one per line, highest first, with when it ends or starts | Any weather source; needs MQTT and HA's `warnings:` block. Flood alert/warning/severe warning map to Yellow/Amber/Red. If HA has not refreshed them for 2 hours (`kWarningsStaleAfterMs`) the detail starts `Not updated for over 2 hours.` rather than dropping them |
+| `WeatherTemperatureWarning` | Warning | current/forecast temperature <= 0C or >= 28C | `WX TEMP` | Dynamic detail (min/max C) | Thresholds shared with the Weather page highlighting (`weather_extremes.h`, below) |
+| `WeatherWindWarning` | Warning | current/forecast mean wind >= 39mph or gusts >= 50mph | `WX WIND` | Dynamic detail (max mph, and gusts when the source gives them) | Thresholds shared with the Weather page highlighting (`weather_extremes.h`, below) |
 | `MqttOffline` | Message | MQTT enabled, not Connected, debounced | `MQTT` | Static text | 5-sample debounce |
 | `KeypadLineFault` | Warning | `MULTI` pressed-key or `active_count > 3`, debounced | `KEYPAD` | Static text | 5-sample debounce |
 | `EnvironmentSensorFault` | Warning | sensor enabled and `Fault`/`BoardMissing`/`Partial` health, or a BME/SGP40 read error | `ENV SENSOR` | Static text | Fires immediately, no debounce |
@@ -87,6 +118,34 @@ samples) before annunciating, to avoid flapping on transient failures.
 | `FirmwareUpdateRolledBack` | Warning | `firmware_status.rolled_back`: this boot followed an uploaded image that did not confirm itself, and the boot ROM went back to the previous one | `UPDATE FAILED` | Static text | Holds for the whole boot. The record lives in a POWMAN scratch register, so a power cut during the trial goes unreported (docs/ota.md) |
 | `UnexpectedRestart` | Warning | `boot_status.reset_reason` is `Watchdog`, `CpuFault` or `Brownout` (#155) | `RESTARTED` | Dynamic detail (the cause, and what to check) | Holds for the whole boot, so a restart overnight is seen. A stack overflow raises `StackLow` instead; power-on, reset pin, update (over Wi-Fi or a USB/picotool load, #204), rollback and asked-for restarts raise nothing |
 | `ControlFailed` | Warning | `home_controls.last_failure`: the last answered Controls key press (#152) was refused by HA or got no answer within 5 s | `CONTROL FAILED` | Dynamic detail (the entity, and whether HA refused or was silent) | Holds until a Controls press works, so it outlasts the page's 10-second notice |
+
+## Exceptional Weather Thresholds
+
+The Weather page inverts a forecast cell whose value is exceptional for the
+UK (#202), and `WX TEMP` and `WX WIND` use the same figures, so a highlighted
+cell and its alert always agree. They live in one table,
+`include/core/weather_extremes.h`.
+
+| Hazard | Cell | Hour | Day | Basis |
+| --- | --- | --- | --- | --- |
+| Cold | Temp | <= 0 C | low <= 0 C | Frost and ice |
+| Heat | Temp | >= 28 C | high >= 28 C | Top of the Met Office's county heatwave thresholds (25-28 C) |
+| Wind | Wind | mean >= 39 mph or gust >= 50 mph | the same, on the day's figures | Beaufort 8 (gale) starts at 39 mph; 50 mph gusts are where yellow wind warnings usually start inland |
+| Heavy rain | Conditions | >= 4 mm | >= 20 mm | Met Office "heavy rain" is over 4 mm/h; 20 mm in a day is typical of a yellow rain warning |
+| Heavy snow | Conditions | >= 1 cm | >= 5 cm | 5 cm lying is where yellow snow warnings usually start |
+| Dense fog | Conditions | visibility < 200 m | never | Met Office forecasts call fog under 200 m "dense" |
+
+- Where a source gives no amount, the condition stands in: HA's `pouring` and
+  Open-Meteo codes 65 and 82 are heavy rain; Open-Meteo codes 75 and 86 are
+  heavy snow.
+- HA forecasts have no snowfall field, so a `snowy` period's precipitation is
+  read as snow at 1 cm per mm.
+- Only Open-Meteo gives visibility, hourly only, so dense fog is highlighted
+  on Open-Meteo hourly rows alone; Met Office fog warnings cover it otherwise.
+- Gusts come from Open-Meteo and from HA providers that send them (the Met
+  Office integration does; Met.no does not).
+- On Next 24 Hours, a sampled hour with nothing exceptional gives way to the
+  first exceptional hour since the previous row, so sampling never hides one.
 
 ## Missing Telemetry
 

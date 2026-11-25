@@ -10,6 +10,8 @@
 #include <optional>
 #include <string_view>
 
+#include "alert_controller.h"
+#include "alert_history.h"
 #include "cert_pin.h"
 #include "config_fields.h"
 #include "config_manager.h"
@@ -28,9 +30,9 @@
 #include "ota_upload.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
-#include "png_encoder.h"
 #include "pico/rand.h"
 #include "pico/time.h"
+#include "png_encoder.h"
 #include "psram.h"
 #include "text_styles.h"
 #include "text_utils.h"
@@ -474,6 +476,21 @@ void html_escape(const char* input, char* output, size_t output_size)
     }
 }
 
+/// @brief Appends `text` HTML-escaped straight into the response, so long
+/// text needs no escape buffer of its own.
+bool append_escaped(char*& cursor, size_t& remaining, const char* text)
+{
+    if (remaining == 0U)
+    {
+        return false;
+    }
+    html_escape(text, cursor, remaining);
+    const size_t written = std::strlen(cursor);
+    cursor += written;
+    remaining -= written;
+    return remaining > 1U;
+}
+
 /// @brief Returns the machine-readable token for one enum value.
 const char* weather_token(WeatherSource source)
 {
@@ -553,6 +570,7 @@ enum class ConfigWebPage : uint8_t
     PinterActivity,
     Preview,
     Firmware,
+    Alerts,
 };
 
 /// @brief Emits a consistent top navigation bar linking between the CCU's web pages.
@@ -581,8 +599,35 @@ bool append_page_nav(char*& cursor, size_t& remaining, ConfigWebPage current_pag
     {
         ok = ok && append(cursor, remaining, "<a class=\"ghost\" href=\"/firmware\">Firmware</a>");
     }
+    if (current_page != ConfigWebPage::Alerts)
+    {
+        ok = ok && append(cursor, remaining, "<a class=\"ghost\" href=\"/alerts\">Alerts</a>");
+    }
     return ok && append(cursor, remaining, "</nav>");
 }
+
+/// @brief Styles shared by the card pages (Firmware, Alerts).
+constexpr char kCardPageStyle[] =
+    ":root{color-scheme:dark;--panel:#111f1b;--line:#2b4a41;--text:#eefbf3;"
+    "--muted:#8eb5a7;--accent:#b7ff57}*{box-sizing:border-box}body{margin:0;background:"
+    "#08110f;font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
+    ".wrap{max-width:720px;margin:0 auto;padding:32px 16px 48px}h1{margin:0 0 16px;"
+    "font-size:28px;letter-spacing:.04em}.card{background:var(--panel);border:1px solid "
+    "var(--line);border-radius:18px;padding:18px;margin-bottom:16px}.card h2{margin:0 0 "
+    "12px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}"
+    "dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0}dt{color:"
+    "var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}dd{margin:0}"
+    "label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;"
+    "letter-spacing:.08em;margin:11px 0 5px}input{width:100%;border:1px solid #315348;"
+    "background:#0a1411;color:var(--text);border-radius:10px;padding:10px 11px;font:inherit}"
+    "button{margin-top:14px;border:0;border-radius:999px;background:var(--accent);color:"
+    "#09110d;font-weight:800;padding:12px 20px}.tools{display:flex;gap:10px;flex-wrap:wrap;"
+    "margin-bottom:18px}.ghost{border:1px solid var(--line);border-radius:999px;padding:"
+    "11px 16px;color:var(--text);text-decoration:none;font-weight:700;font-size:12px;"
+    "text-transform:uppercase}.hint{font-size:12px;color:var(--muted)}#m{margin-top:12px;"
+    "font-weight:700;color:var(--accent);white-space:pre-wrap}.alert{border-top:1px solid "
+    "var(--line);padding:10px 0}.alert:first-of-type{border-top:0}.alert b{color:"
+    "var(--accent)}.alert p{margin:6px 0 0;white-space:pre-wrap}";
 
 /// @brief Names a firmware slot for the Firmware page.
 const char* slot_name(int8_t slot)
@@ -633,30 +678,11 @@ bool build_firmware_page()
 
     char* cursor = g_response;
     size_t remaining = sizeof(g_response);
-    bool ok = append(
-        cursor, remaining,
-        "%s<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,"
-        "initial-scale=1\"><title>Merlin CCU Firmware</title><style>"
-        ":root{color-scheme:dark;--panel:#111f1b;--line:#2b4a41;--text:#eefbf3;"
-        "--muted:#8eb5a7;--accent:#b7ff57}*{box-sizing:border-box}body{margin:0;background:"
-        "#08110f;font:15px/1.45 'Segoe UI',Tahoma,sans-serif;color:var(--text)}"
-        ".wrap{max-width:720px;margin:0 auto;padding:32px 16px 48px}h1{margin:0 0 16px;"
-        "font-size:28px;letter-spacing:.04em}.card{background:var(--panel);border:1px solid "
-        "var(--line);border-radius:18px;padding:18px;margin-bottom:16px}.card h2{margin:0 0 "
-        "12px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}"
-        "dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0}dt{color:"
-        "var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}dd{margin:0}"
-        "label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;"
-        "letter-spacing:.08em;margin:11px 0 5px}input{width:100%%;border:1px solid #315348;"
-        "background:#0a1411;color:var(--text);border-radius:10px;padding:10px 11px;font:inherit}"
-        "button{margin-top:14px;border:0;border-radius:999px;background:var(--accent);color:"
-        "#09110d;font-weight:800;padding:12px 20px}.tools{display:flex;gap:10px;flex-wrap:wrap;"
-        "margin-bottom:18px}.ghost{border:1px solid var(--line);border-radius:999px;padding:"
-        "11px 16px;color:var(--text);text-decoration:none;font-weight:700;font-size:12px;"
-        "text-transform:uppercase}.hint{font-size:12px;color:var(--muted)}#m{margin-top:12px;"
-        "font-weight:700;color:var(--accent);white-space:pre-wrap}</style></head><body><main "
-        "class=\"wrap\"><h1>Firmware</h1>",
-        kHttpOkHeader);
+    bool ok = append(cursor, remaining,
+                     "%s<!doctype html><html><head><meta name=\"viewport\" content=\"width="
+                     "device-width,initial-scale=1\"><title>Merlin CCU Firmware</title><style>%s"
+                     "</style></head><body><main class=\"wrap\"><h1>Firmware</h1>",
+                     kHttpOkHeader, kCardPageStyle);
     ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Firmware);
     ok = ok && append(cursor, remaining,
                       "<section class=\"card\"><h2>Running</h2><dl><dt>Version</dt><dd>%s</dd>"
@@ -687,6 +713,162 @@ bool build_firmware_page()
                 ",body:f});m.textContent=await r.text();if(r.ok){wait()}}catch(e){"
                 "m.textContent='Upload failed: '+e}};</script></main></body></html>");
     return ok;
+}
+
+/// @brief Lower-case severity word for the Alerts page and /api/alerts.
+const char* severity_word(AlertSeverity severity)
+{
+    switch (severity)
+    {
+    case AlertSeverity::Alert:
+        return "alert";
+    case AlertSeverity::Warning:
+        return "warning";
+    case AlertSeverity::Message:
+    case AlertSeverity::None:
+        break;
+    }
+    return "message";
+}
+
+/// @brief Room kept for one more alert on the Alerts page: its summary and
+/// detail with every character escaped, plus its markup.
+constexpr size_t kAlertsPageEntryReserve = 2600U;
+
+/// @brief Builds the Alerts page: active alerts as the panel lists them,
+/// then past alerts newest first, each with its full detail (#203).
+/// @details Text is escaped straight into the response. If the response
+/// fills, the rest are counted rather than cut off mid-entry.
+bool build_alerts_page()
+{
+    const ConsoleState& console = console_controller::state();
+
+    char* cursor = g_response;
+    size_t remaining = sizeof(g_response);
+    bool ok = append(cursor, remaining,
+                     "%s<!doctype html><html><head><meta name=\"viewport\" content=\"width="
+                     "device-width,initial-scale=1\"><title>Merlin CCU Alerts</title><style>%s"
+                     "</style></head><body><main class=\"wrap\"><h1>Alerts</h1>",
+                     kHttpOkHeader, kCardPageStyle);
+    ok = ok && append_page_nav(cursor, remaining, ConfigWebPage::Alerts);
+
+    std::array<uint8_t, kActiveAlertCapacity> order = {};
+    uint8_t active_count = 0U;
+    alert_controller::build_display_indices(console, order, &active_count);
+    ok = ok && append(cursor, remaining, "<section class=\"card\"><h2>Active</h2>");
+    if (active_count == 0U)
+    {
+        ok = ok && append(cursor, remaining, "<p class=\"hint\">None.</p>");
+    }
+    for (uint8_t i = 0U; ok && i < active_count; ++i)
+    {
+        const ActiveAlert& alert = console.active_alerts[order[i]];
+        if (remaining < kAlertsPageEntryReserve)
+        {
+            ok = append(cursor, remaining, "<p class=\"hint\">%u more; see the panel.</p>",
+                        static_cast<unsigned>(active_count - i));
+            break;
+        }
+        char raised[20] = {};
+        char times[24] = {};
+        alert_history::format_date_time(alert.raised_minute, raised, sizeof(raised));
+        if (alert.occurrence_count > 1U)
+        {
+            std::snprintf(times, sizeof(times), ", %u times",
+                          static_cast<unsigned>(alert.occurrence_count));
+        }
+        ok = append(cursor, remaining, "<div class=\"alert\"><b>") &&
+             append_escaped(cursor, remaining, alert.summary.data()) &&
+             append(cursor, remaining, "</b> %s, raised %s%s%s<p>", severity_word(alert.severity),
+                    raised, times, alert.ignored ? ", ignored" : "") &&
+             append_escaped(cursor, remaining, alert.detail.data()) &&
+             append(cursor, remaining, "</p></div>");
+    }
+    ok = ok && append(cursor, remaining, "</section><section class=\"card\"><h2>History</h2>");
+
+    const uint8_t past_count = alert_history::count();
+    if (past_count == 0U)
+    {
+        ok = ok && append(cursor, remaining, "<p class=\"hint\">None.</p>");
+    }
+    for (uint8_t i = 0U; ok && i < past_count; ++i)
+    {
+        const alert_history::Entry& entry = alert_history::entry(i);
+        if (remaining < kAlertsPageEntryReserve)
+        {
+            ok = append(cursor, remaining, "<p class=\"hint\">%u more; see the panel.</p>",
+                        static_cast<unsigned>(past_count - i));
+            break;
+        }
+        char raised[20] = {};
+        char ended[20] = {};
+        char ignored[40] = {};
+        alert_history::format_date_time(entry.raised_minute, raised, sizeof(raised));
+        alert_history::format_date_time(entry.ended_minute, ended, sizeof(ended));
+        if (entry.ignored)
+        {
+            char when[20] = {};
+            alert_history::format_date_time(entry.ignored_minute, when, sizeof(when));
+            std::snprintf(ignored, sizeof(ignored), ", ignored %s", when);
+        }
+        ok = append(cursor, remaining, "<div class=\"alert\"><b>") &&
+             append_escaped(cursor, remaining, entry.summary.data()) &&
+             append(cursor, remaining, "</b> %s, raised %s%s, %s %s, ended %u time%s<p>",
+                    severity_word(entry.severity), raised, ignored,
+                    entry.ending == alert_history::Ending::Accepted ? "accepted" : "cleared", ended,
+                    static_cast<unsigned>(entry.count), entry.count == 1U ? "" : "s") &&
+             append_escaped(cursor, remaining, entry.detail.data()) &&
+             append(cursor, remaining, "</p></div>");
+    }
+    ok = ok && append(cursor, remaining,
+                      "<p class=\"hint\">The newest %u past alerts are kept, across restarts. "
+                      "An alert that ends again within an hour counts against the same entry."
+                      "</p></section></main></body></html>",
+                      static_cast<unsigned>(alert_history::kCapacity));
+    return ok;
+}
+
+/// @brief Builds /api/alerts: one tab-separated line per alert, active then
+/// past, for scripts (#203). Times are `24 Nov 06:12`, or `--:--` when the
+/// clock had not synced.
+void build_alerts_api()
+{
+    const ConsoleState& console = console_controller::state();
+    char* cursor = g_response;
+    size_t remaining = sizeof(g_response);
+    bool ok = append(cursor, remaining,
+                     "%s# active\tsummary\tseverity\traised\ttimes\n"
+                     "# past\tsummary\tseverity\traised\tended\thow\tignored\ttimes\n",
+                     kHttpTextHeader);
+    std::array<uint8_t, kActiveAlertCapacity> order = {};
+    uint8_t active_count = 0U;
+    alert_controller::build_display_indices(console, order, &active_count);
+    for (uint8_t i = 0U; ok && i < active_count; ++i)
+    {
+        const ActiveAlert& alert = console.active_alerts[order[i]];
+        char raised[20] = {};
+        alert_history::format_date_time(alert.raised_minute, raised, sizeof(raised));
+        ok = append(cursor, remaining, "active\t%s\t%s\t%s\t%u\n", alert.summary.data(),
+                    severity_word(alert.severity), raised,
+                    static_cast<unsigned>(std::max<uint8_t>(alert.occurrence_count, 1U)));
+    }
+    for (uint8_t i = 0U; ok && i < alert_history::count(); ++i)
+    {
+        const alert_history::Entry& entry = alert_history::entry(i);
+        char raised[20] = {};
+        char ended[20] = {};
+        char ignored[20] = {"-"};
+        alert_history::format_date_time(entry.raised_minute, raised, sizeof(raised));
+        alert_history::format_date_time(entry.ended_minute, ended, sizeof(ended));
+        if (entry.ignored)
+        {
+            alert_history::format_date_time(entry.ignored_minute, ignored, sizeof(ignored));
+        }
+        ok = append(cursor, remaining, "past\t%s\t%s\t%s\t%s\t%s\t%s\t%u\n", entry.summary.data(),
+                    severity_word(entry.severity), raised, ended,
+                    entry.ending == alert_history::Ending::Accepted ? "accepted" : "cleared",
+                    ignored, static_cast<unsigned>(entry.count));
+    }
 }
 
 /// @brief Builds the professional single-page configuration UI.
@@ -3430,6 +3612,18 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
     else if (matches_get_path(request, "/firmware"))
     {
         (void)build_firmware_page();
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/api/alerts"))
+    {
+        build_alerts_api();
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/alerts"))
+    {
+        (void)build_alerts_page();
         send_response(session, pcb, g_response);
         return;
     }
