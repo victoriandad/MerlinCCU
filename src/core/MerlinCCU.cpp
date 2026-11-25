@@ -584,6 +584,9 @@ int main()
             console_controller::set_home_assistant_status(home_assistant_manager::status()) ||
             console_changed;
         console_changed =
+            console_controller::set_weather_warnings(home_assistant_manager::weather_warnings()) ||
+            console_changed;
+        console_changed =
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
         console_changed =
             console_controller::set_share_market_status(share_price_manager::status()) ||

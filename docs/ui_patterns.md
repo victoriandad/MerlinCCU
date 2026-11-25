@@ -182,6 +182,19 @@ corrected.
   `TableHeader` style and may be mixed case (TXT-5). Cells use `TableCell`.
   The divider runs margin to margin under the headers.
 
+### Exceptional Value Highlight
+
+- Intent: make an exceptional value stand out without an alert (#202).
+- Use When: one cell's value crosses a threshold defined beside the alert that
+  shares it (BODY-7), such as a gale in a forecast row.
+- Source: `draw_cell_highlight()` and `draw_cell_text()` in
+  `src/display/weather_screens.cpp`; hazards per row from
+  `weather_extremes::classify()`.
+- Rules: only the exceptional cell is inverse, never the row; a one-pixel pad
+  on every side; the box is as tall as a weather icon so a row's highlights
+  line up; an icon inside it is drawn dark. A warning leading a footer uses
+  the same pad.
+
 ### Weather Icon
 
 - Intent: let a forecast row be read at a glance (#10).

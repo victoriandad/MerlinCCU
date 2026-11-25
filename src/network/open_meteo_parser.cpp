@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "text_utils.h"
+#include "weather_extremes.h"
 #include "weather_forecast_parser.h"
 #include "weather_json_scan.h"
 #include "weather_normalisation.h"
@@ -15,6 +16,58 @@ namespace open_meteo
 namespace
 {
 using text_utils::copy_text;
+
+/// @brief WMO weather codes Open-Meteo uses for heavy rain: heavy rain and
+/// violent rain showers.
+constexpr int kHeavyRainCode = 65;
+constexpr int kViolentRainShowersCode = 82;
+/// @brief WMO codes for heavy snow: heavy snowfall and heavy snow showers.
+constexpr int kHeavySnowCode = 75;
+constexpr int kHeavySnowShowersCode = 86;
+
+/// @brief Reads a number already copied out as text, or nothing if it is not one.
+std::optional<float> text_number(const char* text)
+{
+    float value = 0.0F;
+    if (!weather_normalisation::parse_float_value(text, &value))
+    {
+        return std::nullopt;
+    }
+    return value;
+}
+
+/// @brief Reads element `index` of a numeric array, or nothing when the
+/// array is missing (an older request) or the value is null.
+std::optional<float> array_number(const char* array, size_t index)
+{
+    char text[16] = {};
+    if (!weather_json::json_array_number_at(array, index, text, sizeof(text)))
+    {
+        return std::nullopt;
+    }
+    return text_number(text);
+}
+
+/// @brief Reads day `index` of a daily array, or nothing when it is missing.
+std::optional<float> daily_number(const char* daily_section, const char* key, size_t index)
+{
+    char text[16] = {};
+    if (!weather_json::open_meteo_daily_scalar(daily_section, key, nullptr, index, text,
+                                               sizeof(text), false))
+    {
+        return std::nullopt;
+    }
+    return text_number(text);
+}
+
+/// @brief Marks heavy rain and heavy snow from a WMO weather code, for when
+/// the amounts are missing.
+void add_heavy_condition(int code, weather_extremes::Reading& reading)
+{
+    reading.heavy_rain_condition = code == kHeavyRainCode || code == kViolentRainShowersCode;
+    reading.heavy_snow_condition = code == kHeavySnowCode || code == kHeavySnowShowersCode;
+}
+
 } // namespace
 
 bool parse_weather(const char* json, HomeAssistantStatus& status, char& temperature_unit,
@@ -134,6 +187,18 @@ bool parse_weather(const char* json, HomeAssistantStatus& status, char& temperat
         return false;
     }
 
+    // Added for exceptional weather (#202); each may be missing, in which
+    // case that hazard is judged from the weather code alone, or not at all.
+    const char* hourly_section = std::strstr(json, "\"hourly\":{");
+    const char* hourly_precipitation_array =
+        weather_json::find_json_array_start(hourly_section, "\"precipitation\":");
+    const char* hourly_snowfall_array =
+        weather_json::find_json_array_start(hourly_section, "\"snowfall\":");
+    const char* hourly_gust_array =
+        weather_json::find_json_array_start(hourly_section, "\"wind_gusts_10m\":");
+    const char* hourly_visibility_array =
+        weather_json::find_json_array_start(hourly_section, "\"visibility\":");
+
     weather_forecast::clear_weather_forecast(status);
     for (size_t i = 0; i < kWeatherForecastEntryCount; ++i)
     {
@@ -163,11 +228,14 @@ bool parse_weather(const char* json, HomeAssistantStatus& status, char& temperat
             continue;
         }
 
+        weather_extremes::Reading reading = {};
         float temperature_celsius = 0.0F;
         if (weather_normalisation::convert_temperature_to_celsius(
                 temperature_text, temperature_unit, &temperature_celsius))
         {
             weather_forecast::include_forecast_temperature_celsius(status, temperature_celsius);
+            reading.low_celsius = temperature_celsius;
+            reading.high_celsius = temperature_celsius;
         }
 
         std::snprintf(entry.temperature_text.data(), entry.temperature_text.size(), "%s C",
@@ -177,7 +245,19 @@ bool parse_weather(const char* json, HomeAssistantStatus& status, char& temperat
                                                                     &wind_speed_mph))
         {
             weather_forecast::include_forecast_wind_speed_mph(status, wind_speed_mph);
+            reading.wind_mph = wind_speed_mph;
         }
+        // The request asks for mph, mm, cm and metres.
+        reading.gust_mph = array_number(hourly_gust_array, i);
+        if (reading.gust_mph.has_value())
+        {
+            weather_forecast::include_forecast_wind_gust_mph(status, *reading.gust_mph);
+        }
+        reading.rain_mm = array_number(hourly_precipitation_array, i);
+        reading.snow_cm = array_number(hourly_snowfall_array, i);
+        reading.visibility_m = array_number(hourly_visibility_array, i);
+        add_heavy_condition(std::atoi(code_text), reading);
+        entry.hazards = weather_extremes::classify(reading, weather_extremes::Period::Hour);
 
         if (!weather_normalisation::format_compact_wind_text(
                 wind_text, direction_text, wind_source_unit, entry.wind_text.data(),
@@ -273,6 +353,24 @@ bool parse_weather(const char* json, HomeAssistantStatus& status, char& temperat
             copy_text(entry.condition_text, condition);
             weather_forecast::record_weather_condition_warning(status, condition,
                                                                 " in the daily forecast");
+
+            // Open-Meteo has no daily visibility, so a day is never marked as
+            // dense fog; the hourly rows and Met Office fog warnings cover it.
+            weather_extremes::Reading reading = {};
+            // The request asks for Celsius.
+            reading.high_celsius = text_number(temperature_max_text);
+            reading.low_celsius = text_number(temperature_min_text);
+            float wind_mph = 0.0F;
+            if (weather_normalisation::convert_wind_speed_to_mph_value(wind_max_text,
+                                                                       wind_source_unit, &wind_mph))
+            {
+                reading.wind_mph = wind_mph;
+            }
+            reading.gust_mph = daily_number(daily_section, "\"wind_gusts_10m_max\":", i);
+            reading.rain_mm = daily_number(daily_section, "\"precipitation_sum\":", i);
+            reading.snow_cm = daily_number(daily_section, "\"snowfall_sum\":", i);
+            add_heavy_condition(std::atoi(code_text), reading);
+            entry.hazards = weather_extremes::classify(reading, weather_extremes::Period::Day);
             ++status.weather_daily_forecast_count;
         }
     }

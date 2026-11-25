@@ -1000,6 +1000,18 @@ bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status)
     return true;
 }
 
+/// @brief Updates the cached official weather warnings in the console model.
+bool set_weather_warnings(const WeatherWarnings& weather_warnings)
+{
+    if (!status_controller::set_weather_warnings(g_console_state, weather_warnings))
+    {
+        return false;
+    }
+
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(const MqttStatus& mqtt_status)
 {

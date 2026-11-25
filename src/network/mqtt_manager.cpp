@@ -352,10 +352,10 @@ struct PendingCommand
 PendingCommand g_pending_command = {};
 
 // House weather from HA (#153): retained "<base>/house/weather/{now,hourly,
-// daily}", shared by every CCU on the broker. Each topic has its own buffer,
-// so the three retained messages that arrive together on subscribe are all
-// kept. The lwIP callbacks fill a buffer and set `ready`; the main loop
-// reads it and clears `ready`, and the callbacks never touch a ready buffer.
+// daily,warnings}" (warnings: #202), shared by every CCU on the broker. Each topic has its own
+// buffer, so the three retained messages that arrive together on subscribe are all kept. The lwIP
+// callbacks fill a buffer and set `ready`; the main loop reads it and clears `ready`, and the
+// callbacks never touch a ready buffer.
 char g_base_topic[48] = {};
 static_assert(sizeof(g_base_topic) > config_fields::kMqttBaseTopicLength,
               "g_base_topic must hold the longest base topic the web page accepts");
@@ -365,6 +365,7 @@ bool g_house_subscribe_in_flight = false;
 MERLIN_PSRAM_BSS char g_house_now[house_weather::kMaxPayloadBytes[0] + 1U];
 MERLIN_PSRAM_BSS char g_house_hourly[house_weather::kMaxPayloadBytes[1] + 1U];
 MERLIN_PSRAM_BSS char g_house_daily[house_weather::kMaxPayloadBytes[2] + 1U];
+MERLIN_PSRAM_BSS char g_house_warnings[house_weather::kMaxPayloadBytes[3] + 1U];
 
 /// @brief One topic's receive buffer, filled by the lwIP callbacks and read
 /// by the main loop (house weather and Controls).
@@ -379,6 +380,7 @@ std::array<InboundBuffer, house_weather::kTopicCount> g_house_buffers = {{
     {g_house_now, sizeof(g_house_now), 0U, false},
     {g_house_hourly, sizeof(g_house_hourly), 0U, false},
     {g_house_daily, sizeof(g_house_daily), 0U, false},
+    {g_house_warnings, sizeof(g_house_warnings), 0U, false},
 }};
 
 // This unit's Controls list and HA's answers to its presses (#152), on

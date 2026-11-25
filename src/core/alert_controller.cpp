@@ -9,6 +9,7 @@
 #include "config_manager.h"
 #include "console_controller_internal.h"
 #include "softkey_builders.h"
+#include "weather_extremes.h"
 
 namespace alert_controller
 {
@@ -45,9 +46,6 @@ constexpr uint32_t kPercentScale = 100U;
 /// several KB of the 8 KB stack (#164); 1 KB is room for one more large
 /// frame, such as a printf with floats or an lwIP callback, on top of it.
 constexpr uint32_t kStackLowFreeBytes = 1024U;
-constexpr float kFreezingTemperatureAlertCelsius = 0.0F;
-constexpr float kHighTemperatureAlertCelsius = 30.0F;
-constexpr float kHighWindAlertMph = 40.0F;
 constexpr uint32_t kStormLowPressurePa = 98000U;
 constexpr uint32_t kStormRapidPressureFallPa = 200U;
 constexpr uint8_t kStormPressureMinimumSamples = 6U;
@@ -179,23 +177,20 @@ bool weather_temperature_alert_range(const WeatherMetrics& metrics, float& min_c
     return have_range;
 }
 
-/// @brief Builds the maximum current/forecast wind value used by weather alerts.
-bool weather_wind_alert_maximum(const WeatherMetrics& metrics, float& max_wind_mph)
+/// @brief The highest current or forecast mean wind used by weather alerts.
+std::optional<float> weather_wind_alert_maximum(const WeatherMetrics& metrics)
 {
-    bool have_wind = false;
+    std::optional<float> max_wind_mph;
     if (metrics.current_wind_speed_mph_valid)
     {
         max_wind_mph = metrics.current_wind_speed_mph;
-        have_wind = true;
     }
     if (metrics.forecast_max_wind_speed_mph_valid &&
-        (!have_wind || metrics.forecast_max_wind_speed_mph > max_wind_mph))
+        (!max_wind_mph.has_value() || metrics.forecast_max_wind_speed_mph > *max_wind_mph))
     {
         max_wind_mph = metrics.forecast_max_wind_speed_mph;
-        have_wind = true;
     }
-
-    return have_wind;
+    return max_wind_mph;
 }
 
 /// @brief Formats the operator-facing temperature alert detail.
@@ -209,8 +204,8 @@ void build_weather_temperature_alert_detail(float min_celsius, float max_celsius
 
     const int min_celsius_rounded = static_cast<int>(std::lround(min_celsius));
     const int max_celsius_rounded = static_cast<int>(std::lround(max_celsius));
-    const bool freezing = min_celsius <= kFreezingTemperatureAlertCelsius;
-    const bool hot = max_celsius >= kHighTemperatureAlertCelsius;
+    const bool freezing = weather_extremes::is_cold(min_celsius);
+    const bool hot = weather_extremes::is_hot(max_celsius);
 
     if (freezing && hot)
     {
@@ -232,19 +227,52 @@ void build_weather_temperature_alert_detail(float min_celsius, float max_celsius
     }
 }
 
-/// @brief Formats the operator-facing wind alert detail.
-void build_weather_wind_alert_detail(float max_wind_mph, char* out, size_t out_size)
+/// @brief Formats the operator-facing wind alert detail, with the gusts when
+/// the source gives them.
+void build_weather_wind_alert_detail(std::optional<float> max_wind_mph,
+                                     std::optional<float> max_gust_mph, char* out, size_t out_size)
 {
     if (out == nullptr || out_size == 0U)
     {
         return;
     }
 
-    const int max_wind_rounded = static_cast<int>(std::lround(max_wind_mph));
-    std::snprintf(out, out_size,
-                  "Weather source reports wind up to %d mph.\nSecure loose items and check local "
-                  "warnings.",
-                  max_wind_rounded);
+    const int kWind = static_cast<int>(std::lround(max_wind_mph.value_or(0.0F)));
+    const int kGust = static_cast<int>(std::lround(max_gust_mph.value_or(0.0F)));
+    constexpr const char* kAdvice = "Secure loose items and check local warnings.";
+    if (max_wind_mph.has_value() && max_gust_mph.has_value())
+    {
+        std::snprintf(out, out_size,
+                      "Weather source reports wind up to %d mph,\ngusts to %d mph.\n%s", kWind,
+                      kGust, kAdvice);
+    }
+    else if (max_gust_mph.has_value())
+    {
+        std::snprintf(out, out_size, "Weather source reports gusts to %d mph.\n%s", kGust, kAdvice);
+    }
+    else
+    {
+        std::snprintf(out, out_size, "Weather source reports wind up to %d mph.\n%s", kWind,
+                      kAdvice);
+    }
+}
+
+/// @brief The alert severity of an official warning level (#202): Yellow is
+/// a message, Amber a warning, and Red an alert, so the ALRT lamp treats a
+/// Red warning like any other alert.
+AlertSeverity warning_level_severity(WarningLevel level)
+{
+    switch (level)
+    {
+    case WarningLevel::Red:
+        return AlertSeverity::Alert;
+    case WarningLevel::Amber:
+        return AlertSeverity::Warning;
+    case WarningLevel::Yellow:
+    case WarningLevel::None:
+        break;
+    }
+    return AlertSeverity::Message;
 }
 
 /// @brief Formats pascals as tenths of a hectopascal for operator messages.
@@ -486,8 +514,8 @@ void sync(ConsoleState& console_state)
         weather_alert_status.provider_warning_detail[0] != '\0'
             ? weather_alert_status.provider_warning_detail.data()
             : "Weather source reports a warning.\nCheck the latest local forecast.";
-    // Official provider-warning APIs are not wired yet. Current weather providers
-    // can still raise this hook from severe condition telemetry such as thunder.
+    // Severe conditions in the forecast, such as thunder; official warnings
+    // are OfficialWeatherWarning below.
     set_alert_condition(console_state, AlertCode::WeatherProviderWarning,
                         weather_alert_data_current && weather_alert_status.provider_warning_active,
                         provider_warning_severity, provider_warning_summary,
@@ -498,10 +526,9 @@ void sync(ConsoleState& console_state)
     float max_temperature_celsius = 0.0F;
     const bool have_temperature_range = weather_temperature_alert_range(
         weather_metrics, min_temperature_celsius, max_temperature_celsius);
-    const bool temperature_warning =
-        weather_alert_data_current && have_temperature_range &&
-        (min_temperature_celsius <= kFreezingTemperatureAlertCelsius ||
-         max_temperature_celsius >= kHighTemperatureAlertCelsius);
+    const bool temperature_warning = weather_alert_data_current && have_temperature_range &&
+                                     (weather_extremes::is_cold(min_temperature_celsius) ||
+                                      weather_extremes::is_hot(max_temperature_celsius));
     // Reused for each alert's detail text below rather than one 320-byte
     // buffer per alert: every use is built then immediately consumed by
     // set_alert_condition (which copies it into ActiveAlert), so lifetimes
@@ -519,17 +546,35 @@ void sync(ConsoleState& console_state)
                         AlertSeverity::Warning, "WX TEMP",
                         temperature_warning ? alert_detail_scratch : "");
 
-    float max_wind_mph = 0.0F;
-    const bool have_wind_maximum = weather_wind_alert_maximum(weather_metrics, max_wind_mph);
+    const std::optional<float> max_wind_mph = weather_wind_alert_maximum(weather_metrics);
+    const std::optional<float> max_gust_mph =
+        weather_metrics.forecast_max_wind_gust_mph_valid
+            ? std::optional<float>(weather_metrics.forecast_max_wind_gust_mph)
+            : std::nullopt;
     const bool wind_warning =
-        weather_alert_data_current && have_wind_maximum && max_wind_mph >= kHighWindAlertMph;
+        weather_alert_data_current && weather_extremes::is_high_wind(max_wind_mph, max_gust_mph);
     if (wind_warning)
     {
-        build_weather_wind_alert_detail(max_wind_mph, alert_detail_scratch,
+        build_weather_wind_alert_detail(max_wind_mph, max_gust_mph, alert_detail_scratch,
                                         sizeof(alert_detail_scratch));
     }
     set_alert_condition(console_state, AlertCode::WeatherWindWarning, wind_warning,
                         AlertSeverity::Warning, "WX WIND", wind_warning ? alert_detail_scratch : "");
+
+    // Official warnings (#202) arrive from HA whatever the weather source.
+    // Stale ones stay up, marked, rather than vanish: a warning HA could not
+    // refresh is more likely still in force than over.
+    const WeatherWarnings& warnings = console_state.weather_warnings;
+    const bool official_warning = warnings.level != WarningLevel::None;
+    if (official_warning)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch), "%s%s",
+                      warnings.stale ? "Not updated for over 2 hours.\n" : "",
+                      warnings.detail.data());
+    }
+    set_alert_condition(console_state, AlertCode::OfficialWeatherWarning, official_warning,
+                        warning_level_severity(warnings.level), warnings.summary.data(),
+                        official_warning ? alert_detail_scratch : "");
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = console_state.mqtt_status.state;

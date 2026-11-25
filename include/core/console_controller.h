@@ -88,6 +88,9 @@ bool set_time_status(const TimeStatus& time_status);
 /// @brief Copies the latest Home Assistant status into the logical front-panel state.
 bool set_home_assistant_status(const HomeAssistantStatus& home_assistant_status);
 
+/// @brief Copies the latest official weather warnings into the logical front-panel state.
+bool set_weather_warnings(const WeatherWarnings& weather_warnings);
+
 /// @brief Copies the latest MQTT status into the logical front-panel state.
 bool set_mqtt_status(const MqttStatus& mqtt_status);
 

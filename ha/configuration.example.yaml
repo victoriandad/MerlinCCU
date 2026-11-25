@@ -21,6 +21,18 @@ merlinccu:
     sun: sun.sun
     base_topic: merlinccu
 
+  # Met Office and flood warnings over MQTT (step 6). Needs the MQTT
+  # integration. Give a region, a flood point, or both.
+  warnings:
+    # Met Office warning region code, e.g. sw (South West England).
+    met_office_region: sw
+    # Environment Agency flood warnings (England) within this distance.
+    flood_latitude: 50.62
+    flood_longitude: -2.45
+    # Optional; these are the defaults.
+    flood_distance_km: 5
+    base_topic: merlinccu
+
   # Controls pages (step 7). Needs the MQTT integration.
   controls:
     units:

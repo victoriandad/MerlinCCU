@@ -188,6 +188,9 @@ struct ChainSchedule
 };
 
 HomeAssistantStatus g_status = {};
+/// Official warnings from HA (#202), and when HA built them (boot-uptime ms).
+WeatherWarnings g_warnings = {};
+uint32_t g_warnings_built_ms = 0U;
 ha_request_plan::Plan g_plan = {};
 Endpoint g_ha_endpoint = {};
 Endpoint g_open_meteo_endpoint = {};
@@ -701,12 +704,41 @@ HomeAssistantConnectionState weather_state_from_mqtt(MqttConnectionState state)
     return HomeAssistantConnectionState::Error;
 }
 
-/// @brief Applies one house weather payload from MQTT (main loop).
-/// @details The data's age comes from the payload's own timestamp once the
-/// clock is set, so data HA kept retained while it was cut off shows its
-/// true age (and goes stale) rather than looking fresh on arrival.
+/// @brief When a payload stamped `timestamp` (Unix seconds) was built, in
+/// boot-uptime ms; never 0, which means "never".
+/// @details The age comes from the payload's own timestamp once the clock is
+/// set, so data HA kept retained while it was cut off shows its true age
+/// (and goes stale) rather than looking fresh on arrival.
+uint32_t payload_built_ms(uint32_t timestamp)
+{
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    uint32_t age_ms = 0U;
+    if (const std::optional<uint32_t> utc = time_manager::utc_now();
+        utc.has_value() && *utc > timestamp)
+    {
+        constexpr uint32_t kMaxAgeSeconds = UINT32_MAX / 1000U;
+        age_ms = std::min(*utc - timestamp, kMaxAgeSeconds) * 1000U;
+    }
+    // Very old data is pinned to boot + 1 ms.
+    return (age_ms < now_ms) ? now_ms - age_ms : 1U;
+}
+
+/// @brief Applies one house weather or warnings payload from MQTT (main loop).
+/// @details Warnings (#202) are kept whatever the weather source; the
+/// forecast topics only while HA is the source.
 void apply_house_weather(house_weather::Topic topic, const char* json)
 {
+    if (topic == house_weather::Topic::Warnings)
+    {
+        const std::optional<uint32_t> timestamp = house_weather::apply_warnings(json, g_warnings);
+        if (!timestamp.has_value())
+        {
+            std::printf("HA warnings payload refused\n");
+            return;
+        }
+        g_warnings_built_ms = payload_built_ms(*timestamp);
+        return;
+    }
     if (g_active_weather_source != WeatherSource::HomeAssistant)
     {
         return;
@@ -721,16 +753,9 @@ void apply_house_weather(house_weather::Topic topic, const char* json)
     {
         return;
     }
-    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-    uint32_t age_ms = 0U;
-    if (const std::optional<uint32_t> utc = time_manager::utc_now();
-        utc.has_value() && *utc > *timestamp)
-    {
-        constexpr uint32_t kMaxAgeSeconds = UINT32_MAX / 1000U;
-        age_ms = std::min(*utc - *timestamp, kMaxAgeSeconds) * 1000U;
-    }
-    // 0 means "never fetched", so very old data is pinned to boot + 1 ms.
-    g_status.weather_last_success_ms = (age_ms < now_ms) ? now_ms - age_ms : 1U;
+    g_status.weather_last_success_ms = payload_built_ms(*timestamp);
+    const uint32_t age_ms =
+        to_ms_since_boot(get_absolute_time()) - g_status.weather_last_success_ms;
     PERIODIC_LOG("HA weather over MQTT: %s %s, %lu s old\n",
                  g_status.weather_condition[0] ? g_status.weather_condition.data() : "?",
                  g_status.weather_temperature[0] ? g_status.weather_temperature.data() : "-",
@@ -742,6 +767,9 @@ void apply_house_weather(house_weather::Topic topic, const char* json)
 void update_house_weather()
 {
     mqtt_manager::take_house_weather(apply_house_weather);
+    g_warnings.stale = g_warnings.level != WarningLevel::None &&
+                       to_ms_since_boot(get_absolute_time()) - g_warnings_built_ms >
+                           home_assistant_manager::kWarningsStaleAfterMs;
     if (g_active_weather_source == WeatherSource::HomeAssistant)
     {
         g_status.weather_state = weather_state_from_mqtt(mqtt_manager::status().state);
@@ -877,8 +905,10 @@ bool build_request()
         const int target_len = std::snprintf(
             target_buffer, sizeof(target_buffer),
             "/v1/forecast?latitude=%.4f&longitude=%.4f&hourly=temperature_2m,wind_speed_10m,"
-            "wind_direction_10m,weather_code&daily=sunrise,sunset,temperature_2m_max,"
-            "temperature_2m_min,wind_speed_10m_max,wind_direction_10m_dominant,weather_code"
+            "wind_direction_10m,weather_code,precipitation,snowfall,wind_gusts_10m,visibility"
+            "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,"
+            "wind_direction_10m_dominant,weather_code,precipitation_sum,snowfall_sum,"
+            "wind_gusts_10m_max"
             "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto"
             "&temperature_unit=celsius&wind_speed_unit=mph&forecast_hours=%u&forecast_days=%u",
             g_provider_latitude, g_provider_longitude,
@@ -1757,6 +1787,11 @@ bool update(const WifiStatus& wifi_status)
 const HomeAssistantStatus& status()
 {
     return g_status;
+}
+
+const WeatherWarnings& weather_warnings()
+{
+    return g_warnings;
 }
 
 } // namespace home_assistant_manager

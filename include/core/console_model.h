@@ -262,6 +262,8 @@ struct WeatherForecastEntry
     std::array<char, 12> temperature_text;
     std::array<char, 8> wind_text;
     std::array<char, 20> condition_text;
+    /// Exceptional weather in this hour (weather_extremes::Hazards, #202).
+    uint8_t hazards;
 };
 
 /// @brief Compares two forecast rows field-by-field.
@@ -270,7 +272,8 @@ struct WeatherForecastEntry
 inline bool operator==(const WeatherForecastEntry& lhs, const WeatherForecastEntry& rhs)
 {
     return lhs.time_text == rhs.time_text && lhs.temperature_text == rhs.temperature_text &&
-           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
+           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text &&
+           lhs.hazards == rhs.hazards;
 }
 
 /// @brief One compact daily forecast entry used by the Next 7 Days weather period.
@@ -280,13 +283,16 @@ struct WeatherDailyForecastEntry
     std::array<char, 16> temperature_text;
     std::array<char, 8> wind_text;
     std::array<char, 20> condition_text;
+    /// Exceptional weather on this day (weather_extremes::Hazards, #202).
+    uint8_t hazards;
 };
 
 /// @brief Compares two daily forecast rows field-by-field.
 inline bool operator==(const WeatherDailyForecastEntry& lhs, const WeatherDailyForecastEntry& rhs)
 {
     return lhs.date_text == rhs.date_text && lhs.temperature_text == rhs.temperature_text &&
-           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text;
+           lhs.wind_text == rhs.wind_text && lhs.condition_text == rhs.condition_text &&
+           lhs.hazards == rhs.hazards;
 }
 
 /// @brief Typed weather values used for provider-neutral alert rules.
@@ -306,6 +312,8 @@ struct WeatherMetrics
     float forecast_max_temperature_celsius;
     bool forecast_max_wind_speed_mph_valid;
     float forecast_max_wind_speed_mph;
+    bool forecast_max_wind_gust_mph_valid;
+    float forecast_max_wind_gust_mph;
 };
 
 /// @brief Compares provider-neutral weather metrics field-by-field.
@@ -322,7 +330,9 @@ inline bool operator==(const WeatherMetrics& lhs, const WeatherMetrics& rhs)
                rhs.forecast_max_temperature_celsius_valid &&
            lhs.forecast_max_temperature_celsius == rhs.forecast_max_temperature_celsius &&
            lhs.forecast_max_wind_speed_mph_valid == rhs.forecast_max_wind_speed_mph_valid &&
-           lhs.forecast_max_wind_speed_mph == rhs.forecast_max_wind_speed_mph;
+           lhs.forecast_max_wind_speed_mph == rhs.forecast_max_wind_speed_mph &&
+           lhs.forecast_max_wind_gust_mph_valid == rhs.forecast_max_wind_gust_mph_valid &&
+           lhs.forecast_max_wind_gust_mph == rhs.forecast_max_wind_gust_mph;
 }
 
 inline bool operator!=(const WeatherMetrics& lhs, const WeatherMetrics& rhs)
@@ -331,9 +341,9 @@ inline bool operator!=(const WeatherMetrics& lhs, const WeatherMetrics& rhs)
 }
 
 /// @brief One provider-originated weather warning normalised for the ALRT page.
-/// @details Official warning APIs are not wired yet. The field still gives
-/// current providers a stable place to surface severe condition telemetry
-/// without coupling the alert page to Home Assistant or Open-Meteo payloads.
+/// @details Raised by severe conditions in a forecast, such as thunder, without
+/// coupling the alert page to Home Assistant or Open-Meteo payloads. Official
+/// Met Office and flood warnings are WeatherWarnings (#202).
 struct WeatherAlertStatus
 {
     bool provider_warning_active;
@@ -352,6 +362,47 @@ inline bool operator==(const WeatherAlertStatus& lhs, const WeatherAlertStatus& 
 }
 
 inline bool operator!=(const WeatherAlertStatus& lhs, const WeatherAlertStatus& rhs)
+{
+    return !(lhs == rhs);
+}
+
+/// @brief An official warning level, as the Met Office grades them (#202).
+/// @details Environment Agency flood messages map onto the same three: flood
+/// alert = Yellow, flood warning = Amber, severe flood warning = Red.
+enum class WarningLevel : uint8_t
+{
+    None = 0,
+    Yellow,
+    Amber,
+    Red,
+};
+
+/// @brief Official weather and flood warnings HA publishes over MQTT (#202).
+/// @details Kept apart from HomeAssistantStatus, which some pages copy onto
+/// the stack, and independent of the weather source: warnings come from HA
+/// whichever source the forecast uses.
+struct WeatherWarnings
+{
+    /// Highest level in force; None when HA reports no warnings, or before
+    /// HA has sent any.
+    WarningLevel level;
+    /// The highest warning, e.g. `AMBER WIND`.
+    std::array<char, 24> summary;
+    /// Every warning in force, one per line, highest first.
+    std::array<char, 240> detail;
+    /// HA has not sent warnings for over two hours, so these may be out of
+    /// date (home_assistant_manager::kWarningsStaleAfterMs).
+    bool stale;
+};
+
+/// @brief Compares two warning snapshots field-by-field.
+inline bool operator==(const WeatherWarnings& lhs, const WeatherWarnings& rhs)
+{
+    return lhs.level == rhs.level && lhs.summary == rhs.summary && lhs.detail == rhs.detail &&
+           lhs.stale == rhs.stale;
+}
+
+inline bool operator!=(const WeatherWarnings& lhs, const WeatherWarnings& rhs)
 {
     return !(lhs == rhs);
 }
@@ -1027,6 +1078,8 @@ struct ConsoleState
     BrightnessLevel key_backlight_brightness;
     WifiStatus wifi_status;
     HomeAssistantStatus home_assistant_status;
+    /// Official weather and flood warnings from HA (#202).
+    WeatherWarnings weather_warnings;
     MqttStatus mqtt_status;
     TimeStatus time_status;
     MainLoopLoadStatus main_loop_load_status;

@@ -160,9 +160,10 @@ something else needs a change to this document first.
   used for decoration, hints, or instructions.
 - **LBL-4** Values inside brackets must be mixed case, in operator-facing words
   (`Enabled`, `Open-Meteo`, `No net`), not protocol or code terms.
-- **LBL-5** Inverse video means one thing only: this key is the selected option
-  of a set, or the field currently being edited. It must never mean that a
-  setting is on.
+- **LBL-5** On a key, inverse video means one thing only: this key is the
+  selected option of a set, or the field currently being edited. It must
+  never mean that a setting is on. In the body, inverse means only an
+  exceptional value (BODY-7).
 - **LBL-6** Every line must fit the 120-pixel cell at the font in use. The code
   that builds a label is responsible for producing text that fits, by choosing
   a compact form. Text that the renderer has to cut off is a defect.
@@ -282,6 +283,12 @@ A body is built from a small set of shared blocks.
 - **BODY-6** Row counts per page and paging arithmetic must each be defined
   once and shared between the code that builds softkeys, the code that draws
   the page, and the code that titles it.
+- **BODY-7** Inverse video in the body means one thing only: this value is
+  exceptional and needs the operator's eye, such as a gale in a forecast
+  table or a weather warning in force (#202). It marks the one cell that is
+  exceptional, never a whole row, with a one-pixel pad so it does not touch
+  its neighbours. What counts as exceptional must be defined once, beside the
+  alert that shares it, so a highlighted value and its alert always agree.
 
 ## 8. No Data, Waiting, Stale, Failed
 

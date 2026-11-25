@@ -57,7 +57,8 @@ Condition classify(const char* condition);
 /// icon or for WeatherIcon::None.
 bool pixel(WeatherIcon icon, int x, int y);
 
-/// @brief Draws `icon` with its top-left corner at (`x`, `y`).
-void draw(uint8_t* fb, int x, int y, WeatherIcon icon);
+/// @brief Draws `icon` with its top-left corner at (`x`, `y`), its lit
+/// pixels set to `on` (false draws it dark on a highlight).
+void draw(uint8_t* fb, int x, int y, WeatherIcon icon, bool on = true);
 
 } // namespace weather_icons

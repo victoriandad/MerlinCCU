@@ -67,6 +67,18 @@ quickly without relying only on photographs of the physical panel.
   page shows `WEATHER NOT SET UP` with a hint naming the web config page.
 - Before the first fetch the page shows `WAITING FOR WEATHER`; after a failed
   fetch it shows `WEATHER UNAVAILABLE` with the same wording for both sources.
+- Exceptional weather (#202, thresholds in `docs/alerts.md`): only the cell
+  that crosses a threshold is inverse (Temp for cold or heat, Wind for gales or
+  gusts, Conditions for heavy rain, heavy snow or dense fog), with its icon
+  dark on the highlight. A row with a gale and heavy rain shows two inverse
+  cells. Highlights do not touch the next column or row, and the text inside
+  is fully readable on the panel.
+- On `Next 24 Hours`, an exceptional hour between two sampled rows takes the
+  later row's place rather than being skipped.
+- With an official warning in force, the footer starts with it inverse (e.g.
+  `AMBER WIND`), the source and freshness after it on the same line, and the
+  ALRT page lists it at the matching severity. With none, the footer is as
+  before.
 
 ## Local Conditions
 

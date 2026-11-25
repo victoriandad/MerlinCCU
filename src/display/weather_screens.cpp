@@ -10,7 +10,9 @@
 #include "home_assistant_manager.h"
 #include "panel_config.h"
 #include "screens_shared.h"
+#include "text_styles.h"
 #include "ui_layout.h"
+#include "weather_extremes.h"
 #include "weather_icons.h"
 
 namespace weather_screens
@@ -80,6 +82,11 @@ constexpr int kConditionsX = 154;
 
 /// @brief Gap between a condition's icon and its text.
 constexpr int kIconTextGap = 2;
+
+/// @brief Background kept around highlighted text (#202), as on an inverted
+/// softkey.
+constexpr int kHighlightPadX = 1;
+constexpr int kHighlightPadY = 1;
 
 // One table frame for every forecast period (BODY-3): header line, divider,
 // first row and row pitch are shared; only the columns differ.
@@ -224,8 +231,12 @@ ForecastRenderSlice build_forecast_render_slice(const ConsoleState& console_stat
 /// @details The provider cache holds up to 24 rows, but the EL320 page can only
 /// show a readable subset. Sampling preserves the beginning and end of the
 /// 24-hour window rather than merely showing the next few consecutive hours.
+/// A sampled hour with no exceptional weather gives way to the first hour
+/// since the previous row that has some (#202), so a gale or downpour between
+/// samples is never hidden; the rows stay in time order.
 uint8_t build_next_twenty_four_hours_forecast_sample(
     const ForecastRenderSlice& forecast_slice,
+    const std::array<WeatherForecastEntry, kWeatherForecastEntryCount>& forecast,
     std::array<uint8_t, kForecastVisibleRows>& out_forecast_indices)
 {
     out_forecast_indices.fill(0);
@@ -269,11 +280,25 @@ uint8_t build_next_twenty_four_hours_forecast_sample(
         return next_twenty_four_hour_entry_count;
     }
 
+    uint8_t previous_chosen = 0U;
     for (uint8_t row = 0; row < max_rows; ++row)
     {
         const uint8_t sample_index = static_cast<uint8_t>(
             (row * (next_twenty_four_hour_entry_count - 1U)) / (max_rows - 1U));
-        out_forecast_indices[row] = next_twenty_four_hour_entries[sample_index];
+        uint8_t chosen = sample_index;
+        if (row > 0U && forecast[next_twenty_four_hour_entries[sample_index]].hazards == 0U)
+        {
+            for (uint8_t skipped = previous_chosen + 1U; skipped < sample_index; ++skipped)
+            {
+                if (forecast[next_twenty_four_hour_entries[skipped]].hazards != 0U)
+                {
+                    chosen = skipped;
+                    break;
+                }
+            }
+        }
+        out_forecast_indices[row] = next_twenty_four_hour_entries[chosen];
+        previous_chosen = chosen;
     }
 
     return max_rows;
@@ -419,6 +444,24 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
         console_state.home_assistant_status.weather_last_success_ms, now_ms,
         home_assistant_manager::kWeatherStaleAfterMs, freshness_text, sizeof(freshness_text));
 
+    // An official warning in force (#202) leads the footer, inverse, e.g.
+    // "AMBER WIND", so it shows on every period of the page.
+    int text_x = ui_layout::kMarginX;
+    const WeatherWarnings& warnings = console_state.weather_warnings;
+    if (warnings.level != WarningLevel::None && warnings.summary[0] != '\0')
+    {
+        constexpr int kWarningGapX = 6;
+        const int kWidth = screens::text_width(warnings.summary.data(), TextStyle::Footer);
+        framebuffer::fill_rect(
+            fb, text_x - kHighlightPadX, ui_layout::kFooterLineY - kHighlightPadY,
+            kWidth + (kHighlightPadX * 2),
+            text_styles::line_height(TextStyle::Footer) + (kHighlightPadY * 2), true);
+        screens::draw_text(fb, text_x, ui_layout::kFooterLineY, warnings.summary.data(),
+                           TextStyle::Footer, false);
+        text_x += kWidth + kHighlightPadX + kWarningGapX;
+    }
+    const int kRoom = ui_layout::kMarginX + ui_layout::kContentWidth - text_x;
+
     // One line only: a second line would rise into the row-5 PERIOD label
     // (#186). A source name too long for the line is shortened, ending in
     // "..", and the freshness is always kept whole.
@@ -427,8 +470,7 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
     char footer_label[80] = {};
     std::snprintf(footer_label, sizeof(footer_label), "%s - %s", source, freshness_text);
     int keep = static_cast<int>(std::strlen(source));
-    while (keep > 1 &&
-           screens::text_width(footer_label, TextStyle::Footer) > ui_layout::kContentWidth)
+    while (keep > 1 && screens::text_width(footer_label, TextStyle::Footer) > kRoom)
     {
         --keep;
         while (keep > 1 && source[keep - 1] == ' ')
@@ -438,8 +480,7 @@ void draw_weather_source_footer(uint8_t* fb, const ConsoleState& console_state, 
         std::snprintf(footer_label, sizeof(footer_label), "%.*s%s - %s", keep, source,
                       kShortenedMark, freshness_text);
     }
-    screens::draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY, footer_label,
-                       TextStyle::Footer);
+    screens::draw_text(fb, text_x, ui_layout::kFooterLineY, footer_label, TextStyle::Footer);
 }
 
 /// @brief Converts a weather phrase to simple title case for display.
@@ -495,36 +536,69 @@ void draw_forecast_table_header(uint8_t* fb, const ForecastColumns& columns)
     framebuffer::draw_hline(fb, kTable.left_x, kTable.right_x, kTable.divider_y, true);
 }
 
+/// @brief Lights the box behind a highlighted cell `width` pixels wide whose
+/// text starts at (`x`, `y`); the cell is then drawn dark on it (#202).
+/// @details Every highlight is as tall as the conditions icon, which starts
+/// a pixel above the text, so the cells of one row line up.
+void draw_cell_highlight(uint8_t* fb, int x, int y, int width)
+{
+    const int kTextHeight = text_styles::line_height(TextStyle::TableCell);
+    const int kTop = y - 1 - kHighlightPadY;
+    const int kBottom =
+        std::max(y + kTextHeight, y - 1 + weather_icons::kIconSize) + kHighlightPadY;
+    framebuffer::fill_rect(fb, x - kHighlightPadX, kTop, width + (kHighlightPadX * 2),
+                           kBottom - kTop, true);
+}
+
+/// @brief Draws one table cell's text, inverse when `highlighted`.
+void draw_cell_text(uint8_t* fb, int x, int y, const char* text, bool highlighted)
+{
+    if (highlighted)
+    {
+        draw_cell_highlight(fb, x, y, screens::text_width(text, TextStyle::TableCell));
+    }
+    screens::draw_text(fb, x, y, text, TextStyle::TableCell, !highlighted);
+}
+
 /// @brief Draws one forecast table row: when, temperature, wind, conditions.
 /// @details A recognised condition gets its icon (#10) and a short name that
 /// fits beside it; anything else shows the provider's words, title-cased,
-/// where the icon would be.
+/// where the icon would be. A cell whose value is exceptional (`hazards`,
+/// #202) is drawn inverse, each on its own, so a row with gales and heavy
+/// rain shows both the wind and the conditions inverted.
 void draw_forecast_table_row(uint8_t* fb, const ForecastColumns& columns, size_t index,
                              const char* when, const char* temperature, const char* wind,
-                             const char* condition)
+                             const char* condition, weather_extremes::Hazards hazards)
 {
     const int y = forecast_row_y(index);
-    const std::array<const char*, 3> cells = {when, temperature, wind};
-    for (size_t i = 0U; i < cells.size(); ++i)
-    {
-        screens::draw_text(fb, columns[i].x, y, cells[i], TextStyle::TableCell);
-    }
+    screens::draw_text(fb, columns[0].x, y, when, TextStyle::TableCell);
+    draw_cell_text(fb, columns[1].x, y, temperature,
+                   (hazards & weather_extremes::kTemperatureHazards) != 0U);
+    draw_cell_text(fb, columns[2].x, y, wind, (hazards & weather_extremes::kWindHazards) != 0U);
 
+    const bool kConditionHighlighted = (hazards & weather_extremes::kConditionHazards) != 0U;
     const int conditions_x = columns[3].x;
     const weather_icons::Condition kind = weather_icons::classify(condition);
     if (kind.icon != weather_icons::WeatherIcon::None)
     {
+        const int kTextX = conditions_x + weather_icons::kIconSize + kIconTextGap;
+        if (kConditionHighlighted)
+        {
+            draw_cell_highlight(fb, conditions_x, y,
+                                (kTextX - conditions_x) +
+                                    screens::text_width(kind.short_name, TextStyle::TableCell));
+        }
         // The 9-pixel icon sits one pixel above the 7-pixel text, centred on it.
-        weather_icons::draw(fb, conditions_x, y - 1, kind.icon);
-        screens::draw_text(fb, conditions_x + weather_icons::kIconSize + kIconTextGap, y,
-                           kind.short_name, TextStyle::TableCell);
+        weather_icons::draw(fb, conditions_x, y - 1, kind.icon, !kConditionHighlighted);
+        screens::draw_text(fb, kTextX, y, kind.short_name, TextStyle::TableCell,
+                           !kConditionHighlighted);
         return;
     }
     char formatted_condition[24] = {};
     format_weather_phrase(condition, formatted_condition, sizeof(formatted_condition));
-    screens::draw_text(fb, conditions_x, y,
-                       formatted_condition[0] != '\0' ? formatted_condition : condition,
-                       TextStyle::TableCell);
+    draw_cell_text(fb, conditions_x, y,
+                   formatted_condition[0] != '\0' ? formatted_condition : condition,
+                   kConditionHighlighted);
 }
 
 /// @brief Draws one hourly forecast entry as a table row.
@@ -532,7 +606,7 @@ void draw_hourly_forecast_row(uint8_t* fb, const WeatherForecastEntry& entry, si
 {
     draw_forecast_table_row(fb, kHourlyColumns, index, entry.time_text.data(),
                             entry.temperature_text.data(), entry.wind_text.data(),
-                            entry.condition_text.data());
+                            entry.condition_text.data(), entry.hazards);
 }
 
 /// @brief Draws the dense forecast table used by the Hourly range mode.
@@ -565,7 +639,8 @@ bool draw_next_twenty_four_hours_forecast_period(uint8_t* fb, const ConsoleState
 {
     std::array<uint8_t, kForecastVisibleRows> forecast_sample_indices = {};
     const uint8_t row_count = build_next_twenty_four_hours_forecast_sample(
-        forecast_slice, forecast_sample_indices);
+        forecast_slice, console_state.home_assistant_status.weather_forecast,
+        forecast_sample_indices);
     if (row_count == 0)
     {
         return false;
@@ -606,7 +681,8 @@ bool draw_next_seven_days_forecast_period(uint8_t* fb, const ConsoleState& conso
         draw_forecast_table_row(
             fb, kDailyColumns, i,
             next_seven_days_label_text(i, entry.date_text.data(), day_label, sizeof(day_label)),
-            entry.temperature_text.data(), entry.wind_text.data(), entry.condition_text.data());
+            entry.temperature_text.data(), entry.wind_text.data(), entry.condition_text.data(),
+            entry.hazards);
     }
 
     return true;
@@ -645,7 +721,9 @@ bool weather_period_has_data(const ConsoleState& console_state,
     case WeatherPeriod::NextTwentyFourHours:
     {
         std::array<uint8_t, kForecastVisibleRows> sample = {};
-        return build_next_twenty_four_hours_forecast_sample(forecast_slice, sample) > 0U;
+        return build_next_twenty_four_hours_forecast_sample(
+                   forecast_slice, console_state.home_assistant_status.weather_forecast, sample) >
+               0U;
     }
     case WeatherPeriod::NextSevenDays:
         return console_state.home_assistant_status.weather_daily_forecast_count > 0U;

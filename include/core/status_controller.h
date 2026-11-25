@@ -25,6 +25,9 @@ bool set_time_status(ConsoleState& console_state, const TimeStatus& time_status)
 bool set_home_assistant_status(ConsoleState& console_state,
                                const HomeAssistantStatus& home_assistant_status);
 
+/// @brief Updates the cached official weather warnings in the console model.
+bool set_weather_warnings(ConsoleState& console_state, const WeatherWarnings& weather_warnings);
+
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(ConsoleState& console_state, const MqttStatus& mqtt_status);
 

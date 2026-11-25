@@ -1,7 +1,10 @@
 #include "house_weather.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 #include "home_assistant_weather_parser.h"
 #include "weather_forecast_parser.h"
@@ -14,7 +17,13 @@ namespace house_weather
 namespace
 {
 
-constexpr std::string_view kTopicNames[kTopicCount] = {"now", "hourly", "daily"};
+constexpr std::string_view kTopicNames[kTopicCount] = {"now", "hourly", "daily", "warnings"};
+
+/// @brief The `level` names of a warnings payload, indexed by WarningLevel.
+constexpr std::array<std::string_view, 4> kLevelNames = {"none", "yellow", "amber", "red"};
+
+/// @brief Most warning lines read from one payload; HA sends at most this many.
+constexpr size_t kMaxWarningLines = 6U;
 constexpr std::string_view kWeatherPath = "/house/weather/";
 
 /// @brief Reads a non-negative integer field, e.g. `"ts":1763900000`.
@@ -119,8 +128,64 @@ std::optional<uint32_t> apply(Topic topic, const char* json, HomeAssistantStatus
                                                                   wind_unit);
         }
         return timestamp;
+    case Topic::Warnings:
+        // Warnings are not weather data; apply_warnings() reads them.
+        break;
     }
     return std::nullopt;
+}
+
+std::optional<uint32_t> apply_warnings(const char* json, WeatherWarnings& warnings)
+{
+    if (json == nullptr || read_unsigned(json, "\"v\":") != kSchemaVersion)
+    {
+        return std::nullopt;
+    }
+    const std::optional<uint32_t> timestamp = read_unsigned(json, "\"ts\":");
+    char level_text[8] = {};
+    if (!timestamp.has_value() || !weather_json::extract_json_string_value(
+                                      json, "\"level\":\"", level_text, sizeof(level_text)))
+    {
+        return std::nullopt;
+    }
+    const auto level = std::find(kLevelNames.begin(), kLevelNames.end(), level_text);
+    if (level == kLevelNames.end())
+    {
+        return std::nullopt;
+    }
+
+    WeatherWarnings updated = {};
+    updated.level = static_cast<WarningLevel>(std::distance(kLevelNames.begin(), level));
+    if (updated.level != WarningLevel::None)
+    {
+        (void)weather_json::extract_json_string_value(
+            json, "\"summary\":\"", updated.summary.data(), updated.summary.size());
+        const char* lines = weather_json::find_json_array_start(json, "\"lines\":");
+        size_t used = 0U;
+        char line[sizeof(updated.detail)] = {};
+        for (size_t i = 0U; i < kMaxWarningLines; ++i)
+        {
+            if (!weather_json::json_array_string_at(lines, i, line, sizeof(line)))
+            {
+                break;
+            }
+            const size_t kLength = std::strlen(line);
+            const size_t kSeparator = used == 0U ? 0U : 1U;
+            if (used + kSeparator + kLength >= updated.detail.size())
+            {
+                break;
+            }
+            if (kSeparator != 0U)
+            {
+                updated.detail[used++] = '\n';
+            }
+            std::memcpy(updated.detail.data() + used, line, kLength);
+            used += kLength;
+        }
+        updated.detail[used] = '\0';
+    }
+    warnings = updated;
+    return timestamp;
 }
 
 } // namespace house_weather

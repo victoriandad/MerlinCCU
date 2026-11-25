@@ -70,6 +70,7 @@ add_executable(MerlinCCU
     src/network/cert_pin.cpp
     src/core/stack_guard.cpp
     src/core/status_controller.cpp
+    src/core/weather_extremes.cpp
     src/config/config_manager.cpp
     src/config/config_persistence.cpp
     src/config/config_fields.cpp

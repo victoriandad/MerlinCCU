@@ -61,6 +61,7 @@ add_executable(host_tests
     test_png_encoder.cpp
     test_home_controls.cpp
     test_weather_icons.cpp
+    test_weather_extremes.cpp
     golden_test_support.cpp
     stubs/time_manager_stub.cpp
     stubs/config_manager_stub.cpp
@@ -109,6 +110,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/softkey_builders.cpp
     ${MERLIN_ROOT}/src/core/cursor_navigation.cpp
     ${MERLIN_ROOT}/src/core/status_controller.cpp
+    ${MERLIN_ROOT}/src/core/weather_extremes.cpp
     ${MERLIN_ROOT}/src/core/reset_reason.cpp
     ${MERLIN_ROOT}/src/display/png_encoder.cpp
     ${MERLIN_ROOT}/src/display/weather_icons.cpp

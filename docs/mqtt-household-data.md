@@ -19,15 +19,17 @@ data as soon as it subscribes. `<base>` is the CCUs' MQTT base topic
 | Topic | Content | Max size |
 | --- | --- | --- |
 | `<base>/house/weather/now` | Current conditions, provider, sun times | 512 bytes |
-| `<base>/house/weather/hourly` | Up to 24 hourly rows | 3584 bytes |
+| `<base>/house/weather/hourly` | Up to 24 hourly rows | 4096 bytes |
 | `<base>/house/weather/daily` | Up to 7 daily rows | 1536 bytes |
+| `<base>/house/weather/warnings` | Met Office and flood warnings in force (#202) | 512 bytes |
 
 The sizes are the CCU's receive buffers (`kMaxPayloadBytes` in
 `include/network/house_weather.h`). HA trims its payloads to fit; the CCU
 drops a bigger one and logs it.
 
-HA publishes all three every 5 minutes and whenever the weather or sun
-entity changes, `now` first. It publishes nothing while the weather entity is
+HA publishes the three weather topics every 5 minutes and whenever the
+weather or sun entity changes, `now` first; `warnings` every 15 minutes
+(`warnings_publisher.py`). It publishes nothing while the weather entity is
 `unavailable` or `unknown`, so the CCUs keep the last data and its timestamp
 shows them it is getting old.
 
@@ -72,13 +74,40 @@ shown as `-` or `?`.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `temperature_unit`, `wind_speed_unit` | no | Units of the rows. Each forecast carries its own, so the topics can arrive in any order. |
+| `temperature_unit`, `wind_speed_unit`, `precipitation_unit` | no | Units of the rows. Each forecast carries its own, so the topics can arrive in any order. Precipitation is `mm` or `in`; mm when missing. |
 | `forecast` | yes | Rows, oldest first: 24 at most for `hourly`, 7 for `daily` |
 | `forecast[].datetime` | yes | ISO 8601 start of the hour or day; a row without it is skipped |
 | `forecast[].condition` | no | HA weather condition |
 | `forecast[].temperature` | no | Temperature (the high, for `daily`) |
 | `forecast[].templow` | no | `daily` only: the low |
+| `forecast[].precipitation` | no | Rain or melted snow in the hour or day; left out when dry (#202) |
 | `forecast[].wind_speed`, `forecast[].wind_bearing` | no | Wind |
+| `forecast[].wind_gust_speed` | no | Gusts, when the provider gives them (#202) |
+
+The CCU uses `precipitation`, `wind_gust_speed` and `pouring` to pick out
+exceptional weather (thresholds in [alerts.md](alerts.md)). HA has no
+snowfall field, so a `snowy` row's precipitation is read as snow.
+
+## `warnings`
+
+```json
+{"v":1,"ts":1763900000,"level":"amber","summary":"AMBER WIND",
+ "lines":["Amber wind until 21:00 Tue","Yellow flood alert: South Devon Coast"]}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `level` | yes | Highest level in force: `none`, `yellow`, `amber` or `red`. `none` clears the warnings. |
+| `summary` | with a warning | The highest warning, upper case, at most 16 characters, e.g. `AMBER WIND`, `YELLOW RAIN/WIND`, `RED FLOOD` |
+| `lines` | with a warning | Every warning in force, highest first, ASCII, at most 6 lines and 239 characters in all; the last may be `+N more` |
+
+Met Office warnings come from the National Severe Weather Warnings RSS feed
+for one region; a warning that has started reads `until` its end, one still
+to come reads `from` its start, and an ended one is left out. Environment
+Agency flood messages map onto the Met Office levels: flood alert = Yellow,
+flood warning = Amber, severe flood warning = Red. If either source cannot be
+read, HA publishes nothing that round, so the CCU keeps the last warnings
+and marks them as possibly out of date after 2 hours.
 
 ## How the CCU uses it
 
@@ -89,6 +118,9 @@ shown as `-` or `?`.
   stale after 20 minutes, the same as for Open-Meteo.
 - A refused payload (other version, no `ts`, no `state` or `forecast`)
   leaves the data already shown in place and is logged on the serial console.
+- `warnings` are kept whichever weather source is chosen, as long as MQTT is
+  set up. They raise the `OfficialWeatherWarning` alert and lead the Weather
+  footer (docs/alerts.md).
 
 ## Controls (#152)
 

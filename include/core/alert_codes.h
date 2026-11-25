@@ -33,6 +33,9 @@ enum class AlertCode : uint8_t
     UnexpectedRestart,
     /// A Controls key press HA refused or did not answer (#152).
     ControlFailed,
+    /// A Met Office weather warning or Environment Agency flood warning is in
+    /// force (#202).
+    OfficialWeatherWarning,
     Count,
 };
 

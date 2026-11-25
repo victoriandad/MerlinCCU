@@ -22,7 +22,7 @@ DAILY = "daily"
 
 # The CCU's receive buffer per topic (kMaxPayloadBytes in
 # include/network/house_weather.h); a bigger payload is dropped there.
-MAX_PAYLOAD_BYTES = {NOW: 512, HOURLY: 3584, DAILY: 1536}
+MAX_PAYLOAD_BYTES = {NOW: 512, HOURLY: 4096, DAILY: 1536}
 
 # Rows the CCU keeps (kWeatherForecastEntryCount and
 # kWeatherDailyForecastEntryCount in console_model.h).
@@ -62,7 +62,7 @@ def _text(value: Any) -> str | None:
 
 def _units(attributes: dict[str, Any]) -> dict[str, str]:
     units = {}
-    for key in ("temperature_unit", "wind_speed_unit"):
+    for key in ("temperature_unit", "wind_speed_unit", "precipitation_unit"):
         if _text(attributes.get(key)):
             units[key] = attributes[key]
     return units
@@ -112,12 +112,22 @@ def _forecast_entry(name: str, entry: dict[str, Any]) -> dict[str, Any] | None:
     condition = _text(entry.get("condition"))
     if condition:
         out["condition"] = condition
-    keys = [("temperature", 1), ("wind_speed", 1), ("wind_bearing", 0)]
+    # Precipitation and gusts let the CCU pick out heavy rain, heavy snow and
+    # high winds (#202). Not every provider gives gusts (Met.no does not).
+    keys = [
+        ("temperature", 1),
+        ("precipitation", 1),
+        ("wind_speed", 1),
+        ("wind_gust_speed", 1),
+        ("wind_bearing", 0),
+    ]
     if name == DAILY:
         keys.insert(1, ("templow", 1))
     for key, digits in keys:
         value = _number(entry.get(key), digits)
-        if value is not None:
+        # A dry period sends no precipitation: most rows are dry, and the
+        # room it saves keeps a gusty, wet day of rows inside the buffer.
+        if value is not None and not (key == "precipitation" and value == 0):
             out[key] = value
     return out
 

@@ -195,6 +195,17 @@ bool set_home_assistant_status(ConsoleState& console_state,
     return changed;
 }
 
+bool set_weather_warnings(ConsoleState& console_state, const WeatherWarnings& weather_warnings)
+{
+    if (console_state.weather_warnings == weather_warnings)
+    {
+        return false;
+    }
+
+    console_state.weather_warnings = weather_warnings;
+    return true;
+}
+
 bool set_mqtt_status(ConsoleState& console_state, const MqttStatus& mqtt_status)
 {
     if (console_state.mqtt_status == mqtt_status)

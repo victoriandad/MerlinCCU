@@ -12,6 +12,9 @@ Controls (#152): gives each CCU its own list of lights, switches, scenes and
 scripts for its Controls page, and carries out its key presses
 (controls_publisher.py).
 
+Warnings (#202): publishes Met Office weather warnings and Environment Agency
+flood warnings to every CCU over MQTT (warnings_publisher.py).
+
 Configured in configuration.yaml; see docs/home-assistant-setup.md.
 """
 
@@ -33,7 +36,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from . import controls, feed
+from . import controls, feed, weather_warnings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +85,43 @@ WEATHER_SCHEMA = vol.Schema(
     }
 )
 
+CONF_WARNINGS = "warnings"
+CONF_MET_OFFICE_REGION = "met_office_region"
+CONF_FLOOD_LATITUDE = "flood_latitude"
+CONF_FLOOD_LONGITUDE = "flood_longitude"
+CONF_FLOOD_DISTANCE = "flood_distance_km"
+
+
+def _warning_sources(conf: dict[str, Any]) -> dict[str, Any]:
+    """At least one source, and a flood point given whole."""
+    has_latitude = CONF_FLOOD_LATITUDE in conf
+    if has_latitude != (CONF_FLOOD_LONGITUDE in conf):
+        raise vol.Invalid("flood_latitude and flood_longitude go together")
+    if not has_latitude and CONF_MET_OFFICE_REGION not in conf:
+        raise vol.Invalid("warnings needs met_office_region, a flood point, or both")
+    return conf
+
+
+WARNINGS_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(CONF_MET_OFFICE_REGION): vol.All(
+                cv.string, vol.Lower, vol.In(weather_warnings.MET_OFFICE_REGIONS)
+            ),
+            vol.Optional(CONF_FLOOD_LATITUDE): cv.latitude,
+            vol.Optional(CONF_FLOOD_LONGITUDE): cv.longitude,
+            vol.Optional(CONF_FLOOD_DISTANCE, default=5): vol.All(
+                vol.Coerce(float), vol.Range(min=1, max=50)
+            ),
+            vol.Optional(CONF_BASE_TOPIC, default="merlinccu"): vol.All(
+                cv.string, vol.Length(min=1, max=40)
+            ),
+        }
+    ),
+    _warning_sources,
+)
+
+
 def _control_entity(value: str) -> str:
     """An entity ID in a domain a Controls key can switch or run."""
     entity_id = cv.entity_id(value)
@@ -128,6 +168,7 @@ CONFIG_SCHEMA = vol.Schema(
                     cv.ensure_list, [SHARE_SCHEMA], vol.Length(min=1, max=MAX_SHARES)
                 ),
                 vol.Optional(CONF_WEATHER): WEATHER_SCHEMA,
+                vol.Optional(CONF_WARNINGS): WARNINGS_SCHEMA,
                 vol.Optional(CONF_CONTROLS): CONTROLS_SCHEMA,
             }
         )
@@ -159,6 +200,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "MerlinCCU weather from %s published under %s/house/weather",
             weather[CONF_ENTITY],
             weather[CONF_BASE_TOPIC],
+        )
+
+    if CONF_WARNINGS in conf:
+        from .warnings_publisher import WarningsPublisher
+
+        warnings_conf = conf[CONF_WARNINGS]
+        flood_point = None
+        if CONF_FLOOD_LATITUDE in warnings_conf:
+            flood_point = (
+                warnings_conf[CONF_FLOOD_LATITUDE],
+                warnings_conf[CONF_FLOOD_LONGITUDE],
+                warnings_conf[CONF_FLOOD_DISTANCE],
+            )
+        WarningsPublisher(
+            hass,
+            warnings_conf[CONF_BASE_TOPIC],
+            warnings_conf.get(CONF_MET_OFFICE_REGION),
+            flood_point,
+        ).async_start()
+        _LOGGER.info(
+            "MerlinCCU warnings (Met Office region %s, floods %s) published under %s",
+            warnings_conf.get(CONF_MET_OFFICE_REGION, "none"),
+            "on" if flood_point else "off",
+            weather_warnings.topic(warnings_conf[CONF_BASE_TOPIC]),
         )
 
     if CONF_CONTROLS in conf:

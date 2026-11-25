@@ -147,7 +147,7 @@ bool pixel(WeatherIcon icon, int x, int y)
     return (kBitmaps[index][static_cast<size_t>(y)] & (1U << (kIconSize - 1 - x))) != 0U;
 }
 
-void draw(uint8_t* fb, int x, int y, WeatherIcon icon)
+void draw(uint8_t* fb, int x, int y, WeatherIcon icon, bool on)
 {
     for (int row = 0; row < kIconSize; ++row)
     {
@@ -155,7 +155,7 @@ void draw(uint8_t* fb, int x, int y, WeatherIcon icon)
         {
             if (pixel(icon, column, row))
             {
-                framebuffer::set_pixel(fb, x + column, y + row, true);
+                framebuffer::set_pixel(fb, x + column, y + row, on);
             }
         }
     }

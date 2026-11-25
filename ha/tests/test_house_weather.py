@@ -93,11 +93,27 @@ class ForecastPayloadTest(unittest.TestCase):
         self.assertLessEqual(len(payload["forecast"]), hw.MAX_ENTRIES[hw.HOURLY])
         self.assertLessEqual(len(text.encode("utf-8")), hw.MAX_PAYLOAD_BYTES[hw.HOURLY])
         self.assertEqual(payload["wind_speed_unit"], "km/h")
-        self.assertNotIn("precipitation", payload["forecast"][0])
+        self.assertNotIn("humidity", payload["forecast"][0])
 
     def test_a_typical_day_of_hourly_rows_fits_whole(self):
         text = hw.forecast_payload(hw.HOURLY, hourly_rows(24, "cloudy"), ATTRIBUTES, TS)
         self.assertEqual(len(json.loads(text)["forecast"]), 24)
+
+    def test_precipitation_and_gusts_ride_along_for_exceptional_weather(self):
+        # #202: a wet, gusty day of Met Office-style rows still fits whole.
+        rows = [dict(r, wind_gust_speed=61.27) for r in hourly_rows(24, "rainy")]
+        attributes = dict(ATTRIBUTES, precipitation_unit="mm")
+        text = hw.forecast_payload(hw.HOURLY, rows, attributes, TS)
+        payload = json.loads(text)
+        self.assertEqual(len(payload["forecast"]), 24)
+        self.assertEqual(payload["precipitation_unit"], "mm")
+        self.assertEqual(payload["forecast"][0]["precipitation"], 0.3)
+        self.assertEqual(payload["forecast"][0]["wind_gust_speed"], 61.3)
+
+    def test_a_dry_period_sends_no_precipitation(self):
+        rows = [dict(r, precipitation=0.0) for r in hourly_rows(2, "sunny")]
+        payload = json.loads(hw.forecast_payload(hw.HOURLY, rows, ATTRIBUTES, TS))
+        self.assertNotIn("precipitation", payload["forecast"][0])
 
     def test_daily_carries_the_low_temperature(self):
         rows = [dict(r, templow=2.04) for r in hourly_rows(10, "sunny")]

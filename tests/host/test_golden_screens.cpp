@@ -12,13 +12,14 @@
 #include "console_controller.h"
 #include "console_model.h"
 #include "framebuffer.h"
+#include "golden_test_support.h"
 #include "input.h"
 #include "local_conditions.h"
-#include "golden_test_support.h"
 #include "panel_config.h"
 #include "screens.h"
 #include "screens_shared.h"
 #include "test_framework.h"
+#include "weather_extremes.h"
 #include "weather_screens.h"
 
 namespace
@@ -902,8 +903,11 @@ bool weather_body_stays_out_of_row_5(const ConsoleState& state)
     }
     const auto fb = render_page(body_only, kWeatherTestNowMs);
     // Up to the footer line itself: a wrapped footer rising into the PERIOD
-    // label is the overlap #186 found.
-    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1, ui_layout::kFooterLineY - 1) &&
+    // label is the overlap #186 found. The one-pixel pad of a warning's
+    // highlight (#202) belongs to the footer, so the last row is left out.
+    constexpr int kFooterHighlightPadY = 1;
+    return !any_pixel_lit(fb.data(), 0, kRow5CellTopY, kUiWidth - 1,
+                          ui_layout::kFooterLineY - 1 - kFooterHighlightPadY) &&
            !any_pixel_lit(fb.data(), kUiWidth - 11, kBodyTopY, kUiWidth - 1, kFooterTopY - 1);
 }
 
@@ -942,6 +946,50 @@ HOST_TEST(weather_page_shows_stale_data_in_the_footer)
     state.home_assistant_status.weather_last_success_ms = 1000U;
     state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
     check_weather_state(state, weather_screens::WeatherPageState::Forecast, "weather_stale");
+}
+
+HOST_TEST(weather_page_inverts_exceptional_cells_and_leads_the_footer_with_a_warning)
+{
+    // #202: every hazard at once. A frosty hour, a hot hour, a gale with a
+    // downpour on one row, heavy snow, and dense fog; on the week view a
+    // hot, wet day and a cold, snowy, windy one. An Amber warning leads the
+    // footer.
+    static constexpr std::array<WeatherPeriod, 3> kPeriods = {
+        WeatherPeriod::Hourly, WeatherPeriod::NextTwentyFourHours, WeatherPeriod::NextSevenDays};
+    static constexpr std::array<const char*, 3> kGoldens = {"weather_hourly_extremes",
+                                                            "weather_next_24_hours_extremes",
+                                                            "weather_next_7_days_extremes"};
+    for (size_t presses = 0U; presses < kPeriods.size(); ++presses)
+    {
+        ConsoleState state = open_weather_page(static_cast<int>(presses));
+        fill_weather_data(state);
+        auto& hourly = state.home_assistant_status.weather_forecast;
+        set_text(hourly[0].temperature_text, "-2.0 C");
+        hourly[0].hazards = weather_extremes::kCold;
+        set_text(hourly[1].temperature_text, "29.0 C");
+        hourly[1].hazards = weather_extremes::kHeat;
+        set_text(hourly[2].wind_text, "44 SW");
+        set_text(hourly[2].condition_text, "pouring");
+        hourly[2].hazards = weather_extremes::kWind | weather_extremes::kRain;
+        set_text(hourly[3].condition_text, "snowy");
+        hourly[3].hazards = weather_extremes::kSnow;
+        set_text(hourly[4].condition_text, "fog");
+        hourly[4].hazards = weather_extremes::kFog;
+        // An hour the Next 24 Hours sample would skip: it takes the row.
+        set_text(hourly[8].wind_text, "52 W");
+        hourly[8].hazards = weather_extremes::kWind;
+        auto& daily = state.home_assistant_status.weather_daily_forecast;
+        set_text(daily[1].temperature_text, "18-29C");
+        daily[1].hazards = weather_extremes::kHeat | weather_extremes::kRain;
+        set_text(daily[3].temperature_text, "-4-1C");
+        set_text(daily[3].condition_text, "snowy");
+        daily[3].hazards =
+            weather_extremes::kCold | weather_extremes::kSnow | weather_extremes::kWind;
+
+        state.weather_warnings.level = WarningLevel::Amber;
+        set_text(state.weather_warnings.summary, "AMBER WIND");
+        check_weather_state(state, weather_screens::WeatherPageState::Forecast, kGoldens[presses]);
+    }
 }
 
 HOST_TEST(weather_page_shortens_a_long_attribution_to_one_footer_line)
