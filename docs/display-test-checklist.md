@@ -31,7 +31,8 @@ quickly without relying only on photographs of the physical panel.
 - `UPTIME` reads `12m`, then `5h 03m`, then `3d 05h`, and moves on each
   minute while the page is open.
 - `LAST RESET` names why the unit started: `Power on` after a power cycle,
-  `Reset pin` after the reset button, `Update` after an OTA upload,
+  `Reset pin` after the reset button, `Update` after an OTA upload
+  or a USB (picotool / VS Code Run) load,
   `Restart` after a requested restart, `Watchdog` after a hang.
 
 ## Status Resources Page

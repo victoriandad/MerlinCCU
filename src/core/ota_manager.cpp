@@ -266,6 +266,12 @@ bool booted_after_update()
     return (g_boot_record & kUpdateMarkerMask) == kUpdateMarker;
 }
 
+bool booted_as_flash_update()
+{
+    constexpr uint8_t kChainedFlag = BOOT_TYPE_CHAINED_FLAG;
+    return (g_boot_type & static_cast<uint8_t>(~kChainedFlag)) == BOOT_TYPE_FLASH_UPDATE;
+}
+
 void log_boot_state()
 {
     std::printf("OTA: boot slot=%d boot_type=%u tbyb_flags=0x%02X update_record=0x%04lX "

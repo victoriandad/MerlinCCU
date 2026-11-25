@@ -30,6 +30,21 @@ HOST_TEST(reset_reason_update_and_rollback_win_over_the_watchdog)
     EXPECT_TRUE(reset_reason::classify(signals) == ResetReason::Rollback);
 }
 
+HOST_TEST(reset_reason_usb_load_is_an_update_not_a_hang)
+{
+    // #204: picotool's ROM reboot left the old firmware's watchdog mark and
+    // a power-on flag, and showed as a hang. Only the boot type tells.
+    Signals signals = {};
+    signals.power_on = true;
+    signals.watchdog_timeout = true;
+    signals.flash_update_boot = true;
+    EXPECT_TRUE(reset_reason::classify(signals) == ResetReason::Update);
+    EXPECT_FALSE(reset_reason::unexpected(reset_reason::classify(signals)));
+
+    signals.cpu_fault = true;
+    EXPECT_TRUE(reset_reason::classify(signals) == ResetReason::CpuFault);
+}
+
 HOST_TEST(reset_reason_watchdog_timeout_is_a_hang_and_a_plain_reboot_a_restart)
 {
     Signals signals = {};
