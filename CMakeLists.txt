@@ -45,6 +45,8 @@ pico_sdk_init()
 add_executable(MerlinCCU
     src/core/MerlinCCU.cpp
     src/core/alert_controller.cpp
+    src/core/alert_history.cpp
+    src/core/alert_history_store.cpp
     src/core/alert_ordering.cpp
     src/core/calendar_controller.cpp
     src/core/calendar_navigation.cpp

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "alert_controller.h"
+#include "alert_history.h"
 #include "alert_screens.h"
 #include "config_manager.h"
 #include "console_controller.h"
@@ -508,6 +509,63 @@ HOST_TEST(a_recurring_alert_shows_its_count_on_the_key_and_in_the_detail)
     EXPECT_TRUE(detail.active_page == MenuPage::AlertDetail);
     EXPECT_TRUE(alert_detail_stays_in_bounds(detail));
     EXPECT_TRUE(golden_test::check_golden("alert_detail_recurring", render_page(detail).data()));
+}
+
+HOST_TEST(alert_history_pages_clear_all_asks_first)
+{
+    console_controller::init();
+    alert_history::reset();
+    for (uint8_t i = 0U; i < 10U; ++i)
+    {
+        ActiveAlert alert = {};
+        alert.code = i;
+        alert.severity = AlertSeverity::Message;
+        alert.raised_minute = (20770U * 1440U) + (60U * i);
+        std::snprintf(alert.summary.data(), alert.summary.size(), "PAST %u",
+                      static_cast<unsigned>(i));
+        alert_history::record(alert, alert_history::Ending::Cleared, alert.raised_minute + 5U);
+    }
+    const auto press = [](ButtonId id)
+    { (void)console_controller::handle_button_event({id, ButtonEventType::Pressed}); };
+
+    press(ButtonId::Alert);
+    press(ButtonId::LeftBottom);
+    const ConsoleState& history = console_controller::state();
+    EXPECT_TRUE(history.active_page == MenuPage::AlertHistory);
+    EXPECT_EQ(alert_history::page_count(), 2U);
+    press(ButtonId::CursorRight);
+    EXPECT_EQ(console_controller::state().alert_history_page_index, 1U);
+    EXPECT_TRUE(golden_test::check_golden("alert_history_page_2", render_page(history).data()));
+
+    // CLEAR ALL asks first; BACK STEP and CANCEL both keep the history.
+    press(ButtonId::LeftBottom);
+    EXPECT_TRUE(console_controller::state().alert_history_clear_confirming);
+    EXPECT_TRUE(golden_test::check_golden("alert_history_clear_confirm",
+                                          render_page(console_controller::state()).data()));
+    press(ButtonId::BackStep);
+    EXPECT_FALSE(console_controller::state().alert_history_clear_confirming);
+    EXPECT_TRUE(console_controller::state().active_page == MenuPage::AlertHistory);
+    press(ButtonId::LeftBottom);
+    press(ButtonId::LeftBottom);
+    EXPECT_EQ(alert_history::count(), 10U);
+
+    press(ButtonId::LeftBottom);
+    press(ButtonId::RightBottom);
+    EXPECT_EQ(alert_history::count(), 0U);
+    EXPECT_EQ(console_controller::state().alert_history_page_index, 0U);
+    EXPECT_TRUE(golden_test::check_golden("alert_history_empty",
+                                          render_page(console_controller::state()).data()));
+    alert_history::reset();
+}
+
+HOST_TEST(the_longest_history_values_fit_the_key)
+{
+    // History keys use the 8x12 font with two label lines (#203).
+    for (const char* value : {"[12 Nov 23:50]", "[12 Nov x99]", "[06:12-07:40]"})
+    {
+        EXPECT_TRUE(screens::text_width(value, text_styles::TextStyle::Softkey) <=
+                    ui_layout::kSoftkeyLabelMaxWidth);
+    }
 }
 
 HOST_TEST(the_largest_alert_count_fits_the_alert_key)

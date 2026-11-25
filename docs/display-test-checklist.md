@@ -255,6 +255,22 @@ step 7).
   - `R5=ACCEPT` removes selected alert and returns to list.
   - `L5=IGNORE` returns to list without removing selected alert.
   - Cursor arrows scroll additional detail text.
+- The alert list shows eight alerts to a page (L1-L4, R1-R4) and `L5=HISTORY`.
+- History page (#203):
+  - Shows `NO PAST ALERTS` when empty, with no `CLEAR ALL` key.
+  - An alert that clears, or is accepted, appears at L1; L4 is newer than R1,
+    and R4 is the oldest on the page. `HISTORY n/m` and arrows page through
+    up to 16 entries.
+  - The same alert ending again within an hour shows `[HH:MM x2]` on one key.
+  - An entry from an earlier day shows its date, e.g. `[12 Nov 23:50]`.
+  - The detail page shows raised, ignored (if `IGNORE` was pressed), and
+    cleared or accepted times, then the alert text; cursor keys scroll it.
+  - `L5=CLEAR ALL` asks first: `CANCEL` and `BACK STEP` keep the history,
+    `R5=CLEAR ALL` empties it. Active alerts are not touched.
+  - History survives a restart: note an entry, power-cycle a minute later,
+    and it is still there.
+  - `http://<unit>/alerts` lists the same active and past alerts with their
+    full text; `/api/alerts` gives one tab-separated line per alert.
 
 ## Failure Capture
 

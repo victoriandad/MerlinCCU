@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "alert_history.h"
 #include "alert_ordering.h"
 #include "config_manager.h"
 #include "console_controller_internal.h"
@@ -91,6 +92,10 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
         const int existing = find_alert_by_code(console_state, code);
         if (existing >= 0)
         {
+            // It has ended on its own; history keeps it (#203).
+            alert_history::record(console_state.active_alerts[static_cast<size_t>(existing)],
+                                  alert_history::Ending::Cleared,
+                                  alert_history::local_minute(console_state.time_status));
             erase_active_alert(console_state, static_cast<uint8_t>(existing));
         }
         return;
@@ -132,6 +137,9 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
     alert.code = static_cast<uint8_t>(code);
     alert.sequence = g_alert_sequence_counter++;
     alert.occurrence_count = g_alert_occurrences[code_idx];
+    alert.ignored = false;
+    alert.raised_minute = alert_history::local_minute(console_state.time_status);
+    alert.ignored_minute = 0U;
     std::snprintf(alert.occurred_time_text.data(), alert.occurred_time_text.size(), "%s",
                   console_state.time_status.synced ? console_state.time_status.time_text.data()
                                                    : "--:--");
@@ -772,6 +780,7 @@ void sync(ConsoleState& console_state)
     {
         console_state.alert_list_page_index = static_cast<uint8_t>(pages - 1U);
     }
+    clamp_history_page(console_state);
 }
 
 uint8_t page_count(const ConsoleState& console_state)
@@ -868,12 +877,25 @@ void accept_alert(ConsoleState& console_state, uint8_t index)
         return;
     }
     const uint8_t code = console_state.active_alerts[index].code;
+    alert_history::record(console_state.active_alerts[index], alert_history::Ending::Accepted,
+                          alert_history::local_minute(console_state.time_status));
     suppress_alert_code(code);
     if (code < g_alert_occurrences.size())
     {
         g_alert_occurrences[code] = 0U;
     }
     erase_active_alert(console_state, index);
+}
+
+void ignore_alert(ConsoleState& console_state, uint8_t index)
+{
+    if (index >= console_state.alert_count)
+    {
+        return;
+    }
+    ActiveAlert& alert = console_state.active_alerts[index];
+    alert.ignored = true;
+    alert.ignored_minute = alert_history::local_minute(console_state.time_status);
 }
 
 bool acknowledged(AlertCode code)
@@ -921,29 +943,97 @@ void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
     build_display_indices(console_state, alert_indices, &sorted_count);
     const uint8_t page_start =
         static_cast<uint8_t>(console_state.alert_list_page_index * kAlertsPerPage);
-    // The Alert list also uses L5 (NAV-6).
-    constexpr std::array<SoftKeyId, kAlertsPerPage> kSlots = {
-        SoftKeyId::Left1,  SoftKeyId::Left2,  SoftKeyId::Left3,
-        SoftKeyId::Left4,  SoftKeyId::Left5,  SoftKeyId::Right1,
-        SoftKeyId::Right2, SoftKeyId::Right3, SoftKeyId::Right4};
-    for (uint8_t i = 0U; i < kSlots.size(); ++i)
+    static_assert(softkey::kListSlots.size() == kAlertsPerPage, "one alert per list slot");
+    for (uint8_t i = 0U; i < softkey::kListSlots.size(); ++i)
     {
         const uint8_t index = static_cast<uint8_t>(page_start + i);
         if (index >= sorted_count)
         {
             continue;
         }
+        const SoftKeyId slot = softkey::kListSlots[i];
         const ActiveAlert& alert = console_state.active_alerts[alert_indices[index]];
-        softkey::set(softkeys, kSlots[i],
-                     softkey::item(build_softkey_label(kSlots[i], alert),
-                                   SoftKeyRoute::SelectAlertSlot, i));
+        softkey::set(
+            softkeys, slot,
+            softkey::item(build_softkey_label(slot, alert), SoftKeyRoute::SelectAlertSlot, i));
     }
+    // Past alerts are a page of their own rather than a view of this one, so
+    // History's L5 is free for CLEAR ALL (#203).
+    softkey::set(softkeys, SoftKeyId::Left5, softkey::navigate("HISTORY", MenuPage::AlertHistory));
 }
 
 void build_detail_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys)
 {
     softkey::set(softkeys, SoftKeyId::Left5, softkey::action("IGNORE", SoftKeyRoute::AlertIgnore));
     softkey::set(softkeys, SoftKeyId::Right5, softkey::action("ACCEPT", SoftKeyRoute::AlertAccept));
+}
+
+void enter_history(ConsoleState& console_state)
+{
+    console_state.alert_history_page_index = 0U;
+    console_state.alert_history_clear_confirming = false;
+}
+
+void build_history_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)
+{
+    if (console_state.alert_history_clear_confirming)
+    {
+        // Decision state: only decline (L5) and confirm (R5) (NAV-3).
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CANCEL", SoftKeyRoute::CancelClearAlertHistory));
+        softkey::set(softkeys, SoftKeyId::Right5,
+                     softkey::action("CLEAR ALL", SoftKeyRoute::ConfirmClearAlertHistory));
+        return;
+    }
+
+    const uint8_t count = alert_history::count();
+    const uint32_t today = alert_history::local_minute(console_state.time_status);
+    const uint8_t page_start =
+        static_cast<uint8_t>(console_state.alert_history_page_index * kAlertsPerPage);
+    for (uint8_t i = 0U; i < softkey::kListSlots.size(); ++i)
+    {
+        const uint8_t index = static_cast<uint8_t>(page_start + i);
+        if (index >= count)
+        {
+            break;
+        }
+        const SoftKeyId slot = softkey::kListSlots[i];
+        const alert_history::Entry& entry = alert_history::entry(index);
+        char value[24] = {};
+        alert_history::format_key_value(entry, today, value, sizeof(value));
+        size_t capacity = 0U;
+        char* label = cci::dynamic_softkey_label_buffer(slot, capacity);
+        std::snprintf(label, capacity, "%s\n%s", entry.summary.data(), value);
+        softkey::set(softkeys, slot, softkey::item(label, SoftKeyRoute::SelectAlertHistorySlot, i));
+    }
+    if (count > 0U)
+    {
+        softkey::set(softkeys, SoftKeyId::Left5,
+                     softkey::action("CLEAR ALL", SoftKeyRoute::RequestClearAlertHistory));
+    }
+}
+
+bool open_history_detail_from_slot(ConsoleState& console_state, uint8_t page_slot)
+{
+    const uint8_t index =
+        static_cast<uint8_t>((console_state.alert_history_page_index * kAlertsPerPage) + page_slot);
+    if (index >= alert_history::count())
+    {
+        return false;
+    }
+    console_state.alert_history_detail_sequence = alert_history::entry(index).sequence;
+    console_state.alert_history_scroll_line = 0U;
+    console_state.active_page = MenuPage::AlertHistoryDetail;
+    return true;
+}
+
+void clamp_history_page(ConsoleState& console_state)
+{
+    const uint8_t pages = alert_history::page_count();
+    if (console_state.alert_history_page_index >= pages)
+    {
+        console_state.alert_history_page_index = static_cast<uint8_t>(pages - 1U);
+    }
 }
 
 } // namespace alert_controller

@@ -177,6 +177,10 @@ enum class MenuPage : uint8_t
     FontSettings,
     /// The fonts one style can take.
     FontOptions,
+    /// Alerts that have ended, newest first (#203).
+    AlertHistory,
+    /// One past alert, read-only.
+    AlertHistoryDetail,
     Count,
 };
 
@@ -677,6 +681,12 @@ enum class SoftKeyRoute : uint8_t
     SelectAlertSlot,
     AlertAccept,
     AlertIgnore,
+    /// Opens the past alert in key `slot` of the current History page (#203).
+    SelectAlertHistorySlot,
+    /// History's CLEAR ALL, with a confirm step.
+    RequestClearAlertHistory,
+    ConfirmClearAlertHistory,
+    CancelClearAlertHistory,
     /// Selects Pinter vessel `slot`.
     SelectPinterSlot,
     ApplyPinterPrimaryAction,
@@ -724,8 +734,9 @@ enum class SoftKeyRoute : uint8_t
 /// never needs raising by hand (NAV-6a).
 inline constexpr size_t kActiveAlertCapacity = kAlertCodeCount;
 
-/// @brief Alerts shown on one Alert list page: L1-L5 and R1-R4 (NAV-6).
-inline constexpr uint8_t kAlertsPerPage = 9U;
+/// @brief Alerts shown on one Alert or History list page: L1-L4 and R1-R4
+/// (NAV-6). L5 opens History, or clears it (#203).
+inline constexpr uint8_t kAlertsPerPage = 8U;
 
 /// @brief Alert list pages needed for `alert_count` alerts; always at least one.
 constexpr uint8_t alert_list_page_count(uint8_t alert_count)
@@ -746,6 +757,12 @@ struct ActiveAlert
     /// Times this alert has gone from clear to active since it was last
     /// accepted or the CCU restarted, capped at kMaxAlertOccurrenceCount.
     uint8_t occurrence_count;
+    /// The operator pressed IGNORE on it; history notes that (#203).
+    bool ignored;
+    /// Local minutes when it was raised and last ignored, 0 when the clock
+    /// had not synced (alert_history::local_minute).
+    uint32_t raised_minute;
+    uint32_t ignored_minute;
     std::array<char, 32> summary;
     std::array<char, 320> detail;
 };
@@ -1096,6 +1113,14 @@ struct ConsoleState
     uint8_t alert_detail_index;
     uint8_t alert_detail_scroll_line;
     MenuPage alert_parent_page;
+    /// History page shown, the past alert open on its detail page (by
+    /// alert_history::Entry::sequence, so a new entry arriving does not
+    /// change which one), and that page's scroll line (#203).
+    uint8_t alert_history_page_index;
+    uint32_t alert_history_detail_sequence;
+    uint8_t alert_history_scroll_line;
+    /// History's CLEAR ALL is asking for confirmation.
+    bool alert_history_clear_confirming;
     std::array<ActiveAlert, kActiveAlertCapacity> active_alerts;
     std::array<CalendarEvent, kCalendarEventCapacity> calendar_events;
     std::array<PinterStatus, kPinterCount> pinters;
@@ -1117,6 +1142,8 @@ inline bool page_is_asking_for_decision(const ConsoleState& console_state)
         return true;
     case MenuPage::Pinter:
         return console_state.pinter_reset_confirming;
+    case MenuPage::AlertHistory:
+        return console_state.alert_history_clear_confirming;
     case MenuPage::ScreenSaverSettings:
         return console_state.screen_saver_timeout_editing;
     default:

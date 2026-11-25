@@ -44,6 +44,7 @@ add_executable(host_tests
     test_page_coverage.cpp
     test_pinter_controller.cpp
     test_alert_controller.cpp
+    test_alert_history.cpp
     test_calendar_controller.cpp
     test_cursor_navigation.cpp
     test_settings_controller.cpp
@@ -105,6 +106,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/core/console_controller.cpp
     ${MERLIN_ROOT}/src/core/pinter_controller.cpp
     ${MERLIN_ROOT}/src/core/alert_controller.cpp
+    ${MERLIN_ROOT}/src/core/alert_history.cpp
     ${MERLIN_ROOT}/src/core/calendar_controller.cpp
     ${MERLIN_ROOT}/src/core/settings_controller.cpp
     ${MERLIN_ROOT}/src/core/softkey_builders.cpp

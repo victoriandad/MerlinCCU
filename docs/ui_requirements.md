@@ -71,8 +71,8 @@ softkeys share the screen.
 
 | Type | Softkeys | Body | Examples |
 | --- | --- | --- | --- |
-| Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list, Controls |
-| Body page | Row 5 only (L5, R5) | Rows 1-4 at full width | Status sub-pages, Calendar event, Share detail, Weather, graphs, Alert detail |
+| Key page | Any of the ten | Empty, apart from the footer and one optional notice line | Home, Settings and its sub-pages, Calendar, Pinter, Shares list, Alert list, Alert history, Controls |
+| Body page | Row 5 only (L5, R5) | Rows 1-4 at full width | Status sub-pages, Calendar event, Share detail, Weather, graphs, Alert detail, Past alert |
 | Diagnostic page | Row 5 only | Free-form test or bring-up content | Keypad debug, Greyscale test |
 
 - **PAGE-1** Each page must declare its type, and its softkey map and body must
@@ -188,13 +188,17 @@ something else needs a change to this document first.
   page shows, such as `PERIOD`, `VIEW`, or `PERSON`) must be at L5.
 - **NAV-5** No softkey may duplicate `BACK STEP`.
 - **NAV-6** Lists of items must fill L1 to L4 and then R1 to R4, eight to a
-  page, leaving row 5 for NAV-2 to NAV-4. The Alert list is the one exception:
-  it has no view modifier, so it also uses L5 and shows nine to a page.
+  page, leaving row 5 for NAV-2 to NAV-4. A list ordered by time puts the
+  newest at L1, so L4 is newer than R1 and R4 is the oldest on the page.
 - **NAV-6a** A list must never be capped below the number of entries that can
   exist; it pages as far as it needs to. Where entries are of known types
   (such as alerts, one per alert type), the list must grow automatically when
   a type is added, and a repeat of the same entry must raise a count on the
   existing key, not add another key.
+- **NAV-6b** A history list (entries that have ended, such as past alerts) is
+  open-ended by nature, so it may keep only the newest N. It must drop the
+  oldest when full, and the page or its documentation must say how many are
+  kept.
 - **NAV-7** Cursor left and right must be the only way to change list page,
   step a date or period, or scroll long text. Softkeys must not be spent on
   previous/next.

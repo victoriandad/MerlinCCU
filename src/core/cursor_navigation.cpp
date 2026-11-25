@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "alert_history.h"
 #include "alert_screens.h"
 #include "page_table.h"
 
@@ -52,6 +53,27 @@ const PageCursor kAlertListPages = {
     [](const ConsoleState& s)
     { return list_pages(s.alert_list_page_index, alert_list_page_count(s.alert_count)); },
     [](ConsoleState& s, int position) { s.alert_list_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kAlertHistoryPages = {
+    [](const ConsoleState& s)
+    {
+        // The CLEAR ALL question holds the page still (NAV-3).
+        return s.alert_history_clear_confirming
+                   ? CursorRange{CursorUse::None, 0, 0, 0}
+                   : list_pages(s.alert_history_page_index, alert_history::page_count());
+    },
+    [](ConsoleState& s, int position)
+    { s.alert_history_page_index = static_cast<uint8_t>(position); }};
+
+const PageCursor kAlertHistoryDetailScroll = {
+    [](const ConsoleState& s)
+    {
+        const int max_scroll = alert_screens::history_detail_max_scroll(s);
+        return CursorRange{CursorUse::Scroll,
+                           std::min<int>(s.alert_history_scroll_line, max_scroll), 0, max_scroll};
+    },
+    [](ConsoleState& s, int position)
+    { s.alert_history_scroll_line = static_cast<uint8_t>(position); }};
 
 const PageCursor kHomeControlPages = {
     [](const ConsoleState& s)

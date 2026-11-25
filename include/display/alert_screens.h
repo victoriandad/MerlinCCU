@@ -24,4 +24,16 @@ void draw_alert_detail_page(uint8_t* fb, const ConsoleState& console_state);
 /// in view. Pure layout arithmetic; draws nothing.
 uint8_t detail_max_scroll(const ActiveAlert& alert);
 
+/// @brief Draws the History page body (#203): empty, or the CLEAR ALL
+/// question. The entries themselves are the softkeys.
+void draw_alert_history_page(uint8_t* fb, const ConsoleState& console_state);
+
+/// @brief Draws the open past alert: what it was, when it was raised and
+/// ended, how it ended, then its detail, with line-based scrolling.
+void draw_alert_history_detail_page(uint8_t* fb, const ConsoleState& console_state);
+
+/// @brief Highest scroll position for the open past alert's text; 0 when
+/// none is open. Shared with the cursor handling, like detail_max_scroll().
+uint8_t history_detail_max_scroll(const ConsoleState& console_state);
+
 } // namespace alert_screens

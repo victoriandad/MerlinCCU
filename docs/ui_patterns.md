@@ -117,7 +117,11 @@ corrected.
   `src/display/alert_screens.cpp`; alert softkeys in
   `src/core/console_controller.cpp`.
 - Rules: list entries show summary and time; detail pages provide accept,
-  ignore, and scroll behaviour.
+  ignore, and scroll behaviour. L5 on the list opens History (#203): past
+  alerts newest first, keyed `SUMMARY` over `[06:12-07:40]` (`[06:12 x3]`
+  when it recurred within the hour, the date instead of the end when it is
+  not today), L5 `CLEAR ALL` with a confirm step, and a read-only detail page
+  (`draw_alert_history_page()`, `draw_alert_history_detail_page()`).
 
 ### Text Block
 

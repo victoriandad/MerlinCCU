@@ -48,6 +48,8 @@ extern const PageCursor kFontPages;
 extern const PageCursor kHomeControlPages;
 extern const PageCursor kCalendarDay;
 extern const PageCursor kAlertDetailScroll;
+extern const PageCursor kAlertHistoryPages;
+extern const PageCursor kAlertHistoryDetailScroll;
 
 /// @brief What the cursor keys move through on the current page, and where.
 CursorRange cursor_range(const ConsoleState& console_state);

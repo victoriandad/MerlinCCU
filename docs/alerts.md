@@ -33,6 +33,36 @@ failure modes are handled consistently across firmware features.
   the next recurrence counts as the first. A restart also resets every count.
 - The alert list is newest-first; detail pages support accept and ignore flows.
 
+## Alert History
+
+Past alerts are kept so the operator can see what happened overnight or
+before a restart (#203). `alert_history` holds them and
+`alert_history_store` keeps them in flash.
+
+- **When an entry is added:** when an alert's condition clears (`Cleared`)
+  or the operator accepts it (`Accepted`). An accepted alert whose condition
+  clears later adds nothing more. `IGNORE` leaves the alert active; its
+  entry, once it ends, records that it was ignored and when.
+- **Repeats:** the same alert ending again within an hour of its entry being
+  raised raises that entry's count and moves it to the top, rather than
+  adding another. Without a synced clock entries never fold.
+- **What is kept:** summary, severity, raised, ended and ignored times (local
+  minutes since the epoch, 0 before the clock syncs), how it ended, the
+  count, and the full detail text.
+- **Size:** the newest 16 entries (two History pages); the oldest drops off
+  (NAV-6b). The whole history is about 6 KB, kept in PSRAM on the Pimoroni
+  and in SRAM on a Pico 2 W.
+- **Persistence:** two copies of two flash sectors each, below the Pinter
+  store, written alternately with a rising sequence and a CRC, so a power cut
+  mid-save leaves the previous copy. A save follows a new entry or
+  `CLEAR ALL` after at least a minute since the last save, and a fold after
+  at least 10 minutes, to bound flash wear from a flapping alert. History
+  that has not been saved yet is lost if the unit restarts in that window.
+- **Clear:** History's `CLEAR ALL`, after a confirm step. Active alerts are
+  not affected.
+- **Remote:** `/alerts` on the web page shows active and past alerts with
+  their full text; `/api/alerts` lists them one tab-separated line each.
+
 ## Severity Guide
 
 - `Message`: useful operator notice or degraded optional service.
