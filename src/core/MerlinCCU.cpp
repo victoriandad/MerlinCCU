@@ -729,10 +729,18 @@ int main()
             };
             const bool loop_load_changed = console_controller::set_main_loop_load_status(status);
             const struct mallinfo heap_info = mallinfo();
+            // The arena is how far sbrk has ever pushed the heap; newlib only
+            // gives it back past a 128 KB trim threshold, larger than this
+            // heap, so it holds a peak reached between these one-second
+            // samples, such as a TLS handshake. The max guards the case
+            // where it does shrink.
+            static uint32_t peak_arena_bytes = 0U;
+            peak_arena_bytes = std::max(peak_arena_bytes, static_cast<uint32_t>(heap_info.arena));
             const HeapStatus heap_status = {
                 .valid = true,
                 .used_bytes = static_cast<uint32_t>(heap_info.uordblks),
                 .arena_bytes = static_cast<uint32_t>(heap_info.arena),
+                .peak_arena_bytes = peak_arena_bytes,
             };
             const bool heap_status_changed = console_controller::set_heap_status(heap_status);
             // Issue #104: MEM_SIZE (lwipopts.h) and PBUF_POOL_SIZE are the two

@@ -36,6 +36,9 @@ enum class AlertCode : uint8_t
     /// A Met Office weather warning or Environment Agency flood warning is in
     /// force (#202).
     OfficialWeatherWarning,
+    /// The heap came within `kHeapLowFreeBytes` of full at some point since
+    /// boot (#206).
+    HeapLow,
     Count,
 };
 

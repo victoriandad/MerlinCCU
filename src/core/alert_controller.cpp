@@ -47,6 +47,12 @@ constexpr uint32_t kPercentScale = 100U;
 /// several KB of the 8 KB stack (#164); 1 KB is room for one more large
 /// frame, such as a printf with floats or an lwIP callback, on top of it.
 constexpr uint32_t kStackLowFreeBytes = 1024U;
+/// The heap is flagged as low once its untouched space has dropped under
+/// this at some point since boot (#206). A fixed floor rather than a share,
+/// since a new connection needs a fixed amount: an mbedTLS session's
+/// buffers and an lwIP connection come to a few KB. Bench: about 9.6 KB of
+/// arena with Home Assistant, MQTT and the web server connected (Plus 2 W).
+constexpr uint32_t kHeapLowFreeBytes = 8U * 1024U;
 constexpr uint32_t kStormLowPressurePa = 98000U;
 constexpr uint32_t kStormRapidPressureFallPa = 200U;
 constexpr uint8_t kStormPressureMinimumSamples = 6U;
@@ -688,6 +694,30 @@ void sync(ConsoleState& console_state)
     }
     set_alert_condition(console_state, AlertCode::StackLow, stack_low, AlertSeverity::Warning,
                         "STACK LOW", stack_low ? alert_detail_scratch : "");
+
+    // The peak since boot only grows, so once raised this holds for the
+    // boot, and an accepted one stays accepted: a brief peak overnight is
+    // still seen in the morning.
+    const HeapStatus& heap = console_state.heap_status;
+    const ImageFootprintStatus& footprint = console_state.image_footprint_status;
+    const uint32_t heap_bytes = footprint.total_ram_bytes > footprint.static_ram_bytes
+                                    ? footprint.total_ram_bytes - footprint.static_ram_bytes
+                                    : 0U;
+    const uint32_t heap_lowest_free =
+        heap_bytes > heap.peak_arena_bytes ? heap_bytes - heap.peak_arena_bytes : 0U;
+    const bool heap_low =
+        heap.valid && footprint.valid && heap_bytes > 0U && heap_lowest_free < kHeapLowFreeBytes;
+    if (heap_low)
+    {
+        std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch),
+                      "At its peak since boot the heap had only %lu of %lu bytes left.\nA new "
+                      "connection, such as to Home Assistant, may fail.\nRestart the CCU, then "
+                      "report it with what was running.",
+                      static_cast<unsigned long>(heap_lowest_free),
+                      static_cast<unsigned long>(heap_bytes));
+    }
+    set_alert_condition(console_state, AlertCode::HeapLow, heap_low, AlertSeverity::Warning,
+                        "HEAP LOW", heap_low ? alert_detail_scratch : "");
 
     const bool share_data_unavailable = console_state.share_data_configured &&
                                         !console_state.share_data_valid &&

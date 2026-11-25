@@ -533,6 +533,74 @@ HOST_TEST(stack_low_raises_after_an_overflow_reset_even_with_free_stack)
     EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "stack overflowed") != nullptr);
 }
 
+namespace
+{
+
+/// @brief A Pico 2 W-sized heap: 28,000 bytes between the image and the stack.
+ConsoleState make_heap_state(uint32_t peak_arena_bytes)
+{
+    ConsoleState state = make_healthy_state();
+    state.image_footprint_status = {.valid = true,
+                                    .program_flash_bytes = 0U,
+                                    .flash_budget_bytes = 0U,
+                                    .reserved_flash_bytes = 0U,
+                                    .static_ram_bytes = 496288U,
+                                    .total_ram_bytes = 524288U};
+    state.heap_status = {.valid = true,
+                         .used_bytes = 1000U,
+                         .arena_bytes = 2000U,
+                         .peak_arena_bytes = peak_arena_bytes};
+    return state;
+}
+
+} // namespace
+
+HOST_TEST(heap_low_raises_when_the_peak_left_under_8_kb)
+{
+    ConsoleState state = make_heap_state(28000U - 8192U);
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::HeapLow));
+
+    state.heap_status.peak_arena_bytes = 28000U - 8191U;
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::HeapLow));
+    const ActiveAlert& alert = state.active_alerts[0];
+    EXPECT_TRUE(alert.severity == AlertSeverity::Warning);
+    EXPECT_TRUE(std::strstr(alert.detail.data(), "only 8191 of 28000 bytes") != nullptr);
+}
+
+HOST_TEST(heap_low_counts_a_peak_after_the_heap_has_been_freed)
+{
+    // The current figures look healthy; the peak since boot is what counts.
+    ConsoleState state = make_heap_state(27000U);
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::HeapLow));
+}
+
+HOST_TEST(heap_low_stays_accepted_for_the_boot)
+{
+    ConsoleState state = make_heap_state(27000U);
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::HeapLow));
+
+    alert_controller::accept_alert(state, 0U);
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::HeapLow));
+}
+
+HOST_TEST(heap_low_ignores_figures_not_yet_sampled)
+{
+    ConsoleState state = make_heap_state(27000U);
+    state.heap_status.valid = false;
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::HeapLow));
+
+    state = make_heap_state(27000U);
+    state.image_footprint_status.valid = false;
+    alert_controller::sync(state);
+    EXPECT_FALSE(has_alert(state, AlertCode::HeapLow));
+}
+
 HOST_TEST(firmware_rollback_raises_update_failed)
 {
     ConsoleState state = make_healthy_state();

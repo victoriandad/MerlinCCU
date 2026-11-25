@@ -324,7 +324,8 @@ bool set_heap_status(ConsoleState& console_state, const HeapStatus& status)
 {
     if (console_state.heap_status.valid == status.valid &&
         console_state.heap_status.used_bytes == status.used_bytes &&
-        console_state.heap_status.arena_bytes == status.arena_bytes)
+        console_state.heap_status.arena_bytes == status.arena_bytes &&
+        console_state.heap_status.peak_arena_bytes == status.peak_arena_bytes)
     {
         return false;
     }
