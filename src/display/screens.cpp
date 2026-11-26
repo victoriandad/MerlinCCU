@@ -1070,7 +1070,8 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
 /// are the surrounding labels for the next level of navigation.
 /// The footer is one identity line (SCR-4): where to browse to on the left,
 /// and when the running firmware was built on the right, so an update can be
-/// confirmed at a glance. The build time gives way if the two would meet.
+/// confirmed at a glance. The "Build:" label, then the build time, give way
+/// if the two would meet.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*now_ms*/)
 {
     char ip_text[32] = {};
@@ -1084,11 +1085,18 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*n
     }
     // At least one character cell between the two.
     constexpr int kMinGapPx = 6;
-    const int built_width = text_width(firmware.built.data(), TextStyle::Footer);
-    const int built_x = ui_layout::kRightEdgeX - built_width;
-    if (built_x - kMinGapPx >= ui_layout::kMarginX + text_width(address, TextStyle::Footer))
+    const int free_from_x =
+        ui_layout::kMarginX + text_width(address, TextStyle::Footer) + kMinGapPx;
+    char labelled[32] = {};
+    std::snprintf(labelled, sizeof(labelled), "Build: %s", firmware.built.data());
+    for (const char* text : {static_cast<const char*>(labelled), firmware.built.data()})
     {
-        draw_text(fb, built_x, ui_layout::kFooterLineY, firmware.built.data(), TextStyle::Footer);
+        const int x = ui_layout::kRightEdgeX - text_width(text, TextStyle::Footer);
+        if (x >= free_from_x)
+        {
+            draw_text(fb, x, ui_layout::kFooterLineY, text, TextStyle::Footer);
+            return;
+        }
     }
 }
 
