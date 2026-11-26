@@ -148,7 +148,7 @@ Current behaviour:
 Use this workflow for UI/layout changes:
 
 1. Flash from the VS Code Pico extension, or perform one bounded CLI build/flash pass.
-2. Open `http://merlinccu/preview`.
+2. Open `http://merlinccu3/preview`.
 3. Check each page for uppercase labels/headings, readable mixed-case values, unclipped right-edge text, footer spacing, and aligned status rows.
 4. Repeat checks on the physical panel and browser preview.
 5. Capture a preview or panel screenshot for failed checks before fixing.

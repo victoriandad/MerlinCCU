@@ -15,9 +15,9 @@ stall reported while using the web preview (see issue #18 follow-up
 discussion): press a softkey, nothing visibly happens for ~10-30 seconds.
 
 Usage:
-  python tools/button_stress_test.py --host merlinccu --iterations 2000
-  python tools/button_stress_test.py --host merlinccu --iterations 200 --raw-only
-  python tools/button_stress_test.py --host merlinccu --iterations 2000 --csv out.csv
+  python tools/button_stress_test.py --host merlinccu3 --iterations 2000
+  python tools/button_stress_test.py --host merlinccu3 --iterations 200 --raw-only
+  python tools/button_stress_test.py --host merlinccu3 --iterations 2000 --csv out.csv
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ def write_csv(path: str, results: list[ClickResult]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--host", default="merlinccu", help="Device hostname or IP (default: merlinccu)")
+    parser.add_argument("--host", default="merlinccu3", help="Device hostname or IP (default: merlinccu3)")
     parser.add_argument("--iterations", type=int, default=2000, help="Number of clicks to send (default: 2000)")
     parser.add_argument("--timeout", type=float, default=5.0, help="Per-request timeout in seconds (default: 5)")
     parser.add_argument("--delay", type=float, default=0.0,

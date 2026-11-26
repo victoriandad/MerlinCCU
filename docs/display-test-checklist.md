@@ -7,7 +7,7 @@ quickly without relying only on photographs of the physical panel.
 ## Test Setup
 
 1. Flash firmware from the VS Code Pico extension.
-2. Open `http://merlinccu/preview`.
+2. Open `http://merlinccu3/preview`.
 3. Keep serial logs open for network/weather status diagnostics.
 
 ## Global UI Consistency Rules
@@ -154,7 +154,7 @@ full 35-item catalogue, right when you actually have a pack in hand.
     the dock filled up while adjusting timing. There is no `HOME` key here.
   - A brew started with cold crash days above 0 offers `COLD CRASH` as the
     Pinter page's primary action while brewing.
-- `http://merlinccu/pinter` shows one row per Pinter, real date ticks, and a
+- `http://merlinccu3/pinter` shows one row per Pinter, real date ticks, and a
   vertical today marker, plus summary tiles for brewing/conditioning/ready
   counts. Starting, moving to fridge, and marking ready stamp event dates
   from the CCU clock.
@@ -286,8 +286,8 @@ When a check fails, capture:
 Use the host tool to compare `/api/framebuffer.pbm` with a saved baseline:
 
 ```bash
-python tools/framebuffer_regression.py capture --host merlinccu --out baselines/status_page.pbm
-python tools/framebuffer_regression.py compare --host merlinccu --baseline baselines/status_page.pbm --mask 190,0,62,20
+python tools/framebuffer_regression.py capture --host merlinccu3 --out baselines/status_page.pbm
+python tools/framebuffer_regression.py compare --host merlinccu3 --baseline baselines/status_page.pbm --mask 190,0,62,20
 ```
 
 Notes:

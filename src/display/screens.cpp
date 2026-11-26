@@ -1064,12 +1064,28 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
 
 /// @details The page body is intentionally empty so the only visual affordances
 /// are the surrounding labels for the next level of navigation.
+/// The footer is one identity line (SCR-4): where to browse to on the left,
+/// and when the running firmware was built on the right, so an update can be
+/// confirmed at a glance. The build time gives way if the two would meet.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*now_ms*/)
 {
     char ip_text[32] = {};
-    draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY,
-              home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text)),
-              TextStyle::Footer);
+    const char* address = home_ip_status_text(console_state.wifi_status, ip_text, sizeof(ip_text));
+    draw_text(fb, ui_layout::kMarginX, ui_layout::kFooterLineY, address, TextStyle::Footer);
+
+    const FirmwareStatus& firmware = console_state.firmware_status;
+    if (!firmware.valid || firmware.built[0] == '\0')
+    {
+        return;
+    }
+    // At least one character cell between the two.
+    constexpr int kMinGapPx = 6;
+    const int built_width = text_width(firmware.built.data(), TextStyle::Footer);
+    const int built_x = ui_layout::kRightEdgeX - built_width;
+    if (built_x - kMinGapPx >= ui_layout::kMarginX + text_width(address, TextStyle::Footer))
+    {
+        draw_text(fb, built_x, ui_layout::kFooterLineY, firmware.built.data(), TextStyle::Footer);
+    }
 }
 
 /// @details Entities are keys, so the body holds only an empty state when

@@ -213,6 +213,7 @@ void boot_check()
     g_status = {};
     g_status.valid = true;
     text_utils::copy_text(g_status.version, kFirmwareVersion);
+    text_utils::copy_text(g_status.built, kFirmwareBuilt);
 
     boot_info_t boot_info = {};
     const bool have_boot_info = rom_get_boot_info(&boot_info);

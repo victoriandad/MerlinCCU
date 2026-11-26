@@ -1008,8 +1008,8 @@ void build_config_page(const char* message)
         "maxlength=\"%u\" value=\"%s\"><div class=\"row\"><div><label>Location</label><input "
         "name=\"location\" maxlength=\"%u\" value=\"%s\"></div><div><label>Room</label><input "
         "name=\"room\" maxlength=\"%u\" value=\"%s\"></div></div><p class=\"hint\">Give each CCU "
-        "its own device name, such as merlin-ground: it is the unit's network name "
-        "(http://merlin-ground/), up to %u letters, digits, - and _. The display label names "
+        "its own device name, such as merlinccu1: it is the unit's network name "
+        "(http://merlinccu1/), up to %u letters, digits, - and _. The display label names "
         "the unit on its Status page and in Home Assistant.</p></section>",
         max_len(Field::DeviceName), device_name, max_len(Field::DeviceLabel), device_label,
         max_len(Field::Location), location, max_len(Field::Room), room,

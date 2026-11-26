@@ -129,6 +129,7 @@ void start_with_data()
     firmware.partitioned = true;
     firmware.slot = 0;
     std::snprintf(firmware.version.data(), firmware.version.size(), "2bf47da");
+    std::snprintf(firmware.built.data(), firmware.built.size(), "26 Nov 15:35");
     (void)console_controller::set_firmware_status(firmware);
 
     // Up for 3 days 5 hours after a power cut (#155).

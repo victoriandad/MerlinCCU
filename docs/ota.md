@@ -110,14 +110,25 @@ In VS Code, the Pico extension's **Compile** button builds the Pimoroni
 image (`build-plus2`), and **Run** loads `build-plus2/MerlinCCU.uf2` over USB.
 Run loads the UF2, never the ELF, so the partition table survives. The task
 **Upload over Wi-Fi** (Terminal > Run Task) builds, then runs the script
-below for `merlinccu`. The Pico 2 W image (`build/`) is built from the
-command line.
+below for `merlinccu3`. **Upload over Wi-Fi (Pico 2 W)** does the same with
+the Pico 2 W image (`build/`) for `merlinccu2`.
+
+The units are named by board, oldest first; where each one hangs goes in
+its location and room settings:
+
+| Name | Board | Image |
+| --- | --- | --- |
+| `merlinccu1` | Pico 2 W in the real CCU | `build/` |
+| `merlinccu2` | Pico 2 W, development | `build/` |
+| `merlinccu3` | Pimoroni Pico Plus 2 W | `build-plus2/` |
 
 `tools/ota_update.py` updates units one at a time and stops at the first
-failure, so a bad build never reaches them all:
+failure, so a bad build never reaches them all. Units on the same board
+can share one run:
 
 ```sh
-python tools/ota_update.py merlinccu merlin-ground merlin-loft
+python tools/ota_update.py merlinccu3
+python tools/ota_update.py --bin build/MerlinCCU.bin merlinccu1 merlinccu2
 python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
 ```
 
@@ -131,14 +142,17 @@ A single unit can also be updated with `curl`:
 
 ```sh
 curl -H "X-OTA-Token: <token>" --data-binary @build-plus2/MerlinCCU.bin \
-  http://merlinccu/api/ota
+  http://merlinccu3/api/ota
 ```
 
 ### Which build is running
 
 Every build is stamped with its git commit (`tools/firmware_version.cmake`
 runs on each build); a `+` means it was built with uncommitted changes.
-The version and slot show on:
+It also records when it was built, local time to the minute, which tells
+two builds of one commit apart. The build time shows at the right of the
+Home page footer (`26 Nov 15:35`), beside the web address; it is left out
+if the two would meet. The version and slot show on:
 
 - the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
 - the Firmware web page;
@@ -163,6 +177,10 @@ are not touched.
 1. Make the table: `picotool partition create tools/ota_partition_table.json
    pt.uf2`.
 2. Load it: `picotool load -f pt.uf2`. The old firmware stops booting here.
+   Then `picotool reboot -u -f` and check `picotool partition info` lists
+   partitions A and B. The boot ROM reads the table only when it starts;
+   without the reboot the next load goes to address 0 and overwrites the
+   table.
 3. Load the firmware **as a UF2**: `picotool load -x
    build-plus2/MerlinCCU.uf2`. The boot ROM picks the slot. Do not use
    `load -x MerlinCCU.elf` from now on: an ELF is written at address 0 and

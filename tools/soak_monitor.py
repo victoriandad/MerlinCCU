@@ -12,7 +12,7 @@ A unit without Wi-Fi cannot answer, so a Wi-Fi drop shows as the unit
 being unreachable, with the time it took to come back.
 
 Usage:
-  python tools/soak_monitor.py merlinccu merlin-loft
+  python tools/soak_monitor.py merlinccu1 merlinccu2 merlinccu3
   python tools/soak_monitor.py --interval 30 --csv soak.csv 192.168.1.172
 """
 

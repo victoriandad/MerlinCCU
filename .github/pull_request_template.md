@@ -6,7 +6,7 @@
 ## Validation
 
 - [ ] Flashed from VS Code Pico extension
-- [ ] Checked `http://merlinccu/preview`
+- [ ] Checked `http://merlinccu3/preview`
 - [ ] Checked physical panel behaviour
 - [ ] Captured evidence for any failures (preview screenshot, panel photo, serial log)
 - [ ] Updated display regression assets when UI output changed (`tools/framebuffer_suite.json`, affected `baselines/*.pbm`, and `docs/display-test-checklist.md` when required)

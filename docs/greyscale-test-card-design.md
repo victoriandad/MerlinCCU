@@ -83,6 +83,6 @@ precedent, and is what this implementation follows.
 ## Validation
 
 Per the existing Display Validation Workflow: flash, open
-`http://merlinccu/preview`, navigate Home → STATUS → GREYSCALE, and check all
+`http://merlinccu3/preview`, navigate Home → STATUS → GREYSCALE, and check all
 five bands render distinctly on both the browser preview and the physical
 panel.

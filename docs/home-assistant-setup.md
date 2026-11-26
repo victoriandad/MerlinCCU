@@ -194,8 +194,8 @@ CCU's device, so in the automation editor pick **Device**, the CCU, and
 
 Units can share one network, one HA and one Mosquitto broker. Give each one:
 
-- its own **Device name** (e.g. `merlin-ground`, `merlin-first`). It is the
-  unit's network name, so `http://merlin-ground/` reaches it;
+- its own **Device name** (`merlinccu1`, `merlinccu2`, `merlinccu3`). It is the
+  unit's network name, so `http://merlinccu1/` reaches it;
 - a **Display label** (e.g. `Ground floor`), shown on its Status page and as
   its device name in HA;
 - its own **Self entity** and MQTT login.

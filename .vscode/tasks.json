@@ -37,11 +37,38 @@
         },
         {
             "label": "Upload over Wi-Fi",
-            "detail": "Build the Pimoroni image and update the CCU over Wi-Fi (docs/ota.md)",
+            "detail": "Build the Pimoroni image and update merlinccu3 over Wi-Fi (docs/ota.md)",
             "type": "process",
             "command": "python",
-            "args": ["tools/ota_update.py", "merlinccu"],
+            "args": ["tools/ota_update.py", "merlinccu3"],
             "dependsOn": "Compile Project",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Compile Pico 2 W",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/ninja/v1.12.1/ninja",
+            "args": ["-C", "${workspaceFolder}/build"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$gcc",
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/ninja/v1.12.1/ninja.exe"
+            }
+        },
+        {
+            "label": "Upload over Wi-Fi (Pico 2 W)",
+            "detail": "Build the Pico 2 W image and update merlinccu2 over Wi-Fi (docs/ota.md)",
+            "type": "process",
+            "command": "python",
+            "args": ["tools/ota_update.py", "--bin", "build/MerlinCCU.bin", "merlinccu2"],
+            "dependsOn": "Compile Pico 2 W",
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"

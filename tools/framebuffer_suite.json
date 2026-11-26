@@ -1,5 +1,5 @@
 {
-  "host": "merlinccu",
+  "host": "merlinccu3",
   "checks": [
     {
       "name": "status-page",

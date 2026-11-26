@@ -965,6 +965,8 @@ struct FirmwareStatus
     /// Git commit the running image was built from, e.g. "2bf47da" ("+"
     /// marks uncommitted changes).
     std::array<char, 16> version;
+    /// When the running image was built, local time, e.g. "26 Nov 15:35".
+    std::array<char, 16> built;
 };
 
 /// @brief Panel scanout timing telemetry, sampled from `display::frame_count()`

@@ -13,7 +13,7 @@ the build folder's generated firmware_version.h next to the .bin, so the
 script can tell the unit really runs the new build.
 
 Usage:
-  python tools/ota_update.py merlinccu merlin-ground merlin-loft
+  python tools/ota_update.py merlinccu3
   python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
 """
 
