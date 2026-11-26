@@ -409,6 +409,11 @@ absolute_time_t g_screen_image_due = nil_time;
 bool g_screen_image_valid = false;
 uint32_t g_screen_image_crc = 0U;
 uint32_t g_screen_image_crc_in_flight = 0U;
+// Frames skipped as too large since the last one that fitted. Only the first
+// skip of a run is logged, and the count when one fits again.
+// (A busy page that stays too large changes every few seconds, which made
+// one line per frame.)
+uint32_t g_screen_images_skipped = 0U;
 mqtt_connect_client_info_t g_client_info = {};
 std::array<std::array<char, 64>, static_cast<size_t>(SensorId::Count)> g_sensor_unique_ids = {};
 std::array<std::array<char, 96>, static_cast<size_t>(SensorId::Count)> g_sensor_state_topics = {};
@@ -1407,7 +1412,8 @@ bool publish(const char* topic, const char* payload, PendingPublishType publish_
 /// when the picture changed and the last one is old enough.
 /// @details Checked every kScreenImageIntervalMs, so the 10 KB CRC and the
 /// encode run at most that often. A page too big for kScreenImageMaxBytes is
-/// logged once and skipped; HA keeps the previous picture.
+/// skipped, and HA keeps the previous picture; a run of skips is logged
+/// once at its start and once at its end.
 bool publish_screen_image()
 {
     if (!g_sensor_discovery_published[sensor_index(SensorId::Screen)] ||
@@ -1432,11 +1438,21 @@ bool publish_screen_image()
         reinterpret_cast<uint8_t*>(g_publish_buffer), sizeof(g_publish_buffer));
     if (length == 0U)
     {
-        std::printf("MQTT screen image too large for %u bytes; skipped\n",
-                    static_cast<unsigned>(sizeof(g_publish_buffer)));
+        if (g_screen_images_skipped == 0U)
+        {
+            std::printf("MQTT screen image too large for %u bytes; skipping until one fits\n",
+                        static_cast<unsigned>(sizeof(g_publish_buffer)));
+        }
+        ++g_screen_images_skipped;
         g_screen_image_valid = true;
         g_screen_image_crc = crc;
         return false;
+    }
+    if (g_screen_images_skipped > 0U)
+    {
+        std::printf("MQTT screen image fits again after %lu skipped\n",
+                    static_cast<unsigned long>(g_screen_images_skipped));
+        g_screen_images_skipped = 0U;
     }
     g_screen_image_crc_in_flight = crc;
     return publish_bytes(g_sensor_state_topics[sensor_index(SensorId::Screen)].data(),
