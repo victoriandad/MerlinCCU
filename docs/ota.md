@@ -166,6 +166,10 @@ are not touched.
 1. Make the table: `picotool partition create tools/ota_partition_table.json
    pt.uf2`.
 2. Load it: `picotool load -f pt.uf2`. The old firmware stops booting here.
+   Then `picotool reboot -u -f` and check `picotool partition info` lists
+   partitions A and B. The boot ROM reads the table only when it starts;
+   without the reboot the next load goes to address 0 and overwrites the
+   table.
 3. Load the firmware **as a UF2**: `picotool load -x
    build-plus2/MerlinCCU.uf2`. The boot ROM picks the slot. Do not use
    `load -x MerlinCCU.elf` from now on: an ELF is written at address 0 and
