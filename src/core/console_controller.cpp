@@ -1109,6 +1109,12 @@ bool set_heap_status(const HeapStatus& status)
     return true;
 }
 
+void sample_alerts()
+{
+    alert_controller::mark_sample_due();
+    update_softkeys_from_state();
+}
+
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.
 bool set_stack_status(const StackStatus& status)
 {

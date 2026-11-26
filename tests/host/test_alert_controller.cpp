@@ -22,6 +22,19 @@ ConsoleState make_healthy_state()
     return state;
 }
 
+/// One-second samples a lost connection must last (alert_controller.cpp).
+constexpr int kGraceSamples = 30;
+
+/// @brief Runs `times` one-second samples, as the main loop does.
+void sample(ConsoleState& state, int times)
+{
+    for (int i = 0; i < times; ++i)
+    {
+        alert_controller::mark_sample_due();
+        alert_controller::sync(state);
+    }
+}
+
 } // namespace
 
 HOST_TEST(sync_reports_no_alerts_for_a_fully_healthy_state)
@@ -61,41 +74,53 @@ HOST_TEST(sync_raises_wifi_auth_failed_immediately)
     EXPECT_EQ(state.alert_count, 2U);
 }
 
-HOST_TEST(sync_time_not_synced_needs_five_consecutive_unsynced_samples)
+HOST_TEST(sync_time_not_synced_needs_thirty_one_second_samples)
 {
     ConsoleState state = make_healthy_state();
     state.time_status.synced = false;
-    for (int i = 0; i < 4; ++i)
+    sample(state, kGraceSamples - 1);
+    EXPECT_EQ(state.alert_count, 0U); // below the grace period
+
+    sample(state, 1);
+    EXPECT_EQ(state.alert_count, 1U);
+}
+
+HOST_TEST(syncs_between_samples_do_not_count_towards_the_grace_period)
+{
+    // sync() runs on every state change and twice per key press; only the
+    // main loop's one-second samples count (they once counted every call).
+    ConsoleState state = make_healthy_state();
+    state.time_status.synced = false;
+    for (int i = 0; i < kGraceSamples * 4; ++i)
     {
         alert_controller::sync(state);
     }
-    EXPECT_EQ(state.alert_count, 0U); // below the retry threshold
+    EXPECT_EQ(state.alert_count, 0U);
 
-    alert_controller::sync(state); // 5th consecutive sample
-    EXPECT_EQ(state.alert_count, 1U);
+    sample(state, kGraceSamples - 1);
+    for (int i = 0; i < 10; ++i)
+    {
+        alert_controller::sync(state);
+    }
+    EXPECT_EQ(state.alert_count, 0U);
 }
 
 HOST_TEST(sync_time_not_synced_counter_resets_once_synced_again)
 {
     ConsoleState state = make_healthy_state();
     state.time_status.synced = false;
-    for (int i = 0; i < 5; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples);
     EXPECT_EQ(state.alert_count, 1U);
 
+    // Clears on the next sync, sample or not.
     state.time_status.synced = true;
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 0U);
 
     // Confirms the failure counter itself was reset, not just the alert:
-    // three more unsynced samples (below threshold) should not re-raise it.
+    // fewer samples than the grace period should not re-raise it.
     state.time_status.synced = false;
-    for (int i = 0; i < 3; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples - 1);
     EXPECT_EQ(state.alert_count, 0U);
 }
 
@@ -183,10 +208,7 @@ HOST_TEST(reset_clears_failure_counters_so_a_fresh_threshold_run_is_needed)
 {
     ConsoleState state = make_healthy_state();
     state.time_status.synced = false;
-    for (int i = 0; i < 5; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples);
     EXPECT_EQ(state.alert_count, 1U);
 
     alert_controller::reset();
@@ -194,11 +216,8 @@ HOST_TEST(reset_clears_failure_counters_so_a_fresh_threshold_run_is_needed)
     state.active_alerts = {};
 
     // Still unsynced, but the failure counter was reset -- needs another
-    // full run at the threshold before the alert reappears.
-    for (int i = 0; i < 4; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    // full grace period before the alert reappears.
+    sample(state, kGraceSamples - 1);
     EXPECT_EQ(state.alert_count, 0U);
 }
 
@@ -225,20 +244,6 @@ HOST_TEST(open_detail_from_slot_rejects_a_slot_past_the_active_alert_count)
     EXPECT_FALSE(alert_controller::open_detail_from_slot(state, 5U));
 }
 
-namespace
-{
-
-constexpr int kAlertRetryThreshold = 5;
-
-void sync_times(ConsoleState& state, int times)
-{
-    for (int i = 0; i < times; ++i)
-    {
-        alert_controller::sync(state);
-    }
-}
-
-} // namespace
 
 HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
 {
@@ -253,10 +258,7 @@ HOST_TEST(sync_raises_weather_unavailable_when_open_meteo_keeps_failing)
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 0U);
 
-    for (int i = 0; i < 5; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples);
     EXPECT_EQ(state.alert_count, 1U);
     EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "WEATHER") == 0);
 
@@ -298,10 +300,7 @@ HOST_TEST(sync_raises_weather_unavailable_when_ha_sends_no_weather_over_mqtt)
     state.weather_source = WeatherSource::HomeAssistant;
     state.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
     state.home_assistant_status.weather_state = HomeAssistantConnectionState::Connected;
-    for (int i = 0; i < 6; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples);
     EXPECT_EQ(state.alert_count, 1U);
     EXPECT_TRUE(std::strcmp(state.active_alerts[0].summary.data(), "WEATHER") == 0);
 
@@ -315,10 +314,7 @@ HOST_TEST(sync_raises_weather_unavailable_when_ha_sends_no_weather_over_mqtt)
     state = make_healthy_state();
     state.weather_source = WeatherSource::HomeAssistant;
     state.home_assistant_status.weather_state = HomeAssistantConnectionState::Error;
-    for (int i = 0; i < 6; ++i)
-    {
-        alert_controller::sync(state);
-    }
+    sample(state, kGraceSamples * 2);
     EXPECT_EQ(state.alert_count, 0U);
 }
 

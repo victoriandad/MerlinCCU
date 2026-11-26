@@ -218,15 +218,16 @@ void start_with_data()
     (void)console_controller::update_home_controls(true, kCoverageNowMs);
     (void)console_controller::apply_home_controls(home_controls::Topic::List, kControlsList);
 
-    // Four keys held at once is a keypad line fault: after its debounce the
-    // KEYPAD alert is active, so the Alert list and Alert detail have an
-    // entry. Each report differs so each one is taken and debounced.
-    for (uint32_t i = 0U; i < 6U; ++i)
+    // Four keys held at once is a keypad line fault: after its debounce of
+    // one-second samples the KEYPAD alert is active, so the Alert list and
+    // Alert detail have an entry.
+    KeypadMonitorStatus keypad = {};
+    keypad.active_count = 4U;
+    keypad.active_mask = 0x0FU << 5U;
+    (void)console_controller::set_keypad_monitor_status(keypad);
+    for (uint32_t i = 0U; i < 5U; ++i)
     {
-        KeypadMonitorStatus keypad = {};
-        keypad.active_count = 4U;
-        keypad.active_mask = 0x0FU << i;
-        (void)console_controller::set_keypad_monitor_status(keypad);
+        console_controller::sample_alerts();
     }
 }
 
