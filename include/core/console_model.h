@@ -244,6 +244,9 @@ struct WifiStatus
     std::array<char, 18> mac_address;
     std::array<char, 33> ssid;
     std::array<char, 16> ip_address;
+    /// Network name the unit answers to (NetBIOS and DHCP), up to 15
+    /// characters; empty until Wi-Fi has advertised it.
+    std::array<char, 16> host_name;
 };
 
 /// @brief Snapshot of time state suitable for UI and controller use.

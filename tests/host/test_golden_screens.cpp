@@ -166,6 +166,10 @@ HOST_TEST(home_footer_fits_the_longest_address_and_build_time)
     state.wifi_status.state = WifiConnectionState::Connected;
     std::snprintf(state.wifi_status.ip_address.data(), state.wifi_status.ip_address.size(),
                   "255.255.255.255");
+    // A 15-character name, the longest a unit can advertise, is as wide as
+    // the longest IP address it stands in for.
+    std::snprintf(state.wifi_status.host_name.data(), state.wifi_status.host_name.size(),
+                  "merlin-landing2");
     state.firmware_status.valid = true;
     std::snprintf(state.firmware_status.built.data(), state.firmware_status.built.size(),
                   "28 Sep 23:59");

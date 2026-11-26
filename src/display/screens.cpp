@@ -27,8 +27,10 @@ namespace
 
 /// @brief Returns the Home-page network footer text.
 /// @details A connected CCU advertises the address a browser should use for
-/// remote configuration; intermediate or failed states use plain operator-facing
-/// text rather than technical DHCP or lwIP details.
+/// remote configuration: its network name, which survives a new DHCP lease
+/// and tells the units apart, or the IP address until the name is known
+/// (Status > Network always shows the IP). Intermediate or failed states use
+/// plain operator-facing text rather than technical DHCP or lwIP details.
 const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t buffer_size)
 {
     if (buffer == nullptr || buffer_size == 0)
@@ -39,7 +41,9 @@ const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t b
     buffer[0] = '\0';
     if (status.ip_address[0] != '\0')
     {
-        std::snprintf(buffer, buffer_size, "http://%s", status.ip_address.data());
+        const char* host =
+            status.host_name[0] != '\0' ? status.host_name.data() : status.ip_address.data();
+        std::snprintf(buffer, buffer_size, "http://%s", host);
         return buffer;
     }
 

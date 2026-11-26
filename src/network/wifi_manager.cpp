@@ -617,6 +617,7 @@ void advertise_hostname()
         netbiosns_set_name(g_runtime_host_name);
     }
     cyw43_arch_lwip_end();
+    copy_text(g_status.host_name, g_runtime_host_name);
 }
 
 /// @brief Advertises a renamed device without waiting for a restart.
