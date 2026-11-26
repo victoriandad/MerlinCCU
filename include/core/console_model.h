@@ -915,12 +915,15 @@ struct MainLoopLoadStatus
 /// @details Sourced from mallinfo(): arena_bytes is how far the heap has grown
 /// from the system (via sbrk), used_bytes is how much of that growth is
 /// currently allocated. Static buffers (ConsoleState, framebuffers) are
-/// tracked separately since they never touch the heap.
+/// tracked separately since they never touch the heap. peak_arena_bytes is
+/// the largest arena seen since boot; with the heap's size (RAM left after
+/// the static image, `ImageFootprintStatus`) it drives the HeapLow alert.
 struct HeapStatus
 {
     bool valid;
     uint32_t used_bytes;
     uint32_t arena_bytes;
+    uint32_t peak_arena_bytes;
 };
 
 /// @brief Worst-case core-0 stack headroom shown on the Resources status page.
