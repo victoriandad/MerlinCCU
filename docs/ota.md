@@ -110,14 +110,25 @@ In VS Code, the Pico extension's **Compile** button builds the Pimoroni
 image (`build-plus2`), and **Run** loads `build-plus2/MerlinCCU.uf2` over USB.
 Run loads the UF2, never the ELF, so the partition table survives. The task
 **Upload over Wi-Fi** (Terminal > Run Task) builds, then runs the script
-below for `merlinccu`. The Pico 2 W image (`build/`) is built from the
-command line.
+below for `merlinccu3`. **Upload over Wi-Fi (Pico 2 W)** does the same with
+the Pico 2 W image (`build/`) for `merlinccu2`.
+
+The units are named by board, oldest first; where each one hangs goes in
+its location and room settings:
+
+| Name | Board | Image |
+| --- | --- | --- |
+| `merlinccu1` | Pico 2 W in the real CCU | `build/` |
+| `merlinccu2` | Pico 2 W, development | `build/` |
+| `merlinccu3` | Pimoroni Pico Plus 2 W | `build-plus2/` |
 
 `tools/ota_update.py` updates units one at a time and stops at the first
-failure, so a bad build never reaches them all:
+failure, so a bad build never reaches them all. Units on the same board
+can share one run:
 
 ```sh
-python tools/ota_update.py merlinccu merlin-ground merlin-loft
+python tools/ota_update.py merlinccu3
+python tools/ota_update.py --bin build/MerlinCCU.bin merlinccu1 merlinccu2
 python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
 ```
 
@@ -131,7 +142,7 @@ A single unit can also be updated with `curl`:
 
 ```sh
 curl -H "X-OTA-Token: <token>" --data-binary @build-plus2/MerlinCCU.bin \
-  http://merlinccu/api/ota
+  http://merlinccu3/api/ota
 ```
 
 ### Which build is running

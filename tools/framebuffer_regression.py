@@ -3,8 +3,8 @@
 Framebuffer regression checker for MerlinCCU preview snapshots.
 
 Usage examples:
-  python tools/framebuffer_regression.py capture --host merlinccu --out baselines/status.pbm
-  python tools/framebuffer_regression.py compare --host merlinccu --baseline baselines/status.pbm --mask 660,0,96,20
+  python tools/framebuffer_regression.py capture --host merlinccu3 --out baselines/status.pbm
+  python tools/framebuffer_regression.py compare --host merlinccu3 --baseline baselines/status.pbm --mask 660,0,96,20
 """
 
 from __future__ import annotations
@@ -169,12 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     cap = sub.add_parser("capture", help="Capture current framebuffer PBM as baseline")
-    cap.add_argument("--host", default="merlinccu", help="Device host name or IP")
+    cap.add_argument("--host", default="merlinccu3", help="Device host name or IP")
     cap.add_argument("--out", required=True, help="Output baseline PBM path")
     cap.set_defaults(func=command_capture)
 
     cmp_parser = sub.add_parser("compare", help="Compare current framebuffer against baseline")
-    cmp_parser.add_argument("--host", default="merlinccu", help="Device host name or IP")
+    cmp_parser.add_argument("--host", default="merlinccu3", help="Device host name or IP")
     cmp_parser.add_argument("--baseline", required=True, help="Baseline PBM path")
     cmp_parser.add_argument(
         "--mask",

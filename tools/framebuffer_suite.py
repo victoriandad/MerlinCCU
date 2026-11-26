@@ -24,7 +24,7 @@ def load_suite(path: Path) -> dict:
 
 
 def run_capture_all(suite: dict, override_host: str | None) -> int:
-    host = override_host or suite.get("host", "merlinccu")
+    host = override_host or suite.get("host", "merlinccu3")
     checks = suite["checks"]
     for check in checks:
         name = check.get("name", check["baseline"])
@@ -50,7 +50,7 @@ def run_capture_all(suite: dict, override_host: str | None) -> int:
 
 
 def run_compare_all(suite: dict, override_host: str | None) -> int:
-    host = override_host or suite.get("host", "merlinccu")
+    host = override_host or suite.get("host", "merlinccu3")
     checks = suite["checks"]
     failures = 0
     errors = 0

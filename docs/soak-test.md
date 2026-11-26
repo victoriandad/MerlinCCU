@@ -26,7 +26,7 @@ there with its age, and goes `STALE` after its threshold (see
 3. On a PC that stays on, start the monitor:
 
    ```bash
-   python tools/soak_monitor.py --csv soak-<build>.csv merlinccu merlin-loft
+   python tools/soak_monitor.py --csv soak-<build>.csv merlinccu1 merlinccu2 merlinccu3
    ```
 
    It polls each unit's `/api/firmware` once a minute, appends every reading
