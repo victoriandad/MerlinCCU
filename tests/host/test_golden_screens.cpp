@@ -159,6 +159,21 @@ HOST_TEST(settings_page_renders_consistently)
     EXPECT_TRUE(golden_test::check_golden("settings_page", fb.data()));
 }
 
+HOST_TEST(home_footer_fits_the_longest_address_and_build_time)
+{
+    ConsoleState state = {};
+    state.active_page = MenuPage::Home;
+    state.wifi_status.state = WifiConnectionState::Connected;
+    std::snprintf(state.wifi_status.ip_address.data(), state.wifi_status.ip_address.size(),
+                  "255.255.255.255");
+    state.firmware_status.valid = true;
+    std::snprintf(state.firmware_status.built.data(), state.firmware_status.built.size(),
+                  "28 Sep 23:59");
+
+    const auto fb = render_page(state);
+    EXPECT_TRUE(golden_test::check_golden("home_footer_longest", fb.data()));
+}
+
 HOST_TEST(keypad_debug_page_renders_consistently)
 {
     ConsoleState state = {};

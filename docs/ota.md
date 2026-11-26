@@ -138,7 +138,10 @@ curl -H "X-OTA-Token: <token>" --data-binary @build-plus2/MerlinCCU.bin \
 
 Every build is stamped with its git commit (`tools/firmware_version.cmake`
 runs on each build); a `+` means it was built with uncommitted changes.
-The version and slot show on:
+It also records when it was built, local time to the minute, which tells
+two builds of one commit apart. The build time shows at the right of the
+Home page footer (`26 Nov 15:35`), beside the web address; it is left out
+if the two would meet. The version and slot show on:
 
 - the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
 - the Firmware web page;
