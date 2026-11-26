@@ -110,6 +110,12 @@ bool set_main_loop_load_status(const MainLoopLoadStatus& status);
 /// @brief Copies live newlib heap usage telemetry into the UI state.
 bool set_heap_status(const HeapStatus& status);
 
+/// @brief Takes the debounced alerts' one-second sample: syncs the alerts
+/// with one sample due (alert_controller::mark_sample_due()).
+/// @details Called once a second by the main loop, so a lost connection is
+/// raised after its grace period even when nothing else changes.
+void sample_alerts();
+
 /// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.
 bool set_stack_status(const StackStatus& status);
 

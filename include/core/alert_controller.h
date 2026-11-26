@@ -16,7 +16,15 @@ namespace alert_controller
 {
 
 /// @brief Rebuilds currently active alerts from live subsystem conditions.
+/// @details The debounced alerts (TIME, HOME ASSISTANT, WEATHER, MQTT,
+/// KEYPAD) count a failing condition once per `mark_sample_due()`, not per
+/// call: sync runs on every state change and twice per keypress, so
+/// counting calls made "for 30 seconds" mean a handful of key presses.
 void sync(ConsoleState& console_state);
+
+/// @brief Lets the next `sync()` count one sample for the debounced alerts.
+/// @details Called once a second by the main loop, just before a sync.
+void mark_sample_due();
 
 /// @brief Returns the number of alert list pages required for the current queue.
 uint8_t page_count(const ConsoleState& console_state);

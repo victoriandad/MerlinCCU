@@ -761,6 +761,7 @@ int main()
                 .overflow_reset = stack_guard::last_reset_was_stack_overflow(),
             };
             const bool stack_status_changed = console_controller::set_stack_status(stack_status);
+            console_controller::sample_alerts();
             const bool page_shows_telemetry =
                 page_table::describe(console_controller::state().active_page).refresh ==
                     page_table::Refresh::Telemetry &&

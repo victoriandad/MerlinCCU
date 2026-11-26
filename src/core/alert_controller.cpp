@@ -34,7 +34,15 @@ uint8_t g_time_unsynced_samples = 0U;
 uint8_t g_keypad_fault_samples = 0U;
 uint8_t g_display_slow_frame_samples = 0U;
 uint32_t g_display_timing_last_sequence = 0U;
+/// Set once a second by mark_sample_due(); the next sync() counts it.
+bool g_sample_due = false;
 constexpr uint8_t kAlertRetryThreshold = 5U;
+/// One-second samples a lost connection or unsynced clock must last before
+/// it is raised. Long enough to ride out a reconnect or a slow NTP reply
+/// after boot; the alert texts quote it.
+constexpr uint8_t kConnectionGraceSamples = 30U;
+/// One-second samples the keypad must look shorted before KEYPAD is raised.
+constexpr uint8_t kKeypadFaultSamples = 5U;
 /// Scanout is counted as lagging when the measured frame-boundary rate falls
 /// below this share of the rate the clocks should give. The bench rate tracks
 /// the nominal one exactly (297 Hz on a Pico 2 W, issue #144), and a flash
@@ -401,8 +409,35 @@ bool display_pipeline_lagging(const DisplayTimingStatus& timing)
 
 } // namespace
 
+namespace
+{
+
+/// @brief Advances one debounce counter: zero once the condition clears,
+/// and up by one per due sample while it holds.
+void count_sample(uint8_t& counter, bool failing, bool sample_due)
+{
+    if (!failing)
+    {
+        counter = 0U;
+    }
+    else if (sample_due && counter < UINT8_MAX)
+    {
+        ++counter;
+    }
+}
+
+} // namespace
+
+void mark_sample_due()
+{
+    g_sample_due = true;
+}
+
 void sync(ConsoleState& console_state)
 {
+    const bool sample_due = g_sample_due;
+    g_sample_due = false;
+
     const bool wifi_connected = console_state.wifi_status.state == WifiConnectionState::Connected;
     set_alert_condition(console_state, AlertCode::WifiDisconnected, !wifi_connected,
                         AlertSeverity::Warning, "NETWORK",
@@ -414,44 +449,30 @@ void sync(ConsoleState& console_state)
         console_state, AlertCode::WifiAuthFailed, wifi_auth_failed, AlertSeverity::Alert,
         "WIFI AUTH", "Wi-Fi authentication failed.\nVerify SSID and password in NETWORK settings.");
 
-    if (!console_state.time_status.synced && wifi_connected)
-    {
-        if (g_time_unsynced_samples < 255U)
-        {
-            ++g_time_unsynced_samples;
-        }
-    }
-    else
-    {
-        g_time_unsynced_samples = 0U;
-    }
+    // The alert texts below quote the grace period.
+    static_assert(kConnectionGraceSamples == 30U, "update the alert texts' \"30 seconds\"");
+    count_sample(g_time_unsynced_samples, !console_state.time_status.synced && wifi_connected,
+                 sample_due);
     set_alert_condition(
-        console_state, AlertCode::TimeNotSynced, g_time_unsynced_samples >= kAlertRetryThreshold,
+        console_state, AlertCode::TimeNotSynced, g_time_unsynced_samples >= kConnectionGraceSamples,
         AlertSeverity::Warning, "TIME",
-        "Clock sync has failed after 5 attempts.\nCheck NTP reachability and timezone setup.");
+        "The clock has not synced for 30 seconds.\nCheck NTP reachability and timezone setup.");
 
     const bool ha_enabled = config_manager::settings().home_assistant_enabled;
     const HomeAssistantConnectionState ha_state = console_state.home_assistant_status.state;
-    if (!ha_enabled || ha_state == HomeAssistantConnectionState::Connected ||
-        ha_state == HomeAssistantConnectionState::Unauthorized)
-    {
-        g_home_assistant_connect_failures = 0U;
-    }
-    else
-    {
-        if (g_home_assistant_connect_failures < 255U)
-        {
-            ++g_home_assistant_connect_failures;
-        }
-    }
+    count_sample(g_home_assistant_connect_failures,
+                 ha_enabled && ha_state != HomeAssistantConnectionState::Connected &&
+                     ha_state != HomeAssistantConnectionState::Unauthorized,
+                 sample_due);
 
     const bool ha_unauthorised = ha_state == HomeAssistantConnectionState::Unauthorized;
     const bool ha_offline = ha_enabled && ha_state != HomeAssistantConnectionState::Connected &&
                             ha_state != HomeAssistantConnectionState::Unauthorized &&
-                            g_home_assistant_connect_failures >= kAlertRetryThreshold;
+                            g_home_assistant_connect_failures >= kConnectionGraceSamples;
     set_alert_condition(console_state, AlertCode::HomeAssistantOffline, ha_offline,
                         AlertSeverity::Message, "HOME ASSISTANT",
-                        "Home Assistant is not connected.\nCheck host/port/token, the https:// "
+                        "Home Assistant has not connected for 30 seconds.\nCheck host/port/token, "
+                        "the https:// "
                         "certificate pin and network routing.\nStatus page shows the "
                         "latest connector state.");
     set_alert_condition(console_state, AlertCode::HomeAssistantUnauthorized, ha_unauthorised,
@@ -493,23 +514,16 @@ void sync(ConsoleState& console_state)
     const bool weather_http_failed =
         !ha_weather && console_state.home_assistant_status.weather_http_status >= 400;
     const bool weather_failed_now = !weather_payload_present || weather_http_failed;
-    if (weather_source_active && weather_prerequisites_ok && weather_failed_now)
-    {
-        if (g_weather_refresh_failures < 255U)
-        {
-            ++g_weather_refresh_failures;
-        }
-    }
-    else
-    {
-        g_weather_refresh_failures = 0U;
-    }
+    count_sample(g_weather_refresh_failures,
+                 weather_source_active && weather_prerequisites_ok && weather_failed_now,
+                 sample_due);
 
     const bool weather_unavailable = weather_source_active && weather_prerequisites_ok &&
-                                     g_weather_refresh_failures >= kAlertRetryThreshold;
-    set_alert_condition(
-        console_state, AlertCode::WeatherUnavailable, weather_unavailable, AlertSeverity::Message,
-        "WEATHER", "Weather refresh failed after 5 retries.\nCheck source settings and network path.");
+                                     g_weather_refresh_failures >= kConnectionGraceSamples;
+    set_alert_condition(console_state, AlertCode::WeatherUnavailable, weather_unavailable,
+                        AlertSeverity::Message, "WEATHER",
+                        "No weather has arrived for 30 seconds.\nCheck source settings and "
+                        "network path.");
 
     const bool weather_alert_data_current =
         weather_source_active && weather_prerequisites_ok && weather_payload_present &&
@@ -592,40 +606,19 @@ void sync(ConsoleState& console_state)
 
     const bool mqtt_enabled = config_manager::settings().mqtt_enabled;
     const MqttConnectionState mqtt_state = console_state.mqtt_status.state;
-    if (!mqtt_enabled || mqtt_state == MqttConnectionState::Connected)
-    {
-        g_mqtt_connect_failures = 0U;
-    }
-    else
-    {
-        if (g_mqtt_connect_failures < 255U)
-        {
-            ++g_mqtt_connect_failures;
-        }
-    }
+    const bool mqtt_down = mqtt_enabled && mqtt_state != MqttConnectionState::Connected;
+    count_sample(g_mqtt_connect_failures, mqtt_down, sample_due);
     set_alert_condition(
         console_state, AlertCode::MqttOffline,
-        mqtt_enabled && mqtt_state != MqttConnectionState::Connected &&
-            g_mqtt_connect_failures >= kAlertRetryThreshold,
-        AlertSeverity::Message, "MQTT",
-        "MQTT discovery is offline after 5 retries.\nCheck broker host/port and credentials.");
+        mqtt_down && g_mqtt_connect_failures >= kConnectionGraceSamples, AlertSeverity::Message,
+        "MQTT", "MQTT has been offline for 30 seconds.\nCheck broker host/port and credentials.");
 
     const bool keypad_fault_now =
         (std::strcmp(console_state.keypad_debug_status.pressed_key_name.data(), "MULTI") == 0) ||
         console_state.keypad_debug_status.active_count > 3U;
-    if (keypad_fault_now)
-    {
-        if (g_keypad_fault_samples < 255U)
-        {
-            ++g_keypad_fault_samples;
-        }
-    }
-    else
-    {
-        g_keypad_fault_samples = 0U;
-    }
+    count_sample(g_keypad_fault_samples, keypad_fault_now, sample_due);
     set_alert_condition(console_state, AlertCode::KeypadLineFault,
-                        g_keypad_fault_samples >= kAlertRetryThreshold, AlertSeverity::Warning,
+                        g_keypad_fault_samples >= kKeypadFaultSamples, AlertSeverity::Warning,
                         "KEYPAD",
                         "Matrix line fault suspected.\nMultiple simultaneous/stuck lines were "
                         "detected repeatedly.");
@@ -961,6 +954,7 @@ void reset()
     g_keypad_fault_samples = 0U;
     g_display_slow_frame_samples = 0U;
     g_display_timing_last_sequence = 0U;
+    g_sample_due = false;
     g_alert_suppressed.fill(false);
     g_alert_was_active.fill(false);
     g_alert_occurrences.fill(0U);

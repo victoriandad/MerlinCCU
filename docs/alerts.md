@@ -90,24 +90,28 @@ before a restart (#203). `alert_history` holds them and
 
 ## Alert Catalogue
 
-All debounced conditions use `kAlertRetryThreshold` (5 consecutive failing
-samples) before annunciating, to avoid flapping on transient failures.
+Debounced conditions count one-second samples, taken by the main loop through
+`console_controller::sample_alerts()`, not `sync()` calls: sync runs on every
+state change and twice per key press. A lost connection or unsynced clock must
+last `kConnectionGraceSamples` (30 s), and a keypad fault `kKeypadFaultSamples`
+(5 s), before it is raised; it clears on the first sync that sees it gone.
+`DisplayPipelineLag` counts its own timing samples (`kAlertRetryThreshold`, 5).
 
 | Code | Severity | Source Signal | Summary | Detail Policy | Test Notes |
 | --- | --- | --- | --- | --- | --- |
 | `WifiDisconnected` | Warning | `wifi_status.state != Connected` | `NETWORK` | Static text | Fires immediately, no debounce |
 | `WifiAuthFailed` | Alert | `wifi_status.state == AuthFailed` | `WIFI AUTH` | Static text | Can be active alongside `WifiDisconnected` |
-| `TimeNotSynced` | Warning | `!time_status.synced` while Wi-Fi connected, debounced | `TIME` | Static text | 5-sample debounce |
-| `HomeAssistantOffline` | Message | HA enabled, not Connected/Unauthorized, debounced | `HOME ASSISTANT` | Static text | 5-sample debounce |
+| `TimeNotSynced` | Warning | `!time_status.synced` while Wi-Fi connected, debounced | `TIME` | Static text | 30 s debounce |
+| `HomeAssistantOffline` | Message | HA enabled, not Connected/Unauthorized, debounced | `HOME ASSISTANT` | Static text | 30 s debounce |
 | `HomeAssistantUnauthorized` | Alert | `home_assistant_status.state == Unauthorized` | `AUTH FAILED` | Static text | Fires immediately, no debounce |
 | `HomeAssistantEntityMissing` | Warning | tracked entity state empty/`unknown`/`unavailable` while HA connected | `HA ENTITY` | Static text | Requires a configured tracked entity id |
-| `WeatherUnavailable` | Message | no weather while its source is reachable, debounced: for Home Assistant, the MQTT link is up but no weather has arrived (#153); for Open-Meteo, the internet is reachable but fetches fail | `WEATHER` | Static text | 5-sample debounce. A lost MQTT link is not a weather alert. |
+| `WeatherUnavailable` | Message | no weather while its source is reachable, debounced: for Home Assistant, the MQTT link is up but no weather has arrived (#153); for Open-Meteo, the internet is reachable but fetches fail | `WEATHER` | Static text | 30 s debounce. A lost MQTT link is not a weather alert. |
 | `WeatherProviderWarning` | Provider-supplied (falls back to Warning) | `weather_alert_status.provider_warning_active` | Provider-supplied (falls back to `WX WARNING`) | Dynamic, provider-supplied summary/detail | Raised by severe conditions in the forecast (thunder, hail); official warnings are `OfficialWeatherWarning` |
 | `OfficialWeatherWarning` | Yellow: Message, Amber: Warning, Red: Alert | `weather_warnings.level`: a Met Office weather warning or Environment Agency flood warning in force, from HA over MQTT (#202) | The highest warning, e.g. `AMBER WIND`, `YELLOW FOG`, `RED FLOOD` | Every warning in force, one per line, highest first, with when it ends or starts | Any weather source; needs MQTT and HA's `warnings:` block. Flood alert/warning/severe warning map to Yellow/Amber/Red. If HA has not refreshed them for 2 hours (`kWarningsStaleAfterMs`) the detail starts `Not updated for over 2 hours.` rather than dropping them |
 | `WeatherTemperatureWarning` | Warning | current/forecast temperature <= 0C or >= 28C | `WX TEMP` | Dynamic detail (min/max C) | Thresholds shared with the Weather page highlighting (`weather_extremes.h`, below) |
 | `WeatherWindWarning` | Warning | current/forecast mean wind >= 39mph or gusts >= 50mph | `WX WIND` | Dynamic detail (max mph, and gusts when the source gives them) | Thresholds shared with the Weather page highlighting (`weather_extremes.h`, below) |
-| `MqttOffline` | Message | MQTT enabled, not Connected, debounced | `MQTT` | Static text | 5-sample debounce |
-| `KeypadLineFault` | Warning | `MULTI` pressed-key or `active_count > 3`, debounced | `KEYPAD` | Static text | 5-sample debounce |
+| `MqttOffline` | Message | MQTT enabled, not Connected, debounced | `MQTT` | Static text | 30 s debounce |
+| `KeypadLineFault` | Warning | `MULTI` pressed-key or `active_count > 3`, debounced | `KEYPAD` | Static text | 5 s debounce |
 | `EnvironmentSensorFault` | Warning | sensor enabled and `Fault`/`BoardMissing`/`Partial` health, or a BME/SGP40 read error | `ENV SENSOR` | Static text | Fires immediately, no debounce |
 | `LocalPressureStormWarning` | Warning | absolute low pressure or a rapid fall across recent 5-minute averages | `STORM WARN` | Dynamic detail (current pressure / fall amount) | See `kStormLowPressurePa`/`kStormRapidPressureFallPa` |
 | `DisplayPipelineLag` | Warning | `display_timing_status.frame_rate_hz` below 75% of `nominal_frame_rate_hz`, debounced per one-second timing sample | `DISPLAY LAG` | Dynamic detail (measured and expected Hz) | 5-sample debounce counted on `sample_sequence`, not `sync()` calls; see `kDisplayFrameRateFloorPercent`. Bench: 297 Hz measured and nominal on a Pico 2 W at 150 MHz, clkdiv 2.51 |
