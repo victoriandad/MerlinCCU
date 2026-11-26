@@ -242,7 +242,7 @@ bool alternate_credentials_available()
 /// @brief Builds a DNS/NetBIOS-safe hostname from the configured device name.
 /// @details Cut to wifi_manager::kMaxHostNameLength so a longer name saved by older
 /// firmware cannot trip lwIP's NetBIOS length assert at boot.
-const char* advertised_host_name()
+void build_host_name(char (&host_name)[sizeof(g_runtime_host_name)])
 {
     static_assert(wifi_manager::kMaxHostNameLength < sizeof(g_runtime_host_name));
     const char* source = config_manager::device_name();
@@ -253,24 +253,22 @@ const char* advertised_host_name()
         const char c = source[i];
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
         {
-            g_runtime_host_name[out++] = c;
+            host_name[out++] = c;
         }
         else if (c == '-' || c == '_')
         {
-            g_runtime_host_name[out++] = '-';
+            host_name[out++] = '-';
         }
     }
 
     if (out == 0)
     {
-        std::snprintf(g_runtime_host_name, sizeof(g_runtime_host_name), "%s", kAdvertisedHostName);
+        std::snprintf(host_name, sizeof(host_name), "%s", kAdvertisedHostName);
     }
     else
     {
-        g_runtime_host_name[out] = '\0';
+        host_name[out] = '\0';
     }
-
-    return g_runtime_host_name;
 }
 
 /// @brief Returns the credential password or `nullptr` for open networks.
@@ -600,22 +598,40 @@ void schedule_wait_for_ip_deadline()
 
 /// @brief Advertises the device name through both lwIP hostname and NetBIOS.
 /// @details Using both mechanisms makes the Pico easier to discover from mixed
-/// desktop and mobile clients during local-network bring-up.
+/// desktop and mobile clients during local-network bring-up. Called again
+/// when the device name changes: NetBIOS answers with the new name at once,
+/// and DHCP sends it with its next request or renewal. lwIP keeps a
+/// pointer to g_runtime_host_name, so it is rewritten under the lwIP lock.
 void advertise_hostname()
 {
-    const char* host_name = advertised_host_name();
     cyw43_arch_lwip_begin();
+    build_host_name(g_runtime_host_name);
     if (netif_default)
     {
-        netif_set_hostname(netif_default, host_name);
+        netif_set_hostname(netif_default, g_runtime_host_name);
         if (!g_netbios_started)
         {
             netbiosns_init();
-            netbiosns_set_name(host_name);
             g_netbios_started = true;
         }
+        netbiosns_set_name(g_runtime_host_name);
     }
     cyw43_arch_lwip_end();
+}
+
+/// @brief Advertises a renamed device without waiting for a restart.
+/// @details Settings can change from the panel or the web form; comparing
+/// the built name each pass catches both without either calling in here.
+void readvertise_hostname_if_renamed()
+{
+    char host_name[sizeof(g_runtime_host_name)] = {};
+    build_host_name(host_name);
+    if (std::strcmp(host_name, g_runtime_host_name) == 0)
+    {
+        return;
+    }
+    advertise_hostname();
+    std::printf("WiFi host name now %s\n", g_runtime_host_name);
 }
 
 /// @brief Records one internet probe outcome and optionally roams to the next AP.
@@ -885,8 +901,7 @@ void init()
     advertise_hostname();
     std::printf("WiFi country code set to 0x%08lx\n", static_cast<unsigned long>(kWifiCountry));
     std::printf("WiFi MAC %s host=%s\n",
-                g_status.mac_address[0] ? g_status.mac_address.data() : "-",
-                advertised_host_name());
+                g_status.mac_address[0] ? g_status.mac_address.data() : "-", g_runtime_host_name);
 
     attempt_connect();
 }
@@ -900,6 +915,7 @@ bool update()
     }
 
     bool changed = false;
+    readvertise_hostname_if_renamed();
 
     // Poll both cyw43 link state and lwIP IP state every loop because they do
     // not always transition at the same moment.
