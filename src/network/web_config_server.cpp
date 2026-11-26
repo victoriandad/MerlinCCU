@@ -2828,6 +2828,27 @@ const char* apply_pin_change(const char* body, RuntimeConfig& cfg)
     return nullptr;
 }
 
+/// @brief Checks one posted text field and stores it in `saved`.
+/// @details A value that matches what is already saved is kept without
+/// checking it: settings from older firmware can be longer than today's
+/// limit (a 31-character device name against NetBIOS's 15), and the form
+/// posts every field, so checking it would refuse every save until that
+/// field was edited.
+/// @return nullptr once stored, otherwise the reason it was refused.
+template <size_t N>
+const char* take_text_field(config_fields::Field field, const char* posted,
+                            std::array<char, N>& saved, char* error, size_t error_size)
+{
+    if (std::strncmp(posted, saved.data(), N) != 0 &&
+        !config_fields::validate(field, posted, error, error_size))
+    {
+        std::printf("Web config save rejected: %s\n", error);
+        return error;
+    }
+    copy_text(saved, posted);
+    return nullptr;
+}
+
 const char* handle_config_post(const char* body)
 {
     std::printf("Web config POST received: %u bytes\n", body != nullptr ? std::strlen(body) : 0U);
@@ -2855,77 +2876,68 @@ const char* handle_config_post(const char* body)
 
     if (get_form_value(body, "device_name", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::DeviceName, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::DeviceName, value, cfg.device_name,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.device_name, value);
     }
     if (get_form_value(body, "device_label", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::DeviceLabel, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::DeviceLabel, value, cfg.device_label,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.device_label, value);
     }
     if (get_form_value(body, "location", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::Location, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::Location, value, cfg.location,
+                                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.location, value);
     }
     if (get_form_value(body, "room", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::Room, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::Room, value, cfg.room,
+                                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.room, value);
     }
     cfg.remote_config_enabled = form_has_key(body, "remote_config");
 
     if (get_form_value(body, "wifi_ssid", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::WifiSsid, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::WifiSsid, value, cfg.wifi_ssid,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.wifi_ssid, value);
     }
     if (get_form_value(body, "wifi_password", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!config_fields::validate(config_fields::Field::WifiPassword, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::WifiPassword, value, cfg.wifi_password,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.wifi_password, value);
     }
 
     cfg.home_assistant_enabled = form_has_key(body, "ha_enabled");
     if (get_form_value(body, "ha_host", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::HomeAssistantHost, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::HomeAssistantHost, value,
+                                                cfg.home_assistant_host, validation_error,
+                                                sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.home_assistant_host, value);
     }
     if (get_form_value(body, "ha_port", value, sizeof(value)))
     {
@@ -2939,33 +2951,30 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "ha_token", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!config_fields::validate(config_fields::Field::HomeAssistantToken, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::HomeAssistantToken, value,
+                                                cfg.home_assistant_token, validation_error,
+                                                sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.home_assistant_token, value);
     }
     if (get_form_value(body, "ha_entity", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::TrackedEntity, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::TrackedEntity, value,
+                                                cfg.home_assistant_entity_id, validation_error,
+                                                sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.home_assistant_entity_id, value);
     }
     if (get_form_value(body, "ha_self", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::SelfEntity, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::SelfEntity, value,
+                                                cfg.home_assistant_self_entity_id, validation_error,
+                                                sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.home_assistant_self_entity_id, value);
     }
     if (get_form_value(body, "ha_cert_pin", value, sizeof(value)))
     {
@@ -3020,13 +3029,12 @@ const char* handle_config_post(const char* body)
     cfg.mqtt_enabled = form_has_key(body, "mqtt_enabled");
     if (get_form_value(body, "mqtt_host", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::MqttHost, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::MqttHost, value, cfg.mqtt_host,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.mqtt_host, value);
     }
     if (get_form_value(body, "mqtt_port", value, sizeof(value)))
     {
@@ -3040,43 +3048,39 @@ const char* handle_config_post(const char* body)
     }
     if (get_form_value(body, "mqtt_username", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::MqttUsername, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::MqttUsername, value, cfg.mqtt_username,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.mqtt_username, value);
     }
     if (get_form_value(body, "mqtt_password", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!config_fields::validate(config_fields::Field::MqttPassword, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::MqttPassword, value, cfg.mqtt_password,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.mqtt_password, value);
     }
     if (get_form_value(body, "mqtt_prefix", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::MqttDiscoveryPrefix, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error = take_text_field(config_fields::Field::MqttDiscoveryPrefix, value,
+                                                cfg.mqtt_discovery_prefix, validation_error,
+                                                sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.mqtt_discovery_prefix, value);
     }
     if (get_form_value(body, "mqtt_topic", value, sizeof(value)))
     {
-        if (!config_fields::validate(config_fields::Field::MqttBaseTopic, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::MqttBaseTopic, value, cfg.mqtt_base_topic,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.mqtt_base_topic, value);
     }
     if (get_form_value(body, "ha_keys", value, sizeof(value)))
     {
@@ -3102,25 +3106,23 @@ const char* handle_config_post(const char* body)
                      static_cast<unsigned>(i + 1));
         if (get_form_value(body, field_name, value, sizeof(value)))
         {
-            if (!config_fields::validate(config_fields::Field::ShareSymbol, value, validation_error,
-                                 sizeof(validation_error)))
+            if (const char* error = take_text_field(config_fields::Field::ShareSymbol, value,
+                                                    cfg.watched_shares[i].symbol, validation_error,
+                                                    sizeof(validation_error)))
             {
-                std::printf("Web config save rejected: %s\n", validation_error);
-                return validation_error;
+                return error;
             }
-            copy_text(cfg.watched_shares[i].symbol, value);
         }
 
         std::snprintf(field_name, sizeof(field_name), "share%u_name", static_cast<unsigned>(i + 1));
         if (get_form_value(body, field_name, value, sizeof(value)))
         {
-            if (!config_fields::validate(config_fields::Field::ShareName, value, validation_error,
-                                 sizeof(validation_error)))
+            if (const char* error = take_text_field(config_fields::Field::ShareName, value,
+                                                    cfg.watched_shares[i].display_name,
+                                                    validation_error, sizeof(validation_error)))
             {
-                std::printf("Web config save rejected: %s\n", validation_error);
-                return validation_error;
+                return error;
             }
-            copy_text(cfg.watched_shares[i].display_name, value);
         }
     }
     cfg.watched_share_count = static_cast<uint8_t>(kMaxWatchedShares);
@@ -3128,13 +3130,12 @@ const char* handle_config_post(const char* body)
     cfg.shares_feed_enabled = form_has_key(body, "shares_feed_enabled");
     if (get_form_value(body, "shares_feed_token", value, sizeof(value)) && value[0] != '\0')
     {
-        if (!config_fields::validate(config_fields::Field::SharesFeedToken, value, validation_error,
-                                 sizeof(validation_error)))
+        if (const char* error =
+                take_text_field(config_fields::Field::SharesFeedToken, value, cfg.shares_feed_token,
+                                validation_error, sizeof(validation_error)))
         {
-            std::printf("Web config save rejected: %s\n", validation_error);
-            return validation_error;
+            return error;
         }
-        copy_text(cfg.shares_feed_token, value);
     }
 
     if (get_form_value(body, "time_zone", value, sizeof(value)))
