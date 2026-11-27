@@ -22,9 +22,12 @@
 #include "framebuffer.h"
 #include "geo_coordinates.h"
 #include "ha_key_list.h"
+#include "home_assistant_manager.h"
 #include "input.h"
 #include "lwip/ip_addr.h"
+#include "lwip/memp.h"
 #include "lwip/pbuf.h"
+#include "lwip/stats.h"
 #include "lwip/tcp.h"
 #include "mbedtls/sha256.h"
 #include "ota_manager.h"
@@ -35,6 +38,7 @@
 #include "pico/time.h"
 #include "png_encoder.h"
 #include "psram.h"
+#include "share_price_manager.h"
 #include "text_styles.h"
 #include "text_utils.h"
 #include "web_auth.h"
@@ -3604,7 +3608,11 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
             g_response, sizeof(g_response),
             "%sversion=%s\nboard=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\n"
             "wifi_connected=%d\nmqtt_connected=%d\nha_connected=%d\nstack_free=%lu\n"
-            "heap_arena=%lu\nalerts=%u\nmqtt_unit=%s\nunits=%u/%u\n",
+            "heap_arena=%lu\nalerts=%u\nmqtt_unit=%s\nunits=%u/%u\n"
+            // Peaks since boot, for sizing lwIP's pools (lwipopts.h) and the
+            // response buffers: peak/size in bytes, or in pool entries.
+            "lwip_mem_peak=%u/%u\npbuf_pool_peak=%u/%u\ntcp_seg_peak=%u/%u\n"
+            "ha_response_peak=%u\nshare_response_peak=%u\nweb_response_peak=%u\n",
             kHttpTextHeader, firmware.version.data(), kFirmwareBoard, slot_name(firmware.slot),
             ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
             static_cast<unsigned long>(console.boot_status.uptime_minutes),
@@ -3614,7 +3622,15 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
             static_cast<unsigned long>(console.stack_status.free_bytes),
             static_cast<unsigned long>(console.heap_status.arena_bytes),
             static_cast<unsigned>(console.alert_count), mqtt_unit, units_online,
-            static_cast<unsigned>(console.unit_fleet.count));
+            static_cast<unsigned>(console.unit_fleet.count),
+            static_cast<unsigned>(lwip_stats.mem.max), static_cast<unsigned>(lwip_stats.mem.avail),
+            static_cast<unsigned>(lwip_stats.memp[MEMP_PBUF_POOL]->max),
+            static_cast<unsigned>(lwip_stats.memp[MEMP_PBUF_POOL]->avail),
+            static_cast<unsigned>(lwip_stats.memp[MEMP_TCP_SEG]->max),
+            static_cast<unsigned>(lwip_stats.memp[MEMP_TCP_SEG]->avail),
+            static_cast<unsigned>(home_assistant_manager::response_peak_bytes()),
+            static_cast<unsigned>(share_price_manager::response_peak_bytes()),
+            static_cast<unsigned>(g_response_peak_len));
         send_response(session, pcb, g_response);
         return;
     }

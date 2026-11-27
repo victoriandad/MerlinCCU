@@ -65,4 +65,8 @@ const HomeAssistantStatus& status();
 /// (#202), whichever weather source is in use.
 const WeatherWarnings& weather_warnings();
 
+/// @brief Largest response received since boot, in bytes, against the size
+/// of the buffer that holds it, for sizing that buffer (/api/firmware).
+size_t response_peak_bytes();
+
 } // namespace home_assistant_manager

@@ -1786,6 +1786,11 @@ const HomeAssistantStatus& status()
     return g_status;
 }
 
+size_t response_peak_bytes()
+{
+    return g_response_peak_len;
+}
+
 const WeatherWarnings& weather_warnings()
 {
     return g_warnings;
