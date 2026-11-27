@@ -4,6 +4,7 @@
 
 #include "alert_history.h"
 #include "alert_screens.h"
+#include "calendar_controller.h"
 #include "page_table.h"
 
 namespace cursor_navigation
@@ -87,11 +88,13 @@ const PageCursor kFontPages = {
     [](ConsoleState& s, int position) { s.font_page_index = static_cast<uint8_t>(position); }};
 
 const PageCursor kCalendarDay = {
-    [](const ConsoleState& s) {
+    [](const ConsoleState& s)
+    {
         return CursorRange{CursorUse::Step, s.calendar_day_offset, kCalendarMinDayOffset,
                            kCalendarMaxDayOffset};
     },
-    [](ConsoleState& s, int position) { s.calendar_day_offset = static_cast<int8_t>(position); }};
+    [](ConsoleState& s, int position)
+    { calendar_controller::show_day(s, static_cast<int8_t>(position)); }};
 
 const PageCursor kAlertDetailScroll = {
     alert_detail_range,

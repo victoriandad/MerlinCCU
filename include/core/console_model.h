@@ -827,7 +827,10 @@ struct ShareMarketStatus
 inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
 inline constexpr int kCalendarMaxDayOffset = 14;
-inline constexpr size_t kCalendarEventCapacity = 48;
+/// @brief Rows of the day on screen: one Calendar page, L1-L4 then R1-R4.
+/// @details Only that day is held; a day is loaded as it is shown
+/// (calendar_controller::show_day), so weeks of events never sit in RAM.
+inline constexpr size_t kCalendarEventCapacity = 8;
 
 /// @brief One compact calendar row ready for display on a softkey.
 struct CalendarEvent

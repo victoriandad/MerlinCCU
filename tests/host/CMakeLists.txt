@@ -119,6 +119,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/weather_icons.cpp
     ${MERLIN_ROOT}/src/network/home_controls.cpp
     ${MERLIN_ROOT}/src/network/unit_fleet.cpp
+    ${MERLIN_ROOT}/src/core/calendar_demo.cpp
     ${MERLIN_ROOT}/src/network/cert_pin.cpp
     ${MERLIN_ROOT}/src/core/ha_key_list.cpp
     ${MERLIN_ROOT}/src/core/home_controller.cpp

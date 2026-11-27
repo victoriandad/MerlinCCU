@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "alert_history_store.h"
+#include "calendar_demo.h"
 #include "config_manager.h"
 #include "hardware/flash.h"
 #include "pinter_store.h"
@@ -90,32 +91,6 @@ constexpr SoftKeyMap kDefaultSoftkeys = {{
     {"", SoftKeyRoute::None, false},
     {"", SoftKeyRoute::None, false},
 }};
-
-/// @brief Seeds one display-ready calendar event row.
-/// @details Home Assistant calendar ingestion can later overwrite these same
-/// fixed rows without changing the Calendar page renderer or routing code.
-void set_calendar_event(CalendarEvent& event, CalendarOwner owner, int8_t day_offset,
-                        const char* start_time, const char* end_time, const char* title,
-                        const char* location, const char* reminder, const char* attendees,
-                        const char* description)
-{
-    event.owner = owner;
-    event.day_offset = day_offset;
-    event.start_time.fill('\0');
-    event.end_time.fill('\0');
-    event.title.fill('\0');
-    event.location.fill('\0');
-    event.reminder.fill('\0');
-    event.attendees.fill('\0');
-    event.description.fill('\0');
-    std::snprintf(event.start_time.data(), event.start_time.size(), "%s", start_time);
-    std::snprintf(event.end_time.data(), event.end_time.size(), "%s", end_time);
-    std::snprintf(event.title.data(), event.title.size(), "%s", title);
-    std::snprintf(event.location.data(), event.location.size(), "%s", location);
-    std::snprintf(event.reminder.data(), event.reminder.size(), "%s", reminder);
-    std::snprintf(event.attendees.data(), event.attendees.size(), "%s", attendees);
-    std::snprintf(event.description.data(), event.description.size(), "%s", description);
-}
 
 /// @brief Seeds one manually tracked Pinter vessel with a stable panel label.
 void set_pinter(PinterStatus& pinter, const char* label)
@@ -304,138 +279,8 @@ void make_default_console_state(ConsoleState& out)
         alert.detail.fill('\0');
     }
 
-    for (auto& event : out.calendar_events)
-    {
-        event.owner = CalendarOwner::Combined;
-        event.day_offset = 0;
-        event.start_time.fill('\0');
-        event.end_time.fill('\0');
-        event.title.fill('\0');
-        event.location.fill('\0');
-        event.reminder.fill('\0');
-        event.attendees.fill('\0');
-        event.description.fill('\0');
-    }
-
-    size_t calendar_event_index = 0U;
-    auto add_calendar_event = [&](CalendarOwner owner, int8_t day_offset, const char* start_time,
-                                  const char* end_time, const char* title, const char* location,
-                                  const char* reminder, const char* attendees,
-                                  const char* description)
-    {
-        if (calendar_event_index >= out.calendar_events.size())
-        {
-            return;
-        }
-
-        set_calendar_event(out.calendar_events[calendar_event_index], owner, day_offset,
-                           start_time, end_time, title, location, reminder, attendees, description);
-        ++calendar_event_index;
-    };
-
-    auto calendar_day_has_event = [&](int8_t day_offset)
-    {
-        for (size_t i = 0U; i < calendar_event_index; ++i)
-        {
-            if (out.calendar_events[i].day_offset == day_offset &&
-                out.calendar_events[i].title[0] != '\0')
-            {
-                return true;
-            }
-        }
-
-        return false;
-    };
-
-    add_calendar_event(CalendarOwner::Owner1, 0, "08:30", "09:00", "Demo standup", "Video call",
-                       "10 min popup", "Project group", "Synthetic status sample.");
-    add_calendar_event(CalendarOwner::Owner2, 0, "09:15", "09:45", "Planning slot", "Room A",
-                       "30 min email", "Ops group", "Synthetic planning sample.");
-    add_calendar_event(CalendarOwner::Owner3, 0, "15:40", "17:00", "Training block", "Activity room",
-                       "1 hour popup", "Training lead", "Synthetic training sample.");
-    add_calendar_event(CalendarOwner::Owner4, 0, "16:30", "17:15", "Practice block", "Activity centre",
-                       "45 min popup", "Practice lead", "Synthetic practice sample.");
-    add_calendar_event(CalendarOwner::Owner1, 0, "19:00", "20:00", "Admin block", "Home base", "None",
-                       "Demo group", "End-of-day synthetic sample.");
-    add_calendar_event(CalendarOwner::Owner2, 1, "10:00", "10:30", "Check-in", "Room B",
-                       "1 day email", "Coordinator", "Synthetic check-in notes.");
-    add_calendar_event(CalendarOwner::Owner3, 1, "13:30", "15:30", "Workshop", "Lab",
-                       "1 day popup", "Demo cohort", "Synthetic workshop sample.");
-    add_calendar_event(CalendarOwner::Owner4, 1, "17:15", "18:30", "Review block", "Room C",
-                       "30 min popup", "Reviewer", "Synthetic review sample.");
-    add_calendar_event(CalendarOwner::Owner1, 2, "08:45", "17:00", "Focus day", "Remote", "None",
-                       "Project group", "Synthetic focus-day sample.");
-    add_calendar_event(CalendarOwner::Owner2, 2, "18:00", "19:00", "Exercise block", "Studio",
-                       "1 hour popup", "Class group", "Synthetic exercise sample.");
-    add_calendar_event(CalendarOwner::Owner3, 3, "11:00", "11:30", "Maintenance slot",
-                       "Service desk", "1 day email", "Service team", "Synthetic service sample.");
-    add_calendar_event(CalendarOwner::Owner4, 3, "14:00", "16:00", "Demo event", "Hall",
-                       "2 hours popup", "Demo group", "Synthetic event sample.");
-    add_calendar_event(CalendarOwner::Owner1, -1, "12:30", "13:00", "Vendor call", "Office",
-                       "10 min popup", "Supplier", "Synthetic quote review.");
-    add_calendar_event(CalendarOwner::Owner2, -1, "18:30", "19:30", "Planning forum",
-                       "Meeting room", "30 min popup", "Planning group",
-                       "Synthetic planning sample.");
-    add_calendar_event(CalendarOwner::Owner1, 4, "09:30", "10:15", "Service slot",
-                       "Service desk", "1 day email", "Service team", "Synthetic booking sample.");
-    add_calendar_event(CalendarOwner::Owner3, 5, "16:00", "17:30", "Away activity", "Field site",
-                       "2 hours popup", "Activity group", "Synthetic away sample.");
-    add_calendar_event(CalendarOwner::Owner4, 6, "10:30", "12:00", "Library block",
-                       "Resource room", "1 hour popup", "Demo group", "Synthetic library sample.");
-    add_calendar_event(CalendarOwner::Owner2, 7, "15:00", "16:00", "Review call", "Video call",
-                       "30 min popup", "Review group", "Synthetic catch-up sample.");
-    add_calendar_event(CalendarOwner::Owner1, -14, "08:00", "08:30", "Historic rota", "Demo base",
-                       "None", "Ops group", "Historic synthetic sample.");
-    add_calendar_event(CalendarOwner::Owner2, -7, "11:00", "11:45", "Historic call", "Phone",
-                       "15 min popup", "Coordinator", "Historic weekly sample.");
-    add_calendar_event(CalendarOwner::Owner1, 14, "09:00", "09:30", "Budget check",
-                       "Planning desk", "1 day email", "Accounts", "Two-week synthetic sample.");
-    add_calendar_event(CalendarOwner::Owner4, 13, "16:00", "17:00", "Signup slot",
-                       "Community room", "1 day popup", "Coordinator",
-                       "Next-fortnight synthetic sample.");
-
-    // Fill every empty day in the navigation test window so arrow-key day
-    // movement can be verified before live HA data exists. Keep this deliberately
-    // small; ConsoleState is built during boot and should not carry bulky
-    // synthetic test data.
-    struct SampleOwner
-    {
-        CalendarOwner owner;
-        const char* title_prefix;
-        const char* attendee;
-    };
-    constexpr SampleOwner kSampleOwners[] = {
-        {CalendarOwner::Owner1, "Owner 1 sample", "Owner 1"},
-        {CalendarOwner::Owner2, "Owner 2 sample", "Owner 2"},
-        {CalendarOwner::Owner3, "Owner 3 sample", "Owner 3"},
-        {CalendarOwner::Owner4, "Owner 4 sample", "Owner 4"},
-    };
-    for (int day = kCalendarMinDayOffset; day <= kCalendarMaxDayOffset; ++day)
-    {
-        const int8_t day_offset = static_cast<int8_t>(day);
-        if (calendar_day_has_event(day_offset))
-        {
-            continue;
-        }
-
-        const int sample_index = day - kCalendarMinDayOffset;
-        const SampleOwner& sample_owner =
-            kSampleOwners[static_cast<size_t>(sample_index) %
-                          (sizeof(kSampleOwners) / sizeof(kSampleOwners[0]))];
-        const int start_hour = 8 + (sample_index % 10);
-        char start_time[6] = {};
-        char end_time[6] = {};
-        char title[32] = {};
-        std::snprintf(start_time, sizeof(start_time), "%02d:00", start_hour);
-        std::snprintf(end_time, sizeof(end_time), "%02d:30", start_hour);
-        std::snprintf(title, sizeof(title), "%s %+d", sample_owner.title_prefix, day);
-
-        add_calendar_event(sample_owner.owner, day_offset, start_time, end_time, title,
-                           "Calendar test", "None", sample_owner.attendee,
-                           "Generated sample for day paging.");
-    }
-
-    out.calendar_event_count = static_cast<uint8_t>(calendar_event_index);
+    // Only the day on screen is held; Calendar loads a day as it is shown.
+    calendar_demo::load_day(0, out.calendar_events, out.calendar_event_count);
 
     for (auto& share : out.watched_shares)
     {
