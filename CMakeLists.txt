@@ -136,6 +136,7 @@ pico_set_program_version(MerlinCCU "0.1")
 set(MERLIN_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/merlin_generated)
 add_custom_target(merlin_firmware_version ALL
     COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_LIST_DIR}
+            -DBOARD=${PICO_BOARD}
             -DOUTPUT=${MERLIN_GENERATED_DIR}/firmware_version.h
             -P ${CMAKE_CURRENT_LIST_DIR}/tools/firmware_version.cmake
     BYPRODUCTS ${MERLIN_GENERATED_DIR}/firmware_version.h
