@@ -547,7 +547,10 @@ HOST_TEST(alert_detail_scrolls_until_the_last_line_is_in_view)
 HOST_TEST(alert_detail_cursor_keys_stop_at_the_scroll_limit)
 {
     console_controller::init();
+    // Joined once since boot, so a drop raises NETWORK at once.
     WifiStatus wifi = {};
+    wifi.state = WifiConnectionState::Connected;
+    (void)console_controller::set_wifi_status(wifi);
     wifi.state = WifiConnectionState::Disabled;
     (void)console_controller::set_wifi_status(wifi);
     for (const ButtonId id : {ButtonId::Alert, ButtonId::LeftTop})
@@ -576,7 +579,10 @@ HOST_TEST(alert_detail_cursor_keys_stop_at_the_scroll_limit)
 HOST_TEST(a_recurring_alert_shows_its_count_on_the_key_and_in_the_detail)
 {
     console_controller::init();
+    // Joined once since boot, so a drop raises NETWORK at once.
     WifiStatus wifi = {};
+    wifi.state = WifiConnectionState::Connected;
+    (void)console_controller::set_wifi_status(wifi);
     for (int i = 0; i < 3; ++i)
     {
         wifi.state = WifiConnectionState::Disabled;

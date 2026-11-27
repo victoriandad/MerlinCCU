@@ -106,7 +106,7 @@ last `kConnectionGraceSamples` (30 s), and a keypad fault `kKeypadFaultSamples`
 
 | Code | Severity | Source Signal | Summary | Detail Policy | Test Notes |
 | --- | --- | --- | --- | --- | --- |
-| `WifiDisconnected` | Warning | `wifi_status.state != Connected` | `NETWORK` | Static text | Fires immediately, no debounce |
+| `WifiDisconnected` | Warning | `wifi_status.state != Connected` | `NETWORK` | Static text | Fires immediately once Wi-Fi has connected since boot. Before that first connection it waits 30 s, so a start or update does not raise it (and leave an untimed History entry) while joining |
 | `WifiAuthFailed` | Alert | `wifi_status.state == AuthFailed` | `WIFI AUTH` | Static text | Can be active alongside `WifiDisconnected` |
 | `TimeNotSynced` | Warning | `!time_status.synced` while Wi-Fi connected, debounced | `TIME` | Static text | 30 s debounce |
 | `HomeAssistantOffline` | Message | HA enabled, not Connected/Unauthorized, debounced | `HOME ASSISTANT` | Static text | 30 s debounce |
