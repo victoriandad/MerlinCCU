@@ -6,6 +6,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/stdlib.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_worms
 {
@@ -30,7 +31,13 @@ struct Worm
 constexpr int kWormCount = 8;
 constexpr int kTrailLength = 18;
 
-std::array<Worm, kWormCount> g_worms = {};
+using Worms = std::array<Worm, kWormCount>;
+
+/// @brief This saver's state, in the shared screen-saver block (started by init()).
+Worms& worms()
+{
+    return screensaver_arena::get<Worms>();
+}
 
 /// @brief Chooses a non-zero step vector so worms keep crawling every frame.
 void choose_direction(Worm& worm)
@@ -59,8 +66,9 @@ void reset_worm(Worm& worm)
 /// @brief Initializes the wandering worms screensaver state.
 void init()
 {
+    (void)screensaver_arena::start<Worms>();
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
-    for (Worm& worm : g_worms)
+    for (Worm& worm : worms())
     {
         reset_worm(worm);
     }
@@ -71,7 +79,7 @@ void step_and_render(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    for (Worm& worm : g_worms)
+    for (Worm& worm : worms())
     {
         if ((std::rand() % 8) == 0)
         {

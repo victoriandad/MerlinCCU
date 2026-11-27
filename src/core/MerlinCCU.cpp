@@ -539,7 +539,7 @@ int main()
         log_if_slow("time_manager::update", update_start);
 
         update_start = get_absolute_time();
-        console_changed = home_assistant_manager::update(wifi_manager::status()) || console_changed;
+        home_assistant_manager::update(wifi_manager::status());
         log_if_slow("home_assistant_manager::update", update_start);
 
         update_start = get_absolute_time();

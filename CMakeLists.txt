@@ -92,6 +92,7 @@ add_executable(MerlinCCU
     src/display/text_styles.cpp
     src/display/status_screens.cpp
     src/display/weather_screens.cpp
+    src/display/screensavers/screensaver_arena.cpp
     src/display/screensavers/screensaver_clock.cpp
     src/display/screensavers/screensaver_life.cpp
     src/display/screensavers/screensaver_matrix.cpp

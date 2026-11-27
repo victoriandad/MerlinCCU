@@ -54,8 +54,9 @@ void init();
 /// @brief Advances the Home Assistant connection state machine.
 /// @param wifi_status Latest Wi-Fi status snapshot used to determine whether
 /// REST probing can start.
-/// @return `true` when visible Home Assistant status changed.
-bool update(const WifiStatus& wifi_status);
+/// @details Changes reach the console through status(), which the main
+/// loop copies in with console_controller::set_home_assistant_status().
+void update(const WifiStatus& wifi_status);
 
 /// @brief Returns the latest Home Assistant status snapshot for the UI/controller.
 const HomeAssistantStatus& status();

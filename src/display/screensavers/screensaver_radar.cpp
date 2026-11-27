@@ -6,6 +6,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/stdlib.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_radar
 {
@@ -44,7 +45,13 @@ constexpr std::array<SweepVector, kSweepCount> kSweepVectors = {{
     {924, -383}, {981, -195},
 }};
 
-std::array<RadarBlip, kBlipCount> g_blips = {};
+using Blips = std::array<RadarBlip, kBlipCount>;
+
+/// @brief This saver's state, in the shared screen-saver block (started by init()).
+Blips& blips()
+{
+    return screensaver_arena::get<Blips>();
+}
 int g_sweep_index = 0;
 
 /// @brief Draws an integer midpoint circle with framebuffer clipping delegated to set_pixel.
@@ -93,9 +100,10 @@ void reset_blip(RadarBlip& blip)
 /// @brief Initializes the rotating radar sweep screensaver state.
 void init()
 {
+    (void)screensaver_arena::start<Blips>();
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
     g_sweep_index = 0;
-    for (RadarBlip& blip : g_blips)
+    for (RadarBlip& blip : blips())
     {
         reset_blip(blip);
     }
@@ -121,7 +129,7 @@ void step_and_render(uint8_t* fb)
         framebuffer::draw_line(fb, kCenterX, kCenterY, end_x, end_y, true);
     }
 
-    for (RadarBlip& blip : g_blips)
+    for (RadarBlip& blip : blips())
     {
         --blip.age;
         if (blip.age <= 0)

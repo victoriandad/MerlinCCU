@@ -179,4 +179,10 @@ bool flush_pending_save();
 /// @brief Returns a normalized device name suitable for hostnames and UI labels.
 const char* device_name();
 
+/// @brief The one 4 KB SRAM buffer, aligned for flash_range_program(), that
+/// a settings or Pinter flash sector is built in before it is written.
+/// @details Shared because both stores write from the main loop, one at a
+/// time, and never from a callback: each fills it and writes it in one call.
+uint8_t* sector_buffer();
+
 } // namespace config_manager

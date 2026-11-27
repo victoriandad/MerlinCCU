@@ -10,7 +10,7 @@
 
 #include "framebuffer.h"
 #include "panel_config.h"
-#include "psram.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_life
 {
@@ -32,11 +32,17 @@ constexpr uint32_t kLifeStableReseedFrames = 200;
 constexpr size_t kLifeHashHistorySize = 8;
 constexpr uint32_t kLifeRepeatReseedFrames = 100;
 
-// PSRAM on boards that have it (#162): only the CPU touches the grids.
-MERLIN_PSRAM_BSS uint8_t g_life_a[kLifeGridBytes];
-MERLIN_PSRAM_BSS uint8_t g_life_b[kLifeGridBytes];
-uint8_t* g_life_front = g_life_a;
-uint8_t* g_life_back = g_life_b;
+/// @brief The two grids, in the shared screen-saver block (in PSRAM on
+/// boards that have it, #162); init() starts them there.
+struct LifeGrids
+{
+    uint8_t a[kLifeGridBytes];
+    uint8_t b[kLifeGridBytes];
+};
+static_assert(sizeof(LifeGrids) == screensaver_arena::kBytes,
+              "the shared block is sized for Life's grids");
+uint8_t* g_life_front = nullptr;
+uint8_t* g_life_back = nullptr;
 uint32_t g_life_hash_ring[kLifeHashHistorySize];
 size_t g_life_hash_index = 0;
 size_t g_life_hash_count = 0;
@@ -258,6 +264,9 @@ void init(const uint8_t* seed_fb)
     // Seed from uptime so repeated power cycles do not always land on the same
     // opening pattern during bench demos.
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
+    LifeGrids& grids = screensaver_arena::start<LifeGrids>();
+    g_life_front = grids.a;
+    g_life_back = grids.b;
     life_clear(g_life_front);
     const int seeded_live_cells = life_seed_from_frame(g_life_front, seed_fb);
     if (seeded_live_cells == 0)

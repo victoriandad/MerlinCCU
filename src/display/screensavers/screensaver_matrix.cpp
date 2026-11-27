@@ -6,6 +6,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/stdlib.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_matrix
 {
@@ -28,7 +29,13 @@ constexpr int kColumnCount = kUiWidth / kColumnSpacing;
 constexpr int kMinTrailLength = 5;
 constexpr int kMaxTrailLength = 18;
 
-std::array<MatrixColumn, kColumnCount> g_columns = {};
+using Columns = std::array<MatrixColumn, kColumnCount>;
+
+/// @brief This saver's state, in the shared screen-saver block (started by init()).
+Columns& columns()
+{
+    return screensaver_arena::get<Columns>();
+}
 
 /// @brief Produces a compact pseudo-codepoint that stays within the 5x7 font table.
 char random_matrix_glyph(uint8_t seed, int row)
@@ -53,12 +60,13 @@ void reset_column(MatrixColumn& column, int x)
 /// @brief Initializes the falling-glyph Matrix screensaver state.
 void init()
 {
+    (void)screensaver_arena::start<Columns>();
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
 
     for (int index = 0; index < kColumnCount; ++index)
     {
-        reset_column(g_columns[index], index * kColumnSpacing);
-        g_columns[index].head_y = std::rand() % kUiHeight;
+        reset_column(columns()[index], index * kColumnSpacing);
+        columns()[index].head_y = std::rand() % kUiHeight;
     }
 }
 
@@ -67,7 +75,7 @@ void step_and_render(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    for (MatrixColumn& column : g_columns)
+    for (MatrixColumn& column : columns())
     {
         column.head_y += column.speed;
         if (column.head_y - (column.length * kGlyphStepY) > kUiHeight)
