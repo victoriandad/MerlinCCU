@@ -178,6 +178,9 @@ HOST_TEST(alert_history_records_cleared_accepted_and_ignored_alerts)
     alert_history::reset();
     alert_controller::reset();
     ConsoleState state = {};
+    // Joined once since boot, so a drop raises NETWORK at once.
+    state.wifi_status.state = WifiConnectionState::Connected;
+    alert_controller::sync(state);
     state.wifi_status.state = WifiConnectionState::Disabled;
     set_clock(state, at(kDay, 6, 0));
     alert_controller::sync(state);

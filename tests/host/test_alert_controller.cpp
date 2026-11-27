@@ -19,6 +19,8 @@ ConsoleState make_healthy_state()
     ConsoleState state = {};
     state.wifi_status.state = WifiConnectionState::Connected;
     state.time_status.synced = true;
+    // Seen connected once, as after boot, so a drop is raised at once.
+    alert_controller::sync(state);
     return state;
 }
 
@@ -50,6 +52,30 @@ HOST_TEST(sync_raises_wifi_disconnected_immediately_no_threshold)
     state.wifi_status.state = WifiConnectionState::Disabled;
     alert_controller::sync(state);
     EXPECT_EQ(state.alert_count, 1U);
+}
+
+HOST_TEST(network_waits_thirty_seconds_for_the_first_connection_after_boot)
+{
+    alert_controller::reset();
+    ConsoleState state = {};
+    state.wifi_status.state = WifiConnectionState::Connecting;
+    sample(state, kGraceSamples - 1);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    // Joining within the grace leaves nothing, not even in History.
+    state.wifi_status.state = WifiConnectionState::Connected;
+    alert_controller::sync(state);
+    state.wifi_status.state = WifiConnectionState::Connecting;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 1U);
+
+    // A unit that never joins is still told after 30 seconds.
+    alert_controller::reset();
+    ConsoleState never = {};
+    never.wifi_status.state = WifiConnectionState::NoNetwork;
+    sample(never, kGraceSamples);
+    EXPECT_EQ(never.alert_count, 1U);
+    EXPECT_EQ(never.active_alerts[0].code, static_cast<uint8_t>(AlertCode::WifiDisconnected));
 }
 
 HOST_TEST(sync_clears_wifi_disconnected_once_reconnected)

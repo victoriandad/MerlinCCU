@@ -31,6 +31,10 @@ uint8_t g_home_assistant_connect_failures = 0U;
 uint8_t g_weather_refresh_failures = 0U;
 uint8_t g_mqtt_connect_failures = 0U;
 uint8_t g_time_unsynced_samples = 0U;
+/// Wi-Fi has connected at least once since boot (or reset()).
+bool g_wifi_connected_since_boot = false;
+/// One-second samples spent waiting for that first connection.
+uint8_t g_wifi_boot_samples = 0U;
 uint8_t g_keypad_fault_samples = 0U;
 uint8_t g_display_slow_frame_samples = 0U;
 uint32_t g_display_timing_last_sequence = 0U;
@@ -615,7 +619,15 @@ void sync(ConsoleState& console_state)
     g_sample_due = false;
 
     const bool wifi_connected = console_state.wifi_status.state == WifiConnectionState::Connected;
-    set_alert_condition(console_state, AlertCode::WifiDisconnected, !wifi_connected,
+    // Joining Wi-Fi after a start or an update takes a few seconds, which
+    // raised NETWORK on every boot and left an untimed entry in History. The
+    // first connection gets the usual grace; a drop after that is raised at
+    // once.
+    g_wifi_connected_since_boot = g_wifi_connected_since_boot || wifi_connected;
+    count_sample(g_wifi_boot_samples, !g_wifi_connected_since_boot, sample_due);
+    const bool network_down = !wifi_connected && (g_wifi_connected_since_boot ||
+                                                  g_wifi_boot_samples >= kConnectionGraceSamples);
+    set_alert_condition(console_state, AlertCode::WifiDisconnected, network_down,
                         AlertSeverity::Warning, "NETWORK",
                         "Wi-Fi link is down.\nCheck SSID/password or signal.\nWithout network, "
                         "cloud features are unavailable.");
@@ -1163,6 +1175,8 @@ void reset()
     g_weather_refresh_failures = 0U;
     g_mqtt_connect_failures = 0U;
     g_time_unsynced_samples = 0U;
+    g_wifi_connected_since_boot = false;
+    g_wifi_boot_samples = 0U;
     g_keypad_fault_samples = 0U;
     g_display_slow_frame_samples = 0U;
     g_display_timing_last_sequence = 0U;
