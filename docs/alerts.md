@@ -119,7 +119,7 @@ last `kConnectionGraceSamples` (30 s), and a keypad fault `kKeypadFaultSamples`
 | `WeatherWindWarning` | Warning | current/forecast mean wind >= 39mph or gusts >= 50mph | `WX WIND` | Dynamic detail (max mph, and gusts when the source gives them) | Thresholds shared with the Weather page highlighting (`weather_extremes.h`, below) |
 | `MqttOffline` | Message | MQTT enabled, not Connected, debounced | `MQTT` | Static text | 30 s debounce |
 | `KeypadLineFault` | Warning | `MULTI` pressed-key or `active_count > 3`, debounced | `KEYPAD` | Static text | 5 s debounce |
-| `EnvironmentSensorFault` | Warning | sensor enabled and `Fault`/`BoardMissing`/`Partial` health, or a BME/SGP40 read error | `ENV SENSOR` | Static text | Fires immediately, no debounce |
+| `EnvironmentSensorFault` | Warning | sensor enabled and `Fault`/`BoardMissing`/`Partial` health, or a BME/SGP40 read error | `ENV SENSOR` | Static text | Fires immediately, no debounce. Latches when accepted (below): quiet across restarts until the board reads `BoardDetected` |
 | `LocalPressureStormWarning` | Warning | absolute low pressure or a rapid fall across recent 5-minute averages | `STORM WARN` | Dynamic detail (current pressure / fall amount) | See `kStormLowPressurePa`/`kStormRapidPressureFallPa` |
 | `DisplayPipelineLag` | Warning | `display_timing_status.frame_rate_hz` below 75% of `nominal_frame_rate_hz`, debounced per one-second timing sample | `DISPLAY LAG` | Dynamic detail (measured and expected Hz) | 5-sample debounce counted on `sample_sequence`, not `sync()` calls; see `kDisplayFrameRateFloorPercent`. Bench: 297 Hz measured and nominal on a Pico 2 W at 150 MHz, clkdiv 2.51 |
 | `StackLow` | Warning | `stack_status.free_bytes` (worst case since boot) below `kStackLowFreeBytes` (1 KB), or `stack_status.overflow_reset` (the previous reset was the stack-limit fault) | `STACK LOW` | Dynamic detail (free bytes, or that the CCU restarted after an overflow) | No debounce: the figure only falls across a boot. Overflow flag comes from `stack_guard` via a watchdog scratch register. Bench: about 2.8 KB of the 8 KB stack used (#164) |
@@ -132,6 +132,22 @@ last `kConnectionGraceSamples` (30 s), and a keypad fault `kKeypadFaultSamples`
 | `ControlFailed` | Warning | `home_controls.last_failure`: the last answered Controls key press (#152) was refused by HA or got no answer within 5 s | `CONTROL FAILED` | Dynamic detail (the entity, and whether HA refused or was silent) | Holds until a Controls press works, so it outlasts the page's 10-second notice |
 | `UnitOffline` | Warning | `unit_fleet.offline_alert_mask`: another unit on the broker has been offline for `kOfflineAlertMs` (30 minutes) and nobody has accepted it (#210) | `UNIT OFFLINE` | Dynamic detail (the units' names) | Accepting it on any unit publishes `<base>/<mac>/offline_ack`, which clears it on every unit until that unit is back; its next outage raises it again. Timed from when this unit learnt of the outage, so a unit that restarts during one waits 30 minutes afresh. Not raised while this unit's MQTT link is down (that is `MQTT`) |
 | `MixedFirmware` | Message | `unit_fleet.mixed_firmware`: an online unit has run different firmware from this one for `kMixedFirmwareMs` (10 minutes) (#210) | `MIXED FIRMWARE` | Dynamic detail (each unit's version) | Long enough for an update of every unit to finish. Offline units, and units that publish no summary, do not count |
+
+## Latched Acceptance
+
+Accepting an alert normally hides it until its condition clears, and a
+restart forgets that. An alert about fitted hardware latches instead
+(`acceptance_latches()` in `alert_controller.cpp`; today only
+`EnvironmentSensorFault`): accepting it once keeps it quiet across restarts
+and power cuts, and it is unlatched only when the part is seen working, so
+a unit with no board fitted is not told at every start.
+
+The latch is a bit per alert code in the alert history's flash image
+(`alert_history::Image::latched_codes`, image version 2; a version 1 image
+loads with none latched). CLEAR ALL in History does not touch it. A new
+latching code needs an unlatch rule in `sync()` that sees the part working,
+not merely the fault clearing: a part reads as not yet probed for a moment
+at every start.
 
 ## Exceptional Weather Thresholds
 

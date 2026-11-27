@@ -274,3 +274,28 @@ HOST_TEST(alert_history_image_survives_a_restart)
     EXPECT_FALSE(alert_history::restore(*saved));
     EXPECT_EQ(alert_history::count(), 0U);
 }
+
+HOST_TEST(a_latched_acceptance_survives_a_restart_and_an_old_image_has_none)
+{
+    alert_history::reset();
+    const auto code = static_cast<uint8_t>(AlertCode::EnvironmentSensorFault);
+    alert_history::mark_saved(0U);
+    alert_history::set_latched(code, true);
+    EXPECT_TRUE(alert_history::latched(code));
+    EXPECT_TRUE(alert_history::save_due(alert_history::kNewEntrySaveDelayMs));
+    auto saved = std::make_unique<alert_history::Image>(alert_history::image_for_save(3U));
+
+    alert_history::reset();
+    EXPECT_FALSE(alert_history::latched(code));
+    EXPECT_TRUE(alert_history::restore(*saved));
+    EXPECT_TRUE(alert_history::latched(code));
+
+    // A version 1 image ends at the entries; erased flash follows it.
+    saved->version = alert_history::kImageVersionWithoutLatches;
+    saved->latched_codes = 0xFFFFFFFFU;
+    saved->latched_codes_check = 0xFFFFFFFFU;
+    alert_history::reset();
+    EXPECT_TRUE(alert_history::restore(*saved));
+    EXPECT_FALSE(alert_history::latched(code));
+    alert_history::reset();
+}

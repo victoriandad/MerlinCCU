@@ -205,11 +205,32 @@ void set_detail(ActiveAlert& alert, AlertCode code, const char* detail)
     alert.detail.point_to(detail_is_fixed(code) ? detail : keep_detail(code, detail));
 }
 
+/// @brief True for alerts whose acceptance lasts until the fault is seen
+/// fixed, across restarts: ones about fitted hardware, where an operator
+/// who knows a part is absent should not be told at every start.
+/// @details The latch lives in the alert history's flash image. Each code
+/// here needs an unlatch rule in sync() that sees the part working.
+constexpr bool acceptance_latches(AlertCode code)
+{
+    return code == AlertCode::EnvironmentSensorFault;
+}
+
 /// @brief Adds or updates one alert condition in the active queue.
 void set_alert_condition(ConsoleState& console_state, AlertCode code, bool active,
                          AlertSeverity severity, const char* summary, const char* detail)
 {
     const size_t code_idx = alert_code_index(code);
+    if (active && acceptance_latches(code) && alert_history::latched(static_cast<uint8_t>(code)))
+    {
+        // Accepted for good. One raised before the history loaded at start-up
+        // goes quietly, not into History.
+        const int existing = find_alert_by_code(console_state, code);
+        if (existing >= 0)
+        {
+            erase_active_alert(console_state, static_cast<uint8_t>(existing));
+        }
+        return;
+    }
     if (!active)
     {
         g_alert_was_active[code_idx] = false;
@@ -830,11 +851,21 @@ void sync(ConsoleState& console_state)
           environment_status.bme_read_error != kNoErrorCode) ||
          (sgp40_detected && !environment_status.air_quality_raw_valid &&
           environment_status.air_quality_read_error != kNoErrorCode));
+    // An ENV SENSOR accepted for good is forgotten only once the board is
+    // seen working, not merely when the fault clears: the board reads as
+    // not yet probed for a moment at every start.
+    if (environment_status.enabled && !environment_sensor_fault &&
+        environment_status.health ==
+            environment_sensor_manager::EnvironmentSensorHealth::BoardDetected)
+    {
+        alert_history::set_latched(static_cast<uint8_t>(AlertCode::EnvironmentSensorFault), false);
+    }
     set_alert_condition(
         console_state, AlertCode::EnvironmentSensorFault, environment_sensor_fault,
         AlertSeverity::Warning, "ENV SENSOR",
         "Environment sensor board is not fully detected.\nCheck I2C pins, power, and address "
-        "jumpers.\nStatus page shows the detected addresses and read errors.");
+        "jumpers.\nStatus page shows the detected addresses and read errors.\nIf no board is "
+        "fitted, accept this: it stays quiet, across restarts, until a board is detected.");
 
     const bool pressure_storm_warning = local_pressure_storm_warning(
         environment_status, alert_detail_scratch, sizeof(alert_detail_scratch));
@@ -1094,6 +1125,10 @@ void accept_alert(ConsoleState& console_state, uint8_t index)
     alert_history::record(console_state.active_alerts[index], alert_history::Ending::Accepted,
                           alert_history::local_minute(console_state.time_status));
     suppress_alert_code(code);
+    if (acceptance_latches(static_cast<AlertCode>(code)))
+    {
+        alert_history::set_latched(code, true);
+    }
     if (code < g_alert_occurrences.size())
     {
         g_alert_occurrences[code] = 0U;
