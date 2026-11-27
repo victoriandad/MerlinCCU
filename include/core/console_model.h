@@ -753,6 +753,34 @@ constexpr uint8_t alert_list_page_count(uint8_t alert_count)
 /// @brief Highest occurrence count kept for one alert; shown as `x99`.
 inline constexpr uint8_t kMaxAlertOccurrenceCount = 99U;
 
+/// @brief Longest alert detail text, terminator included.
+inline constexpr size_t kAlertDetailCapacity = 320U;
+
+/// @brief An active alert's detail text.
+/// @details Most alerts' details are fixed text, which this points at. Text
+/// built at run time (a measured value, a unit's name) lives in one of a few
+/// buffers alert_controller shares between the alerts active at the time, so
+/// the list does not hold kAlertDetailCapacity bytes for every alert type.
+class AlertDetail
+{
+  public:
+    /// @brief The text; empty when none was set.
+    const char* data() const
+    {
+        return text_ != nullptr ? text_ : "";
+    }
+
+    /// @brief Points at `text`, which must outlive the alert: a literal or a
+    /// shared buffer.
+    void point_to(const char* text)
+    {
+        text_ = text;
+    }
+
+  private:
+    const char* text_ = nullptr;
+};
+
 /// @brief One active alert surfaced by the CCU alert workflow.
 struct ActiveAlert
 {
@@ -770,7 +798,7 @@ struct ActiveAlert
     uint32_t raised_minute;
     uint32_t ignored_minute;
     std::array<char, 32> summary;
-    std::array<char, 320> detail;
+    AlertDetail detail;
 };
 
 /// @brief Maximum number of shares a user can watch simultaneously.
@@ -827,7 +855,10 @@ struct ShareMarketStatus
 inline constexpr uint8_t kInvalidWeekdayIndex = 255U;
 inline constexpr int kCalendarMinDayOffset = -14;
 inline constexpr int kCalendarMaxDayOffset = 14;
-inline constexpr size_t kCalendarEventCapacity = 48;
+/// @brief Rows of the day on screen: one Calendar page, L1-L4 then R1-R4.
+/// @details Only that day is held; a day is loaded as it is shown
+/// (calendar_controller::show_day), so weeks of events never sit in RAM.
+inline constexpr size_t kCalendarEventCapacity = 8;
 
 /// @brief One compact calendar row ready for display on a softkey.
 struct CalendarEvent

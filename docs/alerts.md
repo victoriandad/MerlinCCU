@@ -90,6 +90,13 @@ before a restart (#203). `alert_history` holds them and
 
 ## Alert Catalogue
 
+An active alert points at its detail rather than holding a copy. Fixed
+details are pointed at directly; details built at run time (Dynamic detail
+below) share six buffers (`kDetailSlotCount` in `alert_controller.cpp`),
+freed when the alert clears or is accepted. With all six taken, a seventh
+such alert shows that there are too many alerts in place of its detail. A
+new alert code must say which kind it is in `detail_is_fixed()`.
+
 Debounced conditions count one-second samples, taken by the main loop through
 `console_controller::sample_alerts()`, not `sync()` calls: sync runs on every
 state change and twice per key press. A lost connection or unsynced clock must

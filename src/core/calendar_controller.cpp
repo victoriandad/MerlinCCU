@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "calendar_demo.h"
 #include "calendar_navigation.h"
 #include "console_controller_internal.h"
 #include "softkey_builders.h"
@@ -149,8 +150,16 @@ bool reset_filters(ConsoleState& console_state)
     }
 
     console_state.calendar_owner = CalendarOwner::Combined;
-    console_state.calendar_day_offset = 0;
+    show_day(console_state, 0);
     return true;
+}
+
+void show_day(ConsoleState& console_state, int8_t day_offset)
+{
+    console_state.calendar_day_offset = day_offset;
+    calendar_demo::load_day(day_offset, console_state.calendar_events,
+                            console_state.calendar_event_count);
+    console_state.selected_calendar_event_index = 0U;
 }
 
 bool open_detail_from_slot(ConsoleState& console_state, uint8_t visible_slot)

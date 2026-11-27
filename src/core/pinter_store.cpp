@@ -63,8 +63,8 @@ PinterFlashCandidate read_candidate(uint32_t offset)
 bool write_slot(uint32_t offset, const std::array<PinterStatus, kPinterCount>& pinters,
                 uint32_t sequence)
 {
-    alignas(4) static uint8_t flash_buffer[FLASH_SECTOR_SIZE] = {};
-    std::memset(flash_buffer, 0xFF, sizeof(flash_buffer));
+    uint8_t* const flash_buffer = config_manager::sector_buffer();
+    std::memset(flash_buffer, 0xFF, FLASH_SECTOR_SIZE);
 
     PinterFlashSlot slot = {};
     slot.magic = pinter_persistence::kPinterFlashMagic;
@@ -81,7 +81,7 @@ bool write_slot(uint32_t offset, const std::array<PinterStatus, kPinterCount>& p
 
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_range_erase(offset, FLASH_SECTOR_SIZE);
-    flash_range_program(offset, flash_buffer, sizeof(flash_buffer));
+    flash_range_program(offset, flash_buffer, FLASH_SECTOR_SIZE);
     restore_interrupts(interrupts);
 
     const PinterFlashSlot* stored = flash_slot(offset);

@@ -856,6 +856,11 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
     return status_changed(previous, g_status);
 }
 
+size_t response_peak_bytes()
+{
+    return g_response_peak_len;
+}
+
 const ShareMarketStatus& status()
 {
     return g_status;

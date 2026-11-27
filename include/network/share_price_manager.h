@@ -34,4 +34,8 @@ bool update(const WifiStatus& wifi_status, SharePeriod active_period, bool fetch
 /// @brief Returns the latest display-ready share data snapshot.
 const ShareMarketStatus& status();
 
+/// @brief Largest response received since boot, in bytes, for sizing the
+/// response buffer (/api/firmware).
+size_t response_peak_bytes();
+
 } // namespace share_price_manager

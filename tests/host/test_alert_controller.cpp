@@ -635,3 +635,30 @@ HOST_TEST(list_page_count_rounds_up_and_never_returns_zero)
     EXPECT_EQ(kTimeZonePageCount,
               list_page_count(kTimeZoneSelectionCount, kTimeZoneOptionsPerPage));
 }
+
+HOST_TEST(a_run_time_detail_buffer_is_freed_when_its_alert_clears)
+{
+    // Stack and heap figures both build their detail at run time, so they
+    // take shared buffers; clearing one gives its buffer back.
+    ConsoleState state = make_healthy_state();
+    state.stack_status = {.valid = true, .free_bytes = 1000U, .overflow_reset = false};
+    alert_controller::sync(state);
+    EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "Only 1000 bytes") != nullptr);
+
+    state.stack_status.free_bytes = 4000U;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 0U);
+
+    // A fixed detail points at its text and needs no buffer.
+    state.wifi_status.state = WifiConnectionState::Disabled;
+    state.stack_status.free_bytes = 900U;
+    alert_controller::sync(state);
+    EXPECT_EQ(state.alert_count, 2U);
+    for (uint8_t i = 0U; i < state.alert_count; ++i)
+    {
+        const ActiveAlert& alert = state.active_alerts[i];
+        EXPECT_TRUE(alert.code == static_cast<uint8_t>(AlertCode::StackLow)
+                        ? std::strstr(alert.detail.data(), "Only 900 bytes") != nullptr
+                        : std::strstr(alert.detail.data(), "Wi-Fi link is down") != nullptr);
+    }
+}

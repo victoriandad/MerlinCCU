@@ -6,6 +6,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/stdlib.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_rain
 {
@@ -24,7 +25,13 @@ struct RainDrop
 constexpr int kDropCount = 72;
 constexpr int kSlant = 4;
 
-std::array<RainDrop, kDropCount> g_drops = {};
+using Drops = std::array<RainDrop, kDropCount>;
+
+/// @brief This saver's state, in the shared screen-saver block (started by init()).
+Drops& drops()
+{
+    return screensaver_arena::get<Drops>();
+}
 
 /// @brief Restarts one drop above the panel so rain enters from the top edge.
 void reset_drop(RainDrop& drop)
@@ -40,8 +47,9 @@ void reset_drop(RainDrop& drop)
 /// @brief Initializes the diagonal rain screensaver state.
 void init()
 {
+    (void)screensaver_arena::start<Drops>();
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
-    for (RainDrop& drop : g_drops)
+    for (RainDrop& drop : drops())
     {
         reset_drop(drop);
         drop.y = std::rand() % kUiHeight;
@@ -53,7 +61,7 @@ void step_and_render(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    for (RainDrop& drop : g_drops)
+    for (RainDrop& drop : drops())
     {
         drop.y += drop.speed;
         drop.x += 1;

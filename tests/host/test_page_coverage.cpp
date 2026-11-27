@@ -201,8 +201,9 @@ void start_with_data()
         alert.severity = AlertSeverity::Warning;
         alert.raised_minute = raised;
         std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-        std::snprintf(alert.detail.data(), alert.detail.size(),
-                      "%s needed attention.\nIt has since ended.", summary);
+        char detail[kAlertDetailCapacity] = {};
+        std::snprintf(detail, sizeof(detail), "%s needed attention.\nIt has since ended.", summary);
+        alert.detail.point_to(detail);
         alert_history::record(alert, ending, ended);
     };
     constexpr uint32_t kToday = kCoverageEpochDay * 1440U;

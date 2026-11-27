@@ -168,25 +168,33 @@ truth for size/RAM budget, not this document:
 
 #### Major static buffers
 
-Read from `build/MerlinCCU.elf.map` (2026-08-12 build), largest first, everything
-2KB and over. This is a snapshot for orientation, not a live figure -- re-derive
-it from a fresh `.map` if it matters for a specific decision:
+Read from the Pico 2 W build (`build/MerlinCCU.elf`, 2026-11-27), largest
+first, everything 2 KB and over. This is a snapshot for orientation, not a
+live figure -- re-derive it with `arm-none-eabi-nm -S --size-sort` if it
+matters for a specific decision. Static RAM was 430,092 of 524,288 bytes.
 
 | Buffer | Size | Notes |
 | --- | --- | --- |
-| `screensaver_life::g_life_a` + `g_life_b` | 39.4 KiB (2 x 19.7 KiB) | Conway's Life double-buffer; larger than `ConsoleState`, only live while that screensaver is selected. |
-| `web_config_server::g_response` | 24.0 KiB | Whole rendered HTML config page assembled in one buffer. |
-| `console_controller::g_console_state` | 27.0 KiB | The `ConsoleState` instance itself -- see the review rule below. |
+| `display::g_raster_a` + `g_raster_b` | 196.5 KiB (2 x 98.3 KiB) | Panel scan-out rasters, double-buffered. Building one line by line on core 1 (#56) would drop one. |
+| `ram_heap` (lwIP `MEM_SIZE`) | 40.0 KiB | Sized from `lwip_mem_peak` in `/api/firmware`: 19.8 KB at peak with HA, MQTT and the web server busy. |
+| `memp_memory_PBUF_POOL_base` | 23.9 KiB | 16 receive buffers (`PBUF_POOL_SIZE`): one in normal use, up to a receive window during an upload. |
+| `web_config_server::g_response` | 24.0 KiB | Whole rendered page; the largest (`/preview`) is 22.8 KB. |
+| `home_assistant_manager::g_response` | 16.0 KiB | HA responses; the largest measured is 10.9 KB (weather). |
+| `console_controller::g_console_state` | 11.0 KiB | The `ConsoleState` instance itself -- see the review rule below. |
 | `framebuffer::g_fb_a` + `g_fb_b` | 20.0 KiB (2 x 10.0 KiB) | Double UI framebuffer, 252x320 1bpp. |
-| `home_assistant_manager::g_response` | 16.0 KiB | Always reserved even when HA is disabled -- gated by `RuntimeConfig::home_assistant_enabled` (a runtime flag), not a `constexpr`, so the compiler can't prove the buffer unreachable and drop it. |
-| `environment_sensor_manager::g_status` | 2.1 KiB | BME280/SGP40 sensor history buffers. |
+| `alert_history::g_image` | 5.9 KiB | The newest 16 ended alerts with their text, as written to flash. |
+| `screensaver_arena::g_block` | 4.9 KiB | Shared by the screen savers; sized for Life's two grids. |
+| `config_manager::g_sector_buffer` | 4.0 KiB | Shared by the settings and Pinter flash writes. |
+| `share_price_manager::g_response`, `g_house_hourly`, `g_session`, `g_publish_buffer` | 3.5 to 4.0 KiB each | Share feed, HA hourly forecast, web request, MQTT discovery and panel picture. |
 
-Notably absent: `share_price_manager`'s `g_response`/`g_request` buffers
-(16KB + 768B in source) don't appear in `.bss` at all. `kEnableLiveShareFetch`
-is a `constexpr bool` set to `false`, so the compiler can prove the only code
-that touches those buffers is unreachable and drops both the code and the
-backing storage entirely -- unlike HA's runtime-gated equivalent
-above, a `constexpr`-gated feature costs nothing while disabled.
+Several of these sit in PSRAM on the Pimoroni (see PSRAM above).
+
+Memory review (#104, 2026-11-27) took the Pico 2 W from 499,728 to 430,092
+bytes: the Calendar holds only the day on screen (9.2 KB); alerts point at
+their detail, with run-time text in six shared buffers (6.3 KB); MQTT topic
+names are built as they are sent (6.9 KB); a duplicate HA status, a second
+flash sector buffer and per-saver state went (10.3 KB); and lwIP's heap and
+receive pool were sized from measurement (36.9 KB).
 
 Numbers are load-bearing, not aspirational: check this page (or run
 `tools/check_size_budget.py` against a fresh build) after any change that
@@ -620,7 +628,7 @@ native compiler instead of requiring hardware:
   `console_controller.cpp` since they're a configuration concern (reading the
   optional `calendar_identities.h`), not navigation logic. Live Home Assistant
   calendar ingestion (#8, blocked on #33/#34) is out of scope here and will
-  feed `ConsoleState.calendar_events` the same way the current seed data does,
+  fill `ConsoleState.calendar_events` one day at a time, as `calendar_demo::load_day()` does now (only the day on screen is held),
   without needing to change this header.
 
 When adding new pure logic to `console_controller.cpp` or `input.cpp`, prefer

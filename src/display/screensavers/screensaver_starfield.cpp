@@ -6,6 +6,7 @@
 #include "framebuffer.h"
 #include "panel_config.h"
 #include "pico/stdlib.h"
+#include "screensaver_arena.h"
 
 namespace screensaver_starfield
 {
@@ -26,7 +27,13 @@ constexpr int kDepthMin = 8;
 constexpr int kCenterX = kUiWidth / 2;
 constexpr int kCenterY = kUiHeight / 2;
 
-std::array<Star, kStarCount> g_stars = {};
+using Stars = std::array<Star, kStarCount>;
+
+/// @brief This saver's state, in the shared screen-saver block (started by init()).
+Stars& stars()
+{
+    return screensaver_arena::get<Stars>();
+}
 
 /// @brief Returns a random signed offset around the screen centre.
 int random_offset(int radius)
@@ -47,8 +54,9 @@ void respawn_star(Star& star)
 /// @brief Initializes the starfield screensaver state.
 void init()
 {
+    (void)screensaver_arena::start<Stars>();
     std::srand(static_cast<unsigned int>(to_ms_since_boot(get_absolute_time())));
-    for (Star& star : g_stars)
+    for (Star& star : stars())
     {
         respawn_star(star);
     }
@@ -59,7 +67,7 @@ void step_and_render(uint8_t* fb)
 {
     framebuffer::clear(fb, false);
 
-    for (Star& star : g_stars)
+    for (Star& star : stars())
     {
         star.z -= 2;
         if (star.z < kDepthMin)

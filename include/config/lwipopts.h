@@ -21,7 +21,10 @@ extern "C"
 
 #define MEM_LIBC_MALLOC 0
 #define MEM_ALIGNMENT 4
-#define MEM_SIZE (64 * 1024)
+// Measured on a Pimoroni unit (/api/firmware lwip_mem_peak, 2026-11-27):
+// 19.8 KB at peak with HA, MQTT (its 4 KB ring and panel pictures) and the
+// web server sending its largest pages. 40 KB keeps twice that; it was 64.
+#define MEM_SIZE (40 * 1024)
 
 #define LWIP_ARP 1
 #define LWIP_ETHERNET 1
@@ -53,7 +56,10 @@ extern "C"
 #define MQTT_OUTPUT_RINGBUF_SIZE 4096
 #define MQTT_REQ_TIMEOUT 10
 #define MQTT_CONNECT_TIMOUT 10
-#define PBUF_POOL_SIZE 24
+// Received packets. In normal use one is held at a time (pbuf_pool_peak 1
+// of 24). An over-the-air upload holds up to a receive window (TCP_WND, 8
+// segments) unacknowledged while flash catches up, so 16 is that twice over.
+#define PBUF_POOL_SIZE 16
 
 #define LWIP_NETIF_HOSTNAME 1
 #define LWIP_NETIF_STATUS_CALLBACK 1

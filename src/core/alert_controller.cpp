@@ -94,6 +94,113 @@ int find_alert_by_code(const ConsoleState& console_state, AlertCode code)
     return -1;
 }
 
+/// @brief True for alert types whose detail is always fixed text, which the
+/// list can point at; the rest build theirs at run time.
+/// @details No default case, so a new code has to choose.
+constexpr bool detail_is_fixed(AlertCode code)
+{
+    switch (code)
+    {
+    case AlertCode::WifiDisconnected:
+    case AlertCode::WifiAuthFailed:
+    case AlertCode::TimeNotSynced:
+    case AlertCode::HomeAssistantOffline:
+    case AlertCode::HomeAssistantUnauthorized:
+    case AlertCode::HomeAssistantEntityMissing:
+    case AlertCode::WeatherUnavailable:
+    case AlertCode::MqttOffline:
+    case AlertCode::KeypadLineFault:
+    case AlertCode::EnvironmentSensorFault:
+    case AlertCode::ShareDataUnavailable:
+    case AlertCode::PinterScheduleConflict:
+    case AlertCode::FirmwareUpdateRolledBack:
+        return true;
+    case AlertCode::WeatherProviderWarning:
+    case AlertCode::WeatherTemperatureWarning:
+    case AlertCode::WeatherWindWarning:
+    case AlertCode::OfficialWeatherWarning:
+    case AlertCode::LocalPressureStormWarning:
+    case AlertCode::DisplayPipelineLag:
+    case AlertCode::StackLow:
+    case AlertCode::HeapLow:
+    case AlertCode::HomeAssistantMessage:
+    case AlertCode::UnexpectedRestart:
+    case AlertCode::ControlFailed:
+    case AlertCode::UnitOffline:
+    case AlertCode::MixedFirmware:
+    case AlertCode::Count:
+        return false;
+    }
+    return false;
+}
+
+/// @brief Buffers for run-time detail text, shared by whichever such alerts
+/// are active: several at once is rare, all thirteen never.
+constexpr size_t kDetailSlotCount = 6U;
+
+/// @brief Shown instead when every buffer is taken.
+constexpr char kNoRoomForDetail[] =
+    "Too many alerts are active to keep this one's detail.\nAccept some, and it shows the next "
+    "time it is raised.";
+
+struct DetailSlot
+{
+    bool used;
+    uint8_t code;
+    std::array<char, kAlertDetailCapacity> text;
+};
+std::array<DetailSlot, kDetailSlotCount> g_detail_slots = {};
+
+/// @brief Keeps `text` for alert `code` in its shared buffer, taking a free
+/// one if it has none, and returns where it now lives.
+const char* keep_detail(AlertCode code, const char* text)
+{
+    DetailSlot* slot = nullptr;
+    for (DetailSlot& candidate : g_detail_slots)
+    {
+        if (candidate.used && candidate.code == static_cast<uint8_t>(code))
+        {
+            slot = &candidate;
+            break;
+        }
+        if (!candidate.used && slot == nullptr)
+        {
+            slot = &candidate;
+        }
+    }
+    if (slot == nullptr)
+    {
+        return kNoRoomForDetail;
+    }
+    slot->used = true;
+    slot->code = static_cast<uint8_t>(code);
+    if (std::strncmp(slot->text.data(), text, slot->text.size()) != 0)
+    {
+        std::snprintf(slot->text.data(), slot->text.size(), "%s", text);
+    }
+    return slot->text.data();
+}
+
+/// @brief Frees alert `code`'s detail buffer, if it holds one.
+void release_detail(uint8_t code)
+{
+    for (DetailSlot& slot : g_detail_slots)
+    {
+        if (slot.used && slot.code == code)
+        {
+            slot.used = false;
+            slot.text[0] = '\0';
+        }
+    }
+}
+
+/// @brief Points `alert` at its detail: fixed text directly, run-time text
+/// through its shared buffer.
+void set_detail(ActiveAlert& alert, AlertCode code, const char* detail)
+{
+    alert.detail.point_to(detail_is_fixed(code) ? detail : keep_detail(code, detail));
+}
+
 /// @brief Adds or updates one alert condition in the active queue.
 void set_alert_condition(ConsoleState& console_state, AlertCode code, bool active,
                          AlertSeverity severity, const char* summary, const char* detail)
@@ -132,7 +239,7 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
         ActiveAlert& alert = console_state.active_alerts[static_cast<size_t>(existing)];
         alert.severity = severity;
         std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-        std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
+        set_detail(alert, code, detail);
         alert.occurrence_count = g_alert_occurrences[code_idx];
         // Existing active alerts keep their original arrival sequence/time so
         // periodic state re-evaluation does not retrigger annunciation.
@@ -158,7 +265,7 @@ void set_alert_condition(ConsoleState& console_state, AlertCode code, bool activ
                   console_state.time_status.synced ? console_state.time_status.time_text.data()
                                                    : "--:--");
     std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-    std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
+    set_detail(alert, code, detail);
 }
 
 /// @brief Adds one optional temperature value to a min/max range.
@@ -429,7 +536,7 @@ void sync_unit_alerts(ConsoleState& console_state)
 {
     static_assert(unit_fleet::kOfflineAlertMs == 30U * 60U * 1000U,
                   "update UNIT OFFLINE's \"30 minutes\"");
-    static char detail[sizeof(ActiveAlert::detail)] = {};
+    static char detail[kAlertDetailCapacity] = {};
     const UnitFleet& fleet = console_state.unit_fleet;
 
     char names[96] = {};
@@ -633,7 +740,7 @@ void sync(ConsoleState& console_state)
     // update_softkeys_from_state and update_lamps_from_state), so trimming
     // its stack footprint matters on a memory-constrained MCU with no
     // configured stack guard.
-    char alert_detail_scratch[sizeof(ActiveAlert::detail)] = {};
+    char alert_detail_scratch[kAlertDetailCapacity] = {};
     if (temperature_warning)
     {
         build_weather_temperature_alert_detail(min_temperature_celsius, max_temperature_celsius,
@@ -954,6 +1061,7 @@ void erase_active_alert(ConsoleState& console_state, uint8_t index)
         return;
     }
 
+    release_detail(console_state.active_alerts[index].code);
     for (uint8_t i = index; i + 1U < console_state.alert_count; ++i)
     {
         console_state.active_alerts[i] = console_state.active_alerts[i + 1U];
@@ -1062,6 +1170,7 @@ void reset()
     g_alert_suppressed.fill(false);
     g_alert_was_active.fill(false);
     g_alert_occurrences.fill(0U);
+    g_detail_slots = {};
 }
 
 void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)

@@ -1692,17 +1692,15 @@ bool chain_due(Chain chain)
 }
 
 /// @brief Advances the Home Assistant resolve/connect/request state machine.
-bool update(const WifiStatus& wifi_status)
+/// @details Reports no change itself: the main loop's
+/// console_controller::set_home_assistant_status() compares the status with
+/// the console's copy, so a third 2 KB copy to compare against is not kept.
+void update(const WifiStatus& wifi_status)
 {
-    // Static: the status carries the weather forecast tables, and a stack copy
-    // took about 2 KB of the 4 KB core-0 stack on every loop pass (#164).
-    // update() only runs from the main loop, so one copy is never shared.
-    static HomeAssistantStatus previous = {};
-    previous = g_status;
     if (runtime_weather_config_changed())
     {
         init();
-        return previous != g_status;
+        return;
     }
     update_house_weather();
 
@@ -1711,7 +1709,7 @@ bool update(const WifiStatus& wifi_status)
     if (!ha_request_plan::chain_active(Chain::HomeAssistant, g_plan) &&
         !ha_request_plan::chain_active(Chain::OpenMeteo, g_plan))
     {
-        return previous != g_status;
+        return;
     }
 
     const bool wifi_ready = wifi_status.ip_address[0] != '\0';
@@ -1729,7 +1727,7 @@ bool update(const WifiStatus& wifi_status)
             schedule_chain_restart(chain, 0U);
             g_chain_backoff[static_cast<size_t>(chain)].reset();
         }
-        return previous != g_status;
+        return;
     }
 
     // Resolver and socket operations are asynchronous, so deadlines are checked
@@ -1781,12 +1779,16 @@ bool update(const WifiStatus& wifi_status)
         }
     }
 
-    return previous != g_status;
 }
 
 const HomeAssistantStatus& status()
 {
     return g_status;
+}
+
+size_t response_peak_bytes()
+{
+    return g_response_peak_len;
 }
 
 const WeatherWarnings& weather_warnings()

@@ -33,7 +33,7 @@ int detail_visible_lines()
     return std::max(1, ((kLimitY - ui_layout::kContentTopY - kLineHeight) / kPitch) + 1);
 }
 
-// ActiveAlert::detail holds 319 characters, plus the occurrence line or, for
+// An alert's detail holds 319 characters (kAlertDetailCapacity), plus the occurrence line or, for
 // a past alert, its summary and times; even at one short word per line that
 // is well under this many wrapped lines at the detail width.
 constexpr size_t kMaxDetailLines = 56U;

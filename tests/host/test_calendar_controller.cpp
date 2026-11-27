@@ -122,3 +122,22 @@ HOST_TEST(open_detail_from_slot_rejects_a_slot_with_no_matching_event)
     state.calendar_event_count = 0U;
     EXPECT_FALSE(calendar_controller::open_detail_from_slot(state, 0U));
 }
+
+HOST_TEST(showing_a_day_loads_only_that_days_rows)
+{
+    ConsoleState state = make_state();
+    calendar_controller::show_day(state, 0);
+    EXPECT_EQ(state.calendar_event_count, 5U);
+    EXPECT_TRUE(std::strcmp(state.calendar_events[0].title.data(), "Demo standup") == 0);
+
+    // A day with no sample gets its one generated row.
+    calendar_controller::show_day(state, 9);
+    EXPECT_EQ(state.calendar_day_offset, 9);
+    EXPECT_EQ(state.calendar_event_count, 1U);
+    EXPECT_EQ(state.calendar_events[0].day_offset, 9);
+
+    state.calendar_owner = CalendarOwner::Owner2;
+    EXPECT_TRUE(calendar_controller::reset_filters(state));
+    EXPECT_EQ(state.calendar_day_offset, 0);
+    EXPECT_EQ(state.calendar_event_count, 5U);
+}

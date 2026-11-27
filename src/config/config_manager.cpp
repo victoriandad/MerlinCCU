@@ -40,6 +40,11 @@ static_assert(sizeof(ConfigSlot) <= FLASH_SECTOR_SIZE, "Config slot must fit in 
 static_assert(kConfigStorageBytes == config_manager::kReservedFlashBytes,
               "config_manager::kReservedFlashBytes must track this store's real reservation");
 
+// The one SRAM buffer a flash sector is built in before it is written;
+// see sector_buffer(). In SRAM, not PSRAM: PSRAM is reached through the
+// flash interface, which a flash write takes over.
+alignas(4) uint8_t g_sector_buffer[FLASH_SECTOR_SIZE] = {};
+
 RuntimeConfig g_settings = {};
 uint32_t g_sequence = 0;
 bool g_save_pending = false;
@@ -209,17 +214,12 @@ bool load_from_flash()
 /// @brief Writes one complete slot to flash.
 bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequence)
 {
-    // The slot is built in the static sector buffer rather than as a stack
+    // The slot is built in the shared sector buffer rather than as a stack
     // local: a ConfigSlot is about 1.5 KB (#164).
-    union FlashSector
-    {
-        ConfigSlot slot;
-        uint8_t bytes[FLASH_SECTOR_SIZE];
-    };
-    alignas(4) static FlashSector sector = {};
-    std::memset(sector.bytes, 0xFF, sizeof(sector.bytes));
+    uint8_t* const sector = config_manager::sector_buffer();
+    std::memset(sector, 0xFF, FLASH_SECTOR_SIZE);
 
-    ConfigSlot& slot = sector.slot;
+    ConfigSlot& slot = *new (sector) ConfigSlot;
     slot.magic = config_persistence::kConfigMagic;
     slot.version = config_persistence::kConfigVersion;
     slot.reserved = 0U;
@@ -234,7 +234,7 @@ bool write_slot(uint32_t offset, const RuntimeConfig& settings, uint32_t sequenc
 
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_range_erase(offset, FLASH_SECTOR_SIZE);
-    flash_range_program(offset, sector.bytes, sizeof(sector.bytes));
+    flash_range_program(offset, sector, FLASH_SECTOR_SIZE);
     restore_interrupts(interrupts);
 
     const ConfigSlot* stored = flash_slot(offset);
@@ -343,6 +343,11 @@ bool flush_pending_save()
                 static_cast<unsigned long>(g_sequence), g_settings.device_name.data(),
                 g_settings.device_label.data());
     return true;
+}
+
+uint8_t* sector_buffer()
+{
+    return g_sector_buffer;
 }
 
 const char* device_name()
