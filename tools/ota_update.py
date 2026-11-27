@@ -134,23 +134,32 @@ def firmware_state(host: str) -> dict[str, str] | None:
 
 
 def upload(host: str, image: bytes, token: str) -> tuple[bool, str]:
-    """Posts the image, retrying while the unit's web server is busy."""
+    """Posts the image, retrying while the unit's web server is busy.
+
+    A busy unit (a browser page polling it, say) answers 503 and closes the
+    connection while the image is still being sent, so the send can fail
+    with the connection reset instead. Both are retried: a cut-off upload is
+    abandoned by the unit with its running image untouched.
+    """
     request = urllib.request.Request(
         f"http://{host}/api/ota", data=image, method="POST",
         headers={"X-OTA-Token": token, "Content-Type": "application/octet-stream"})
+    last_error = "unit stayed busy"
     for _ in range(BUSY_RETRIES):
         try:
             with urllib.request.urlopen(request, timeout=UPLOAD_TIMEOUT_S) as response:
                 return True, response.read().decode("utf-8", "replace").strip()
         except urllib.error.HTTPError as error:
-            text = error.read().decode("utf-8", "replace").strip()
-            if error.code == 503:
-                time.sleep(BUSY_DELAY_S)
-                continue
-            return False, text
+            if error.code != 503:
+                try:
+                    return False, error.read().decode("utf-8", "replace").strip()
+                except OSError:
+                    return False, f"upload refused: HTTP {error.code}"
+            last_error = "unit stayed busy"
         except (urllib.error.URLError, OSError) as error:
-            return False, f"upload failed: {error}"
-    return False, "unit stayed busy"
+            last_error = f"upload failed: {error}"
+        time.sleep(BUSY_DELAY_S)
+    return False, last_error
 
 
 def update_unit(host: str, images: list[Image], token: str) -> Outcome:
