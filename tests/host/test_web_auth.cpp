@@ -28,6 +28,8 @@ HOST_TEST(web_auth_only_login_ping_and_firmware_status_are_public)
     EXPECT_TRUE(web_auth::is_public_request("GET /ping HTTP/1.1\r\n"));
     EXPECT_TRUE(web_auth::is_public_request("GET /api/firmware HTTP/1.1\r\n"));
     EXPECT_TRUE(web_auth::is_public_request("GET /api/firmware?x=1 HTTP/1.1\r\n"));
+    EXPECT_TRUE(web_auth::is_public_request("GET /api/status.json HTTP/1.1\r\n"));
+    EXPECT_FALSE(web_auth::is_public_request("POST /api/status.json HTTP/1.1\r\n"));
 
     EXPECT_FALSE(web_auth::is_public_request("GET / HTTP/1.1\r\n"));
     EXPECT_FALSE(web_auth::is_public_request("GET /config HTTP/1.1\r\n"));

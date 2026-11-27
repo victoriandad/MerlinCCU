@@ -168,13 +168,17 @@ if the two would meet. The version and slot show on:
 
 - the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
 - the Firmware web page;
-- `GET /api/firmware`: `version=`, `board=`, `slot=` and `state=` lines, where
-  state is `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`.
+- `GET /api/firmware`: `unit=` and `mac=` (the network name and Wi-Fi MAC,
+  docs/network-deployment.md), then `version=`, `board=`, `slot=` and
+  `state=` lines, where state is `confirmed`, `on_trial`, `rolled_back` or
+  `not_partitioned`.
   Health lines follow for `tools/soak_monitor.py` (#155, docs/soak-test.md):
   `reset=`, `uptime_min=`, `wifi_connected=`, `mqtt_connected=`,
   `ha_connected=`, `stack_free=`, `heap_arena=` and `alerts=`, then
   `mqtt_unit=`, the unit's MQTT name for HA's Controls setup (#152), and
-  `units=`, the other units it sees online of those it knows (#210);
+  `units=`, the other units it sees online of those it knows (#210), and
+  the memory peaks `lwip_mem_peak=`, `pbuf_pool_peak=`, `tcp_seg_peak=`,
+  `ha_response_peak=`, `share_response_peak=` and `web_response_peak=`;
 - Home Assistant, over MQTT: a `Firmware` diagnostic sensor (the version,
   also the device's software version) and a `Firmware update` sensor (the
   state above). An automation on `rolled_back` can notify you.

@@ -70,6 +70,7 @@ add_executable(MerlinCCU
     src/display/weather_icons.cpp
     src/network/home_controls.cpp
     src/network/unit_fleet.cpp
+    src/network/status_json.cpp
     src/core/calendar_demo.cpp
     src/network/cert_pin.cpp
     src/core/stack_guard.cpp

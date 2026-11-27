@@ -66,6 +66,7 @@ Raspberry Pi Pico 2 W firmware.
   - UI patterns: `docs/ui_patterns.md`
   - alerts: `docs/alerts.md`
   - network trust: `docs/network-trust.md`
+  - house network deployment: `docs/network-deployment.md`
   - hardware findings: `docs/schematic-pinout.md`
   - display validation: `docs/display-test-checklist.md`
 

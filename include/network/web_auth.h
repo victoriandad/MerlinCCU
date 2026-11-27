@@ -40,7 +40,8 @@ inline constexpr uint64_t kLockoutMs = 60ULL * 1000ULL;
 using Token = std::array<char, kTokenHexLength>;
 
 /// @brief True for requests that never need a login: the login page itself,
-/// the `/ping` health check and the read-only `/api/firmware`.
+/// the `/ping` health check and the read-only `/api/firmware` and
+/// `/api/status.json`.
 /// @param request the request line onwards, e.g. "GET /ping HTTP/1.1...".
 bool is_public_request(std::string_view request);
 

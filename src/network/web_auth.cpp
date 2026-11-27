@@ -41,7 +41,10 @@ bool is_public_request(std::string_view request)
     {
         return method == "GET" || method == "POST";
     }
-    return method == "GET" && (path == "/ping" || path == "/api/firmware");
+    // Read-only status for monitors that cannot log in: Uptime Kuma and the
+    // house dashboard (docs/network-deployment.md).
+    return method == "GET" &&
+           (path == "/ping" || path == "/api/firmware" || path == "/api/status.json");
 }
 
 bool pin_is_acceptable(std::string_view pin)

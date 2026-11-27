@@ -3,7 +3,8 @@
 What each CCU connection trusts, what it protects, and what it does not
 (#17). The CCU is a LAN appliance: everything it talks to, apart from
 Open-Meteo and NTP, is on the house network, and the design assumes that
-network is not hostile. Never port-forward a CCU or expose its broker.
+network is not hostile. Never port-forward a CCU or expose its broker; from
+away, reach it over Tailscale (docs/network-deployment.md).
 
 ## Connections
 
