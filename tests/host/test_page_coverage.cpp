@@ -121,6 +121,7 @@ void start_with_data()
     WifiStatus wifi = {};
     wifi.state = WifiConnectionState::Connected;
     std::snprintf(wifi.ip_address.data(), wifi.ip_address.size(), "192.168.1.40");
+    std::snprintf(wifi.host_name.data(), wifi.host_name.size(), "merlinccu2");
     (void)console_controller::set_wifi_status(wifi);
 
     // A partitioned unit running from slot A, as after an OTA update (#154).

@@ -154,7 +154,8 @@ bool set_wifi_status(ConsoleState& console_state, const WifiStatus& wifi_status)
         console_state.wifi_status.auth_mode != wifi_status.auth_mode ||
         console_state.wifi_status.mac_address != wifi_status.mac_address ||
         console_state.wifi_status.ssid != wifi_status.ssid ||
-        console_state.wifi_status.ip_address != wifi_status.ip_address;
+        console_state.wifi_status.ip_address != wifi_status.ip_address ||
+        console_state.wifi_status.host_name != wifi_status.host_name;
 
     if (!kChanged)
     {

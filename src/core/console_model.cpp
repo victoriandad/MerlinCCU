@@ -199,6 +199,7 @@ void make_default_console_state(ConsoleState& out)
     out.wifi_status.mac_address.fill('\0');
     out.wifi_status.ssid.fill('\0');
     out.wifi_status.ip_address.fill('\0');
+    out.wifi_status.host_name.fill('\0');
 
     out.home_assistant_status.state = HomeAssistantConnectionState::Disabled;
     out.home_assistant_status.configured = false;

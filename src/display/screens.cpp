@@ -27,8 +27,10 @@ namespace
 
 /// @brief Returns the Home-page network footer text.
 /// @details A connected CCU advertises the address a browser should use for
-/// remote configuration; intermediate or failed states use plain operator-facing
-/// text rather than technical DHCP or lwIP details.
+/// remote configuration: its network name, which survives a new DHCP lease
+/// and tells the units apart, or the IP address until the name is known
+/// (Status > Network always shows the IP). Intermediate or failed states use
+/// plain operator-facing text rather than technical DHCP or lwIP details.
 const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t buffer_size)
 {
     if (buffer == nullptr || buffer_size == 0)
@@ -39,7 +41,9 @@ const char* home_ip_status_text(const WifiStatus& status, char* buffer, size_t b
     buffer[0] = '\0';
     if (status.ip_address[0] != '\0')
     {
-        std::snprintf(buffer, buffer_size, "http://%s", status.ip_address.data());
+        const char* host =
+            status.host_name[0] != '\0' ? status.host_name.data() : status.ip_address.data();
+        std::snprintf(buffer, buffer_size, "http://%s", host);
         return buffer;
     }
 
@@ -1066,7 +1070,8 @@ void draw_compact_detail_rows(uint8_t* fb, const DetailRow* rows, size_t count, 
 /// are the surrounding labels for the next level of navigation.
 /// The footer is one identity line (SCR-4): where to browse to on the left,
 /// and when the running firmware was built on the right, so an update can be
-/// confirmed at a glance. The build time gives way if the two would meet.
+/// confirmed at a glance. The "Build:" label, then the build time, give way
+/// if the two would meet.
 void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*now_ms*/)
 {
     char ip_text[32] = {};
@@ -1080,11 +1085,18 @@ void draw_home_page(uint8_t* fb, const ConsoleState& console_state, uint32_t /*n
     }
     // At least one character cell between the two.
     constexpr int kMinGapPx = 6;
-    const int built_width = text_width(firmware.built.data(), TextStyle::Footer);
-    const int built_x = ui_layout::kRightEdgeX - built_width;
-    if (built_x - kMinGapPx >= ui_layout::kMarginX + text_width(address, TextStyle::Footer))
+    const int free_from_x =
+        ui_layout::kMarginX + text_width(address, TextStyle::Footer) + kMinGapPx;
+    char labelled[32] = {};
+    std::snprintf(labelled, sizeof(labelled), "Build: %s", firmware.built.data());
+    for (const char* text : {static_cast<const char*>(labelled), firmware.built.data()})
     {
-        draw_text(fb, built_x, ui_layout::kFooterLineY, firmware.built.data(), TextStyle::Footer);
+        const int x = ui_layout::kRightEdgeX - text_width(text, TextStyle::Footer);
+        if (x >= free_from_x)
+        {
+            draw_text(fb, x, ui_layout::kFooterLineY, text, TextStyle::Footer);
+            return;
+        }
     }
 }
 
