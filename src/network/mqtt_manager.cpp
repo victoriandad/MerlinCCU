@@ -446,13 +446,15 @@ uint32_t g_screen_image_crc_in_flight = 0U;
 // one line per frame.)
 uint32_t g_screen_images_skipped = 0U;
 mqtt_connect_client_info_t g_client_info = {};
-std::array<std::array<char, 64>, static_cast<size_t>(SensorId::Count)> g_sensor_unique_ids = {};
-std::array<std::array<char, 96>, static_cast<size_t>(SensorId::Count)> g_sensor_state_topics = {};
-std::array<std::array<char, 128>, static_cast<size_t>(SensorId::Count)> g_sensor_discovery_topics =
-    {};
 std::array<std::array<char, 32>, static_cast<size_t>(SensorId::Count)> g_current_sensor_values = {};
-std::array<std::array<char, 32>, static_cast<size_t>(SensorId::Count)> g_published_sensor_values =
-    {};
+// What the broker last took for each sensor, as a CRC of the value: a
+// change is all that matters, and 4 bytes stand in for 32. An empty value,
+// never published, has the CRC 0 these start at.
+std::array<uint32_t, static_cast<size_t>(SensorId::Count)> g_published_sensor_crcs = {};
+uint32_t g_sensor_crc_in_flight = 0U;
+// Topic names and unique ids are built when a message goes out
+// (sensor_name below), not kept per sensor: about 6 KB for 22 entities.
+constexpr size_t kTopicCapacity = 128U;
 std::array<bool, static_cast<size_t>(SensorId::Count)> g_sensor_discovery_published = {};
 
 /// @brief Updates the public MQTT status snapshot.
@@ -465,26 +467,11 @@ void set_status(MqttConnectionState state, int last_error)
 /// @brief Clears retained topic, value, and discovery bookkeeping.
 void clear_sensor_tracking()
 {
-    for (auto& unique_id : g_sensor_unique_ids)
-    {
-        unique_id.fill('\0');
-    }
-    for (auto& topic : g_sensor_state_topics)
-    {
-        topic.fill('\0');
-    }
-    for (auto& topic : g_sensor_discovery_topics)
-    {
-        topic.fill('\0');
-    }
     for (auto& value : g_current_sensor_values)
     {
         value.fill('\0');
     }
-    for (auto& value : g_published_sensor_values)
-    {
-        value.fill('\0');
-    }
+    g_published_sensor_crcs.fill(0U);
     g_sensor_discovery_published.fill(false);
     g_status.discovery_published = false;
 }
@@ -540,10 +527,7 @@ void reset_runtime(bool reset_publish_state)
     }
     else
     {
-        for (auto& value : g_published_sensor_values)
-        {
-            value.fill('\0');
-        }
+        g_published_sensor_crcs.fill(0U);
     }
 }
 
@@ -642,25 +626,43 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
     std::snprintf(g_base_topic, sizeof(g_base_topic), "%s", base_topic);
     std::snprintf(g_self_mac, sizeof(g_self_mac), "%s", mac_hex);
 
-    // Topic strings are precomputed once per session so the publish path can
-    // focus on ordering and retry behaviour instead of repeated formatting.
-    for (size_t i = 0; i < static_cast<size_t>(SensorId::Count); ++i)
-    {
-        const SensorDescriptor& sensor = kSensorDescriptors[i];
-        const char* slug = entity_slug(sensor);
-        const char* component =
-            sensor.command != kNoCommand
-                ? mqtt_commands::info(sensor.command).component
-                : (static_cast<SensorId>(i) == SensorId::Screen ? "image" : "sensor");
-        std::snprintf(g_sensor_unique_ids[i].data(), g_sensor_unique_ids[i].size(), "%s_%s",
-                      g_device_id, slug);
-        std::snprintf(g_sensor_state_topics[i].data(), g_sensor_state_topics[i].size(),
-                      "%s/%s/state", g_topic_prefix, slug);
-        std::snprintf(g_sensor_discovery_topics[i].data(), g_sensor_discovery_topics[i].size(),
-                      "%s/%s/%s/%s/config", discovery_prefix, component, g_device_id, slug);
-    }
-
     copy_text(g_status.device_id, g_device_id);
+}
+
+/// @brief Which of a sensor's names to build.
+enum class SensorName : uint8_t
+{
+    UniqueId,       ///< `<device id>_<slug>`
+    StateTopic,     ///< `<base>/<mac>/<slug>/state`
+    DiscoveryTopic, ///< `<discovery prefix>/<component>/<device id>/<slug>/config`
+};
+
+/// @brief Builds one of a sensor's names into `out` (kTopicCapacity bytes).
+/// @details Built when a message goes out rather than kept per sensor; lwIP
+/// copies the topic into its output buffer, so a stack buffer will do.
+const char* sensor_name(SensorId sensor_id, SensorName which, char* out, size_t out_size)
+{
+    const SensorDescriptor& sensor = kSensorDescriptors[sensor_index(sensor_id)];
+    const char* slug = entity_slug(sensor);
+    switch (which)
+    {
+    case SensorName::UniqueId:
+        std::snprintf(out, out_size, "%s_%s", g_device_id, slug);
+        break;
+    case SensorName::StateTopic:
+        std::snprintf(out, out_size, "%s/%s/state", g_topic_prefix, slug);
+        break;
+    case SensorName::DiscoveryTopic:
+    {
+        const char* component = sensor.command != kNoCommand
+                                    ? mqtt_commands::info(sensor.command).component
+                                    : (sensor_id == SensorId::Screen ? "image" : "sensor");
+        std::snprintf(out, out_size, "%s/%s/%s/%s/config", g_discovery_prefix, component,
+                      g_device_id, slug);
+        break;
+    }
+    }
+    return out;
 }
 
 /// @brief Where the payload of the publish being received goes.
@@ -1073,6 +1075,10 @@ bool build_discovery_payload(SensorId sensor_id)
     // sensor entity. State values are published separately afterward. An
     // image entity takes its picture from "image_topic" instead.
     const char* topic_key = sensor_id == SensorId::Screen ? "image_topic" : "state_topic";
+    char unique_id[kTopicCapacity] = {};
+    char state_topic[kTopicCapacity] = {};
+    (void)sensor_name(sensor_id, SensorName::UniqueId, unique_id, sizeof(unique_id));
+    (void)sensor_name(sensor_id, SensorName::StateTopic, state_topic, sizeof(state_topic));
     const int kLen =
         std::snprintf(g_publish_buffer, sizeof(g_publish_buffer),
                       "{\"name\":\"%s\",\"unique_id\":\"%s\","
@@ -1081,10 +1087,9 @@ bool build_discovery_payload(SensorId sensor_id)
                       "\"origin\":{\"name\":\"MerlinCCU\",\"sw_version\":\"%s\"},"
                       "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\","
                       "\"manufacturer\":\"%s\",\"model\":\"%s\",\"sw_version\":\"%s\"}%s}",
-                      name, g_sensor_unique_ids[sensor_index(sensor_id)].data(), topic_key,
-                      g_sensor_state_topics[sensor_index(sensor_id)].data(), g_availability_topic,
-                      kOnlineState, kOfflineState, kFirmwareVersion, g_device_id, g_device_name,
-                      kManufacturer, kDeviceModel, kFirmwareVersion, extras);
+                      name, unique_id, topic_key, state_topic, g_availability_topic, kOnlineState,
+                      kOfflineState, kFirmwareVersion, g_device_id, g_device_name, kManufacturer,
+                      kDeviceModel, kFirmwareVersion, extras);
     return kLen > 0 && static_cast<size_t>(kLen) < sizeof(g_publish_buffer);
 }
 
@@ -1128,6 +1133,12 @@ bool find_pending_discovery(SensorId* out_sensor)
     return false;
 }
 
+/// @brief CRC of one sensor value, as g_published_sensor_crcs holds them.
+uint32_t value_crc(const char* value)
+{
+    return png_encoder::crc32(reinterpret_cast<const uint8_t*>(value), std::strlen(value));
+}
+
 /// @brief Finds the next sensor whose state value changed since last publish.
 bool find_pending_state(SensorId* out_sensor)
 {
@@ -1138,8 +1149,7 @@ bool find_pending_state(SensorId* out_sensor)
 
     for (size_t i = 0; i < static_cast<size_t>(SensorId::Count); ++i)
     {
-        if (std::strcmp(g_current_sensor_values[i].data(), g_published_sensor_values[i].data()) !=
-            0)
+        if (value_crc(g_current_sensor_values[i].data()) != g_published_sensor_crcs[i])
         {
             *out_sensor = static_cast<SensorId>(i);
             return true;
@@ -1293,15 +1303,13 @@ void mqtt_request_cb(void* arg, err_t err)
     case PendingPublishType::Discovery:
         g_sensor_discovery_published[sensor_index(kCompletedSensor)] = true;
         g_status.discovery_published = all_discovery_published();
-        PERIODIC_LOG("MQTT discovery published topic=%s\n",
-                     g_sensor_discovery_topics[sensor_index(kCompletedSensor)].data());
+        PERIODIC_LOG("MQTT discovery published sensor=%s\n",
+                     entity_slug(kSensorDescriptors[sensor_index(kCompletedSensor)]));
         break;
     case PendingPublishType::State:
-        copy_text(g_published_sensor_values[sensor_index(kCompletedSensor)],
-                  g_current_sensor_values[sensor_index(kCompletedSensor)].data());
-        PERIODIC_LOG("MQTT state published topic=%s value=%s\n",
-                     g_sensor_state_topics[sensor_index(kCompletedSensor)].data(),
-                     g_published_sensor_values[sensor_index(kCompletedSensor)].data());
+        g_published_sensor_crcs[sensor_index(kCompletedSensor)] = g_sensor_crc_in_flight;
+        PERIODIC_LOG("MQTT state published sensor=%s\n",
+                     entity_slug(kSensorDescriptors[sensor_index(kCompletedSensor)]));
         break;
     case PendingPublishType::KeyTrigger:
         if (g_key_trigger_removing)
@@ -1564,9 +1572,11 @@ bool publish_screen_image()
         g_screen_images_skipped = 0U;
     }
     g_screen_image_crc_in_flight = crc;
-    return publish_bytes(g_sensor_state_topics[sensor_index(SensorId::Screen)].data(),
-                         g_publish_buffer, static_cast<u16_t>(length),
-                         PendingPublishType::ScreenImage, SensorId::Screen);
+    char screen_topic[kTopicCapacity] = {};
+    return publish_bytes(
+        sensor_name(SensorId::Screen, SensorName::StateTopic, screen_topic, sizeof(screen_topic)),
+        g_publish_buffer, static_cast<u16_t>(length), PendingPublishType::ScreenImage,
+        SensorId::Screen);
 }
 
 /// @brief Starts the next queued availability, discovery, or state publish.
@@ -1594,8 +1604,10 @@ bool start_next_publish()
             set_status(MqttConnectionState::Error, ERR_BUF);
             return false;
         }
-        return publish(g_sensor_discovery_topics[sensor_index(sensor_id)].data(), g_publish_buffer,
-                       PendingPublishType::Discovery, sensor_id);
+        char discovery_topic[kTopicCapacity] = {};
+        return publish(sensor_name(sensor_id, SensorName::DiscoveryTopic, discovery_topic,
+                                   sizeof(discovery_topic)),
+                       g_publish_buffer, PendingPublishType::Discovery, sensor_id);
     }
 
     // The other units (#210): an acceptance made here goes out first, then
@@ -1697,8 +1709,11 @@ bool start_next_publish()
             set_status(MqttConnectionState::Error, ERR_BUF);
             return false;
         }
-        return publish(g_sensor_state_topics[sensor_index(sensor_id)].data(), g_publish_buffer,
-                       PendingPublishType::State, sensor_id);
+        g_sensor_crc_in_flight = value_crc(g_publish_buffer);
+        char state_topic[kTopicCapacity] = {};
+        return publish(
+            sensor_name(sensor_id, SensorName::StateTopic, state_topic, sizeof(state_topic)),
+            g_publish_buffer, PendingPublishType::State, sensor_id);
     }
 
     // The picture goes last: it is the largest message and the least urgent.
