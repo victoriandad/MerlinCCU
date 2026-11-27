@@ -1125,6 +1125,9 @@ void sample_alerts()
 {
     alert_controller::mark_sample_due();
     update_softkeys_from_state();
+    // An alert raised with no key pressed, such as UNIT OFFLINE or MQTT,
+    // must still light the ALRT lamp; otherwise it waited for a key.
+    update_lamps_from_state();
 }
 
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.

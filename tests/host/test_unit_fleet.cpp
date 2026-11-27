@@ -4,6 +4,7 @@
 #include <string>
 
 #include "alert_controller.h"
+#include "console_controller.h"
 #include "test_framework.h"
 
 namespace
@@ -247,4 +248,28 @@ HOST_TEST(unit_alerts_are_raised_from_the_fleet_and_left_out_of_the_summary)
     EXPECT_TRUE(std::strstr(state.active_alerts[0].detail.data(), "merlinccu2 runs 9271096") !=
                 nullptr);
     alert_controller::reset();
+}
+
+HOST_TEST(an_alert_raised_with_no_key_pressed_lights_the_alert_lamp)
+{
+    console_controller::init();
+    WifiStatus wifi = {};
+    wifi.state = WifiConnectionState::Connected;
+    (void)console_controller::set_wifi_status(wifi);
+    TimeStatus time = {};
+    time.synced = true;
+    (void)console_controller::set_time_status(time);
+    console_controller::sample_alerts();
+    const auto alert_lamp = []
+    { return console_controller::state().lamps[static_cast<size_t>(LampId::AlertLamp)]; };
+    EXPECT_TRUE(alert_lamp() == LampMode::Off);
+
+    // UNIT OFFLINE arrives from MQTT; only the one-second sample follows.
+    UnitFleet fleet = with_peer("76c0214");
+    send(fleet, kPeerA, unit_fleet::Kind::Availability, "offline", 0U);
+    (void)unit_fleet::update(fleet, unit_fleet::kOfflineAlertMs, "76c0214");
+    (void)console_controller::set_unit_fleet(fleet);
+    console_controller::sample_alerts();
+    EXPECT_TRUE(alert_lamp() == LampMode::FlashSlow);
+    console_controller::init();
 }

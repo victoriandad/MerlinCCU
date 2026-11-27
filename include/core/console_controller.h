@@ -117,7 +117,8 @@ bool set_heap_status(const HeapStatus& status);
 /// @brief Takes the debounced alerts' one-second sample: syncs the alerts
 /// with one sample due (alert_controller::mark_sample_due()).
 /// @details Called once a second by the main loop, so a lost connection is
-/// raised after its grace period even when nothing else changes.
+/// raised after its grace period even when nothing else changes, and the
+/// lamps follow: an alert raised with no key pressed lights ALRT.
 void sample_alerts();
 
 /// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.
