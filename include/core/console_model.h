@@ -8,6 +8,7 @@
 #include "environment_sensor_manager.h"
 #include "home_controls.h"
 #include "reset_reason.h"
+#include "unit_fleet.h"
 
 /// @brief Physical softkeys mounted beside the display.
 enum class SoftKeyId : uint8_t
@@ -181,6 +182,8 @@ enum class MenuPage : uint8_t
     AlertHistory,
     /// One past alert, read-only.
     AlertHistoryDetail,
+    /// The other CCUs on the broker and their state (#210).
+    StatusUnits,
     Count,
 };
 
@@ -1135,6 +1138,8 @@ struct ConsoleState
     std::array<ShareWatchEntry, kMaxWatchedShares> watched_shares;
     /// @brief The Controls page's list from Home Assistant (#152).
     HomeControls home_controls;
+    /// @brief The other CCUs on the broker (#210).
+    UnitFleet unit_fleet;
     std::array<LampMode, static_cast<size_t>(LampId::Count)> lamps;
     SoftKeyMap softkeys;
 };

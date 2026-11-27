@@ -173,7 +173,8 @@ if the two would meet. The version and slot show on:
   Health lines follow for `tools/soak_monitor.py` (#155, docs/soak-test.md):
   `reset=`, `uptime_min=`, `wifi_connected=`, `mqtt_connected=`,
   `ha_connected=`, `stack_free=`, `heap_arena=` and `alerts=`, then
-  `mqtt_unit=`, the unit's MQTT name for HA's Controls setup (#152);
+  `mqtt_unit=`, the unit's MQTT name for HA's Controls setup (#152), and
+  `units=`, the other units it sees online of those it knows (#210);
 - Home Assistant, over MQTT: a `Firmware` diagnostic sensor (the version,
   also the device's software version) and a `Firmware update` sensor (the
   state above). An automation on `rolled_back` can notify you.

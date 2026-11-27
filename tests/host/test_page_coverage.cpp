@@ -99,6 +99,7 @@ constexpr std::array<const char*, kPageCount> kPageNames = {
     "font_options",
     "alert_history",
     "alert_history_detail",
+    "status_units",
 };
 
 void press(ButtonId id)

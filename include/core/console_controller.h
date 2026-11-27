@@ -94,6 +94,10 @@ bool set_weather_warnings(const WeatherWarnings& weather_warnings);
 /// @brief Copies the latest MQTT status into the logical front-panel state.
 bool set_mqtt_status(const MqttStatus& mqtt_status);
 
+/// @brief Copies the latest view of the other units into the logical
+/// front-panel state (#210).
+bool set_unit_fleet(const UnitFleet& unit_fleet);
+
 /// @brief Copies the latest share market-data snapshot into the UI state.
 bool set_share_market_status(const ShareMarketStatus& share_market_status);
 

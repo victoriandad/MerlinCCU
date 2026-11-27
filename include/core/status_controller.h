@@ -31,6 +31,10 @@ bool set_weather_warnings(ConsoleState& console_state, const WeatherWarnings& we
 /// @brief Updates the cached MQTT snapshot in the console model.
 bool set_mqtt_status(ConsoleState& console_state, const MqttStatus& mqtt_status);
 
+/// @brief Updates the cached view of the other units in the console model
+/// (#210).
+bool set_unit_fleet(ConsoleState& console_state, const UnitFleet& unit_fleet);
+
 /// @brief Updates the cached share market-data snapshot in the console model.
 bool set_share_market_status(ConsoleState& console_state,
                              const ShareMarketStatus& share_market_status);

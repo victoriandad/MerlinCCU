@@ -178,6 +178,71 @@ HOST_TEST(home_footer_fits_the_longest_address_and_build_time)
     EXPECT_TRUE(golden_test::check_golden("home_footer_longest", fb.data()));
 }
 
+namespace
+{
+
+/// @brief Adds one other unit to the Units page's fleet (#210).
+void add_peer(UnitFleet& fleet, const char* mac, const char* summary, const char* availability,
+              uint32_t now_ms)
+{
+    unit_fleet::TopicRef ref = {};
+    std::snprintf(ref.mac.data(), ref.mac.size(), "%s", mac);
+    if (summary != nullptr)
+    {
+        ref.kind = unit_fleet::Kind::Summary;
+        (void)unit_fleet::apply(fleet, ref, summary, now_ms, "28cdc11a896c");
+    }
+    ref.kind = unit_fleet::Kind::Availability;
+    (void)unit_fleet::apply(fleet, ref, availability, now_ms, "28cdc11a896c");
+}
+
+/// @brief The Units page with MQTT set up, as this unit `merlinccu3`.
+ConsoleState units_state()
+{
+    ConsoleState state = {};
+    state.active_page = MenuPage::StatusUnits;
+    state.mqtt_status.configured = true;
+    std::snprintf(state.wifi_status.host_name.data(), state.wifi_status.host_name.size(),
+                  "merlinccu3");
+    std::snprintf(state.firmware_status.version.data(), state.firmware_status.version.size(),
+                  "76c0214");
+    return state;
+}
+
+} // namespace
+
+HOST_TEST(units_page_shows_each_unit_its_firmware_and_its_own_alerts)
+{
+    ConsoleState state = units_state();
+    UnitFleet& fleet = state.unit_fleet;
+    (void)unit_fleet::set_listening(fleet, true);
+    add_peer(fleet, "88a29e0b828a",
+             "name=merlinccu2\nversion=76c0214\nboard=pico2_w\nalerts=2\ntop=HEAP LOW\n", "online",
+             0U);
+    // Offline for 45 minutes, accepted on another unit, with the longest name.
+    add_peer(fleet, "d83add000001",
+             "name=merlin-landing2\nversion=9271096+\nboard=pico2_w\nalerts=0\ntop=\n", "offline",
+             0U);
+    unit_fleet::TopicRef ack = {};
+    std::snprintf(ack.mac.data(), ack.mac.size(), "d83add000001");
+    ack.kind = unit_fleet::Kind::OfflineAck;
+    (void)unit_fleet::apply(fleet, ack, "1", 0U, "28cdc11a896c");
+    // An old unit that publishes no summary.
+    add_peer(fleet, "d83add0a1b2c", nullptr, "online", 0U);
+
+    const auto fb = render_page(state, 45U * 60U * 1000U);
+    EXPECT_TRUE(golden_test::check_golden("status_units_page", fb.data()));
+}
+
+HOST_TEST(units_page_waits_for_mqtt_then_says_when_it_is_alone)
+{
+    ConsoleState state = units_state();
+    EXPECT_TRUE(golden_test::check_golden("status_units_waiting", render_page(state).data()));
+
+    (void)unit_fleet::set_listening(state.unit_fleet, true);
+    EXPECT_TRUE(golden_test::check_golden("status_units_alone", render_page(state).data()));
+}
+
 HOST_TEST(keypad_debug_page_renders_consistently)
 {
     ConsoleState state = {};

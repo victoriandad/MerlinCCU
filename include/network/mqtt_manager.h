@@ -21,6 +21,10 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
 /// @brief Returns the latest MQTT status snapshot for the UI/controller.
 const MqttStatus& status();
 
+/// @brief Returns the latest view of the other units on the broker (#210),
+/// as of the last update().
+const UnitFleet& unit_fleet();
+
 /// @brief Receives one house weather payload (null-terminated JSON).
 using HouseWeatherHandler = void (*)(house_weather::Topic topic, const char* json);
 
