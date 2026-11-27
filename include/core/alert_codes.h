@@ -39,6 +39,11 @@ enum class AlertCode : uint8_t
     /// The heap came within `kHeapLowFreeBytes` of full at some point since
     /// boot (#206).
     HeapLow,
+    /// Another unit has been offline for unit_fleet::kOfflineAlertMs (#210).
+    UnitOffline,
+    /// The units have run different firmware for unit_fleet::kMixedFirmwareMs
+    /// (#210).
+    MixedFirmware,
     Count,
 };
 

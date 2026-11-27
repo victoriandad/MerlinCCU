@@ -5,20 +5,21 @@
 #include <cstring>
 #include <limits>
 
+#include "alert_controller.h"
 #include "config_fields.h"
 #include "config_manager.h"
+#include "console_controller.h"
 #include "debug_logging.h"
 #include "firmware_version.h"
-#include "lwip/apps/mqtt.h"
-#include "lwip/dns.h"
-#include "lwip/inet.h"
-#include "lwip/ip_addr.h"
-#include "console_controller.h"
 #include "framebuffer.h"
 #include "ha_key_list.h"
 #include "home_controls.h"
 #include "house_weather.h"
 #include "input.h"
+#include "lwip/apps/mqtt.h"
+#include "lwip/dns.h"
+#include "lwip/inet.h"
+#include "lwip/ip_addr.h"
 #include "mqtt_commands.h"
 #include "ota_manager.h"
 #include "page_table.h"
@@ -30,6 +31,7 @@
 #include "psram.h"
 #include "retry_backoff.h"
 #include "text_utils.h"
+#include "unit_fleet.h"
 
 namespace
 {
@@ -112,6 +114,12 @@ enum class PendingPublishType : uint8_t
     KeyEvent,
     ScreenImage,
     ControlPress,
+    /// This unit's summary for the other units (#210).
+    UnitSummary,
+    /// Emptying this unit's own UNIT OFFLINE acceptance as it connects.
+    UnitAckClear,
+    /// Telling the other units UNIT OFFLINE was accepted here.
+    UnitAck,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -395,6 +403,29 @@ std::array<InboundBuffer, 2> g_controls_buffers = {{
     {g_controls_list, sizeof(g_controls_list), 0U, false},
     {g_controls_result, sizeof(g_controls_result), 0U, false},
 }};
+// The other units (#210): "<base>/+/+" brings every unit's availability,
+// summary and offline_ack. The lwIP callbacks apply each publish to g_fleet;
+// the main loop works out the alerts under the lwIP lock and keeps a copy for
+// the console.
+char g_fleet_filter[96] = {};
+bool g_fleet_subscribed = false;
+bool g_fleet_subscribe_in_flight = false;
+char g_self_mac[unit_fleet::kMacLength + 1U] = {};
+UnitFleet g_fleet = {};
+UnitFleet g_fleet_snapshot = {};
+unit_fleet::TopicRef g_fleet_receiving = {};
+char g_fleet_payload[unit_fleet::kMaxPayloadBytes + 1U] = {};
+size_t g_fleet_payload_length = 0U;
+// This unit's summary as it should be, as the broker last took it, and as
+// sent in the publish in flight.
+char g_own_summary[unit_fleet::kMaxPayloadBytes + 1U] = {};
+char g_published_summary[unit_fleet::kMaxPayloadBytes + 1U] = {};
+char g_summary_in_flight[unit_fleet::kMaxPayloadBytes + 1U] = {};
+// Emptied once per session, so an acceptance left from this unit's last
+// outage cannot hide its next one.
+bool g_own_ack_cleared = false;
+char g_ack_mac_in_flight[unit_fleet::kMacLength + 1U] = {};
+
 // Discovery JSON, and the panel PNG (#159). Pages are 0.5 to 2 KB as PNG; a
 // bigger one (heavy dither) is skipped. The lwIP ring (lwipopts.h) holds
 // this plus the topic.
@@ -478,6 +509,10 @@ void reset_runtime(bool reset_publish_state)
     g_house_subscribe_in_flight = false;
     g_controls_subscribed = false;
     g_controls_subscribe_in_flight = false;
+    g_fleet_subscribed = false;
+    g_fleet_subscribe_in_flight = false;
+    g_published_summary[0] = '\0';
+    g_own_ack_cleared = false;
     // Unknown after a reconnect or restart: treat every key as published, so
     // configs for keys no longer on the list are cleared once (#151).
     g_triggers_published = kAllKeysMask;
@@ -495,6 +530,9 @@ void reset_runtime(bool reset_publish_state)
         cyw43_arch_lwip_end();
         g_client = nullptr;
     }
+    cyw43_arch_lwip_begin();
+    (void)unit_fleet::set_listening(g_fleet, false);
+    cyw43_arch_lwip_end();
 
     if (reset_publish_state)
     {
@@ -602,6 +640,7 @@ void configure_identity_and_topics(const WifiStatus& wifi_status)
                   base_topic, mac_hex);
     std::snprintf(g_topic_prefix, sizeof(g_topic_prefix), "%s/%s", base_topic, mac_hex);
     std::snprintf(g_base_topic, sizeof(g_base_topic), "%s", base_topic);
+    std::snprintf(g_self_mac, sizeof(g_self_mac), "%s", mac_hex);
 
     // Topic strings are precomputed once per session so the publish path can
     // focus on ordering and retry behaviour instead of repeated formatting.
@@ -631,6 +670,8 @@ enum class Receiving : uint8_t
     Command,
     /// House weather or Controls, into g_receiving_buffer.
     Buffer,
+    /// Another unit's topic (#210), into g_fleet_payload.
+    Fleet,
 };
 
 /// @brief Set by incoming_publish_cb for incoming_data_cb (lwIP context).
@@ -674,6 +715,20 @@ void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
         start_buffer(g_controls_buffers[static_cast<size_t>(*controls)], topic, tot_len);
         return;
     }
+    // Everything "<base>/+/+" brings is another unit's, never a command; topics
+    // it does not know, and oversized ones, are skipped.
+    if (unit_fleet::in_fleet_filter(topic, g_base_topic))
+    {
+        const std::optional<unit_fleet::TopicRef> ref = unit_fleet::topic_for(topic, g_base_topic);
+        g_receiving = Receiving::Nothing;
+        if (ref.has_value() && tot_len <= unit_fleet::kMaxPayloadBytes)
+        {
+            g_fleet_receiving = *ref;
+            g_fleet_payload_length = 0U;
+            g_receiving = Receiving::Fleet;
+        }
+        return;
+    }
     PendingCommand& command = g_pending_command;
     if (command.ready || tot_len > mqtt_commands::kMaxPayloadLength ||
         std::strlen(topic) >= sizeof(command.topic))
@@ -693,6 +748,24 @@ void incoming_publish_cb(void* /*arg*/, const char* topic, u32_t tot_len)
 /// context).
 void incoming_data_cb(void* /*arg*/, const u8_t* data, u16_t len, u8_t flags)
 {
+    if (g_receiving == Receiving::Fleet)
+    {
+        const size_t count =
+            std::min<size_t>(len, unit_fleet::kMaxPayloadBytes - g_fleet_payload_length);
+        if (count > 0U)
+        {
+            std::memcpy(g_fleet_payload + g_fleet_payload_length, data, count);
+            g_fleet_payload_length += count;
+        }
+        if ((flags & MQTT_DATA_FLAG_LAST) != 0U)
+        {
+            (void)unit_fleet::apply(g_fleet, g_fleet_receiving,
+                                    std::string_view(g_fleet_payload, g_fleet_payload_length),
+                                    to_ms_since_boot(get_absolute_time()), g_self_mac);
+            g_receiving = Receiving::Nothing;
+        }
+        return;
+    }
     if (g_receiving == Receiving::Buffer && g_receiving_buffer != nullptr)
     {
         InboundBuffer& buffer = *g_receiving_buffer;
@@ -751,12 +824,23 @@ void controls_subscribe_cb(void* /*arg*/, err_t err)
                 g_controls_filter);
 }
 
+/// @brief Records the result of subscribing to the other units' topics; the
+/// table is live from here (lwIP context, so under the lock).
+void fleet_subscribe_cb(void* /*arg*/, err_t err)
+{
+    g_fleet_subscribe_in_flight = false;
+    g_fleet_subscribed = err == ERR_OK;
+    (void)unit_fleet::set_listening(g_fleet, g_fleet_subscribed);
+    std::printf("MQTT units subscribe %s: %s\n", g_fleet_subscribed ? "ok" : "failed",
+                g_fleet_filter);
+}
+
 /// @brief Subscribes to "<prefix>/+/set", then "<base>/house/weather/+",
-/// then "<prefix>/controls/+", once per connection.
+/// then "<prefix>/controls/+", then "<base>/+/+", once per connection.
 void subscribe_commands()
 {
     if (g_subscribe_in_flight || g_house_subscribe_in_flight || g_controls_subscribe_in_flight ||
-        !g_connected || g_client == nullptr)
+        g_fleet_subscribe_in_flight || !g_connected || g_client == nullptr)
     {
         return;
     }
@@ -781,6 +865,15 @@ void subscribe_commands()
                 mqtt_subscribe(g_client, g_controls_filter, 0, controls_subscribe_cb, nullptr);
             cyw43_arch_lwip_end();
             g_controls_subscribe_in_flight = rc == ERR_OK;
+        }
+        else if (!g_fleet_subscribed)
+        {
+            std::snprintf(g_fleet_filter, sizeof(g_fleet_filter), "%s/+/+", g_base_topic);
+            cyw43_arch_lwip_begin();
+            const err_t rc =
+                mqtt_subscribe(g_client, g_fleet_filter, 0, fleet_subscribe_cb, nullptr);
+            cyw43_arch_lwip_end();
+            g_fleet_subscribe_in_flight = rc == ERR_OK;
         }
         return;
     }
@@ -1224,6 +1317,22 @@ void mqtt_request_cb(void* arg, err_t err)
         g_screen_image_valid = true;
         g_screen_image_crc = g_screen_image_crc_in_flight;
         break;
+    case PendingPublishType::UnitSummary:
+        std::snprintf(g_published_summary, sizeof(g_published_summary), "%s", g_summary_in_flight);
+        break;
+    case PendingPublishType::UnitAckClear:
+        g_own_ack_cleared = true;
+        break;
+    case PendingPublishType::UnitAck:
+        // lwIP context, so the table is already under the lock.
+        for (size_t i = 0U; i < g_fleet.count; ++i)
+        {
+            if (std::strcmp(g_fleet.peers[i].mac.data(), g_ack_mac_in_flight) == 0)
+            {
+                g_fleet.peers[i].ack_to_publish = false;
+            }
+        }
+        break;
     case PendingPublishType::KeyEvent:
     case PendingPublishType::ControlPress:
     case PendingPublishType::None:
@@ -1489,6 +1598,37 @@ bool start_next_publish()
                        PendingPublishType::Discovery, sensor_id);
     }
 
+    // The other units (#210): an acceptance made here goes out first, then
+    // this unit's stale acceptance is emptied, then its summary.
+    char unit_topic[112] = {};
+    cyw43_arch_lwip_begin();
+    const std::optional<size_t> ack = unit_fleet::next_ack_to_publish(g_fleet);
+    if (ack.has_value())
+    {
+        std::snprintf(g_ack_mac_in_flight, sizeof(g_ack_mac_in_flight), "%s",
+                      g_fleet.peers[*ack].mac.data());
+    }
+    cyw43_arch_lwip_end();
+    if (ack.has_value())
+    {
+        std::snprintf(unit_topic, sizeof(unit_topic), "%s/%s/offline_ack", g_base_topic,
+                      g_ack_mac_in_flight);
+        std::printf("MQTT unit offline accepted: %s\n", unit_topic);
+        return publish(unit_topic, "1", PendingPublishType::UnitAck, SensorId::Status);
+    }
+    if (!g_own_ack_cleared)
+    {
+        std::snprintf(unit_topic, sizeof(unit_topic), "%s/offline_ack", g_topic_prefix);
+        return publish(unit_topic, "", PendingPublishType::UnitAckClear, SensorId::Status);
+    }
+    if (g_own_summary[0] != '\0' && std::strcmp(g_own_summary, g_published_summary) != 0)
+    {
+        std::snprintf(g_summary_in_flight, sizeof(g_summary_in_flight), "%s", g_own_summary);
+        std::snprintf(unit_topic, sizeof(unit_topic), "%s/summary", g_topic_prefix);
+        return publish(unit_topic, g_summary_in_flight, PendingPublishType::UnitSummary,
+                       SensorId::Status);
+    }
+
     // Key presses are time-critical (#151), so they go ahead of trigger
     // configs and state updates.
     if (const std::optional<ButtonId> key = console_controller::pop_ha_key_press())
@@ -1565,6 +1705,39 @@ bool start_next_publish()
     return publish_screen_image();
 }
 
+/// @brief Brings the other units' table up to date (main loop, #210).
+/// @details Applies an acceptance of UNIT OFFLINE made on this panel, works
+/// out the alerts for the time now, keeps a copy for the console, and
+/// rebuilds the summary this unit publishes.
+void update_unit_fleet()
+{
+    const ConsoleState& console = console_controller::state();
+    const char* own_version = console.firmware_status.version.data();
+    const bool accepted = alert_controller::acknowledged(AlertCode::UnitOffline);
+    cyw43_arch_lwip_begin();
+    if (accepted && unit_fleet::acknowledge_offline(g_fleet))
+    {
+        std::printf("Units: UNIT OFFLINE accepted here\n");
+    }
+    (void)unit_fleet::update(g_fleet, to_ms_since_boot(get_absolute_time()), own_version);
+    g_fleet_snapshot = g_fleet;
+    cyw43_arch_lwip_end();
+
+    const ActiveAlert* top = nullptr;
+    const uint8_t alert_count = alert_controller::own_alerts(console, &top);
+    unit_fleet::OwnSummary summary = {};
+    summary.name = console.wifi_status.host_name[0] != '\0' ? console.wifi_status.host_name.data()
+                                                            : config_manager::device_name();
+    summary.version = own_version;
+    summary.board = kFirmwareBoard;
+    summary.alert_count = alert_count;
+    summary.top_alert = top != nullptr ? top->summary.data() : "";
+    if (!unit_fleet::format_summary(summary, g_own_summary, sizeof(g_own_summary)))
+    {
+        g_own_summary[0] = '\0';
+    }
+}
+
 } // namespace
 
 namespace mqtt_manager
@@ -1597,6 +1770,8 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
             const TimeStatus& time_status)
 {
     const MqttStatus kPrevious = g_status;
+
+    update_unit_fleet();
 
     // Controls keys act only while a press can reach HA (#152).
     (void)console_controller::update_home_controls(g_connected && g_controls_subscribed,
@@ -1702,6 +1877,11 @@ bool update(const WifiStatus& wifi_status, const HomeAssistantStatus& home_assis
 const MqttStatus& status()
 {
     return g_status;
+}
+
+const UnitFleet& unit_fleet()
+{
+    return g_fleet_snapshot;
 }
 
 void take_house_weather(HouseWeatherHandler handler)

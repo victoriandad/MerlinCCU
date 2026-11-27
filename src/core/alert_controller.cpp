@@ -412,6 +412,75 @@ bool display_pipeline_lagging(const DisplayTimingStatus& timing)
 namespace
 {
 
+/// @brief Appends `text` to `out`, after ", " unless `out` is empty.
+void append_name(char* out, size_t out_size, const char* text)
+{
+    const size_t used = std::strlen(out);
+    if (used + 1U >= out_size)
+    {
+        return;
+    }
+    std::snprintf(out + used, out_size - used, "%s%s", used > 0U ? ", " : "", text);
+}
+
+/// @brief UNIT OFFLINE and MIXED FIRMWARE, from the other units' state
+/// (#210). unit_fleet decides when each holds; this words them.
+void sync_unit_alerts(ConsoleState& console_state)
+{
+    static_assert(unit_fleet::kOfflineAlertMs == 30U * 60U * 1000U,
+                  "update UNIT OFFLINE's \"30 minutes\"");
+    static char detail[sizeof(ActiveAlert::detail)] = {};
+    const UnitFleet& fleet = console_state.unit_fleet;
+
+    char names[96] = {};
+    uint8_t offline_count = 0U;
+    for (size_t i = 0U; i < fleet.count; ++i)
+    {
+        if ((fleet.offline_alert_mask & (1U << i)) != 0U)
+        {
+            char name[unit_fleet::kNameLength + 8U] = {};
+            unit_fleet::display_name(fleet.peers[i], name, sizeof(name));
+            append_name(names, sizeof(names), name);
+            ++offline_count;
+        }
+    }
+    if (offline_count > 0U)
+    {
+        std::snprintf(detail, sizeof(detail),
+                      "%s %s been offline for over 30 minutes.\nAccepting this clears it on "
+                      "every unit until %s back.",
+                      names, offline_count == 1U ? "has" : "have",
+                      offline_count == 1U ? "it is" : "they are");
+    }
+    set_alert_condition(console_state, AlertCode::UnitOffline, offline_count > 0U,
+                        AlertSeverity::Warning, "UNIT OFFLINE", offline_count > 0U ? detail : "");
+
+    if (fleet.mixed_firmware)
+    {
+        const char* own = console_state.firmware_status.version.data();
+        std::snprintf(detail, sizeof(detail), "This unit runs %s.", own);
+        for (size_t i = 0U; i < fleet.count; ++i)
+        {
+            const PeerUnit& peer = fleet.peers[i];
+            if (peer.online && peer.version[0] != '\0' &&
+                std::strcmp(peer.version.data(), own) != 0)
+            {
+                char name[unit_fleet::kNameLength + 8U] = {};
+                unit_fleet::display_name(peer, name, sizeof(name));
+                const size_t used = std::strlen(detail);
+                std::snprintf(detail + used, sizeof(detail) - used, "\n%s runs %s.", name,
+                              peer.version.data());
+            }
+        }
+        const size_t used = std::strlen(detail);
+        std::snprintf(detail + used, sizeof(detail) - used,
+                      "\nUpdate every unit with the Upload to all units task.");
+    }
+    set_alert_condition(console_state, AlertCode::MixedFirmware, fleet.mixed_firmware,
+                        AlertSeverity::Message, "MIXED FIRMWARE",
+                        fleet.mixed_firmware ? detail : "");
+}
+
 /// @brief Advances one debounce counter: zero once the condition clears,
 /// and up by one per due sample while it holds.
 void count_sample(uint8_t& counter, bool failing, bool sample_due)
@@ -712,6 +781,8 @@ void sync(ConsoleState& console_state)
     set_alert_condition(console_state, AlertCode::HeapLow, heap_low, AlertSeverity::Warning,
                         "HEAP LOW", heap_low ? alert_detail_scratch : "");
 
+    sync_unit_alerts(console_state);
+
     const bool share_data_unavailable = console_state.share_data_configured &&
                                         !console_state.share_data_valid &&
                                         (console_state.share_data_last_error != 0 ||
@@ -919,6 +990,39 @@ void ignore_alert(ConsoleState& console_state, uint8_t index)
     ActiveAlert& alert = console_state.active_alerts[index];
     alert.ignored = true;
     alert.ignored_minute = alert_history::local_minute(console_state.time_status);
+}
+
+uint8_t own_alerts(const ConsoleState& console_state, const ActiveAlert** top)
+{
+    const ActiveAlert* best = nullptr;
+    uint8_t count = 0U;
+    for (uint8_t i = 0U; i < console_state.alert_count; ++i)
+    {
+        const ActiveAlert& alert = console_state.active_alerts[i];
+        switch (static_cast<AlertCode>(alert.code))
+        {
+        case AlertCode::WeatherProviderWarning:
+        case AlertCode::WeatherTemperatureWarning:
+        case AlertCode::WeatherWindWarning:
+        case AlertCode::OfficialWeatherWarning:
+        case AlertCode::UnitOffline:
+        case AlertCode::MixedFirmware:
+            continue;
+        default:
+            break;
+        }
+        ++count;
+        if (best == nullptr || alert.severity > best->severity ||
+            (alert.severity == best->severity && alert.sequence > best->sequence))
+        {
+            best = &alert;
+        }
+    }
+    if (top != nullptr)
+    {
+        *top = best;
+    }
+    return count;
 }
 
 bool acknowledged(AlertCode code)

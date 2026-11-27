@@ -108,10 +108,15 @@ upload the previous build.
 
 In VS Code, the Pico extension's **Compile** button builds the Pimoroni
 image (`build-plus2`), and **Run** loads `build-plus2/MerlinCCU.uf2` over USB.
-Run loads the UF2, never the ELF, so the partition table survives. The task
-**Upload over Wi-Fi** (Terminal > Run Task) builds, then runs the script
-below for `merlinccu3`. **Upload over Wi-Fi (Pico 2 W)** does the same with
-the Pico 2 W image (`build/`) for `merlinccu2`.
+Run loads the UF2, never the ELF, so the partition table survives.
+
+The tasks (Terminal > Run Task) build, then run the script below:
+
+- **Upload to all units** builds both images and updates `merlinccu1`,
+  `merlinccu2` and `merlinccu3` in turn, each with its own board's image.
+- **Upload over Wi-Fi** updates `merlinccu3` with the Pimoroni image.
+- **Upload over Wi-Fi (Pico 2 W)** updates `merlinccu2` with the Pico 2 W
+  image (`build/`).
 
 The units are named by board, oldest first; where each one hangs goes in
 its location and room settings:
@@ -122,21 +127,28 @@ its location and room settings:
 | `merlinccu2` | Pico 2 W, development | `build/` |
 | `merlinccu3` | Pimoroni Pico Plus 2 W | `build-plus2/` |
 
-`tools/ota_update.py` updates units one at a time and stops at the first
-failure, so a bad build never reaches them all. Units on the same board
-can share one run:
+`tools/ota_update.py` updates units one at a time:
 
 ```sh
-python tools/ota_update.py merlinccu3
-python tools/ota_update.py --bin build/MerlinCCU.bin merlinccu1 merlinccu2
+python tools/ota_update.py merlinccu1 merlinccu2 merlinccu3
 python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
 ```
 
+Each build stamps its version and board (`PICO_BOARD`) into
+`merlin_generated/firmware_version.h` next to the `.bin`, and each unit
+reports its board as `board=` in `/api/firmware`. The script loads every
+`--bin` given, or by default whichever of `build-plus2/` and `build/` are
+built, and gives each unit the image for its board. A Pimoroni image never
+reaches a Pico 2 W, which would start with default settings.
+
 For each unit it reads `/api/firmware`, uploads, then polls until the unit
 reports `confirmed` from the other slot with the version the build
-stamped (`merlin_generated/firmware_version.h` next to the `.bin`). It
-reports a rollback or a timeout and stops. The token comes from `--token`,
-`MERLIN_OTA_TOKEN` or `config/ota_credentials.h`.
+stamped. A rollback or a timeout stops the run, so a bad build never
+reaches every unit. A unit that is offline, not yet on the A/B layout, or
+on a board no image was built for is skipped; the run carries on and lists
+it at the end. Firmware from before `board=` existed is updated only with a
+single `--bin`, which the per-unit tasks pass. The token comes from
+`--token`, `MERLIN_OTA_TOKEN` or `config/ota_credentials.h`.
 
 A single unit can also be updated with `curl`:
 
@@ -156,12 +168,13 @@ if the two would meet. The version and slot show on:
 
 - the panel's Status > Overview page (`FIRMWARE: 2bf47da (A)`);
 - the Firmware web page;
-- `GET /api/firmware`: `version=`, `slot=` and `state=` lines, where
+- `GET /api/firmware`: `version=`, `board=`, `slot=` and `state=` lines, where
   state is `confirmed`, `on_trial`, `rolled_back` or `not_partitioned`.
   Health lines follow for `tools/soak_monitor.py` (#155, docs/soak-test.md):
   `reset=`, `uptime_min=`, `wifi_connected=`, `mqtt_connected=`,
   `ha_connected=`, `stack_free=`, `heap_arena=` and `alerts=`, then
-  `mqtt_unit=`, the unit's MQTT name for HA's Controls setup (#152);
+  `mqtt_unit=`, the unit's MQTT name for HA's Controls setup (#152), and
+  `units=`, the other units it sees online of those it knows (#210);
 - Home Assistant, over MQTT: a `Firmware` diagnostic sensor (the version,
   also the device's software version) and a `Firmware update` sensor (the
   state above). An automation on `rolled_back` can notify you.

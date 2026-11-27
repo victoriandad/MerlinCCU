@@ -18,6 +18,7 @@
 #include "console_controller.h"
 #include "date_time_math.h"
 #include "debug_logging.h"
+#include "firmware_version.h"
 #include "framebuffer.h"
 #include "geo_coordinates.h"
 #include "ha_key_list.h"
@@ -3592,21 +3593,28 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         const char* mqtt_unit = device_id.substr(0, kDevicePrefix.size()) == kDevicePrefix
                                     ? console.mqtt_status.device_id.data() + kDevicePrefix.size()
                                     : "-";
+        // The other units this one sees, online of known (#210).
+        unsigned units_online = 0U;
+        for (size_t i = 0U; i < console.unit_fleet.count; ++i)
+        {
+            units_online += console.unit_fleet.peers[i].online ? 1U : 0U;
+        }
+        // board= lets tools/ota_update.py pick the matching image (#210).
         std::snprintf(
             g_response, sizeof(g_response),
-            "%sversion=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\nwifi_connected=%d\n"
-            "mqtt_connected=%d\nha_connected=%d\nstack_free=%lu\nheap_arena=%lu\nalerts=%u\n"
-            "mqtt_unit=%s\n",
-            kHttpTextHeader, firmware.version.data(), slot_name(firmware.slot),
+            "%sversion=%s\nboard=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\n"
+            "wifi_connected=%d\nmqtt_connected=%d\nha_connected=%d\nstack_free=%lu\n"
+            "heap_arena=%lu\nalerts=%u\nmqtt_unit=%s\nunits=%u/%u\n",
+            kHttpTextHeader, firmware.version.data(), kFirmwareBoard, slot_name(firmware.slot),
             ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
             static_cast<unsigned long>(console.boot_status.uptime_minutes),
             console.wifi_status.state == WifiConnectionState::Connected ? 1 : 0,
             console.mqtt_status.state == MqttConnectionState::Connected ? 1 : 0,
-            console.home_assistant_status.state == HomeAssistantConnectionState::Connected ? 1
-                                                                                            : 0,
+            console.home_assistant_status.state == HomeAssistantConnectionState::Connected ? 1 : 0,
             static_cast<unsigned long>(console.stack_status.free_bytes),
             static_cast<unsigned long>(console.heap_status.arena_bytes),
-            static_cast<unsigned>(console.alert_count), mqtt_unit);
+            static_cast<unsigned>(console.alert_count), mqtt_unit, units_online,
+            static_cast<unsigned>(console.unit_fleet.count));
         send_response(session, pcb, g_response);
         return;
     }

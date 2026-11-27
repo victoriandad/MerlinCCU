@@ -94,6 +94,10 @@ bool set_weather_warnings(const WeatherWarnings& weather_warnings);
 /// @brief Copies the latest MQTT status into the logical front-panel state.
 bool set_mqtt_status(const MqttStatus& mqtt_status);
 
+/// @brief Copies the latest view of the other units into the logical
+/// front-panel state (#210).
+bool set_unit_fleet(const UnitFleet& unit_fleet);
+
 /// @brief Copies the latest share market-data snapshot into the UI state.
 bool set_share_market_status(const ShareMarketStatus& share_market_status);
 
@@ -113,7 +117,8 @@ bool set_heap_status(const HeapStatus& status);
 /// @brief Takes the debounced alerts' one-second sample: syncs the alerts
 /// with one sample due (alert_controller::mark_sample_due()).
 /// @details Called once a second by the main loop, so a lost connection is
-/// raised after its grace period even when nothing else changes.
+/// raised after its grace period even when nothing else changes, and the
+/// lamps follow: an alert raised with no key pressed lights ALRT.
 void sample_alerts();
 
 /// @brief Copies worst-case core-0 stack headroom telemetry into the UI state.

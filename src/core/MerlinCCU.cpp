@@ -604,6 +604,8 @@ int main()
         console_changed =
             console_controller::set_mqtt_status(mqtt_manager::status()) || console_changed;
         console_changed =
+            console_controller::set_unit_fleet(mqtt_manager::unit_fleet()) || console_changed;
+        console_changed =
             console_controller::set_share_market_status(share_price_manager::status()) ||
             console_changed;
         console_changed = console_controller::set_environment_sensor_status(

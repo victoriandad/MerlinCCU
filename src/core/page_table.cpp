@@ -194,6 +194,9 @@ constexpr std::array<PageDescriptor, kMenuPageCount> kPages = {{
     {MenuPage::AlertHistoryDetail, "PAST ALERT", MenuPage::AlertHistory, kBody, kStd, kLines,
      nullptr, without_time<alert_screens::draw_alert_history_detail_page>,
      nullptr, &kAlertHistoryDetailScroll, kOnChange, kNoFetch},
+    {MenuPage::StatusUnits, "UNITS", MenuPage::Status, kBody, kStd, kLines,
+     nullptr, status_screens::draw_status_page,
+     nullptr, nullptr, kDataAge, kNoFetch},
 }};
 // clang-format on
 

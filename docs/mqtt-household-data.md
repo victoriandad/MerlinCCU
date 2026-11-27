@@ -173,6 +173,37 @@ whenever one of its entities changes state, and when HA starts.
 - A toggle that worked shows its new state at once; HA's next list confirms
   it.
 
+## Units (#210)
+
+The CCUs on one broker and base topic see each other with no setup. Each
+publishes, retained, under its own `<base>/<mac>/`, and subscribes to
+`<base>/+/+` to hear the others (`include/network/unit_fleet.h`).
+
+| Topic | Retained | Content |
+| --- | --- | --- |
+| `<base>/<mac>/availability` | yes | `online`, or `offline` from the broker's last will (HA uses it too) |
+| `<base>/<mac>/summary` | yes | `key=value` lines, up to 128 bytes: `name`, `version`, `board`, `alerts` (a count) and `top` (the most serious) |
+| `<base>/<mac>/offline_ack` | yes | `1` once UNIT OFFLINE for that unit was accepted on any unit; emptied by the unit itself each time it connects |
+
+Example summary:
+
+```text
+name=merlinccu2
+version=76c0214
+board=pico2_w
+alerts=1
+top=HEAP LOW
+```
+
+- `alerts` and `top` count only the unit's own alerts. Ones every unit raises
+  alike (forecast and official weather warnings, `UNIT OFFLINE`,
+  `MIXED FIRMWARE`) are left out, so Status > Units shows what is wrong with
+  a unit rather than the weather.
+- A CCU tracks up to four other units (`unit_fleet::kMaxPeers`); more are
+  ignored and logged. A retired unit's retained topics stay on the broker:
+  empty them with an MQTT client to take it off the Units page.
+- `GET /api/firmware` reports `units=<online>/<known>`.
+
 ## Changing the schema
 
 Additive optional fields keep `v` at 1. Anything else (a renamed or removed

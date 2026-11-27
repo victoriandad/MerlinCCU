@@ -81,6 +81,14 @@ bool acknowledged(AlertCode code);
 /// new Home Assistant message after the last one was accepted.
 void rearm(AlertCode code);
 
+/// @brief Counts this unit's own active alerts for its summary to the other
+/// units (#210), and finds the most serious (newest of the highest severity).
+/// @details Alerts every unit raises alike are left out, so the Units page
+/// shows what is wrong with a unit rather than the weather: forecast and
+/// official weather warnings, and UNIT OFFLINE and MIXED FIRMWARE themselves.
+/// @param top Set to the most serious, or nullptr when there is none.
+uint8_t own_alerts(const ConsoleState& console_state, const ActiveAlert** top);
+
 /// @brief Resets alert history, occurrence counts and failure-sample counters,
 /// e.g. on device reset.
 void reset();

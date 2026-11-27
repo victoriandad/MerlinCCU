@@ -2,34 +2,43 @@
 """
 Update one or more MerlinCCU units over Wi-Fi (#154, docs/ota.md).
 
-For each unit in turn: upload the firmware .bin to /api/ota, wait for the
-unit to restart into the new slot, and wait until it reports the new build
-as confirmed. Stops at the first unit that fails, so one bad build is never
-rolled out to every unit.
+For each unit in turn: pick the image built for the unit's board, upload it
+to /api/ota, wait for the unit to restart into the new slot, and wait until
+it reports the new build as confirmed. Stops at the first unit whose update
+fails, so one bad build is never rolled out to every unit. A unit that is
+offline, not yet on the A/B layout, or on a board no image is built for is
+skipped and listed at the end (#210).
+
+Images: every --bin given, or by default each of build-plus2/ and build/
+that has been built. The version and board of each image are read from the
+build folder's generated firmware_version.h next to the .bin. A unit reports
+its board in /api/firmware; firmware from before that line existed can only
+be updated with a single --bin, which is then trusted.
 
 The token comes from --token, the MERLIN_OTA_TOKEN environment variable, or
-config/ota_credentials.h, in that order. The expected version is read from
-the build folder's generated firmware_version.h next to the .bin, so the
-script can tell the unit really runs the new build.
+config/ota_credentials.h, in that order.
 
 Usage:
-  python tools/ota_update.py merlinccu3
+  python tools/ota_update.py merlinccu1 merlinccu2 merlinccu3
   python tools/ota_update.py --bin build-plus2/MerlinCCU.bin 192.168.1.172
 """
 
 from __future__ import annotations
 
 import argparse
+import enum
 import os
 import re
 import sys
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_BIN = REPO_ROOT / "build-plus2" / "MerlinCCU.bin"
+DEFAULT_BINS = (REPO_ROOT / "build-plus2" / "MerlinCCU.bin",
+                REPO_ROOT / "build" / "MerlinCCU.bin")
 CREDENTIALS = REPO_ROOT / "config" / "ota_credentials.h"
 
 # The CCU serves one request at a time and answers 503 while busy.
@@ -57,13 +66,52 @@ def read_token(cli_token: str | None) -> str:
              "config/ota_credentials.h")
 
 
-def expected_version(bin_path: Path) -> str | None:
-    """Reads the version the build stamped next to the .bin, if it is there."""
+@dataclass
+class Image:
+    """One firmware image and what its build stamped."""
+    path: Path
+    data: bytes
+    version: str | None
+    board: str | None
+
+
+class Outcome(enum.Enum):
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+def stamped(bin_path: Path, name: str) -> str | None:
+    """Reads a constant the build stamped next to the .bin, if it is there."""
     header = bin_path.parent / "merlin_generated" / "firmware_version.h"
     if not header.exists():
         return None
-    match = re.search(r'kFirmwareVersion\[\]\s*=\s*"([^"]*)"', header.read_text())
+    match = re.search(name + r'\[\]\s*=\s*"([^"]*)"', header.read_text())
     return match.group(1) if match else None
+
+
+def load_image(bin_path: Path) -> Image:
+    """Reads an image and its stamped version and board."""
+    if bin_path.suffix != ".bin":
+        sys.exit(f"{bin_path} is not a .bin image; the CCU refuses .uf2 and .elf files")
+    return Image(bin_path, bin_path.read_bytes(), stamped(bin_path, "kFirmwareVersion"),
+                 stamped(bin_path, "kFirmwareBoard"))
+
+
+def choose_image(host: str, board: str | None, images: list[Image]) -> Image | None:
+    """Picks the image for a unit's board, or None (with the reason printed)."""
+    if board is None:
+        if len(images) == 1:
+            print(f"{host}: does not report its board; using {images[0].path} as given")
+            return images[0]
+        print(f"{host}: does not report its board; update it once with a single --bin")
+        return None
+    for image in images:
+        if image.board == board:
+            return image
+    built = ", ".join(f"{image.board or 'unknown'} ({image.path})" for image in images)
+    print(f"{host}: board {board} but the images are for {built}; not updated")
+    return None
 
 
 def firmware_state(host: str) -> dict[str, str] | None:
@@ -105,8 +153,8 @@ def upload(host: str, image: bytes, token: str) -> tuple[bool, str]:
     return False, "unit stayed busy"
 
 
-def update_unit(host: str, image: bytes, token: str, version: str | None) -> bool:
-    """Updates one unit and waits for it to confirm. Returns True on success."""
+def update_unit(host: str, images: list[Image], token: str) -> Outcome:
+    """Updates one unit with its board's image and waits for it to confirm."""
     before = None
     for _ in range(BUSY_RETRIES):
         before = firmware_state(host)
@@ -115,18 +163,22 @@ def update_unit(host: str, image: bytes, token: str, version: str | None) -> boo
         time.sleep(BUSY_DELAY_S)
     if before is None:
         print(f"{host}: not reachable")
-        return False
+        return Outcome.SKIPPED
     print(f"{host}: running {before.get('version')} in slot {before.get('slot')} "
           f"({before.get('state')})")
     if before.get("state") == "not_partitioned":
         print(f"{host}: no A/B partition table; move it to the A/B layout over USB first")
-        return False
+        return Outcome.SKIPPED
+    image = choose_image(host, before.get("board"), images)
+    if image is None:
+        return Outcome.SKIPPED
+    version = image.version
 
     started = time.monotonic()
-    ok, reply = upload(host, image, token)
+    ok, reply = upload(host, image.data, token)
     print(f"{host}: {reply}")
     if not ok:
-        return False
+        return Outcome.FAILED
 
     deadline = time.monotonic() + CONFIRM_TIMEOUT_S
     last_state = None
@@ -142,39 +194,49 @@ def update_unit(host: str, image: bytes, token: str, version: str | None) -> boo
             last_state = summary
         if state.get("state") == "rolled_back":
             print(f"{host}: FAILED - the new firmware did not confirm; back on the old one")
-            return False
+            return Outcome.FAILED
         moved = state.get("slot") != before.get("slot")
         if state.get("state") == "confirmed" and moved:
             if version is not None and state.get("version") != version:
                 print(f"{host}: FAILED - running {state.get('version')}, expected {version}")
-                return False
+                return Outcome.FAILED
             print(f"{host}: done in {time.monotonic() - started:.0f} s")
-            return True
+            return Outcome.UPDATED
     print(f"{host}: FAILED - no confirmation within {CONFIRM_TIMEOUT_S:.0f} s")
-    return False
+    return Outcome.FAILED
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("hosts", nargs="+", help="unit host names or IP addresses")
-    parser.add_argument("--bin", type=Path, default=DEFAULT_BIN,
-                        help=f"firmware image (default: {DEFAULT_BIN.relative_to(REPO_ROOT)})")
+    parser.add_argument("--bin", type=Path, action="append",
+                        help="firmware image; repeat for several boards "
+                             "(default: build-plus2/ and build/, whichever are built)")
     parser.add_argument("--token", help="upload token (default: config/ota_credentials.h)")
     args = parser.parse_args()
 
-    if args.bin.suffix != ".bin":
-        sys.exit(f"{args.bin} is not a .bin image; the CCU refuses .uf2 and .elf files")
-    image = args.bin.read_bytes()
+    bins = args.bin or [path for path in DEFAULT_BINS if path.exists()]
+    if not bins:
+        sys.exit("No images built: build build-plus2/ or build/, or pass --bin")
+    images = [load_image(path) for path in bins]
     token = read_token(args.token)
-    version = expected_version(args.bin)
-    print(f"Image {args.bin} ({len(image) // 1024} KB), version {version or 'unknown'}")
+    for image in images:
+        print(f"Image {image.path} ({len(image.data) // 1024} KB), "
+              f"board {image.board or 'unknown'}, version {image.version or 'unknown'}")
 
-    for host in args.hosts:
-        if not update_unit(host, image, token, version):
-            remaining = args.hosts[args.hosts.index(host) + 1:]
+    skipped = []
+    for index, host in enumerate(args.hosts):
+        outcome = update_unit(host, images, token)
+        if outcome is Outcome.FAILED:
+            remaining = args.hosts[index + 1:]
             if remaining:
                 print(f"Stopped; not updated: {', '.join(remaining)}")
             return 1
+        if outcome is Outcome.SKIPPED:
+            skipped.append(host)
+    if skipped:
+        print(f"Not updated: {', '.join(skipped)}")
+        return 1
     print("All units updated.")
     return 0
 

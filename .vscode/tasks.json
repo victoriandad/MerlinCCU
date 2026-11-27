@@ -40,7 +40,7 @@
             "detail": "Build the Pimoroni image and update merlinccu3 over Wi-Fi (docs/ota.md)",
             "type": "process",
             "command": "python",
-            "args": ["tools/ota_update.py", "merlinccu3"],
+            "args": ["tools/ota_update.py", "--bin", "build-plus2/MerlinCCU.bin", "merlinccu3"],
             "dependsOn": "Compile Project",
             "presentation": {
                 "reveal": "always",
@@ -69,6 +69,20 @@
             "command": "python",
             "args": ["tools/ota_update.py", "--bin", "build/MerlinCCU.bin", "merlinccu2"],
             "dependsOn": "Compile Pico 2 W",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Upload to all units",
+            "detail": "Build both images and update every unit with its board's image (#210, docs/ota.md)",
+            "type": "process",
+            "command": "python",
+            "args": ["tools/ota_update.py", "merlinccu1", "merlinccu2", "merlinccu3"],
+            "dependsOrder": "sequence",
+            "dependsOn": ["Compile Project", "Compile Pico 2 W"],
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"

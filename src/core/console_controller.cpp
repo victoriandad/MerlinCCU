@@ -1047,6 +1047,18 @@ bool set_mqtt_status(const MqttStatus& mqtt_status)
     return true;
 }
 
+/// @brief Updates the cached view of the other units in the console model.
+bool set_unit_fleet(const UnitFleet& unit_fleet)
+{
+    if (!status_controller::set_unit_fleet(g_console_state, unit_fleet))
+    {
+        return false;
+    }
+
+    update_softkeys_from_state();
+    return true;
+}
+
 /// @brief Updates the cached share market-data snapshot in the console model.
 bool set_share_market_status(const ShareMarketStatus& share_market_status)
 {
@@ -1113,6 +1125,9 @@ void sample_alerts()
 {
     alert_controller::mark_sample_due();
     update_softkeys_from_state();
+    // An alert raised with no key pressed, such as UNIT OFFLINE or MQTT,
+    // must still light the ALRT lamp; otherwise it waited for a key.
+    update_lamps_from_state();
 }
 
 /// @brief Updates worst-case core-0 stack headroom telemetry shown by Resources status.

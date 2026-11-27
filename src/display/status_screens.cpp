@@ -1,8 +1,9 @@
 #include "status_screens.h"
 
 #include <algorithm>
-#include <cstdio>
+#include <cctype>
 #include <cstdint>
+#include <cstdio>
 
 #include "config_manager.h"
 #include "console_model.h"
@@ -651,6 +652,120 @@ void draw_status_integrations_page(uint8_t* fb, const ConsoleState& console_stat
                                       status_row_pitch());
 }
 
+/// @brief Upper-cases a unit's name for its row label (TXT-4).
+void upper_case_label(const char* name, char* out, size_t out_size)
+{
+    std::snprintf(out, out_size, "%s", name);
+    for (size_t i = 0U; out[i] != '\0'; ++i)
+    {
+        out[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[i])));
+    }
+}
+
+/// @brief Formats one other unit's row value: whether it is online (and for
+/// how long it has not been), its firmware, and its own most serious alert.
+void build_peer_value(const PeerUnit& peer, uint32_t now_ms, char* out, size_t out_size)
+{
+    char state[24] = {};
+    if (!peer.availability_known)
+    {
+        std::snprintf(state, sizeof(state), "-");
+    }
+    else if (peer.online)
+    {
+        std::snprintf(state, sizeof(state), "Online");
+    }
+    else
+    {
+        char age[12] = {};
+        screens::build_elapsed_time_text(now_ms - peer.offline_since_ms, age, sizeof(age));
+        std::snprintf(state, sizeof(state), "Offline %s%s", age,
+                      peer.offline_acknowledged ? " (accepted)" : "");
+    }
+
+    char alerts[unit_fleet::kAlertLength + 8U] = {};
+    if (peer.alert_count == 0U)
+    {
+        std::snprintf(alerts, sizeof(alerts), "no alerts");
+    }
+    else if (peer.alert_count == 1U)
+    {
+        std::snprintf(alerts, sizeof(alerts), "%s", peer.top_alert.data());
+    }
+    else
+    {
+        std::snprintf(alerts, sizeof(alerts), "%s +%u", peer.top_alert.data(),
+                      static_cast<unsigned>(peer.alert_count - 1U));
+    }
+
+    if (peer.version[0] == '\0')
+    {
+        std::snprintf(out, out_size, "%s", state);
+    }
+    else if (peer.availability_known && !peer.online)
+    {
+        // Its alerts are as it last reported them, so they are not shown.
+        std::snprintf(out, out_size, "%s, %s", state, peer.version.data());
+    }
+    else
+    {
+        std::snprintf(out, out_size, "%s, %s, %s", state, peer.version.data(), alerts);
+    }
+}
+
+/// @brief Draws the other CCUs on the broker and their state (#210): this
+/// unit first, then one row per other unit, in the order they appeared.
+void draw_status_units_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
+{
+    const UnitFleet& fleet = console_state.unit_fleet;
+    if (!console_state.mqtt_status.configured)
+    {
+        screens::draw_empty_state(fb, "MQTT NOT SET", "Set it up in Settings > MQTT discovery.");
+        return;
+    }
+    if (!fleet.listening)
+    {
+        screens::draw_empty_state(fb, "WAITING FOR MQTT",
+                                  "The other units show once MQTT connects.");
+        return;
+    }
+    if (fleet.count == 0U)
+    {
+        screens::draw_empty_state(fb, "NO OTHER UNITS",
+                                  "Units on the same MQTT broker and base topic show here.");
+        return;
+    }
+
+    constexpr size_t kRows = unit_fleet::kMaxPeers + 1U;
+    constexpr size_t kLabelSize = unit_fleet::kNameLength + 8U;
+    constexpr size_t kValueSize = 64U;
+    char labels[kRows][kLabelSize] = {};
+    char values[kRows][kValueSize] = {};
+    screens::DetailRow rows[kRows] = {};
+
+    const char* own_name = console_state.wifi_status.host_name[0] != '\0'
+                               ? console_state.wifi_status.host_name.data()
+                               : config_manager::settings().device_name.data();
+    upper_case_label(own_name, labels[0], kLabelSize);
+    std::snprintf(values[0], kValueSize, "This unit, %s",
+                  console_state.firmware_status.version[0] != '\0'
+                      ? console_state.firmware_status.version.data()
+                      : "-");
+    rows[0] = {labels[0], values[0]};
+
+    size_t count = 1U;
+    for (size_t i = 0U; i < fleet.count && count < kRows; ++i, ++count)
+    {
+        char name[kLabelSize] = {};
+        unit_fleet::display_name(fleet.peers[i], name, sizeof(name));
+        upper_case_label(name, labels[count], kLabelSize);
+        build_peer_value(fleet.peers[i], now_ms, values[count], kValueSize);
+        rows[count] = {labels[count], values[count]};
+    }
+
+    screens::draw_compact_detail_rows(fb, rows, count, kStatusRowsTopY, status_row_pitch());
+}
+
 } // namespace
 
 void draw_status_page(uint8_t* fb, const ConsoleState& console_state, uint32_t now_ms)
@@ -671,6 +786,9 @@ void draw_status_page(uint8_t* fb, const ConsoleState& console_state, uint32_t n
         break;
     case MenuPage::StatusIntegrations:
         draw_status_integrations_page(fb, console_state, now_ms);
+        break;
+    case MenuPage::StatusUnits:
+        draw_status_units_page(fb, console_state, now_ms);
         break;
     default:
         break;

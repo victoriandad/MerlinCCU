@@ -207,6 +207,17 @@ bool set_weather_warnings(ConsoleState& console_state, const WeatherWarnings& we
     return true;
 }
 
+bool set_unit_fleet(ConsoleState& console_state, const UnitFleet& unit_fleet)
+{
+    if (console_state.unit_fleet == unit_fleet)
+    {
+        return false;
+    }
+
+    console_state.unit_fleet = unit_fleet;
+    return true;
+}
+
 bool set_mqtt_status(ConsoleState& console_state, const MqttStatus& mqtt_status)
 {
     if (console_state.mqtt_status == mqtt_status)
@@ -403,6 +414,7 @@ void build_status_softkeys(ConsoleState& /*console_state*/, SoftKeyMap& softkeys
     softkey::set(softkeys, SoftKeyId::Left4, softkey::navigate("SENSORS", MenuPage::StatusSensors));
     softkey::set(softkeys, SoftKeyId::Right1,
                  softkey::navigate("INTEGRATIONS", MenuPage::StatusIntegrations));
+    softkey::set(softkeys, SoftKeyId::Right2, softkey::navigate("UNITS", MenuPage::StatusUnits));
     softkey::set(softkeys, SoftKeyId::Right3,
                  softkey::navigate("GREYSCALE", MenuPage::GreyscaleTest));
     softkey::set(softkeys, SoftKeyId::Right4, softkey::navigate("KEYPAD", MenuPage::KeypadDebug));
