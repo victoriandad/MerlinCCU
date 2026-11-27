@@ -276,7 +276,7 @@ void make_default_console_state(ConsoleState& out)
         alert.sequence = 0U;
         alert.occurred_time_text.fill('\0');
         alert.summary.fill('\0');
-        alert.detail.fill('\0');
+        alert.detail = {};
     }
 
     // Only the day on screen is held; Calendar loads a day as it is shown.

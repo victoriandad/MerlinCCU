@@ -159,9 +159,8 @@ void record(const ActiveAlert& alert, Ending ending, uint32_t now_minute)
         updated.ignored_minute = alert.ignored_minute;
     }
     updated.summary = alert.summary;
-    updated.detail = alert.detail;
     updated.summary.back() = '\0';
-    updated.detail.back() = '\0';
+    std::snprintf(updated.detail.data(), updated.detail.size(), "%s", alert.detail.data());
 
     if (fold)
     {

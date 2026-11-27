@@ -28,7 +28,13 @@ ActiveAlert make_alert(uint8_t code, const char* summary, uint32_t raised_minute
     alert.severity = AlertSeverity::Warning;
     alert.raised_minute = raised_minute;
     std::snprintf(alert.summary.data(), alert.summary.size(), "%s", summary);
-    std::snprintf(alert.detail.data(), alert.detail.size(), "Detail for %s.", summary);
+    // History copies the text when it records, so a few rotating buffers
+    // outlive every alert a test builds before recording it.
+    static std::array<std::array<char, 64>, 8> texts = {};
+    static size_t next_text = 0U;
+    std::array<char, 64>& text = texts[next_text++ % texts.size()];
+    std::snprintf(text.data(), text.size(), "Detail for %s.", summary);
+    alert.detail.point_to(text.data());
     return alert;
 }
 

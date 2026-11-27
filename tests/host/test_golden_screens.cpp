@@ -454,7 +454,13 @@ ConsoleState make_alert_detail_state(const char* detail)
     ActiveAlert& alert = state.active_alerts[0];
     alert.severity = AlertSeverity::Warning;
     std::snprintf(alert.summary.data(), alert.summary.size(), "TEST");
-    std::snprintf(alert.detail.data(), alert.detail.size(), "%s", detail);
+    // Cut to what an alert keeps, in a buffer that outlives the state, as
+    // alert_controller's shared detail buffers do.
+    static std::array<std::array<char, kAlertDetailCapacity>, 4> texts = {};
+    static size_t next_text = 0U;
+    std::array<char, kAlertDetailCapacity>& text = texts[next_text++ % texts.size()];
+    std::snprintf(text.data(), text.size(), "%s", detail);
+    alert.detail.point_to(text.data());
     state.softkeys[static_cast<size_t>(SoftKeyId::Left5)] = {"IGNORE", SoftKeyRoute::AlertIgnore,
                                                              true};
     state.softkeys[static_cast<size_t>(SoftKeyId::Right5)] = {"ACCEPT", SoftKeyRoute::AlertAccept,
