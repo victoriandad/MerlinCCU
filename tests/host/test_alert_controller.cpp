@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "alert_history.h"
 #include "test_framework.h"
 
 namespace
@@ -687,4 +688,41 @@ HOST_TEST(a_run_time_detail_buffer_is_freed_when_its_alert_clears)
                         ? std::strstr(alert.detail.data(), "Only 900 bytes") != nullptr
                         : std::strstr(alert.detail.data(), "Wi-Fi link is down") != nullptr);
     }
+}
+
+HOST_TEST(accepting_env_sensor_keeps_it_quiet_across_restarts_until_the_board_is_seen)
+{
+    alert_history::reset();
+    ConsoleState state = make_healthy_state();
+    state.environment_sensor_status.enabled = true;
+    state.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::BoardMissing;
+    alert_controller::sync(state);
+    EXPECT_TRUE(has_alert(state, AlertCode::EnvironmentSensorFault));
+    alert_controller::accept_alert(state, 0U);
+
+    // A restart: alert state is new, the history (and its latch) is kept.
+    ConsoleState restarted = make_healthy_state();
+    restarted.environment_sensor_status = state.environment_sensor_status;
+    alert_controller::sync(restarted);
+    EXPECT_FALSE(has_alert(restarted, AlertCode::EnvironmentSensorFault));
+
+    // Not yet probed at start-up does not unlatch it.
+    restarted.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::BusReady;
+    alert_controller::sync(restarted);
+    restarted.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::BoardMissing;
+    alert_controller::sync(restarted);
+    EXPECT_FALSE(has_alert(restarted, AlertCode::EnvironmentSensorFault));
+
+    // A board seen working unlatches it, so its next fault is raised.
+    restarted.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::BoardDetected;
+    alert_controller::sync(restarted);
+    restarted.environment_sensor_status.health =
+        environment_sensor_manager::EnvironmentSensorHealth::BoardMissing;
+    alert_controller::sync(restarted);
+    EXPECT_TRUE(has_alert(restarted, AlertCode::EnvironmentSensorFault));
+    alert_history::reset();
 }

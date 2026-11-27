@@ -85,10 +85,19 @@ struct Image
     uint32_t next_entry_sequence;
     /// Newest first; only the first entry_count are used.
     std::array<Entry, kCapacity> entries;
+    /// Alerts accepted for good: one bit per AlertCode (alert_controller's
+    /// acceptance_latches()). After the entries, so a version 1 image, which
+    /// ends there, still loads.
+    uint32_t latched_codes;
+    /// ~latched_codes; the CRC covers only the entries.
+    uint32_t latched_codes_check;
 };
 
 inline constexpr uint32_t kImageMagic = 0x414C4849U; // "ALHI"
-inline constexpr uint16_t kImageVersion = 1U;
+/// @brief 2 added latched_codes; a version 1 image loads with none latched.
+inline constexpr uint16_t kImageVersion = 2U;
+inline constexpr uint16_t kImageVersionWithoutLatches = 1U;
+static_assert(static_cast<size_t>(AlertCode::Count) <= 32U, "latched_codes holds one bit per code");
 
 /// @brief Local minutes now, or 0 before the clock has synced.
 uint32_t local_minute(const TimeStatus& time);
@@ -106,6 +115,14 @@ void clear_all();
 
 /// @brief Entries kept.
 uint8_t count();
+
+/// @brief True when alert `code` was accepted for good: it stays quiet,
+/// across restarts, until alert_controller unlatches it.
+bool latched(uint8_t code);
+
+/// @brief Latches or unlatches alert `code`, and schedules a save when that
+/// changes anything.
+void set_latched(uint8_t code, bool latched);
 
 /// @brief Entry `index`, 0 = newest. Out-of-range gives an empty entry.
 const Entry& entry(uint8_t index);

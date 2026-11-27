@@ -188,6 +188,28 @@ void clear_all()
     g_new_pending = true;
 }
 
+bool latched(uint8_t code)
+{
+    return code < 32U && (g_image.latched_codes & (1UL << code)) != 0U;
+}
+
+void set_latched(uint8_t code, bool latched_now)
+{
+    if (code >= 32U || latched(code) == latched_now)
+    {
+        return;
+    }
+    if (latched_now)
+    {
+        g_image.latched_codes |= 1UL << code;
+    }
+    else
+    {
+        g_image.latched_codes &= ~(1UL << code);
+    }
+    g_new_pending = true;
+}
+
 uint8_t count()
 {
     return static_cast<uint8_t>(std::min<size_t>(g_image.entry_count, kCapacity));
@@ -307,12 +329,14 @@ const Image& image_for_save(uint32_t save_sequence)
     g_image.save_sequence = save_sequence;
     g_image.payload_size = sizeof(g_image.entries);
     g_image.crc32 = entries_crc(g_image);
+    g_image.latched_codes_check = ~g_image.latched_codes;
     return g_image;
 }
 
 bool image_valid(const Image& image)
 {
-    return image.magic == kImageMagic && image.version == kImageVersion &&
+    return image.magic == kImageMagic &&
+           (image.version == kImageVersion || image.version == kImageVersionWithoutLatches) &&
            image.entry_count <= kCapacity && image.payload_size == sizeof(image.entries) &&
            image.crc32 == entries_crc(image);
 }
@@ -324,6 +348,13 @@ bool restore(const Image& image)
         return false;
     }
     g_image = image;
+    // A version 1 image has erased flash where the latches go, and a damaged
+    // pair latches nothing rather than hiding an alert.
+    if (image.version != kImageVersion ||
+        image.latched_codes_check != static_cast<uint32_t>(~image.latched_codes))
+    {
+        g_image.latched_codes = 0U;
+    }
     if (g_image.next_entry_sequence == 0U)
     {
         g_image.next_entry_sequence = 1U;
