@@ -62,6 +62,7 @@ add_executable(host_tests
     test_png_encoder.cpp
     test_home_controls.cpp
     test_unit_fleet.cpp
+    test_status_json.cpp
     test_weather_icons.cpp
     test_weather_extremes.cpp
     golden_test_support.cpp
@@ -119,6 +120,7 @@ add_executable(host_tests
     ${MERLIN_ROOT}/src/display/weather_icons.cpp
     ${MERLIN_ROOT}/src/network/home_controls.cpp
     ${MERLIN_ROOT}/src/network/unit_fleet.cpp
+    ${MERLIN_ROOT}/src/network/status_json.cpp
     ${MERLIN_ROOT}/src/core/calendar_demo.cpp
     ${MERLIN_ROOT}/src/network/cert_pin.cpp
     ${MERLIN_ROOT}/src/core/ha_key_list.cpp

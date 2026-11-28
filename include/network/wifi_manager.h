@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
 #include "console_model.h"
 
@@ -23,5 +24,9 @@ bool update();
 
 /// @brief Returns the latest Wi-Fi status snapshot for the UI/controller.
 const WifiStatus& status();
+
+/// @brief Signal strength in dBm, sampled every 10 s while connected; empty
+/// when not connected or not yet read. Safe to call from lwIP callbacks.
+std::optional<int> rssi_dbm();
 
 } // namespace wifi_manager

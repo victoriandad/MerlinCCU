@@ -32,6 +32,7 @@
 #include "mbedtls/sha256.h"
 #include "ota_manager.h"
 #include "ota_upload.h"
+#include "page_table.h"
 #include "panel_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/rand.h"
@@ -39,6 +40,7 @@
 #include "png_encoder.h"
 #include "psram.h"
 #include "share_price_manager.h"
+#include "status_json.h"
 #include "text_styles.h"
 #include "text_utils.h"
 #include "web_auth.h"
@@ -92,6 +94,9 @@ constexpr char kHttpPngHeader[] =
     "Connection: close\r\n\r\n";
 constexpr char kHttpTextHeader[] =
     "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n";
+constexpr char kHttpJsonHeader[] =
+    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
+    "Connection: close\r\n\r\n";
 constexpr char kHttpBusyResponse[] =
     "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n"
     "Connection: close\r\nRetry-After: 1\r\n\r\nMerlinCCU web server is busy, retry shortly.\n";
@@ -831,6 +836,71 @@ bool build_alerts_page()
                       "</p></section></main></body></html>",
                       static_cast<unsigned>(alert_history::kCapacity));
     return ok;
+}
+
+/// @brief The unit's network name: as advertised, or its setting before Wi-Fi
+/// has advertised it.
+const char* unit_name(const ConsoleState& console)
+{
+    return console.wifi_status.host_name[0] != '\0' ? console.wifi_status.host_name.data()
+                                                    : config_manager::device_name();
+}
+
+/// @brief Builds /api/status.json for the house dashboard
+/// (docs/network-deployment.md): a small JSON object from state already held,
+/// so it is cheap to answer from the lwIP callback.
+void build_status_json()
+{
+    const ConsoleState& console = console_controller::state();
+    const RuntimeConfig& config = config_manager::settings();
+    const ImageFootprintStatus& footprint = console.image_footprint_status;
+    const uint32_t heap_bytes = footprint.total_ram_bytes > footprint.static_ram_bytes
+                                    ? footprint.total_ram_bytes - footprint.static_ram_bytes
+                                    : 0U;
+
+    // The most serious active alert, newest first among equals.
+    const ActiveAlert* top = nullptr;
+    for (uint8_t i = 0U; i < console.alert_count; ++i)
+    {
+        const ActiveAlert& alert = console.active_alerts[i];
+        if (top == nullptr || alert.severity > top->severity ||
+            (alert.severity == top->severity && alert.sequence > top->sequence))
+        {
+            top = &alert;
+        }
+    }
+    uint8_t units_online = 0U;
+    for (size_t i = 0U; i < console.unit_fleet.count; ++i)
+    {
+        units_online =
+            static_cast<uint8_t>(units_online + (console.unit_fleet.peers[i].online ? 1U : 0U));
+    }
+
+    status_json::Status status = {};
+    status.unit = unit_name(console);
+    status.label = config.device_label[0] != '\0' ? config.device_label.data() : status.unit;
+    status.firmware = console.firmware_status.version.data();
+    status.board = kFirmwareBoard;
+    status.uptime_s = to_ms_since_boot(get_absolute_time()) / 1000U;
+    status.wifi_connected = console.wifi_status.state == WifiConnectionState::Connected;
+    status.rssi_dbm = wifi_manager::rssi_dbm();
+    status.ha_connected =
+        console.home_assistant_status.state == HomeAssistantConnectionState::Connected;
+    status.mqtt_connected = console.mqtt_status.state == MqttConnectionState::Connected;
+    status.free_heap = heap_bytes > console.heap_status.used_bytes
+                           ? heap_bytes - console.heap_status.used_bytes
+                           : 0U;
+    status.current_page = console_controller::screen_saver_active()
+                              ? "SCREEN SAVER"
+                              : page_table::describe(console.active_page).title;
+    status.alerts_active = console.alert_count;
+    status.top_alert = top != nullptr ? top->summary.data() : "";
+    status.units_online = units_online;
+    status.units_known = console.unit_fleet.count;
+
+    const size_t header = std::strlen(kHttpJsonHeader);
+    std::memcpy(g_response, kHttpJsonHeader, header);
+    (void)status_json::build(status, g_response + header, sizeof(g_response) - header);
 }
 
 /// @brief Builds /api/alerts: one tab-separated line per alert, active then
@@ -3603,17 +3673,21 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
         {
             units_online += console.unit_fleet.peers[i].online ? 1U : 0U;
         }
-        // board= lets tools/ota_update.py pick the matching image (#210).
+        // board= lets tools/ota_update.py pick the matching image (#210);
+        // unit= and mac= identify the panel for the house network's records.
         std::snprintf(
             g_response, sizeof(g_response),
-            "%sversion=%s\nboard=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\n"
+            "%sunit=%s\nmac=%s\nversion=%s\nboard=%s\nslot=%s\nstate=%s\nreset=%s\nuptime_min=%lu\n"
             "wifi_connected=%d\nmqtt_connected=%d\nha_connected=%d\nstack_free=%lu\n"
             "heap_arena=%lu\nalerts=%u\nmqtt_unit=%s\nunits=%u/%u\n"
             // Peaks since boot, for sizing lwIP's pools (lwipopts.h) and the
             // response buffers: peak/size in bytes, or in pool entries.
             "lwip_mem_peak=%u/%u\npbuf_pool_peak=%u/%u\ntcp_seg_peak=%u/%u\n"
             "ha_response_peak=%u\nshare_response_peak=%u\nweb_response_peak=%u\n",
-            kHttpTextHeader, firmware.version.data(), kFirmwareBoard, slot_name(firmware.slot),
+            kHttpTextHeader, unit_name(console),
+            console.wifi_status.mac_address[0] != '\0' ? console.wifi_status.mac_address.data()
+                                                       : "-",
+            firmware.version.data(), kFirmwareBoard, slot_name(firmware.slot),
             ota_manager::state_name(), reset_reason::slug(console.boot_status.reset_reason),
             static_cast<unsigned long>(console.boot_status.uptime_minutes),
             console.wifi_status.state == WifiConnectionState::Connected ? 1 : 0,
@@ -3631,6 +3705,12 @@ void handle_request(WebSession* session, tcp_pcb* pcb, const char* request)
             static_cast<unsigned>(home_assistant_manager::response_peak_bytes()),
             static_cast<unsigned>(share_price_manager::response_peak_bytes()),
             static_cast<unsigned>(g_response_peak_len));
+        send_response(session, pcb, g_response);
+        return;
+    }
+    else if (matches_get_path(request, "/api/status.json"))
+    {
+        build_status_json();
         send_response(session, pcb, g_response);
         return;
     }

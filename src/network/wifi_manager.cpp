@@ -23,6 +23,7 @@ static_assert(wifi_manager::kMaxHostNameLength == config_fields::kNetbiosNameLen
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 
 namespace
 {
@@ -113,6 +114,11 @@ constexpr size_t kWifiCredentialCount =
 // relying on blocking waits everywhere. That lets the main loop stay responsive
 // while DHCP, DNS, and retry behaviour are still visible on the status page.
 WifiStatus g_status = {};
+/// Signal strength, sampled while connected (sample_rssi); empty otherwise.
+/// Kept out of WifiStatus so its drift does not count as a status change.
+std::optional<int> g_rssi_dbm;
+absolute_time_t g_next_rssi_sample = nil_time;
+constexpr uint32_t kRssiSampleIntervalMs = 10000U;
 bool g_cyw43_initialized = false;
 int g_last_observed_link_status = CYW43_LINK_DOWN;
 absolute_time_t g_next_retry = nil_time;
@@ -907,6 +913,28 @@ void init()
     attempt_connect();
 }
 
+/// @brief Reads the signal strength every kRssiSampleIntervalMs while
+/// connected, from the main loop: the web server reports it from an lwIP
+/// callback, which must not wait on the radio.
+void sample_rssi()
+{
+    if (g_status.state != WifiConnectionState::Connected)
+    {
+        g_rssi_dbm.reset();
+        return;
+    }
+    if (!is_nil_time(g_next_rssi_sample) && !time_reached(g_next_rssi_sample))
+    {
+        return;
+    }
+    g_next_rssi_sample = make_timeout_time_ms(kRssiSampleIntervalMs);
+    int32_t rssi = 0;
+    if (cyw43_wifi_get_rssi(&cyw43_state, &rssi) == 0)
+    {
+        g_rssi_dbm = static_cast<int>(rssi);
+    }
+}
+
 /// @brief Advances the Wi-Fi connection state machine.
 bool update()
 {
@@ -1023,6 +1051,7 @@ bool update()
     }
 
     changed = update_internet_probe() || changed;
+    sample_rssi();
 
     return changed;
 }
@@ -1030,6 +1059,11 @@ bool update()
 const WifiStatus& status()
 {
     return g_status;
+}
+
+std::optional<int> rssi_dbm()
+{
+    return g_rssi_dbm;
 }
 
 } // namespace wifi_manager
