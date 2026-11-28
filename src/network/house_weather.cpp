@@ -17,7 +17,8 @@ namespace house_weather
 namespace
 {
 
-constexpr std::string_view kTopicNames[kTopicCount] = {"now", "hourly", "daily", "warnings"};
+constexpr std::string_view kTopicNames[kTopicCount] = {"now", "hourly", "daily", "warnings",
+                                                       "acks"};
 
 /// @brief The `level` names of a warnings payload, indexed by WarningLevel.
 constexpr std::array<std::string_view, 4> kLevelNames = {"none", "yellow", "amber", "red"};
@@ -129,7 +130,9 @@ std::optional<uint32_t> apply(Topic topic, const char* json, HomeAssistantStatus
         }
         return timestamp;
     case Topic::Warnings:
-        // Warnings are not weather data; apply_warnings() reads them.
+    case Topic::Acks:
+        // Not weather data: apply_warnings() and weather_acks::apply() read
+        // these.
         break;
     }
     return std::nullopt;
@@ -155,6 +158,8 @@ std::optional<uint32_t> apply_warnings(const char* json, WeatherWarnings& warnin
     }
 
     WeatherWarnings updated = {};
+    // Acceptances arrive on their own topic and outlast a change of warnings.
+    updated.acked = warnings.acked;
     updated.level = static_cast<WarningLevel>(std::distance(kLevelNames.begin(), level));
     if (updated.level != WarningLevel::None)
     {

@@ -334,6 +334,37 @@ force. With a warning in force, the CCU's ALRT page lists it, e.g.
 HA sends nothing that round; after 2 hours the CCU's alert says the warnings
 were not updated, rather than dropping them.
 
+### Accepting a weather alert once for every panel
+
+With a `weather:` or `warnings:` block, the integration also relays
+acceptances (#210). Accepting an official warning, WX WIND, WX TEMP or a
+forecast warning on any panel clears it on every panel. HA keeps the record,
+so a panel that restarts does not raise it again. A changed warning, or the
+same forecast hazard on a new day, is raised again everywhere. A panel's own
+alerts (HEAP LOW, ENV SENSOR, UNIT OFFLINE) stay on that panel.
+
+Nothing to configure beyond copying the updated integration and restarting
+HA. HA's log then shows `MerlinCCU weather acknowledgements relayed under
+merlinccu`, and each acceptance fires a `merlinccu_weather_acknowledged`
+event (`unit`, `alert`, `id`) that an automation or the logbook can use:
+
+```yaml
+automation:
+  - alias: Weather alert accepted on a panel
+    trigger:
+      - platform: event
+        event_type: merlinccu_weather_acknowledged
+    action:
+      - service: logbook.log
+        data:
+          name: MerlinCCU
+          message: "{{ trigger.event.data.unit }} accepted {{ trigger.event.data.alert }}"
+```
+
+Check: listen to `merlinccu/house/weather/acks`; a retained `{"v":1}`
+arrives once HA has started, and each acceptance adds its kind and id.
+Without the updated integration, accepting still works, on that panel only.
+
 ## 7. Controls page
 
 Each CCU's **Controls** page (Home, R4) switches lights, switches, fans and

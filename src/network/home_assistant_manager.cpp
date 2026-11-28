@@ -38,6 +38,7 @@
 #include "retry_backoff.h"
 #include "text_utils.h"
 #include "time_manager.h"
+#include "weather_acks.h"
 #include "weather_forecast_parser.h"
 #include "weather_json_scan.h"
 #include "weather_normalisation.h"
@@ -728,6 +729,14 @@ uint32_t payload_built_ms(uint32_t timestamp)
 /// forecast topics only while HA is the source.
 void apply_house_weather(house_weather::Topic topic, const char* json)
 {
+    if (topic == house_weather::Topic::Acks)
+    {
+        if (!weather_acks::apply(json, g_warnings.acked))
+        {
+            std::printf("HA weather acks payload refused\n");
+        }
+        return;
+    }
     if (topic == house_weather::Topic::Warnings)
     {
         const std::optional<uint32_t> timestamp = house_weather::apply_warnings(json, g_warnings);

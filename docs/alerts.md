@@ -133,6 +133,18 @@ last `kConnectionGraceSamples` (30 s), and a keypad fault `kKeypadFaultSamples`
 | `UnitOffline` | Warning | `unit_fleet.offline_alert_mask`: another unit on the broker has been offline for `kOfflineAlertMs` (30 minutes) and nobody has accepted it (#210) | `UNIT OFFLINE` | Dynamic detail (the units' names) | Accepting it on any unit publishes `<base>/<mac>/offline_ack`, which clears it on every unit until that unit is back; its next outage raises it again. Timed from when this unit learnt of the outage, so a unit that restarts during one waits 30 minutes afresh. Not raised while this unit's MQTT link is down (that is `MQTT`) |
 | `MixedFirmware` | Message | `unit_fleet.mixed_firmware`: an online unit has run different firmware from this one for `kMixedFirmwareMs` (10 minutes) (#210) | `MIXED FIRMWARE` | Dynamic detail (each unit's version) | Long enough for an update of every unit to finish. Offline units, and units that publish no summary, do not count |
 
+## Shared Acceptance Of Weather Alerts
+
+`OfficialWeatherWarning`, `WeatherProviderWarning`, `WeatherTemperatureWarning`
+and `WeatherWindWarning` come from the weather HA sends every unit, so
+accepting one on any unit clears it on all (#210). Each has an id worked out
+alike on every unit (`settle_weather_ack()` in `alert_controller.cpp`); the
+accepting unit sends it to HA, HA lists it on a retained topic, and a unit
+whose alert's id is listed drops it into History as accepted. A changed
+official warning, or a forecast hazard on a new day, has a new id and is
+raised again. Ids and topics: docs/mqtt-household-data.md. Every other alert
+is the unit's own and is accepted on that unit only.
+
 ## Latched Acceptance
 
 Accepting an alert normally hides it until its condition clears, and a

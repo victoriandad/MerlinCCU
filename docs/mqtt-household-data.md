@@ -173,6 +173,34 @@ whenever one of its entities changes state, and when HA starts.
 - A toggle that worked shows its new state at once; HA's next list confirms
   it.
 
+## Weather acknowledgements (#210)
+
+Every panel raises the same weather alerts from the same data, so one
+acceptance should do for all. Each weather alert has an **id**, a CRC-32 (8
+hex digits) of a key every panel builds alike (`weather_acks.h`):
+
+| Alert | Kind | Key |
+| --- | --- | --- |
+| Official warning | `official` | `official:` + summary, then a newline and the warning lines |
+| Forecast warning (thunder, hail) | `wx_provider` | `provider:` + summary, `|`, local day |
+| WX TEMP | `wx_temp` | `temp:cold`, `temp:hot` or `temp:cold+hot`, `|`, local day |
+| WX WIND | `wx_wind` | `wind`, `|`, local day |
+
+The local day is days since 1970 in local time, so a forecast hazard
+accepted today comes back tomorrow if still forecast; an official warning
+comes back when its text changes.
+
+| Topic | Direction | Retained | Content |
+| --- | --- | --- | --- |
+| `<base>/house/acks/set` | CCU to HA | no | `{"alert":"wx_temp","id":"1a2b3c4d","unit":"merlinccu2"}`, once per id when accepted |
+| `<base>/house/weather/acks` | HA to CCU | yes | `{"v":1,"official":"...","wx_temp":"..."}`: the newest accepted id of each kind |
+
+The set topic is outside both panel filters (`<base>/house/weather/+` and
+`<base>/+/+`), so only HA hears it. HA stores the ids (they survive its
+restart) and fires `merlinccu_weather_acknowledged`. A panel whose alert's id
+is listed records it in History as accepted and does not raise it; a panel
+that accepted it sends the id again each MQTT session until HA lists it.
+
 ## Units (#210)
 
 The CCUs on one broker and base topic see each other with no setup. Each

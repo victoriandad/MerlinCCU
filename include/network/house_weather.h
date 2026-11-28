@@ -29,16 +29,19 @@ enum class Topic : uint8_t
     Daily,
     /// Official Met Office and flood warnings (#202), read by apply_warnings().
     Warnings,
+    /// Weather alerts accepted for every unit (#210), read by
+    /// weather_acks::apply().
+    Acks,
 };
 
-inline constexpr size_t kTopicCount = 4U;
+inline constexpr size_t kTopicCount = 5U;
 
 /// @brief Largest payload of each topic the CCU accepts, in bytes.
 /// @details HA's integration trims its payloads to fit (MAX_PAYLOAD_BYTES in
 /// ha/custom_components/merlinccu/house_weather.py); a bigger one is dropped.
 /// The hourly limit leaves room for precipitation and gusts on all 24 rows
 /// (#202).
-inline constexpr size_t kMaxPayloadBytes[kTopicCount] = {512U, 4096U, 1536U, 512U};
+inline constexpr size_t kMaxPayloadBytes[kTopicCount] = {512U, 4096U, 1536U, 512U, 256U};
 
 /// @brief Returns which weather topic `topic` is, for base topic `base`.
 std::optional<Topic> topic_for(std::string_view topic, std::string_view base);

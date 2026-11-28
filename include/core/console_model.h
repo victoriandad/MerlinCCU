@@ -9,6 +9,7 @@
 #include "home_controls.h"
 #include "reset_reason.h"
 #include "unit_fleet.h"
+#include "weather_acks.h"
 
 /// @brief Physical softkeys mounted beside the display.
 enum class SoftKeyId : uint8_t
@@ -403,13 +404,17 @@ struct WeatherWarnings
     /// HA has not sent warnings for over two hours, so these may be out of
     /// date (home_assistant_manager::kWarningsStaleAfterMs).
     bool stale;
+    /// Weather alerts accepted for every unit, by id, from HA's retained
+    /// acks topic (#210, weather_acks.h). Kept here, beside the warnings HA
+    /// also sends, though it covers the forecast alerts too.
+    weather_acks::Accepted acked;
 };
 
 /// @brief Compares two warning snapshots field-by-field.
 inline bool operator==(const WeatherWarnings& lhs, const WeatherWarnings& rhs)
 {
     return lhs.level == rhs.level && lhs.summary == rhs.summary && lhs.detail == rhs.detail &&
-           lhs.stale == rhs.stale;
+           lhs.stale == rhs.stale && lhs.acked == rhs.acked;
 }
 
 inline bool operator!=(const WeatherWarnings& lhs, const WeatherWarnings& rhs)

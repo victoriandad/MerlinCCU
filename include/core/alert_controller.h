@@ -89,6 +89,13 @@ void rearm(AlertCode code);
 /// @param top Set to the most serious, or nullptr when there is none.
 uint8_t own_alerts(const ConsoleState& console_state, const ActiveAlert** top);
 
+/// @brief The weather alert of `kind` as of the last sync: its id
+/// (weather_acks.h), empty while it is not raised.
+const weather_acks::Id& weather_ack_id(weather_acks::Kind kind);
+
+/// @brief The alert code a weather acknowledgement `kind` covers.
+AlertCode weather_ack_code(weather_acks::Kind kind);
+
 /// @brief Resets alert history, occurrence counts and failure-sample counters,
 /// e.g. on device reset.
 void reset();

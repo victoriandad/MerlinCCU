@@ -613,6 +613,49 @@ void sync_unit_alerts(ConsoleState& console_state)
                         fleet.mixed_firmware ? detail : "");
 }
 
+/// @brief Each weather alert's id now (weather_acks.h), empty while it is
+/// not raised; mqtt_manager sends it to HA when the alert is accepted here.
+std::array<weather_acks::Id, weather_acks::kKindCount> g_weather_ack_ids = {};
+
+/// @brief Applies HA's record of weather alerts accepted on any unit
+/// (#210): one whose id HA lists goes from the list, into History as
+/// accepted, and is not raised here.
+/// @param key names the alert's subject, with more after it; every unit
+/// builds the same key from the same data from HA, so they agree on the id.
+/// @return Whether the alert is still raised here.
+bool settle_weather_ack(ConsoleState& console_state, weather_acks::Kind kind, AlertCode code,
+                        bool active, std::string_view key, std::string_view more = {})
+{
+    weather_acks::Id& id = g_weather_ack_ids[static_cast<size_t>(kind)];
+    if (!active)
+    {
+        id = {};
+        return false;
+    }
+    id = weather_acks::id_for(key, more);
+    if (console_state.weather_warnings.acked[static_cast<size_t>(kind)] != id)
+    {
+        return true;
+    }
+    const int existing = find_alert_by_code(console_state, code);
+    if (existing >= 0)
+    {
+        alert_history::record(console_state.active_alerts[static_cast<size_t>(existing)],
+                              alert_history::Ending::Accepted,
+                              alert_history::local_minute(console_state.time_status));
+        erase_active_alert(console_state, static_cast<uint8_t>(existing));
+    }
+    return false;
+}
+
+/// @brief A weather key for "this hazard, today": the forecast alerts are
+/// accepted for the day, and come back on the next if still forecast.
+void day_key(const ConsoleState& console_state, const char* hazard, char* out, size_t out_size)
+{
+    std::snprintf(out, out_size, "%s|%lu", hazard,
+                  static_cast<unsigned long>(console_state.time_status.local_epoch_day));
+}
+
 /// @brief Advances one debounce counter: zero once the condition clears,
 /// and up by one per due sample while it holds.
 void count_sample(uint8_t& counter, bool failing, bool sample_due)
@@ -752,9 +795,17 @@ void sync(ConsoleState& console_state)
             ? weather_alert_status.provider_warning_detail.data()
             : "Weather source reports a warning.\nCheck the latest local forecast.";
     // Severe conditions in the forecast, such as thunder; official warnings
-    // are OfficialWeatherWarning below.
-    set_alert_condition(console_state, AlertCode::WeatherProviderWarning,
-                        weather_alert_data_current && weather_alert_status.provider_warning_active,
+    // are OfficialWeatherWarning below. The weather alerts can be accepted
+    // for every unit through HA (#210, settle_weather_ack).
+    char ack_key[64] = {};
+    char provider_hazard[48] = {};
+    std::snprintf(provider_hazard, sizeof(provider_hazard), "provider:%s",
+                  provider_warning_summary);
+    day_key(console_state, provider_hazard, ack_key, sizeof(ack_key));
+    const bool provider_warning = settle_weather_ack(
+        console_state, weather_acks::Kind::Provider, AlertCode::WeatherProviderWarning,
+        weather_alert_data_current && weather_alert_status.provider_warning_active, ack_key);
+    set_alert_condition(console_state, AlertCode::WeatherProviderWarning, provider_warning,
                         provider_warning_severity, provider_warning_summary,
                         provider_warning_detail);
 
@@ -763,9 +814,13 @@ void sync(ConsoleState& console_state)
     float max_temperature_celsius = 0.0F;
     const bool have_temperature_range = weather_temperature_alert_range(
         weather_metrics, min_temperature_celsius, max_temperature_celsius);
-    const bool temperature_warning = weather_alert_data_current && have_temperature_range &&
-                                     (weather_extremes::is_cold(min_temperature_celsius) ||
-                                      weather_extremes::is_hot(max_temperature_celsius));
+    const bool cold = have_temperature_range && weather_extremes::is_cold(min_temperature_celsius);
+    const bool hot = have_temperature_range && weather_extremes::is_hot(max_temperature_celsius);
+    day_key(console_state, cold && hot ? "temp:cold+hot" : (cold ? "temp:cold" : "temp:hot"),
+            ack_key, sizeof(ack_key));
+    const bool temperature_warning = settle_weather_ack(
+        console_state, weather_acks::Kind::Temperature, AlertCode::WeatherTemperatureWarning,
+        weather_alert_data_current && (cold || hot), ack_key);
     // Reused for each alert's detail text below rather than one 320-byte
     // buffer per alert: every use is built then immediately consumed by
     // set_alert_condition (which copies it into ActiveAlert), so lifetimes
@@ -788,8 +843,11 @@ void sync(ConsoleState& console_state)
         weather_metrics.forecast_max_wind_gust_mph_valid
             ? std::optional<float>(weather_metrics.forecast_max_wind_gust_mph)
             : std::nullopt;
-    const bool wind_warning =
-        weather_alert_data_current && weather_extremes::is_high_wind(max_wind_mph, max_gust_mph);
+    day_key(console_state, "wind", ack_key, sizeof(ack_key));
+    const bool wind_warning = settle_weather_ack(
+        console_state, weather_acks::Kind::Wind, AlertCode::WeatherWindWarning,
+        weather_alert_data_current && weather_extremes::is_high_wind(max_wind_mph, max_gust_mph),
+        ack_key);
     if (wind_warning)
     {
         build_weather_wind_alert_detail(max_wind_mph, max_gust_mph, alert_detail_scratch,
@@ -802,7 +860,12 @@ void sync(ConsoleState& console_state)
     // Stale ones stay up, marked, rather than vanish: a warning HA could not
     // refresh is more likely still in force than over.
     const WeatherWarnings& warnings = console_state.weather_warnings;
-    const bool official_warning = warnings.level != WarningLevel::None;
+    // The warnings themselves name it: the same set is the same id however
+    // often HA republishes it, and any change is a new one.
+    std::snprintf(ack_key, sizeof(ack_key), "official:%s", warnings.summary.data());
+    const bool official_warning = settle_weather_ack(
+        console_state, weather_acks::Kind::Official, AlertCode::OfficialWeatherWarning,
+        warnings.level != WarningLevel::None, ack_key, warnings.detail.data());
     if (official_warning)
     {
         std::snprintf(alert_detail_scratch, sizeof(alert_detail_scratch), "%s%s",
@@ -1180,6 +1243,27 @@ uint8_t own_alerts(const ConsoleState& console_state, const ActiveAlert** top)
     return count;
 }
 
+const weather_acks::Id& weather_ack_id(weather_acks::Kind kind)
+{
+    return g_weather_ack_ids[static_cast<size_t>(kind)];
+}
+
+AlertCode weather_ack_code(weather_acks::Kind kind)
+{
+    switch (kind)
+    {
+    case weather_acks::Kind::Official:
+        return AlertCode::OfficialWeatherWarning;
+    case weather_acks::Kind::Provider:
+        return AlertCode::WeatherProviderWarning;
+    case weather_acks::Kind::Temperature:
+        return AlertCode::WeatherTemperatureWarning;
+    case weather_acks::Kind::Wind:
+        return AlertCode::WeatherWindWarning;
+    }
+    return AlertCode::OfficialWeatherWarning;
+}
+
 bool acknowledged(AlertCode code)
 {
     const size_t index = alert_code_index(code);
@@ -1220,6 +1304,7 @@ void reset()
     g_alert_was_active.fill(false);
     g_alert_occurrences.fill(0U);
     g_detail_slots = {};
+    g_weather_ack_ids = {};
 }
 
 void build_list_softkeys(ConsoleState& console_state, SoftKeyMap& softkeys)

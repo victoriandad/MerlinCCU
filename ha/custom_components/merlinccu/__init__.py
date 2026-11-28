@@ -15,6 +15,9 @@ scripts for its Controls page, and carries out its key presses
 Warnings (#202): publishes Met Office weather warnings and Environment Agency
 flood warnings to every CCU over MQTT (warnings_publisher.py).
 
+Acknowledgements (#210): a weather alert accepted on one CCU is recorded and
+cleared on every CCU (weather_acks_relay.py).
+
 Configured in configuration.yaml; see docs/home-assistant-setup.md.
 """
 
@@ -225,6 +228,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "on" if flood_point else "off",
             weather_warnings.topic(warnings_conf[CONF_BASE_TOPIC]),
         )
+
+    # Weather alerts accepted on one panel clear on every panel (#210), for
+    # each base topic weather or warnings go out on.
+    weather_bases = {
+        conf[block][CONF_BASE_TOPIC] for block in (CONF_WEATHER, CONF_WARNINGS) if block in conf
+    }
+    if weather_bases:
+        from .weather_acks_relay import WeatherAcksRelay
+
+        for base_topic in sorted(weather_bases):
+            WeatherAcksRelay(hass, base_topic).async_start()
+            _LOGGER.info("MerlinCCU weather acknowledgements relayed under %s", base_topic)
 
     if CONF_CONTROLS in conf:
         from .controls_publisher import ControlsPublisher

@@ -32,6 +32,7 @@
 #include "retry_backoff.h"
 #include "text_utils.h"
 #include "unit_fleet.h"
+#include "weather_acks.h"
 
 namespace
 {
@@ -120,6 +121,8 @@ enum class PendingPublishType : uint8_t
     UnitAckClear,
     /// Telling the other units UNIT OFFLINE was accepted here.
     UnitAck,
+    /// Telling HA a weather alert was accepted here, for every unit (#210).
+    WeatherAck,
 };
 
 /// @brief Describes one MQTT sensor entity published through Home Assistant discovery.
@@ -374,6 +377,7 @@ MERLIN_PSRAM_BSS char g_house_now[house_weather::kMaxPayloadBytes[0] + 1U];
 MERLIN_PSRAM_BSS char g_house_hourly[house_weather::kMaxPayloadBytes[1] + 1U];
 MERLIN_PSRAM_BSS char g_house_daily[house_weather::kMaxPayloadBytes[2] + 1U];
 MERLIN_PSRAM_BSS char g_house_warnings[house_weather::kMaxPayloadBytes[3] + 1U];
+char g_house_acks[house_weather::kMaxPayloadBytes[4] + 1U] = {};
 
 /// @brief One topic's receive buffer, filled by the lwIP callbacks and read
 /// by the main loop (house weather and Controls).
@@ -389,6 +393,7 @@ std::array<InboundBuffer, house_weather::kTopicCount> g_house_buffers = {{
     {g_house_hourly, sizeof(g_house_hourly), 0U, false},
     {g_house_daily, sizeof(g_house_daily), 0U, false},
     {g_house_warnings, sizeof(g_house_warnings), 0U, false},
+    {g_house_acks, sizeof(g_house_acks), 0U, false},
 }};
 
 // This unit's Controls list and HA's answers to its presses (#152), on
@@ -425,6 +430,11 @@ char g_summary_in_flight[unit_fleet::kMaxPayloadBytes + 1U] = {};
 // outage cannot hide its next one.
 bool g_own_ack_cleared = false;
 char g_ack_mac_in_flight[unit_fleet::kMacLength + 1U] = {};
+// Weather alerts accepted here and sent to HA this session (#210), by id, so
+// each is sent once; and the one in flight.
+std::array<weather_acks::Id, weather_acks::kKindCount> g_weather_acks_sent = {};
+size_t g_weather_ack_kind_in_flight = 0U;
+weather_acks::Id g_weather_ack_id_in_flight = {};
 
 // Discovery JSON, and the panel PNG (#159). Pages are 0.5 to 2 KB as PNG; a
 // bigger one (heavy dither) is skipped. The lwIP ring (lwipopts.h) holds
@@ -500,6 +510,8 @@ void reset_runtime(bool reset_publish_state)
     g_fleet_subscribe_in_flight = false;
     g_published_summary[0] = '\0';
     g_own_ack_cleared = false;
+    // Sent again on the next session if HA has still not recorded them.
+    g_weather_acks_sent = {};
     // Unknown after a reconnect or restart: treat every key as published, so
     // configs for keys no longer on the list are cleared once (#151).
     g_triggers_published = kAllKeysMask;
@@ -1331,6 +1343,9 @@ void mqtt_request_cb(void* arg, err_t err)
     case PendingPublishType::UnitAckClear:
         g_own_ack_cleared = true;
         break;
+    case PendingPublishType::WeatherAck:
+        g_weather_acks_sent[g_weather_ack_kind_in_flight] = g_weather_ack_id_in_flight;
+        break;
     case PendingPublishType::UnitAck:
         // lwIP context, so the table is already under the lock.
         for (size_t i = 0U; i < g_fleet.count; ++i)
@@ -1494,7 +1509,8 @@ bool publish_bytes(const char* topic, const void* payload, u16_t length,
     // Key presses are moments, not state: a retained one would fire HA
     // automations again on every reconnect, or a light again (#152).
     const u8_t kRetain = (publish_type == PendingPublishType::KeyEvent ||
-                          publish_type == PendingPublishType::ControlPress)
+                          publish_type == PendingPublishType::ControlPress ||
+                          publish_type == PendingPublishType::WeatherAck)
                              ? 0U
                              : 1U;
 
@@ -1627,6 +1643,31 @@ bool start_next_publish()
                       g_ack_mac_in_flight);
         std::printf("MQTT unit offline accepted: %s\n", unit_topic);
         return publish(unit_topic, "1", PendingPublishType::UnitAck, SensorId::Status);
+    }
+    // A weather alert accepted here goes to HA, which records it for every
+    // unit (#210); sent once per id, and not once HA lists it.
+    const ConsoleState& console = console_controller::state();
+    for (size_t k = 0U; k < weather_acks::kKindCount; ++k)
+    {
+        const auto kind = static_cast<weather_acks::Kind>(k);
+        const weather_acks::Id& id = alert_controller::weather_ack_id(kind);
+        if (id[0] == '\0' ||
+            !alert_controller::acknowledged(alert_controller::weather_ack_code(kind)) ||
+            console.weather_warnings.acked[k] == id || g_weather_acks_sent[k] == id)
+        {
+            continue;
+        }
+        char payload[96] = {};
+        if (!weather_acks::format_ack(kind, id, console.wifi_status.host_name.data(), payload,
+                                      sizeof(payload)))
+        {
+            continue;
+        }
+        g_weather_ack_kind_in_flight = k;
+        g_weather_ack_id_in_flight = id;
+        std::snprintf(unit_topic, sizeof(unit_topic), "%s/house/acks/set", g_base_topic);
+        std::printf("MQTT weather alert accepted: %s %s\n", weather_acks::name(kind), id.data());
+        return publish(unit_topic, payload, PendingPublishType::WeatherAck, SensorId::Status);
     }
     if (!g_own_ack_cleared)
     {

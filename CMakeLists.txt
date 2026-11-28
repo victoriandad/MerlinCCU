@@ -71,6 +71,7 @@ add_executable(MerlinCCU
     src/network/home_controls.cpp
     src/network/unit_fleet.cpp
     src/network/status_json.cpp
+    src/network/weather_acks.cpp
     src/core/calendar_demo.cpp
     src/network/cert_pin.cpp
     src/core/stack_guard.cpp
